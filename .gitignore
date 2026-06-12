@@ -21,6 +21,7 @@ logs/
 .pytest_cache/
 .ruff_cache/
 .pyright_cache/
+.codegraph/
 .coverage
 htmlcov/
 
