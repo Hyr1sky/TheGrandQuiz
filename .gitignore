@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# Secrets — never commit credentials
+.env
+.env.*
+!.env.example
+
+# Runtime data
+workspace/
+logs/
+*.db
+*.sqlite3
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.pyright_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Node (future frontend / pyright bundled runtime)
+node_modules/
