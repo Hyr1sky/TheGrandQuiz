@@ -161,6 +161,12 @@ Do not add subagents only for the sake of being multi-agent. Introduce a subagen
 
 The main agent should handle conversation and orchestration. Subagents should handle isolated, verifiable work.
 
+> 2026-06-13 收敛（架构审视）：判据硬化为"隔离大上下文 + 输出可结构化验证"。按此判据，
+> **MVP 唯一 subagent 是 Reader**；出题（generate_quiz）、判卷（grade_answer）是带 schema 的
+> **工具**，不是 subagent。上表 Discovery / Quiz / Interview / Summarizer / Planner 降为二期候选，
+> 逐个按判据再立项。核心考核循环是确定性 workflow（见 architecture.md 核心设计判断二），
+> 不是多 subagent 编排。
+
 ## Tool Plan
 
 ```mermaid
@@ -204,6 +210,10 @@ generate_quiz
 generate_summary
 get_recent_activity
 ```
+
+> 2026-06-13 按考核竖切收敛 MVP 实际工具集：`approve_resource`、`read_resource_deep`（经 Reader
+> subagent）、`list_knowledge_items`、`generate_quiz`（出题，工具）、`grade_answer`（判卷，工具）、
+> `get_recent_activity`。`search_learning_resources` / `generate_summary` 随发现 / 总结环节移入二期。
 
 Later expansions can add GitHub repository reading, official documentation priority ranking, coding exercise generation, and source quality scoring.
 
@@ -267,6 +277,9 @@ Do not merge all memory into one generic table. Separate memory by purpose.
    Resource summaries, concepts, citations, and quality judgments.
 ```
 
+> 2026-06-13 收敛（ADR-0003）：上述四分库收为两类——MVP 只实现 **Learning + Preference**；
+> Resource Memory 并入 KnowledgeItem（不重复造实体），Session Memory 归 kernel 会话历史（非 domain 记忆）。
+
 SQLite plus JSON payload is enough for the first version. A vector database can be introduced later when resource volume and retrieval requirements justify it.
 
 ## Error Recovery
@@ -305,21 +318,38 @@ flowchart LR
     ASSERT --> A5[Skill Behavior]
 ```
 
-Initial eval cases:
+Initial eval cases（2026-06-12 改为考核竖切 8 例，全部跑在 trace 上）：
 
-| Case | Assertion |
-| --- | --- |
-| User asks to learn React Server Components | Agent discovers resources first and does not directly build the knowledge base |
-| User rejects a resource | Rejected resource must not enter context |
-| User asks details about a blog | Agent must call `read_resource_deep` before answering |
-| User enables interview skill | Agent should generate interview questions, not a normal summary |
-| User answers a quiz incorrectly | Weak concept should be recorded into Learning Memory |
-| Web fetch fails | Resource should be marked failed and replacement should be suggested |
+| # | Case | Assertion |
+| --- | --- | --- |
+| 1 | 深读产出未经审批 | 未审批的 KnowledgeItem 不得入库 |
+| 2 | 空库时"考我" | Agent 拒绝出题并引导用户先喂资源，不凭空编题 |
+| 3 | 出题 | 每道题锚定存在的 KnowledgeItem，且其 evidence 非空 |
+| 4 | 答错一道题 | 对应薄弱概念按 item id 写入 Learning Memory |
+| 5 | 复考选题 | 出的题 ∈ 代码构造的"薄弱优先"候选集（候选集按薄弱优先构造，LLM 在集内自由挑；有薄弱概念时新概念不进集） |
+| 6 | 答对薄弱题 | 第一次答对 → 薄弱转"观察中"（仍在表内）；连续第二次答对 → 销账移出 |
+| 7 | 深读 fetch 失败 | 资源标记失败，不产生幽灵 KnowledgeItem |
+| 8 | 题型路由 | 首次接触概念出选择题，薄弱概念复考走追问 |
 
-## MVP Scope（已确认）
+> 旧用例中 discovery（"先发现再建库"）、interview skill、换源建议三例随发现/面试环节移入二期。
+> "拒绝资源不入上下文"并入用例 1（审批语义）。
 
-Narrow first scope: user enters a technical learning direction; agent finds resources; user approves; agent generates a learning route, quiz, and summary.
+## MVP Scope（已确认，2026-06-12 修订为考核竖切）
 
-For stable development and eval, the first version can use a mock resource provider or manually supplied URLs. Real search can be added as a second-phase tool.
+> 修订背景：产品定位明确为"考核驱动的个人学习工具"（见根目录 CONTEXT.md），
+> 核心循环是考核，路线规划与总结降为配角——原"路线 + quiz + 总结三件套"出 MVP。
 
-The main recommendation is to build the Agent Runtime skeleton, approval gate, trace, and eval extension points before adding many tools.
+MVP 是一条穿透考核循环的竖切：
+
+```text
+手动喂 URL → 审批 → Reader 深读入库（带出处）→ "考我" → 出题带证据
+→ 判卷 → 薄弱概念入 Learning Memory → 复考时优先薄弱点
+```
+
+这条竖切已穿透全部 runtime 能力：审批门、subagent、grounding、结构化输出、记忆、trace/replay。
+
+For stable development and eval, the first version uses manually supplied URLs (mock resource
+provider). Real search/discovery, learning-route planning, and summaries are second-phase.
+
+The main recommendation is unchanged: build the Agent Runtime skeleton, approval gate, trace, and
+eval extension points before adding many tools.
