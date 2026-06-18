@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Learning-oriented digital human: an observable, recoverable, and evaluable learning Agent Runtime"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["pydantic>=2.0"]
+
+[project.scripts]
+grandquiz = "grandquiz.interfaces.cli.repl:main"
 
 [dependency-groups]
 dev = [
@@ -36,6 +39,12 @@ select = [
     "B",   # flake8-bugbear
     "SIM", # flake8-simplify
     "RUF", # ruff-specific
+]
+ignore = [
+    # 本项目注释/文档用中文，全角标点是正确排版；关闭"歧义 Unicode"检查（本为防英文代码误入全角字符）
+    "RUF001",
+    "RUF002",
+    "RUF003",
 ]
 
 [tool.pyright]
