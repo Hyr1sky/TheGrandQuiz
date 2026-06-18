@@ -4,10 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目是什么
 
-学习型数字人：一个**可观测、可恢复、可评测**的学习 Agent Runtime（Python 3.12+）。
-当前处于 Pre-MVP 脚手架阶段——`src/grandquiz/` 还只有 `__init__.py`，全部设计都在 `docs/` 里。
-**动手写代码前先读 [docs/architecture.md](docs/architecture.md)**（目标架构与搭建顺序）和
-[docs/roadmap.md](docs/roadmap.md)（领域模型 / Subagent / 工具规划）。
+**考核驱动的个人学习工具**，工程内核是一个可观测、可恢复、可评测的 Agent Runtime（Python 3.12+）；
+作者本人是用户 #1，同时作为 AI/Agent 工程师方向的简历项目。核心循环是"考核"：学完材料 → 被拷问
+→ 暴露薄弱概念 → 记入记忆 → 下次优先考薄弱点。
+
+当前处于 Pre-MVP 脚手架阶段——`src/grandquiz/` 还只有 `__init__.py`，全部设计都在 `docs/` 与 `CONTEXT.md` 里。
+**动手写代码前按序读**：
+
+- [CONTEXT.md](CONTEXT.md) — 领域语言权威表（先读这个统一术语）
+- [docs/architecture.md](docs/architecture.md) — 目标架构、两条核心设计判断、搭建顺序
+- [docs/roadmap.md](docs/roadmap.md) — MVP 考核竖切、领域模型、eval 用例
+- [docs/adr/](docs/adr/) — 四个不可逆决策（提取式迁移 / 概念同一性 / 记忆四收二 / 循环是 workflow）
 
 ## 常用命令
 
@@ -56,6 +63,11 @@ hook、recovery、eval 全部建在其上。
 
 来自 architecture.md 已对齐的决策，不是建议：
 
+- **核心循环是 workflow，不是自由 ReAct**（[ADR-0004](docs/adr/0004-core-loop-is-workflow-not-free-react.md)）：
+  考核链路是确定性骨架，LLM 只在"出题""判卷"两个槽里被调用；状态机转移、选题候选集、Learning Memory
+  写入全是代码。自由 ReAct 只用于开放编排。一句话：**LLM 判卷，代码记账。**
+- **事件是信封**：`AgentEvent` = type + 元数据 + 不透明 payload，kernel 泛型分发、不认识具体类型；
+  领域事件在 domain 层定义、经 kernel `emit()` 上同一条脊柱（kernel 保持领域无关）。
 - **Hook 分两类语义**：interceptor（`before_*`，可改参可阻断）vs observer（`on_*`/`after_*`，只读）。
   Hook 抛异常必须被隔离，不能炸掉整个 turn。
 - **确定性基建第一天做对**：时钟 / 随机数走注入（`Clock` 抽象 + 种子化 RNG），否则 replay 永远对不齐。
@@ -64,7 +76,10 @@ hook、recovery、eval 全部建在其上。
 - **跨轮次裁剪**：历史只保留最终 assistant 回答，丢弃 tool 调用中间过程（旧仓库的已知坑）。
 - **注入防护进 MVP**：抓取的网页 / GitHub 内容是不可信输入——打"不可信"标记 + system prompt
   硬约束 + fetch 层大小 / 超时 / 域名限制。
-- **结构化输出契约**：subagent 返回值用 pydantic schema 强制校验，失败自动重试。
+- **subagent 判据 + 结构化输出契约**：subagent 仅用于"隔离大上下文 + 可验证输出"（MVP 唯一 subagent
+  是 Reader；出题 / 判卷是工具）；其返回值用 pydantic schema 强制校验，失败自动重试。
+- **审批门是可挂起 / 可恢复的 turn**：发 ApprovalRequested 事件 + 持久化待决状态 + 凭 token 恢复，
+  不是阻塞 `input()`；CLI MVP 可用阻塞 prompt 实现，但接口形状第一天按 suspend/resume 定。
 - **SQLite 迁移**：版本号 + 顺序 SQL 文件，不上 alembic。
 - **Prompt 版本管理**：prompt 模板独立于代码存放，trace 记 prompt 版本号。
 
@@ -75,8 +90,36 @@ hook、recovery、eval 全部建在其上。
 [docs/reference-map.md](docs/reference-map.md) 记录每个待移植模块的出处、外部参考仓库，
 以及**明确不要带过来的旧坑**——移植前先查这份清单。移植不是照搬：runner 进新仓库时同步做事件化改造。
 
+## 开发节奏与代码树约定
+
+- **走骨架，竖切先穿透**：trace/replay 先行后，立刻拉一条最小可跑的考核竖切（搭建顺序 step 3），
+  kernel 各层由真实 domain 拉动着逐层加硬——step 3 里可用 dict 假装 memory、阻塞 prompt 假装审批门，
+  step 4-7 再换正式实现。**不要在竖切跑通前打磨任何 kernel 层。**
+- **一个 PR 一个可验收行为**：每个 PR 对应 architecture.md 搭建顺序里的一条验收标准，保持 CI 全绿；
+  build order（step 1→8）即 backlog，不提前建满 issue。
+- **测试分工**：确定性核心（状态机 / 选题 / 事件信封 / 销账）走 TDD（红-绿-重构），是 eval 命门；
+  LLM 的两个槽（出题 / 判卷）不 unit-TDD，靠 replay 录放 + eval harness 验证。
+- **代码树跟依赖规则和真实文件走，不跟 aspiration 走**：保持 `kernel/providers/domain/interfaces/evals`
+  分层（它本身就编码了"领域无关 runtime"这一卖点，比扁平铺开更讲故事）；现在用扁平模块（`events.py`…），
+  一个概念长到 2+ 文件时才提升为子文件夹；**不预建空文件夹**。`domain/learning/` 的嵌套即使只有一个
+  领域也保留（标示 runtime 领域无关）。
+
 ## 工程规范
 
 - **提交规范**：conventional commits；issue 驱动开发，每个 issue 对应一个独立可验收的 PR
 - **决策记录**：架构级决策写入 `docs/adr/`（模板见 `docs/adr/0000-template.md`）
 - **密钥纪律**：凭证只走 `.env`（已 gitignore），任何 key 不进 git 历史
+
+## Agent skills
+
+### Issue tracker
+
+本地 markdown：issues 与 PRD 存于 `.scratch/<feature-slug>/`（PRD.md + issues/NN-slug.md）。See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+五个标准 triage 角色用默认标签名（`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`）。See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+单 context：根 `CONTEXT.md`（领域语言权威表）+ `docs/adr/`。See `docs/agents/domain.md`.
