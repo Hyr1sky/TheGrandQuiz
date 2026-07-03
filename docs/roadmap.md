@@ -146,6 +146,10 @@ classDiagram
     ActivityEvent --> MemoryRecord
 ```
 
+> 2026-06-15 领域模型精化（保持 ADR-0002）：KnowledgeItem 的 `evidence` 落为 `{quote, locator|None}`
+> 结构（locator 携 section_path/锚点，MVP 可 None）；LearningResource 持久化原始抓取内容（blob + content_hash）。
+> 二者让"出处定位符"与"资源内概念树"可事后构建而无需重抓——见 issue 03 与 reference-map（knowhere）。
+
 ## Subagent Plan
 
 Do not add subagents only for the sake of being multi-agent. Introduce a subagent when the task boundary is clear, the context can be isolated, and the output can be verified.
@@ -353,3 +357,55 @@ provider). Real search/discovery, learning-route planning, and summaries are sec
 
 The main recommendation is unchanged: build the Agent Runtime skeleton, approval gate, trace, and
 eval extension points before adding many tools.
+
+## 未来方向（潜在扩展，"可达不堵死"，非 MVP）
+
+> 2026-06-15 记录，基于对 [Ontos-AI/knowhere](https://github.com/Ontos-AI/knowhere) 的调研 + 一次对抗式设计审查。
+> 原则：最好的前向兼容是好的当前边界，不是投机接口——只埋"retrofit 贵 + 预留近乎免费 + 当前会堵死"的种子。
+
+### 轻量知识图谱：分四层，成本/时机各不同
+
+关键教训（对标 [GitNexus](https://github.com/abhigyanpatwari/GitNexus)：纯 Tree-sitter AST、零 LLM 建
+`CALLS/IMPORTS/EXTENDS` 边；[graphify](https://github.com/safishamsi/graphify)：代码走 AST、仅文档
+fallback LLM 语义抽取且给边打 `EXTRACTED/INFERRED/AMBIGUOUS` 置信标签）：**便宜可靠的边来自可确定性抽取
+的"结构"，LLM 三元组抽取是昂贵且噪的 fallback，只在没有结构信号时才用**。代码有 AST，我们的散文学习材料
+没有——对应的"廉价结构"是文档层级（section 树），语义边才需要 LLM。
+
+- **Layer 0 — 知识点（已在建，M3.1）**：Reader 抽取 → 摘要 + `section_path`。抽取产出精简摘要当索引
+  （而非 embedding→向量），是"无向量库 / agentic 检索"路线的核心。这是个领域无关抽象——学习域叫"知识点"，
+  条款 / 合规域就是"规则点"（同一 kernel 换 domain 即可，验证 runtime 可复用；但本项目聚焦学习、不建 rules 域）。
+- **Layer 1 — 资源内概念树（便宜的结构边，已由 provenance 预留）**：`section_path` 天然给父 / 子层级，
+  零 LLM。用于按结构导航概念、按层级排考序（先基础节点、再进阶子节点）。不违反 ADR-0002。
+- **Layer 2 — 概念间语义边，作为 Reader 单次遍历的副产品（eval 门控，MVP 后）**：Reader 本就把整篇读进
+  隔离上下文并产 KnowledgeItem[]，在**同一次调用**顺带吐 `{from_item, relation: prerequisite|related|
+  contradicts, to_item, confidence}`——是 SPO 三元组，但主体限定在已抽的 item、不另起抽取管线、带置信
+  标签（graphify 式）让选题代码只信高置信边。存普通 SQLite 行（knowhere 式，不上图数据库）。启用多跳提问
+  + **前置知识感知选题**（答错"useEffect 依赖"→ 发现其 prerequisite 是"闭包"→ 先补考"闭包"）。
+  成本 = 现有 Reader 调用的边际 token。
+- **Layer 3 — 跨资源图 / 归并（推迟）**：ADR-0002 二期 `concept_key` + knowhere 规则式重叠配方。不碰。
+
+**eval 门控是回答"值不值"的成熟解法**：Layer 2 建在检索 / 选题缝后，加一个 eval 用例——"前置知识感知
+选题" vs "纯薄弱优先"基线，在薄弱概念解决率 / 出题相关性上是否有提升，跑 trace 量化，有提升才留。这把
+"SPO 图值不值这个成本"从玄学变成 A/B 数字，是本项目该秀的差异化肌肉。
+
+**纪律**：Layer 2 现在**不进 schema**（未跑通竖切前加边字段 = 过早抽象），但没被堵死——已预留的
+"LearningResource 持久化原始内容"让日后对存下的原文重跑一次 Reader 即可建边，无需重抓。故作 MVP 后的
+eval 门控实验，而非现在预留接口。**不采纳**：Leiden 社区检测（GraphRAG 血统，太重）、图数据库
+（Neo4j/FalkorDB/LadybugDB——两仓库都提供导出但核心可移植，我们坚持 SQLite 行）、向量库。
+
+### 其他方向（延续前几轮讨论）
+
+- 入库/检索深化为 agentic search（PageIndex 式"读大纲→选章节"逐步单次 LLM 调用），落在预留的"检索缝"后。
+- 开放/定时任务 → 拉取相关资料 → 生成推送摘要 → 用户挑感兴趣的 → 进学习-考核-复习循环：复用
+  ResourceCandidate + 审批门原语 + ADR-0004 的自由 ReAct（开放编排）+ interfaces 通道（定时触发即又一通道）。
+
+### 明确不采纳（避免走偏）
+
+向量库 / embedding、GraphRAG 式 LLM 实体抽取 + 社区检测、knowhere 的重运行时（Postgres/Redis/S3/worker/
+FastAPI monorepo）、MinerU/VLM 多模态栈、大规模跨文档图导航。差异化卖点押在可观测/可评测
+（trace/replay/eval），而非再造一个 RAG 壳。
+
+### 待办的两笔工程性备注
+
+- **EventSink 异常隔离**：per-observer try/except 隔离在 M4 HookManager 落（events.py 已加 docstring 说明）。
+- **并发下的 seq 定序**：建 subagent 并发（M4+）时，工具顺序断言改用 parent_span 因果树而非全局 seq。
