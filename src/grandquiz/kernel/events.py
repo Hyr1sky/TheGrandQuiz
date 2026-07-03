@@ -6,10 +6,11 @@ eval replay = 事件流的回放。一个 span 是一对事件（``*.started`` /
 泛型地分发 / 持久化事件，从不查看 ``payload`` 的具体内容。
 """
 
+import copy
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from grandquiz.kernel.clock import Clock
 
@@ -27,7 +28,9 @@ class EventType:
 
 class AgentEvent(BaseModel):
     """不可变的事件信封。``payload`` 对 kernel 不透明（JSON-able dict），由发射方
-    用各自的 typed 模型构造。"""
+    用各自的 typed 模型构造，构造时深拷贝隔离——事件不与构造方共享嵌套引用（发射后再改源
+    dict 不会污染已落事件）；consumer 视 ``payload`` 为只读（EventSink 把同一事件实例扇出给
+    所有订阅者，谁都不该改它）。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -39,12 +42,21 @@ class AgentEvent(BaseModel):
     parent_span_id: str | None = None
     payload: Mapping[str, Any] = Field(default_factory=dict)
 
+    @field_validator("payload", mode="before")
+    @classmethod
+    def _isolate_payload(cls, value: object) -> object:
+        # 深拷贝隔离：见类 docstring。payload 契约上是 JSON-able，deepcopy 有界且良定义。
+        return copy.deepcopy(value)
+
 
 Observer = Callable[[AgentEvent], None]
 
 
 class EventSink:
-    """扇出登记处——脊柱，订阅者挂在这里。M1 订阅者：CLI 打印器；后续：TraceStore、HookManager。"""
+    """扇出登记处——脊柱，订阅者挂在这里。M1 订阅者：CLI 打印器；后续：TraceStore、HookManager。
+
+    publish 不做 per-observer 异常隔离，订阅者不得抛异常——隔离是 HookManager（M4）的职责
+    （见 CLAUDE.md "Hook 抛异常必须被隔离"）。"""
 
     def __init__(self) -> None:
         self._observers: list[Observer] = []

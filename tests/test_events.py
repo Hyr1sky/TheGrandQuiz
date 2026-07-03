@@ -43,3 +43,12 @@ def test_agent_event_is_frozen() -> None:
     event = AgentEvent(type="x", seq=0, ts=0.0, trace_id="t")
     with pytest.raises(ValidationError):
         event.seq = 5
+
+
+def test_payload_is_isolated_from_source_mutation() -> None:
+    inner = [1, 2]
+    source = {"a": inner}
+    emitter = EventEmitter(EventSink(), ManualClock(), trace_id="t")
+    event = emitter.emit(EventType.MODEL_STARTED, payload=source)
+    inner.append(3)
+    assert event.payload == {"a": [1, 2]}

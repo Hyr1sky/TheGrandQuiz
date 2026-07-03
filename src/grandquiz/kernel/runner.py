@@ -35,23 +35,32 @@ class Runner:
             span_id=turn_span,
             payload={"user_message": user_message},
         )
-        self._history.append(Message(role="user", content=user_message))
 
+        # 历史只在成功后提交：失败不留孤儿 user 消息，否则重试会喂给 LLM 两条连续 user。
+        call_messages = [*self._messages(), Message(role="user", content=user_message)]
         model_span = self._emitter.new_span_id()
         self._emitter.emit(
             EventType.MODEL_STARTED,
             span_id=model_span,
             parent_span_id=turn_span,
-            payload={"messages": [m.model_dump() for m in self._messages()]},
+            payload={"messages": [m.model_dump() for m in call_messages]},
         )
         try:
-            completion: Completion = await self._provider.complete(self._messages(), role="basic")
+            completion: Completion = await self._provider.complete(call_messages, role="basic")
         except Exception as exc:
+            # 错误也要闭合 model span（started/ended 成对不变量）：ERROR 是一等信号，
+            # MODEL_ENDED(ok=False) 封口，否则 TraceStore 会拿到永远开着的 span。
             self._emitter.emit(
                 EventType.ERROR,
                 span_id=model_span,
                 parent_span_id=turn_span,
                 payload={"error": repr(exc)},
+            )
+            self._emitter.emit(
+                EventType.MODEL_ENDED,
+                span_id=model_span,
+                parent_span_id=turn_span,
+                payload={"ok": False, "error": repr(exc)},
             )
             self._emitter.emit(EventType.TURN_ENDED, span_id=turn_span, payload={"ok": False})
             raise
@@ -60,9 +69,14 @@ class Runner:
             EventType.MODEL_ENDED,
             span_id=model_span,
             parent_span_id=turn_span,
-            payload={"output": completion.text, "usage": completion.usage.model_dump()},
+            payload={
+                "ok": True,
+                "output": completion.text,
+                "usage": completion.usage.model_dump(),
+            },
         )
         # 跨轮裁剪（架构约束）：历史只保留每轮最终 assistant 回答——M1 无工具中间步，故平凡。
+        self._history.append(Message(role="user", content=user_message))
         self._history.append(Message(role="assistant", content=completion.text))
         self._emitter.emit(EventType.TURN_ENDED, span_id=turn_span, payload={"ok": True})
         return completion.text
