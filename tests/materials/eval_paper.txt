@@ -1,0 +1,496 @@
+# Demystifying Evals for AI Agents - Detailed Notes
+
+## One-Sentence Thesis
+
+Agent evals are not just answer checks; they are an engineering harness for repeatedly running realistic tasks, recording trajectories, checking real outcomes, grading multiple quality dimensions, and maintaining the suite as the agent and product evolve.
+
+## Full Conceptual Map
+
+```text
+User / product risk
+  -> representative tasks
+  -> isolated environments
+  -> repeated trials
+  -> trajectory / transcript records
+  -> outcome inspection
+  -> graders
+  -> aggregate metrics
+  -> transcript review and failure triage
+  -> capability improvement or regression protection
+```
+
+The article's core shift is from "did the model say the right thing?" to "did the agent reliably change or produce the right thing, in the right environment, with an acceptable path?"
+
+## Core Concepts And Terminology
+
+### Task
+
+A task is the scenario being evaluated. It should define:
+
+- user instruction or initial request;
+- initial environment state;
+- available tools;
+- constraints and policies;
+- expected outcome or success criteria;
+- optional reference solution or reference behavior.
+
+Important correction: a task is not the trace. A task is the thing to be attempted. The trace appears only after a trial is run.
+
+### Trial
+
+A trial is one complete attempt at one task.
+
+Important correction: a trial is not one turn. One trial can contain many turns, many tool calls, retries, errors, clarifications, and environment updates.
+
+Because agents are nondeterministic, one task should often be run multiple times. Without repeated trials, a single pass/fail result can hide unstable behavior.
+
+### Trajectory / Transcript
+
+The trajectory or transcript is the complete execution record of a trial:
+
+- messages;
+- tool calls;
+- tool arguments;
+- tool results;
+- observations;
+- intermediate artifacts;
+- errors and retries;
+- timing, token, and cost signals;
+- final answer.
+
+The transcript is not usually the primary success condition, but it is essential for diagnosis.
+
+### Outcome
+
+The outcome is the real final state or artifact after a trial:
+
+- database state;
+- ticket status;
+- refund record;
+- generated file;
+- passing tests;
+- research report;
+- browser or app state;
+- final user-facing answer, when the task is answer-only.
+
+Important correction: outcome is not the same as final answer. The final answer is usually one part of the transcript. The outcome is the real task result.
+
+### Grader
+
+A grader turns evidence into judgment. It can inspect:
+
+- outcome;
+- trajectory;
+- tool use;
+- costs;
+- policy compliance;
+- quality dimensions;
+- comparison with a reference;
+- human or expert judgment.
+
+Good evals often use several graders together instead of one binary pass/fail.
+
+## Agent Harness Vs Eval Harness
+
+### Agent Harness
+
+The agent harness is the runtime scaffold that lets the model act:
+
+- prompt and system instructions;
+- tool schemas and tool permissions;
+- planning loop;
+- memory and context management;
+- retry and error recovery;
+- stop conditions;
+- execution policy;
+- state passed back to the model.
+
+It answers: "How does the model become an agent that can act?"
+
+### Eval Harness
+
+The eval harness is the measurement system:
+
+- task suite;
+- isolated environments;
+- trial runner;
+- trace recorder;
+- outcome extractor;
+- graders;
+- metric aggregation;
+- reports and debugging views.
+
+It answers: "How do we know whether this agent works, how reliably, and why it failed?"
+
+When an agent fails, do not immediately blame the base model. The failure could come from the prompt, tool schema, missing permissions, poor planning loop, ambiguous task, unstable environment, wrong grader, or bad instrumentation.
+
+## Method, Architecture, Or Argument Breakdown
+
+The article's practical architecture can be understood as:
+
+```text
+Eval suite
+  contains tasks
+
+Task
+  defines input + environment + success criteria
+
+Trial runner
+  runs agent on task, often multiple times
+
+Agent harness
+  enables model to use tools and act
+
+Trace recorder
+  captures trajectory
+
+Outcome extractor
+  checks final state or artifact
+
+Graders
+  score success, quality, safety, cost, and reliability
+
+Aggregator
+  computes pass rates, pass@k, pass^k, failure types, and trends
+```
+
+The article is not proposing one universal benchmark. It is describing the engineering pattern behind useful agent evals.
+
+## Key Mechanisms And Design Tradeoffs
+
+### Outcome-Based Grading
+
+Outcome-based grading is stronger than final-answer grading because it checks whether the task was actually accomplished.
+
+Examples:
+
+- A refund agent saying "I refunded you" is insufficient; the refund record must exist.
+- A coding agent saying "tests pass" is insufficient; the tests must actually run and pass.
+- A computer-use agent clicking the right-looking button is insufficient; the backend or UI state must be correct afterward.
+
+Outcome-based grading is usually better than transcript pattern matching because there can be multiple valid paths. A transcript matcher can accidentally reward one scripted route and reject a more efficient valid route.
+
+### Why Transcript Review Still Matters
+
+Do not throw away transcripts just because scoring is outcome-based. Transcripts are the debugging substrate.
+
+They reveal:
+
+- failure cause;
+- tool misuse;
+- policy violations;
+- wasted steps;
+- cost blowups;
+- unsupported claims;
+- bad task design;
+- grader bugs;
+- environment or harness bugs.
+
+Rule of thumb: score primarily from outcome, diagnose from transcript.
+
+### Grader Types
+
+#### Code-Based Graders
+
+Use when success can be checked deterministically:
+
+- exact state checks;
+- unit tests;
+- type checks;
+- lint;
+- regex or schema checks;
+- database assertions;
+- tool call constraints;
+- cost or turn-count thresholds.
+
+They are cheap, reproducible, and debuggable, but can be brittle if they encode one narrow path.
+
+#### Model-Based Graders
+
+Use for open-ended quality:
+
+- explanation quality;
+- groundedness;
+- helpfulness;
+- coverage;
+- tone;
+- synthesis quality;
+- rubric-based subjective judgment.
+
+They are flexible but need calibration, cost control, and audit.
+
+#### Human Graders
+
+Use for:
+
+- high-value or high-risk cases;
+- expert domains;
+- rubric creation;
+- LLM judge calibration;
+- disagreement analysis;
+- spot-checking regressions.
+
+Human grading is not just "manual approval"; it is how teams build and maintain trust in subjective graders.
+
+### Concrete Mixed-Grader Example
+
+For a refund customer-support agent:
+
+- code-based grader checks order status, refund amount, policy fields, and database state;
+- code-based trace check verifies no forbidden tool was called;
+- model-based grader judges whether the explanation was clear, grounded in policy, and appropriately empathetic;
+- human grader samples risky or disputed cases to calibrate the model-based grader.
+
+## Evaluation Design, Metrics, And Evidence
+
+### Capability Eval
+
+Capability eval asks: "Can the agent solve this class of difficult tasks yet?"
+
+Properties:
+
+- challenging;
+- initial pass rate may be low;
+- useful for hill-climbing;
+- should expose ability boundaries;
+- can include tasks that the current system fails.
+
+### Regression Eval
+
+Regression eval asks: "Can the agent still do what it already learned to do?"
+
+Properties:
+
+- stable;
+- close to production-critical behavior;
+- expected to pass nearly 100%;
+- useful for prompt, model, tool, and harness changes;
+- should run continuously or before releases.
+
+A capability eval can graduate into a regression eval when the task is stably solved, the grader is reliable, the environment is repeatable, and the behavior remains important.
+
+### `pass@k`
+
+`pass@k` means success in at least one of k attempts.
+
+It measures whether the agent can find a solution if allowed retries or multiple samples. It is useful for coding, candidate generation, search, and workflows where a human or reranker can pick the best result.
+
+As k increases, `pass@k` usually increases.
+
+### `pass^k`
+
+`pass^k` means success in all k attempts.
+
+It measures reliability. This matters more for customer-facing agents, support workflows, production operations, and user-visible automation where every run is expected to work.
+
+As k increases, `pass^k` usually decreases.
+
+An agent can have good `pass@10` and poor `pass^5`: it has ability, but not product reliability.
+
+## Building A Balanced Eval Suite
+
+Do not build the first 20-50 tasks only from convenient traces. Runtime traces are useful, but they are one source among several.
+
+Good initial sources:
+
+- support tickets;
+- bug reports;
+- observed failures;
+- manual QA scripts;
+- product requirements;
+- domain expert examples;
+- runtime traces;
+- edge cases from policy documents;
+- user requests that should be rejected.
+
+To avoid one-sided optimization, include:
+
+- cases where the agent should act;
+- cases where it should refuse;
+- cases where it must ask for missing information;
+- policy-boundary cases;
+- ambiguous user requests;
+- user mistakes or misleading statements;
+- tool errors;
+- stale or inconsistent environment state;
+- multi-turn changes of intent.
+
+For a customer-support agent, a bad suite only asks "should this be refunded?" with many positive examples. A better suite includes valid refunds, invalid refunds, partial refunds, expired windows, missing order IDs, policy exceptions, fraud-risk cases, and tool failures.
+
+## Outcome Examples By Agent Type
+
+### Conversational Agents
+
+Outcome may include:
+
+- ticket resolved;
+- booking changed;
+- refund processed;
+- account setting updated;
+- user got a correct grounded answer;
+- policy followed;
+- escalation performed when needed.
+
+Quality dimensions can include tone, empathy, clarity, and turn count, but these are not a substitute for business outcome.
+
+### Research Agents
+
+Outcome may include:
+
+- grounded final report;
+- coverage of required facts;
+- source quality;
+- factual accuracy;
+- coherence;
+- uncertainty handling;
+- citations supporting key claims.
+
+Research evals are hard because facts can change, good coverage is subjective, and source quality requires judgment.
+
+### Computer-Use Agents
+
+Outcome may include:
+
+- file created or modified;
+- app setting changed;
+- web form submitted;
+- backend state updated;
+- UI state matches target;
+- generated artifact exists and is valid.
+
+The click is not the outcome. The state after the click is the outcome.
+
+Computer-use evals are hard because screenshots, DOM state, app state, backend data, and timing can disagree.
+
+## Results And Interpretation
+
+Aggregate scores are useful but insufficient.
+
+If pass rate improves, ask:
+
+- Did the agent really improve, or did the grader become easier?
+- Did the environment change?
+- Did the task set become saturated?
+- Did the agent overfit to one route?
+- Did failures shift from outcome failure to cost, safety, or quality failure?
+
+If pass rate drops, ask:
+
+- Was the base model changed?
+- Was the agent harness changed?
+- Did tool schema or permissions change?
+- Did environment setup drift?
+- Is the grader now stricter?
+- Are failures concentrated in one task family?
+
+This is why transcripts and failure taxonomies matter. Evals should support debugging, not just ranking.
+
+## Limitations And Failure Modes
+
+The article leaves several hard problems open:
+
+- LLM judges can accumulate bias and reward surface patterns.
+- Human gold sets are expensive and can encode subjective preferences.
+- Environment isolation is hard when tasks depend on time, caches, external APIs, or shared state.
+- Benchmark saturation turns capability evals into weak progress signals.
+- Task representativeness drifts as users and products change.
+- Real traffic is needed to discover boundary cases not imagined by designers.
+- Eval suites need owners, budgets, triage processes, and retirement rules.
+- Strong graders can still be inadequate oracles if they check proxies instead of real intent.
+
+## User-Specific Weak Point Reinforcement
+
+### 1. Final Answer Vs Outcome
+
+Your first answer slightly merged final answer and outcome. Keep this separation:
+
+```text
+final answer = what the agent says
+outcome = what is true after the task ends
+```
+
+Sometimes they are the same, such as a pure question-answering task. In most agent tasks, they are different.
+
+### 2. Task Vs Trial Vs Trajectory
+
+Use this mental model:
+
+```text
+task = the test case
+trial = one run of the test case
+trajectory = what happened during that run
+outcome = where the run ended
+grader = how we judge it
+```
+
+A trial is not a turn. A trial can contain many turns.
+
+### 3. Harness Boundary
+
+You initially placed the boundary around trace and grader. Better:
+
+```text
+agent harness = runtime control
+eval harness = measurement control
+```
+
+Runtime control determines what the agent can do. Measurement control determines how we know whether it worked.
+
+### 4. Balanced Task Sets
+
+Runtime traces are a good seed, but not enough. Trace-only evals reflect what happened, not necessarily what must be protected.
+
+For product evals, force yourself to add:
+
+- negative cases;
+- policy traps;
+- tool failure cases;
+- ambiguous requests;
+- edge cases from domain experts.
+
+### 5. Outcome By Agent Type
+
+Avoid reducing outcome to surface behavior.
+
+```text
+conversational: resolved business/user state
+research: grounded, complete, sourced report
+computer use: environment state after actions
+```
+
+The visible response, report, or click is only evidence. The real outcome is the achieved state or artifact quality.
+
+## Practical Takeaways And Transfer Ideas
+
+For your own agent project, define a minimal eval harness around five objects:
+
+1. Task
+   - instruction, initial state, tools, constraints, expected outcome.
+2. Trial
+   - one complete run of one task with a specific agent/model/harness version.
+3. Trajectory
+   - messages, tool calls, observations, artifacts, costs, errors.
+4. Outcome
+   - final state or artifact produced by the trial.
+5. Grader
+   - deterministic checks, LLM rubric, human review, and aggregation logic.
+
+Then add:
+
+- environment isolation;
+- repeated trials;
+- `pass@k` and `pass^k`;
+- failure taxonomy;
+- transcript review workflow;
+- owner for suite maintenance.
+
+## Review Questions For Spaced Repetition
+
+1. Why is outcome not the same as final answer?
+2. What is the difference between a task, a trial, and a trajectory?
+3. When would `pass@k` be misleading for a customer-facing agent?
+4. What can transcript review reveal that outcome grading cannot?
+5. When should a capability eval graduate into a regression eval?
+6. Give one example of a balanced customer-support eval suite with positive and negative cases.
+7. For a computer-use agent, why is a click not enough evidence of success?
+8. What are three reasons an agent failure might not be caused by the base model?
