@@ -1,0 +1,126 @@
+"""学习领域模型——纯 pydantic 数据结构（LearningTask / LearningResource / KnowledgeItem）。
+
+两条确定性纪律在此落地（否则 replay 与跨轮次记账永远对不齐）：
+
+- **本模块不 import kernel**：领域模型不依赖 runtime（分层守卫的对偶——kernel 才是禁 import
+  domain 的一方）。领域事件另经 kernel 的 ``emit()`` 上脊柱，模型自身与 runtime 解耦。
+- **不 import uuid / time / random / datetime**：ID 全走 ``derive_id`` 的稳定 hash 派生（决策 1），
+  且模型**无任何时间戳字段**（决策 2）——创建 / 深读 / 答题的时序信息来自事件流的 ``seq`` / ``ts``
+  （注入时钟），模型不存 ``created_at``。
+
+ID 派生约定（工厂在构造点保证确定性，调用方拿不到手写随机 id）：
+``task_id = derive_id(title)``；``resource_id = derive_id(task_id, url)``；
+``item_id = f"{resource_id}#{index:03d}"``（``index`` 为 Reader 输出中的序号）。
+"""
+
+import hashlib
+import unicodedata
+from typing import Literal, Self
+
+from pydantic import BaseModel, Field
+
+
+def derive_id(*parts: str) -> str:
+    """确定性 ID 派生：只用稳定输入 hash，禁止 uuid / time / random（决策 1）。
+
+    以 NUL（``\\x00``）连接各 ``parts`` 再取 sha256，返回 hexdigest 前 16 位。
+    NUL 分隔避免 ``("a", "bc")`` 与 ``("ab", "c")`` 拼接后撞同一 key；同一输入恒得同一 id，
+    replay 因此对得齐。16 位十六进制（64 bit）对 N=1 用户量的资源 / item 规模碰撞概率可忽略。
+
+    入参先做 Unicode **NFC 归一化**再 hash：中文 / 多来源文本（粘贴 vs 输入法）可能是不同规范化
+    形式（NFC 单码点 vs NFD 组合字符），字节不同但语义同一。不归一化会让"同一"标题 / URL 派生出
+    不同 id，破坏概念同一性与去重。注意这不是 replay 破坏点（重放的是同一串字节、仍确定），
+    而是跨会话录入的稳健性。
+    """
+    normalized = [unicodedata.normalize("NFC", part) for part in parts]
+    joined = "\x00".join(normalized)
+    digest = hashlib.sha256(joined.encode("utf-8")).hexdigest()
+    return digest[:16]
+
+
+class Evidence(BaseModel):
+    """KnowledgeItem 的证据：一段原文引文 + 可选结构定位符。
+
+    ``locator`` 携 section_path / 锚点，MVP 恒留 None——字段 / 形状第一天就在，是 ADR-0002
+    资源内概念树的前向兼容缝（grounding 与二期资源内边的地基），此刻不填也不抽取。
+    """
+
+    quote: str
+    locator: str | None = None
+
+
+class KnowledgeItem(BaseModel):
+    """深读一个资源产出的最小知识单元，资源内唯一——概念同一性的边界（ADR-0002）。
+
+    ``evidence`` 非空是模型级硬校验门（决策 3）：无证据的 item 不许存在，从构造点挡住幽灵
+    知识点污染考核循环。``concept_key`` 为二期跨资源归并预留，MVP 恒 None（ADR-0002）。
+    无时间戳字段（决策 2）。
+    """
+
+    item_id: str
+    resource_id: str
+    concept: str
+    summary: str
+    evidence: list[Evidence] = Field(min_length=1)
+    confidence: float = Field(ge=0.0, le=1.0)
+    concept_key: str | None = None
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        resource_id: str,
+        index: int,
+        concept: str,
+        summary: str,
+        evidence: list[Evidence],
+        confidence: float,
+    ) -> Self:
+        """工厂：``item_id = f"{resource_id}#{index:03d}"``（``index`` 为 Reader 输出中的序号）。"""
+        return cls(
+            item_id=f"{resource_id}#{index:03d}",
+            resource_id=resource_id,
+            concept=concept,
+            summary=summary,
+            evidence=evidence,
+            confidence=confidence,
+        )
+
+
+class LearningResource(BaseModel):
+    """挂在 LearningTask 下的一个学习资源（待深读 / 已深读 / 深读失败）。
+
+    ``trusted`` 默认 False——抓取的网页 / GitHub 内容是不可信输入（注入防护，深读前不得当可信）；
+    ``status`` 深读失败 → ``"failed"``，不产生幽灵 item（eval case 7）。无时间戳字段（决策 2）：
+    创建 / 深读时序来自事件流。
+    """
+
+    resource_id: str
+    task_id: str
+    url: str
+    raw_content: str | None = None
+    content_hash: str | None = None
+    trusted: bool = False
+    status: Literal["pending", "read", "failed"] = "pending"
+
+    @classmethod
+    def create(cls, *, task_id: str, url: str) -> Self:
+        """工厂：``resource_id = derive_id(task_id, url)``。"""
+        return cls(resource_id=derive_id(task_id, url), task_id=task_id, url=url)
+
+
+class LearningTask(BaseModel):
+    """学习主题的容器与考核范围（"考我 React" 里的 "React"）：资源 / KnowledgeItem 都挂其下。
+
+    ``domain`` = 粗领域（如"理科" / "前端"），建 task 时人工可选填，MVP 不抽取。
+    无时间戳字段（决策 2）。
+    """
+
+    task_id: str
+    title: str
+    domain: str | None = None
+
+    @classmethod
+    def create(cls, title: str, domain: str | None = None) -> Self:
+        """工厂：``task_id = derive_id(title)``——确定性由构造点保证，调用方拿不到手写随机 id。"""
+        return cls(task_id=derive_id(title), title=title, domain=domain)
