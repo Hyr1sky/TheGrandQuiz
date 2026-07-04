@@ -15,10 +15,13 @@ class Runner:
         emitter: EventEmitter,
         *,
         system_prompt: str | None = None,
+        prompt_version: str | None = None,
     ) -> None:
         self._provider = provider
         self._emitter = emitter
         self._system_prompt = system_prompt
+        # prompt 版本号进 trace（架构约束）——此处只留种子；正式 prompt registry 是后续里程碑。
+        self._prompt_version = prompt_version
         self._history: list[Message] = []
 
     def _messages(self) -> list[Message]:
@@ -43,7 +46,10 @@ class Runner:
             EventType.MODEL_STARTED,
             span_id=model_span,
             parent_span_id=turn_span,
-            payload={"messages": [m.model_dump() for m in call_messages]},
+            payload={
+                "messages": [m.model_dump() for m in call_messages],
+                "prompt_version": self._prompt_version,
+            },
         )
         try:
             completion: Completion = await self._provider.complete(call_messages, role="basic")

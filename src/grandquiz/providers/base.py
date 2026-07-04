@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Literal, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 Role = Literal["basic", "enrich"]
 
@@ -17,6 +17,10 @@ class Usage(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
 
+    # computed_field 而非裸 property：pydantic v2 的 model_dump() 不序列化普通 property，
+    # 而 usage 要经 MODEL_ENDED payload 落 trace——total 必须进 dict，下游（Span.tokens /
+    # M8 eval 成本列）才拿得到。反序列化时它作为 computed 输入被忽略、由字段重算，往返一致。
+    @computed_field
     @property
     def total_tokens(self) -> int:
         return self.prompt_tokens + self.completion_tokens
