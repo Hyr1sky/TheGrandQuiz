@@ -144,6 +144,7 @@ class Reader:
             payload={
                 "messages": [m.model_dump() for m in messages],
                 "prompt_version": self._prompt.version,
+                "role": "basic",
             },
         )
         try:

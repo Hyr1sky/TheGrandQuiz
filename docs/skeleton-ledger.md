@@ -26,6 +26,7 @@ PRD 里的 **Out of Scope**（资源自动发现 / 向量库 / Web 前端 / 跨�
 | 3 | 审批门 | M3.1 已落 `ApprovalGate` 协议 + `ScriptedApprovalGate`（发 `approval.requested` 事件 + 脚本化决策）；CLI 阻塞 `prompt` 交互实现仍是后续 human 步骤 | 可挂起 / 可恢复 turn：凭 token 从待决状态恢复，跨 SSE / HTTP | **TBD**（随 `interfaces/api` 或专门加固；**接口形状第一天就按 suspend/resume 定**，故替换不改调用方） | 关掉 CLI 重开、凭 token 恢复同一次待审批会话 | ⬜ |
 | 4 | Reader subagent 执行器 | M3.1 内联调用（隔离上下文 + pydantic 校验 + ModelRetry 已是真的） | `kernel/subagent.py` 通用执行器 | 出现**第二个** subagent 时再抽（无独立 M，YAGNI） | 第二个 subagent 复用同一执行器、零重复 | ⬜ |
 | 5 | prompt 版本号 | ~~`MODEL_STARTED` 里手填 `prompt_version`~~ | prompt 模板独立存放（`prompts/*.md`）+ 内容 hash 版本号，trace 记版本号 | **✅ 已完成** | trace 能按 prompt 版本归因 eval 回归 | ✅ `domain/learning/prompts.py` + `prompts/reader_extract.md`（版本=内容 hash，Reader 加载） |
+| 6 | Responder（作答输入原语） | M3.2 已落 `Responder` 协议 + `ScriptedResponder`（注入固定 / 按序答案，确定性）；交互式 CLI Responder（阻塞 `prompt`）仍是后续 human 步骤 | 交互式 / 可挂起-恢复的作答 turn（凭 token 恢复，跨 SSE / HTTP，与审批门同形） | **TBD**（随 `interfaces/cli` 或 `interfaces/api`；**接口形状第一天按 `Responder` 协议定**，替换不改 `assess_once` 调用方） | CLI 里逐题作答；关掉重开可凭 token 续答 | ⬜ |
 
 其余 kernel 层（HookManager 异常隔离→M4、ContextBuilder→M5、RecoveryPolicy→M6、Eval harness→M8）
 不是"假实现"而是"尚未上线的层"，其排期见 [roadmap.md](roadmap.md) 增量路线，不在本表重复。
@@ -45,6 +46,22 @@ M3.1（喂 URL → 深读 → 审批 → 入库）落地了下列骨架欠账的
 **grep 对账**：`grep -rn "SKELETON" src/` 现有 **3** 处标记（上表 #2/#3/#4）。台账未完成行为 4（#1~#4），
 差的一处是 **#1 Learning Memory**——它属考核循环后半段（选题 / 判卷 / 销账），M3.1 ingest 竖切**不触及**，
 其 dict 假件将在 M3.2+ 引入时补上代码标记。届时 grep 数应回到与未完成行数一致。
+
+## M3.2 单题考核竖切落地的骨架标记
+
+M3.2（考我 → 选题 → 出题 → 答 → 判卷）新增一处骨架欠账的**假件**（状态 ⬜，正式实现见里程碑）：
+
+| 台账行 | 代码标记 | 位置 |
+|---|---|---|
+| #6 Responder | `# SKELETON` | `src/grandquiz/domain/learning/responder.py`（`Responder` 协议 + `ScriptedResponder`） |
+
+M3.2 **不引入** #1 Learning Memory 的 dict 假件——单题竖切只发 `ANSWER_JUDGED`（含 `verdict` +
+代码算出的 `weak_item_id`），**不写任何记忆库**；薄弱状态机 / 三态 / 连对销账 / 薄弱优先选题是
+**M3.3** 的活（届时 `selection.select_target` 换内部实现、`assess_once` 消费判决落库，签名不变）。
+
+**grep 对账（M3.2 后）**：`grep -rn "SKELETON" src/` 应为 **4** 处（#2 store / #3 approval / #4 reader /
+#6 responder）。台账未完成行为 **5**（#1~#4、#6），差的一处仍是 **#1 Learning Memory**——M3.2 未触及，
+其 dict 假件将在 M3.3 引入选题 / 销账时补上代码标记。届时 grep 数应回到与未完成行数一致。
 
 ## 变更约定
 

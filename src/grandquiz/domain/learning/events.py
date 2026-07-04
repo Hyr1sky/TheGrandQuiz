@@ -25,3 +25,10 @@ class LearningEvent:
     ITEMS_EXTRACTED = "learning.items_extracted"  # Reader 产候选（审批前预览）
     RESOURCE_APPROVED = "learning.resource_approved"  # 用户经审批门通过
     ITEM_CREATED = "learning.item_created"  # 逐个入库（审批后）——eval case 1
+
+    # M3.2 单题考核竖切（考我 → 选题 → 出题 → 答 → 判卷）：
+    ASSESSMENT_REFUSED = "learning.assessment_refused"  # eval case 2：空库拒答，不调任何 LLM
+    QUESTION_ASKED = (
+        "learning.question_asked"  # 出题：锚定真实 item + 非空 cited_evidence（case 3）
+    )
+    ANSWER_JUDGED = "learning.answer_judged"  # 判卷：verdict + weak_item_id（LLM 判卷，代码记账）
