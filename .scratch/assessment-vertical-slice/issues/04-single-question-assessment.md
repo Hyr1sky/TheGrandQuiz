@@ -1,7 +1,11 @@
 # M3.2 — 单题考核竖切：考我 → 出题 → 判卷
 
-Status: ready-for-agent
+Status: done（确定性竖切完成，commit 25869d4，CI 全绿）
 Type: AFK
+
+> **交回 human 的收尾（非 issue 04 验收项，属后续）**：出题 / 判卷 prompt（`prompts/question_generate.md`
+> 与 `answer_grade.md`）的真机质量调优 + 录真实 cassette（照 M3.1 的 `scripts/record_ingest.py` 套路，
+> 可加个 assess 版录制脚本）；交互式 CLI Responder（台账 #6）。接口形状已焊好，human 只换实现不改 `assess_once` 调用方。
 
 ## Parent
 
