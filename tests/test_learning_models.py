@@ -142,6 +142,38 @@ def test_knowledge_item_accepts_one_evidence() -> None:
     assert item.evidence[0].locator is None
 
 
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_knowledge_item_rejects_blank_quote(blank: str) -> None:
+    # 决策 3 强化：空串 / 纯空白引文也是"无证据"，须被 NonEmptyStr 挡下（不只挡空 evidence 列表）。
+    with pytest.raises(ValidationError):
+        KnowledgeItem.model_validate(
+            {
+                "item_id": "r#000",
+                "resource_id": "r",
+                "concept": "闭包",
+                "summary": "摘要",
+                "evidence": [{"quote": blank}],
+                "confidence": 0.5,
+            }
+        )
+
+
+@pytest.mark.parametrize("field", ["concept", "summary"])
+def test_knowledge_item_rejects_blank_concept_or_summary(field: str) -> None:
+    # 空串 / 纯空白 concept·summary 同样是空白幽灵 item，须被挡下。
+    data: dict[str, object] = {
+        "item_id": "r#000",
+        "resource_id": "r",
+        "concept": "闭包",
+        "summary": "摘要",
+        "evidence": [{"quote": "q"}],
+        "confidence": 0.5,
+    }
+    data[field] = "   "
+    with pytest.raises(ValidationError):
+        KnowledgeItem.model_validate(data)
+
+
 # --- confidence 边界 --------------------------------------------------------
 
 

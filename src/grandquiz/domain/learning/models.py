@@ -15,9 +15,14 @@ ID 派生约定（工厂在构造点保证确定性，调用方拿不到手写�
 
 import hashlib
 import unicodedata
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
+
+# 非空字符串（去首尾空白后至少 1 字符）：概念名 / 摘要 / 证据引文的硬约束。
+# 决策 3 的门原本只挡"evidence 列表为空"，不挡"引文为空串"——空串 quote/concept/summary
+# 能铸出空白幽灵 item 直达 store。此约束把"无内容"从构造点一并挡住（strip 后为空也拒）。
+NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 def derive_id(*parts: str) -> str:
@@ -45,7 +50,7 @@ class Evidence(BaseModel):
     资源内概念树的前向兼容缝（grounding 与二期资源内边的地基），此刻不填也不抽取。
     """
 
-    quote: str
+    quote: NonEmptyStr
     locator: str | None = None
 
 
@@ -59,8 +64,8 @@ class KnowledgeItem(BaseModel):
 
     item_id: str
     resource_id: str
-    concept: str
-    summary: str
+    concept: NonEmptyStr
+    summary: NonEmptyStr
     evidence: list[Evidence] = Field(min_length=1)
     confidence: float = Field(ge=0.0, le=1.0)
     concept_key: str | None = None

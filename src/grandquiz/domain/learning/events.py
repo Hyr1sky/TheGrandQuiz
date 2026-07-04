@@ -18,6 +18,9 @@ class LearningEvent:
     """
 
     RESOURCE_CREATED = "learning.resource_created"
+    RESOURCE_READ = (
+        "learning.resource_read"  # 抓取成功回填内容后：资源状态跃迁上脊柱（对称于 fetch_failed）
+    )
     RESOURCE_FETCH_FAILED = "learning.resource_fetch_failed"  # eval case 7：深读失败，不产幽灵 item
     ITEMS_EXTRACTED = "learning.items_extracted"  # Reader 产候选（审批前预览）
     RESOURCE_APPROVED = "learning.resource_approved"  # 用户经审批门通过
