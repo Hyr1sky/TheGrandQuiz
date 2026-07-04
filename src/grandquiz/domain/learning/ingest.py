@@ -52,7 +52,6 @@ async def ingest_resource(
     store: LearningStore,
     approval: ApprovalGate,
     emitter: EventEmitter,
-    prompt_version: str = "reader@skeleton",
     max_bytes: int,
     allowed_domains: Collection[str],
 ) -> IngestResult:
@@ -126,7 +125,6 @@ async def ingest_resource(
                 provider=provider,
                 emitter=emitter,
                 parent_span_id=ingest_span,
-                prompt_version=prompt_version,
             )
         except ReaderError as exc:
             return fail(f"reader: {exc}")
