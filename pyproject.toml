@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Learning-oriented digital human: an observable, recoverable, and evaluable learning Agent Runtime"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.0"]
+dependencies = [
+    "openai>=2.44.0",
+    "pydantic>=2.0",
+]
 
 [project.scripts]
 grandquiz = "grandquiz.interfaces.cli.repl:main"
