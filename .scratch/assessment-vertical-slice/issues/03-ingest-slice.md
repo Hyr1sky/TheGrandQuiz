@@ -1,7 +1,11 @@
 # M3.1 — Ingest 竖切：喂 URL → 深读 → 审批 → 入库
 
-Status: ready-for-agent
+Status: done（确定性竖切完成，commit e9e6b03，CI 全绿）
 Type: AFK
+
+> **交回 human 的收尾（非 issue 03 验收项，属后续）**：真实 LLM provider（`providers/llm.py`）+ `.env`
+> 密钥接入、Reader 抽取 prompt 真机调优 + 录真实 cassette、交互式 CLI ingest 演示、真实网络 fetch + 超时。
+> 接口形状已按此焊好——human 只需把假 provider 换成 `ReplayProvider(真实录制)` / 真实 `source`，不改调用方。
 
 ## Parent
 
