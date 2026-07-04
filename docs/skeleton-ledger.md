@@ -1,0 +1,36 @@
+# 走骨架替换台账（Walking-Skeleton Ledger）
+
+> 竖切原则（见 [architecture.md](architecture.md) 搭建顺序、[CLAUDE.md](../CLAUDE.md) 开发节奏）：
+> M3 考核竖切**先穿透**——用最小假实现让整条链路亮起来，kernel 各层再由真实 domain
+> 拉动着逐层加硬。本台账钉死每一处"临时假实现"的正式版本、替换里程碑与验收信号，
+> **防止竖切跑通后遗忘补齐**（"跑通 ≠ 做完"）。
+
+## 两条纪律
+
+1. **代码里打标记**：每处临时假实现旁写一行
+   `# SKELETON(Mx): <一句话> — 见 docs/skeleton-ledger.md`，
+   于是 `grep -rn "SKELETON" src/` 能一键枚举全部欠账（机读视图）。
+2. **本表是人读视图**：新增假实现时同步加一行；替换完成后把状态改 ✅ 并删掉对应代码标记。
+   代码里 `grep` 到的 `SKELETON` 数应与本表未完成行数一致——两边对不上就说明有人偷偷加了假实现没记账。
+
+**区分骨架欠账与范围边界**：本表只收**骨架欠账**（为让竖切早点亮而临时假的、我们一定会补的实现）。
+PRD 里的 **Out of Scope**（资源自动发现 / 向量库 / Web 前端 / 跨资源归并等 MVP 刻意不做、未必会做的）
+是**范围边界**，不进本表。
+
+## 台账
+
+| # | 组件 / 缝 | M3 临时实现（fake） | 正式实现 | 替换里程碑 | 验收信号 | 状态 |
+|---|---|---|---|---|---|---|
+| 1 | Learning Memory | 进程内 dict（薄弱概念 + 三态 + 连对计数 + 判决历史） | SQLite 支持的 Memory 抽象（store / recall / policy） | **M7** | 跨会话薄弱点持久，重启后仍薄弱优先出题 | ⬜ |
+| 2 | KnowledgeItem / Resource 存储 | 进程内 dict | SQLite（复用 M2 的迁移机制，加 `000N_learning.sql`） | **M7** | 入库 item 重启后仍在、仍可锚定出题 | ⬜ |
+| 3 | 审批门 | CLI 阻塞 `prompt`（仍发 `ApprovalRequested` 事件 + 持久化待决状态，但用阻塞等输入代替真恢复） | 可挂起 / 可恢复 turn：凭 token 从待决状态恢复，跨 SSE / HTTP | **TBD**（随 `interfaces/api` 或专门加固；**接口形状第一天就按 suspend/resume 定**，故替换不改调用方） | 关掉 CLI 重开、凭 token 恢复同一次待审批会话 | ⬜ |
+| 4 | Reader subagent 执行器 | M3.1 内联调用（隔离上下文 + pydantic 校验 + ModelRetry 已是真的） | `kernel/subagent.py` 通用执行器 | 出现**第二个** subagent 时再抽（无独立 M，YAGNI） | 第二个 subagent 复用同一执行器、零重复 | ⬜ |
+| 5 | prompt 版本号 | `MODEL_STARTED` payload 的 `prompt_version`（M2 已埋 seam，暂 `None` / 手填） | prompt 模板独立存放 + 版本注册表，trace 记版本号 | **M3.2**（出题 / 判卷 prompt 落地时） | trace 能按 prompt 版本归因 eval 回归 | ⬜ |
+
+其余 kernel 层（HookManager 异常隔离→M4、ContextBuilder→M5、RecoveryPolicy→M6、Eval harness→M8）
+不是"假实现"而是"尚未上线的层"，其排期见 [roadmap.md](roadmap.md) 增量路线，不在本表重复。
+
+## 变更约定
+
+- 每个引入 / 消除骨架欠账的 PR，**必须同步改本表**（加行 / 改状态 / 删代码标记），与 issue 一一对应。
+- 替换某行时，其"验收信号"列即该 PR 的验收标准之一。

@@ -94,7 +94,9 @@ hook、recovery、eval 全部建在其上。
 
 - **走骨架，竖切先穿透**：trace/replay 先行后，立刻拉一条最小可跑的考核竖切（搭建顺序 step 3），
   kernel 各层由真实 domain 拉动着逐层加硬——step 3 里可用 dict 假装 memory、阻塞 prompt 假装审批门，
-  step 4-7 再换正式实现。**不要在竖切跑通前打磨任何 kernel 层。**
+  step 4-7 再换正式实现。**不要在竖切跑通前打磨任何 kernel 层。** 每处临时假实现打
+  `# SKELETON(Mx):` 标记并记入 [docs/skeleton-ledger.md](docs/skeleton-ledger.md)（走骨架替换台账），
+  防止"跑通即遗忘"；替换 PR 同步销记录。
 - **一个 PR 一个可验收行为**：每个 PR 对应 architecture.md 搭建顺序里的一条验收标准，保持 CI 全绿；
   build order（step 1→8）即 backlog，不提前建满 issue。
 - **测试分工**：确定性核心（状态机 / 选题 / 事件信封 / 销账）走 TDD（红-绿-重构），是 eval 命门；

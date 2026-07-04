@@ -1,6 +1,6 @@
 # M2 — TraceStore + Replay Provider
 
-Status: ready-for-agent
+Status: done（M2 实现完成，CI 全绿，commit 0bba3e1）
 Type: AFK
 
 ## Parent
