@@ -21,7 +21,7 @@ import json
 
 from pydantic import BaseModel, ValidationError
 
-from grandquiz.domain.learning.models import KnowledgeItem, NonEmptyStr
+from grandquiz.domain.learning.models import CitedEvidence, KnowledgeItem, NonEmptyStr
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.providers.base import Completion, Message, Provider
@@ -61,7 +61,7 @@ class GeneratedQuestion(BaseModel):
     """
 
     question: NonEmptyStr
-    cited_evidence: list[str]
+    cited_evidence: CitedEvidence
 
 
 async def generate_question(

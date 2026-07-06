@@ -68,6 +68,18 @@ async def test_valid_output_becomes_generated_question() -> None:
     assert [e.type for e in events] == [EventType.MODEL_STARTED, EventType.MODEL_ENDED]
 
 
+async def test_string_cited_evidence_is_coerced_to_list() -> None:
+    # 真机 LLM 常把单条 cited_evidence 写成裸字符串——被宽容纳成单元素列表，锚定门在其后照常把关。
+    provider = _FixedProvider(json.dumps({"question": "什么是闭包？", "cited_evidence": _QUOTE}))
+    emitter, _ = _emitter()
+
+    question = await generate_question(
+        _item(), provider=provider, emitter=emitter, parent_span_id="a"
+    )
+    assert question.cited_evidence == [_QUOTE]
+    assert provider.calls == 1  # 裸字符串被纳成列表 + 引文命中真实证据 → 无需重试
+
+
 async def test_empty_cited_evidence_retries_then_raises() -> None:
     # 校验门：cited_evidence 为空 → ModelRetry 用尽 → QuestionError（provider 被多调）。
     provider = _FixedProvider(json.dumps({"question": "什么是闭包？", "cited_evidence": []}))

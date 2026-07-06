@@ -82,6 +82,15 @@ async def test_valid_verdict_parses() -> None:
     assert [e.type for e in events] == [EventType.MODEL_STARTED, EventType.MODEL_ENDED]
 
 
+async def test_string_cited_evidence_is_coerced_to_list() -> None:
+    # 真机 LLM 常把单条 cited_evidence 写成裸字符串（正是这次真机踩到的 list_type 报错）——
+    # 被宽容纳成单元素列表，锚定门在其后照常把关。
+    provider = _FixedProvider(json.dumps({"verdict": "错", "cited_evidence": _QUOTE}))
+    verdict = await _grade(provider)
+    assert verdict.cited_evidence == [_QUOTE]
+    assert provider.calls == 1  # 裸字符串被纳成列表 + 引文命中真实证据 → 无需重试
+
+
 @pytest.mark.parametrize("label", ["对", "勉强", "错"])
 async def test_all_three_verdicts_parse(label: str) -> None:
     provider = _FixedProvider(json.dumps({"verdict": label, "cited_evidence": [_QUOTE]}))

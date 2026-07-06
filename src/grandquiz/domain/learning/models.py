@@ -17,12 +17,23 @@ import hashlib
 import unicodedata
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, BeforeValidator, Field, StringConstraints
 
 # 非空字符串（去首尾空白后至少 1 字符）：概念名 / 摘要 / 证据引文的硬约束。
 # 决策 3 的门原本只挡"evidence 列表为空"，不挡"引文为空串"——空串 quote/concept/summary
 # 能铸出空白幽灵 item 直达 store。此约束把"无内容"从构造点一并挡住（strip 后为空也拒）。
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+def _as_str_list(value: object) -> object:
+    # 真机 LLM 常把"只有一条"的列表写成裸字符串——宽容纳成单元素列表（Postel 定律），
+    # 使结构化输出契约耐得住这个最常见的偏差。非空 / 逐字锚定的门在其后仍照常把关；
+    # 其它非列表输入（None / dict 等）照旧交给 pydantic 报错 → ModelRetry。
+    return [value] if isinstance(value, str) else value
+
+
+# 出题 / 判卷 LLM 的 cited_evidence 字段共用：list[str]，但裸字符串会被宽容纳成单元素列表。
+CitedEvidence = Annotated[list[str], BeforeValidator(_as_str_list)]
 
 
 def derive_id(*parts: str) -> str:

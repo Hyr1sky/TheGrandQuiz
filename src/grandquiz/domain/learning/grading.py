@@ -14,7 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ValidationError
 
-from grandquiz.domain.learning.models import KnowledgeItem
+from grandquiz.domain.learning.models import CitedEvidence, KnowledgeItem
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.providers.base import Completion, Message, Provider
@@ -47,7 +47,7 @@ class Verdict(BaseModel):
     """
 
     verdict: VerdictLabel
-    cited_evidence: list[str]
+    cited_evidence: CitedEvidence
 
 
 async def grade_answer(
