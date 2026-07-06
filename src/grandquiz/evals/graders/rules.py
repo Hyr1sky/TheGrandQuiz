@@ -14,11 +14,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import cast
 
 from grandquiz.domain.learning.assessment import AssessmentResult
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.ingest import IngestResult
 from grandquiz.domain.learning.models import KnowledgeItem
+from grandquiz.evals.graders.scorers import (
+    expected_bucket_for_language,
+    language_consistency,
+    no_duplicate,
+)
 from grandquiz.evals.harness import (
     INGEST_APPROVED_CONCEPTS,
     INGEST_CANDIDATE_COUNT,
@@ -41,6 +47,10 @@ def _check(failures: list[str], cond: bool, msg: str) -> None:
 
 def _find(events: list[AgentEvent], etype: str) -> AgentEvent | None:
     return next((e for e in events if e.type == etype), None)
+
+
+def _find_all(events: list[AgentEvent], etype: str) -> list[AgentEvent]:
+    return [e for e in events if e.type == etype]
 
 
 def _assess(sr: SolveResult) -> AssessmentResult | None:
@@ -392,6 +402,70 @@ def grade_case8(sr: SolveResult) -> list[str]:
     return failures
 
 
+# --- case 9：语言一致性（01 回归探针）——多轮英文 task，每题 question / options 英文且全会话同桶 ---
+
+
+def grade_case9(sr: SolveResult) -> list[str]:
+    failures: list[str] = []
+    result = _assess(sr)
+    if result is None:
+        return [f"result 不是 AssessmentResult：{sr.result!r}"]
+    item_ids = sr.context.get("item_ids", [])
+    asked = _find_all(sr.events, LearningEvent.QUESTION_ASKED)
+    _check(failures, len(asked) == 2, f"应为多轮（2 轮）出题，实得 {len(asked)} 题")
+    for event in asked:
+        _check(
+            failures,
+            event.payload.get("question_type") == "选择题",
+            f"每轮应路由选择题（答对未追踪概念保持 MC），实为 {event.payload.get('question_type')}",
+        )
+        _check(failures, event.payload.get("item_id") in item_ids, "出题应锚定真实存在的 item")
+    # 核心断言：每题 question / options 都落 task 语言对应的桶、且全会话同桶（01 回归探针）。
+    # 期望桶由 case 的 task 语言派生（而非硬编码 "en"），消除 yaml ↔ grader 语言约定漂移。
+    failures.extend(language_consistency(sr, expected_bucket_for_language(sr.case.language)))
+    return failures
+
+
+# --- case 10：无重复出题（02 回归探针）——复考同一薄弱 item 两轮，题面不逐字重复且薄弱优先未破 -----
+
+
+def grade_case10(sr: SolveResult) -> list[str]:
+    failures: list[str] = []
+    result = _assess(sr)
+    if result is None:
+        return [f"result 不是 AssessmentResult：{sr.result!r}"]
+    weak_target = sr.context.get("weak_target")
+    natural = sr.context.get("natural")
+    asked = _find_all(sr.events, LearningEvent.QUESTION_ASKED)
+    _check(failures, len(asked) == 2, f"应为多轮（2 轮）复考，实得 {len(asked)} 题")
+    # 薄弱优先未破：两轮都锁定同一预置薄弱 item，且它不是全集随机的自然选择（薄弱优先压过随机）。
+    for event in asked:
+        _check(
+            failures,
+            event.payload.get("item_id") == weak_target,
+            f"复考应锁定薄弱 item {weak_target}，实为 {event.payload.get('item_id')}",
+        )
+        _check(
+            failures,
+            event.payload.get("item_id") != natural,
+            "薄弱优先应压过全集随机（被考 item 不应是自然选择）",
+        )
+    # 代码记账命门：会话内"已问过"台账记的内容 == 实际发出的题目文本（顺序一致）——仅断长度会放过
+    # "记错内容"的 mutation（如记常量 / 截断），届时下一轮去重门拿垃圾比对、真重复漏网。
+    asked_texts = [str(e.payload.get("question", "")) for e in asked]
+    recently_asked = cast("dict[str, list[str]]", sr.context.get("recently_asked", {}))
+    if isinstance(weak_target, str):
+        ledger = [str(q) for q in recently_asked.get(weak_target, [])]
+        _check(
+            failures,
+            ledger == asked_texts,
+            f"已问过台账应逐字记录两轮实发题目，实为 {ledger}（应为 {asked_texts}）",
+        )
+    # 核心断言：会话内所有 QUESTION_ASKED 归一化后零逐字重复（02 回归探针）。
+    failures.extend(no_duplicate(sr))
+    return failures
+
+
 GRADERS: dict[str, Grader] = {
     "case1": grade_case1,
     "case2": grade_case2,
@@ -401,4 +475,6 @@ GRADERS: dict[str, Grader] = {
     "case6": grade_case6,
     "case7": grade_case7,
     "case8": grade_case8,
+    "case9": grade_case9,
+    "case10": grade_case10,
 }

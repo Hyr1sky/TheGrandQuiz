@@ -24,7 +24,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, Protocol, cast
 
 import yaml
 
@@ -177,10 +177,115 @@ class IngestFakeProvider:
         return Completion(text=self.text, usage=Usage(prompt_tokens=7, completion_tokens=3))
 
 
-def build_stocked_store() -> tuple[LearningStore, LearningTask, list[str]]:
-    """建一个塞了 ``ITEM_DATA`` 若干 KnowledgeItem 的 store，返回 ``(store, task, item_ids)``。"""
+def _extract_quote(messages: Sequence[Message]) -> str:
+    """从组装好的 messages 里回抽被考 item 的真实证据引文（只有它会出现在自己的 prompt 里）。"""
+    text = "\n".join(m.content for m in messages)
+    return next(q for q in QUOTES if q in text)
+
+
+# 语言回声 provider 的常量——镜像 ``tests/test_question_language._LanguageEchoProvider``：题目 / 选项
+# 随 task 语言变。question 每轮换角度（provider 内按 enrich 调用序轮换），使复考同一 item 时不撞去重
+# 门；两条 question 归一化后互不相等（否则会话内会逐字重复）。选项固定、answer_index 恒 1。
+_LANG_ZH_QUESTIONS: tuple[str, ...] = (
+    "闭包捕获的是变量本身还是值的快照？",
+    "闭包如何延长其引用变量的生命周期？",
+)
+_LANG_EN_QUESTIONS: tuple[str, ...] = (
+    "Does a closure capture the variable itself or a value snapshot?",
+    "How does a closure extend the lifetime of the variables it references?",
+)
+_LANG_ZH_OPTIONS = ["值的快照", "变量本身"]
+_LANG_EN_OPTIONS = ["a value snapshot", "the variable itself"]
+_LANG_ANSWER_INDEX = 1
+# case9 用英文 task：正确项是英文选项的 answer_index 项。健康态下 responder 答它 → 判对 → 概念保持
+# 未追踪 → 每轮仍 MC；若语言注入被删（01 回归）→ provider 转产中文选项 → 答案对不上 → 但 case9 的
+# language_consistency 早已因"中文题 != 期望 en"变红（真回归信号来自英文 task 的语言漂移）。
+LANG_MC_CORRECT = _LANG_EN_OPTIONS[_LANG_ANSWER_INDEX]
+
+
+class LanguageEchoAssessProvider:
+    """出题按 system prompt 里**被替换后**的 ``{{LANGUAGE}}`` 指令决定语言（镜像语言回声测试）。
+
+    这是 01（语言可配置）的回归探针：若删掉语言注入，system prompt 里不会出现"请用 英文"，本 fake
+    就退回中文出题——英文 task 下 ``language_consistency(expected="en")`` 随即变红。每次 enrich 调用
+    按序轮换问句（两条归一化互不相等），使同一 item 复考时不撞去重门；``cited_evidence`` 恒引被考
+    item 的真实证据（与语言无关），使锚定门放行。健康态下每轮都是 MC（判卷走确定性代码、不打 basic
+    槽）；但仍实现 basic 判卷分支（恒判对），使 01 一旦回归、路由漂到追问 / 开放时判卷不硬失败，让
+    language_consistency 而非 GradingError 成为红灯来源（回归信号落在 scorer 上，更清晰）。
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.roles: list[Role] = []
+        self._enrich_calls = 0
+
+    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+        self.calls += 1
+        self.roles.append(role)
+        quote = _extract_quote(messages)
+        if role != "enrich":  # basic 判卷：恒判对（健康态 MC 不走这里，仅回归时兜底）
+            return Completion(
+                text=json.dumps({"verdict": "对", "cited_evidence": [quote]}, ensure_ascii=False),
+                usage=Usage(prompt_tokens=7, completion_tokens=3),
+            )
+        english = "请用 英文" in messages[0].content  # {{LANGUAGE}} 被替换成"英文"的证据
+        questions = _LANG_EN_QUESTIONS if english else _LANG_ZH_QUESTIONS
+        question = questions[self._enrich_calls % len(questions)]
+        self._enrich_calls += 1
+        payload = {
+            "question": question,
+            "options": _LANG_EN_OPTIONS if english else _LANG_ZH_OPTIONS,
+            "answer_index": _LANG_ANSWER_INDEX,
+            "cited_evidence": [quote],
+        }
+        return Completion(
+            text=json.dumps(payload, ensure_ascii=False),
+            usage=Usage(prompt_tokens=7, completion_tokens=3),
+        )
+
+
+# 去重敏感 provider 的常量——镜像 ``tests/test_no_duplicate._DupProvider``：默认重复同一道题，见到
+# 注入的"已问过"约束才换角度。两句归一化后互不相等（换角度是合法的、不该被去重误杀）。
+_DEDUP_DEFAULT_Q = "什么是闭包？"
+_DEDUP_ALT_Q = "闭包如何捕获它引用的变量？"
+
+
+class DedupAssessProvider:
+    """出题默认**重复**同一道题，仅在 user message 里见到"已问过"约束时才换角度；判卷恒判对。
+
+    这是 02（无重复出题）的回归探针：若删掉去重注入 / 去重门，复考同一薄弱 item 时第二轮拿不到"已问
+    过"约束 → 退回默认题 → ``no_duplicate`` 随即变红。判卷恒"对"让薄弱 item 转观察中、仍留在薄弱优先
+    集，复考锁定同一 item（薄弱优先未破）。``cited_evidence`` 恒引真实证据使锚定门放行。
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.roles: list[Role] = []
+
+    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+        self.calls += 1
+        self.roles.append(role)
+        quote = _extract_quote(messages)
+        if role == "enrich":  # 出题：见"已问过"约束才换角度，否则默认重复
+            text = "\n".join(m.content for m in messages)
+            question = _DEDUP_ALT_Q if "已问过" in text else _DEDUP_DEFAULT_Q
+            payload: dict[str, Any] = {"question": question, "cited_evidence": [quote]}
+        else:  # basic：恒判对（让薄弱 item 转观察中、留在薄弱优先集，复考锁定同一 item）
+            payload = {"verdict": "对", "cited_evidence": [quote]}
+        return Completion(
+            text=json.dumps(payload, ensure_ascii=False),
+            usage=Usage(prompt_tokens=7, completion_tokens=3),
+        )
+
+
+def build_stocked_store(language: str = "中文") -> tuple[LearningStore, LearningTask, list[str]]:
+    """建一个塞了 ``ITEM_DATA`` 若干 KnowledgeItem 的 store，返回 ``(store, task, item_ids)``。
+
+    ``language`` 只落到 ``LearningTask.language``（不进 task_id 派生，故 resource / item id 不变）——
+    供语言一致性用例按 task 语言出题；默认"中文"使既有用例装配一字不变。
+    """
     store = LearningStore()
-    task = LearningTask.create("React")
+    task = LearningTask.create("React", language=language)
     resource = LearningResource.create(task_id=task.task_id, url=ASSESS_URL)
     store.add_task(task)
     store.add_resource(resource)
@@ -241,6 +346,14 @@ class Case:
     preset: list[PresetVerdict] = field(default_factory=_empty_presets)
     answer: str = "我的作答"
     verdict: str = "对"
+    # 多轮 assess：非空时对每个 answer 调 assess_once 一次，跨轮复用同一 memory / store / 会话内
+    # recently_asked 台账（镜像 CLI run_quiz 驱动），事件流按序拼接。空 = 单轮（走 ``answer``），
+    # 既有 8 用例走此向后兼容路径、行为一字不变。
+    answers: list[str] = field(default_factory=_empty_strs)
+    # 假 provider 选择：default = canned JSON；language_echo / dedup = 两个新用例的回归探针 fake。
+    provider: Literal["default", "language_echo", "dedup"] = "default"
+    # task 出题 / 判卷语言（下传到 {{LANGUAGE}} 槽）；默认"中文"使既有用例装配不变。
+    language: str = "中文"
     # ingest 专属
     source: Literal["ok", "boom"] = "ok"
     approval_keep: list[str] = field(default_factory=_empty_strs)
@@ -255,6 +368,10 @@ def _parse_case(raw: Any) -> Case:
             PresetVerdict(target=str(p["target"]), verdict=str(p["verdict"]))
             for p in setup.get("preset", [])
         ]
+        raw_provider = str(setup.get("provider", "default"))
+        provider: Literal["default", "language_echo", "dedup"] = (
+            raw_provider if raw_provider in ("default", "language_echo", "dedup") else "default"
+        )
         return Case(
             id=case_id,
             kind="assess",
@@ -263,6 +380,9 @@ def _parse_case(raw: Any) -> Case:
             preset=preset,
             answer=str(setup.get("answer", "我的作答")),
             verdict=str(setup.get("verdict", "对")),
+            answers=[str(a) for a in setup.get("answers", [])],
+            provider=provider,
+            language=str(setup.get("language", "中文")),
         )
     src: Literal["ok", "boom"] = "boom" if str(setup.get("source", "ok")) == "boom" else "ok"
     return Case(
@@ -301,7 +421,31 @@ class SolveResult:
 
 
 def _resolve_answer(token: str) -> str:
-    return {"mc_correct": MC_CORRECT, "mc_wrong": MC_WRONG}.get(token, token)
+    return {
+        "mc_correct": MC_CORRECT,
+        "mc_wrong": MC_WRONG,
+        "lang_correct": LANG_MC_CORRECT,  # 语言用例（英文 task）的正确选项
+    }.get(token, token)
+
+
+class _CountingFake(Protocol):
+    """结构类型：本模块的假 assess provider——除 ``complete`` 外还计 ``calls`` / ``roles``。"""
+
+    calls: int
+    roles: list[Role]
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic"
+    ) -> Completion: ...
+
+
+def _build_assess_fake(case: Case) -> _CountingFake:
+    """按 case 选假 provider：默认 canned JSON；language_echo / dedup 是两个新用例的回归探针。"""
+    if case.provider == "language_echo":
+        return LanguageEchoAssessProvider()
+    if case.provider == "dedup":
+        return DedupAssessProvider()
+    return AssessFakeProvider(case.verdict)
 
 
 def _resolve_target(selector: str, item_ids: list[str], natural: str) -> str:
@@ -316,7 +460,7 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
     memory = LearningMemory()
     context: dict[str, Any] = {}
     if case.stocked:
-        store, task, item_ids = build_stocked_store()
+        store, task, item_ids = build_stocked_store(case.language)
         items = store.items_for_task(task.task_id)
         natural = select_target(items, rng=new_rng(SEED)).item_id
         context.update(item_ids=item_ids, natural=natural, items=list(items))
@@ -331,27 +475,44 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
             context["pre_in_weak"] = weak_target in memory.weak_item_ids()
     else:
         store = LearningStore()
-        task = LearningTask.create("React")
+        task = LearningTask.create("React", language=case.language)
         context.update(item_ids=[], items=[])
 
-    provider = provider_override or AssessFakeProvider(case.verdict)
-    fake = provider if isinstance(provider, AssessFakeProvider) else None
-    emitter, events, trace = build_event_harness()
-    result = await assess_once(
-        task,
-        store=store,
-        provider=provider,
-        responder=ScriptedResponder(answer=_resolve_answer(case.answer)),
-        memory=memory,
-        emitter=emitter,
-        rng=new_rng(SEED),
-    )
-    spans = trace.span_tree("run")
-    trace.close()
+    if provider_override is not None:
+        provider: Provider = provider_override
+        fake: _CountingFake | None = None
+    else:
+        fake = _build_assess_fake(case)
+        provider = fake
+
+    # 单轮（既有 8 用例）走 [case.answer]；多轮走 case.answers。跨轮复用同一 memory / store / 会话内
+    # recently_asked 台账，每轮 rng = new_rng(SEED + round_index)——与 CLI run_quiz 的多轮驱动一致；
+    # round 0 = new_rng(SEED) + 空 asked_before，故单轮路径与改动前逐字节等价（向后兼容）。
+    answers = case.answers if case.answers else [case.answer]
+    recently_asked: dict[str, list[str]] = {}
+    all_events: list[AgentEvent] = []
+    all_spans: list[Span] = []
+    result: AssessmentResult | None = None
+    for round_index, answer_token in enumerate(answers):
+        emitter, events, trace = build_event_harness()
+        result = await assess_once(
+            task,
+            store=store,
+            provider=provider,
+            responder=ScriptedResponder(answer=_resolve_answer(answer_token)),
+            memory=memory,
+            emitter=emitter,
+            rng=new_rng(SEED + round_index),
+            recently_asked=recently_asked,
+        )
+        all_spans.extend(trace.span_tree("run"))
+        trace.close()
+        all_events.extend(events)
+    context["recently_asked"] = recently_asked
     return SolveResult(
         case=case,
-        events=events,
-        spans=spans,
+        events=all_events,
+        spans=all_spans,
         result=result,
         store=store,
         memory=memory,

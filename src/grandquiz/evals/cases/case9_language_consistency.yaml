@@ -1,0 +1,28 @@
+# eval case 9：语言一致性（01 回归探针）——多轮 assess，task 语言指定，语言回声 provider。
+# 英文 task（language="英文"）：每轮 QUESTION_ASKED 的 question / options 都应为英文、且全会话同桶。
+# 语言回声 provider 按 system prompt 里被替换后的 {{LANGUAGE}} 指令决定语言——删掉语言注入（01）→
+# 退回中文出题 → language_consistency(expected="en") 变红。答对正确项 → 概念保持未追踪 → 每轮仍 MC。
+id: case9
+kind: assess
+setup:
+  stocked: true
+  provider: language_echo
+  language: "英文"
+  answers:
+    - lang_correct
+    - lang_correct
+expected_events:
+  - assessment.started
+  - model.started
+  - model.ended
+  - learning.question_asked
+  - learning.answer_judged
+  - learning.concept_state_changed
+  - assessment.ended
+  - assessment.started
+  - model.started
+  - model.ended
+  - learning.question_asked
+  - learning.answer_judged
+  - learning.concept_state_changed
+  - assessment.ended

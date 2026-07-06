@@ -6,6 +6,8 @@ harness 用与 test_assessment / test_ingest 相同的假 provider（canned JSON
 
 import pytest
 
+from grandquiz.domain.learning.events import LearningEvent
+from grandquiz.evals.graders.scorers import language_consistency, no_duplicate
 from grandquiz.evals.harness import load_cases, run_all, run_case, solve
 from grandquiz.providers.base import Role
 from grandquiz.providers.replay import Cassette, ReplayMiss, ReplayProvider
@@ -13,11 +15,35 @@ from grandquiz.providers.replay import Cassette, ReplayMiss, ReplayProvider
 _MODELS: dict[Role, str] = {"basic": "deepseek-x", "enrich": "qwen-x"}
 
 
-async def test_all_eight_cases_pass() -> None:
+async def test_all_ten_cases_pass() -> None:
     reports = await run_all()
-    assert len(reports) == 8
+    assert len(reports) == 10  # 8 既有 + 2 新（语言一致性 / 无重复）
     failing = {r.case_id: r.failures for r in reports if not r.passed}
     assert failing == {}, f"有用例未通过：{failing}"
+
+
+async def test_language_consistency_case_is_all_one_bucket() -> None:
+    # 语言一致性用例（case9，英文 task、多轮）：跑在 run_all 里为绿，且直接调 scorer 复核——
+    # 每题 question / options 都落英文桶、全会话同桶（跨轮语言不漂移）。
+    reports = {r.case_id: r for r in await run_all()}
+    assert reports["case9"].passed, reports["case9"].failures
+    sr = await solve(next(c for c in load_cases() if c.id == "case9"))
+    asked = [e for e in sr.events if e.type == LearningEvent.QUESTION_ASKED]
+    assert len(asked) == 2  # 多轮 assess（≥2 轮）
+    assert language_consistency(sr, "en") == []  # 全桶一致（en），无漂移
+
+
+async def test_no_duplicate_case_has_no_verbatim_repeat() -> None:
+    # 无重复用例（case10，复考同一薄弱 item 两轮）：跑在 run_all 里为绿，且直接调 scorer 复核——
+    # 会话内零逐字重复，且两轮都锁定同一薄弱 item（薄弱优先未破）。
+    reports = {r.case_id: r for r in await run_all()}
+    assert reports["case10"].passed, reports["case10"].failures
+    sr = await solve(next(c for c in load_cases() if c.id == "case10"))
+    asked = [e for e in sr.events if e.type == LearningEvent.QUESTION_ASKED]
+    assert len(asked) == 2
+    weak_target = sr.context["weak_target"]
+    assert all(e.payload["item_id"] == weak_target for e in asked)  # 薄弱优先未破
+    assert no_duplicate(sr) == []  # 会话内零逐字重复
 
 
 async def test_report_has_token_cost_and_prompt_version_columns() -> None:
