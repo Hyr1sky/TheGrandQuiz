@@ -135,7 +135,11 @@ async def assess_once(
         mc: MultipleChoiceQuestion | None = None
         if question_type == "选择题":
             mc = await generate_multiple_choice(
-                target, provider=provider, emitter=emitter, parent_span_id=assessment_span
+                target,
+                provider=provider,
+                emitter=emitter,
+                parent_span_id=assessment_span,
+                language=task.language,
             )
             question_text = mc.question
             asked_evidence = list(mc.cited_evidence)
@@ -147,6 +151,7 @@ async def assess_once(
                 emitter=emitter,
                 parent_span_id=assessment_span,
                 prompt_name=prompt_name,
+                language=task.language,
             )
             question_text = generated.question
             asked_evidence = list(generated.cited_evidence)
@@ -183,6 +188,7 @@ async def assess_once(
                 provider=provider,
                 emitter=emitter,
                 parent_span_id=assessment_span,
+                language=task.language,
             )
             verdict_label = verdict.verdict
             judged_evidence = list(verdict.cited_evidence)

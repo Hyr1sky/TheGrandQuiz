@@ -323,7 +323,7 @@ def test_model_field_sets_are_pinned() -> None:
         "trusted",
         "status",
     }
-    assert set(LearningTask.model_fields) == {"task_id", "title", "domain"}
+    assert set(LearningTask.model_fields) == {"task_id", "title", "domain", "language"}
 
 
 # --- 分层 + 确定性守卫：模型模块不 import kernel / 无非确定性来源 -----------

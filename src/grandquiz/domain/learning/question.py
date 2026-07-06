@@ -94,6 +94,7 @@ async def generate_question(
     parent_span_id: str | None,
     max_attempts: int = 3,
     prompt_name: str = "question_generate",
+    language: str = "中文",
 ) -> GeneratedQuestion:
     """为 ``item`` 产出一道 grounded 题；持续失败 → ``QuestionError``。见模块 docstring。
 
@@ -101,6 +102,10 @@ async def generate_question(
     ``prompt_name``：出题 system prompt 模板名——默认 ``question_generate``（标准开放题）；
     追问深挖传 ``question_probe``（同一 schema、仅换 prompt 逼深一层）。trace 记的 prompt_version
     随之反映所用变体，故 eval 回归可归因到具体题型 prompt（追问用例即靠此断言走了 probe）。
+    ``language``：出题语言（默认"中文"，由 ``assess_once`` 从 ``LearningTask.language`` 下传）——
+    用字面 ``str.replace`` 把模板里的 ``{{LANGUAGE}}`` 哨兵换成它（**不用 str.format**：模板含
+    JSON schema 示例的字面花括号，format 会崩）。模板文件内容（含字面 ``{{LANGUAGE}}``）才是
+    prompt 版本号的哈希对象，故版本号跨语言稳定；只有发出的 message 及 replay_key 按语言不同。
     """
     if max_attempts < 1:
         raise ValueError("max_attempts 至少为 1")
@@ -108,7 +113,7 @@ async def generate_question(
     valid_quotes = {ev.quote for ev in item.evidence}
     evidence_block = "\n".join(f"- {ev.quote}" for ev in item.evidence)
     base_messages = [
-        Message(role="system", content=prompt.text),
+        Message(role="system", content=prompt.text.replace("{{LANGUAGE}}", language)),
         Message(
             role="user",
             content=(
@@ -207,6 +212,7 @@ async def generate_multiple_choice(
     emitter: EventEmitter,
     parent_span_id: str | None,
     max_attempts: int = 3,
+    language: str = "中文",
 ) -> MultipleChoiceQuestion:
     """为 ``item`` 产一道锚定的选择题（首次接触概念的热身题型）；持续失败 → ``QuestionError``。
 
@@ -219,6 +225,7 @@ async def generate_multiple_choice(
 
     任一不满足 → ``ModelRetry``（反馈进下一次上下文）；重试预算耗尽 → ``QuestionError``。
     provider 传输异常照 ``_call_model`` 模式先闭合 model span 后原样冒泡（不吞）。
+    ``language`` 同 ``generate_question``：字面替换模板 ``{{LANGUAGE}}`` 哨兵，版本号跨语言稳定。
     """
     if max_attempts < 1:
         raise ValueError("max_attempts 至少为 1")
@@ -226,7 +233,7 @@ async def generate_multiple_choice(
     valid_quotes = {ev.quote for ev in item.evidence}
     evidence_block = "\n".join(f"- {ev.quote}" for ev in item.evidence)
     base_messages = [
-        Message(role="system", content=prompt.text),
+        Message(role="system", content=prompt.text.replace("{{LANGUAGE}}", language)),
         Message(
             role="user",
             content=(

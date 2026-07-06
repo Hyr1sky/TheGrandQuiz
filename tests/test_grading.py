@@ -54,7 +54,7 @@ def _item() -> KnowledgeItem:
     )
 
 
-async def _grade(provider: _FixedProvider, **kwargs: int) -> Verdict:
+async def _grade(provider: _FixedProvider, *, max_attempts: int = 3) -> Verdict:
     emitter, _ = _emitter()
     return await grade_answer(
         _item(),
@@ -63,7 +63,7 @@ async def _grade(provider: _FixedProvider, **kwargs: int) -> Verdict:
         provider=provider,
         emitter=emitter,
         parent_span_id="a",
-        **kwargs,
+        max_attempts=max_attempts,
     )
 
 

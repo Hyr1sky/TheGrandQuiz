@@ -77,10 +77,14 @@ async def grade_answer(
     emitter: EventEmitter,
     parent_span_id: str | None,
     max_attempts: int = 3,
+    language: str = "中文",
 ) -> Verdict:
     """对 ``answer``（针对 ``question`` / ``item``）产出结构化判决；持续失败 → ``GradingError``。
 
     ``max_attempts``：1 次初始调用 + 最多 ``max_attempts - 1`` 次重试（默认 3；测试可收紧）。
+    ``language``：判决与反馈语言（默认"中文"，由 ``assess_once`` 从 task 下传）——用字面
+    ``str.replace`` 把模板里的 ``{{LANGUAGE}}`` 哨兵换成它（**不用 str.format**：模板含 JSON
+    schema 示例的字面花括号，format 会崩）。版本号跨语言稳定；只 message / replay_key 随语言变。
     """
     if max_attempts < 1:
         raise ValueError("max_attempts 至少为 1")
@@ -88,7 +92,7 @@ async def grade_answer(
     valid_quotes = {ev.quote for ev in item.evidence}
     evidence_block = "\n".join(f"- {ev.quote}" for ev in item.evidence)
     base_messages = [
-        Message(role="system", content=prompt.text),
+        Message(role="system", content=prompt.text.replace("{{LANGUAGE}}", language)),
         Message(
             role="user",
             content=(

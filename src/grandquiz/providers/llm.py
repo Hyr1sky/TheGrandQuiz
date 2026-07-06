@@ -85,9 +85,13 @@ class OpenAICompatProvider:
         extra_body: dict[str, object] = {}
         if config.disable_thinking:
             extra_body["enable_thinking"] = False
+        # temperature=0：出题（enrich）必须贪心解码——温度采样会让同一 message 每次录出不同题，
+        # 毁掉 record/replay 的可复现（replay_key 只按 message 算、不含温度，故这不改键、只稳定录制
+        # 输出）；判卷（basic）同样设 0 求判决稳定。
         response = await client.chat.completions.create(
             model=config.model,
             messages=oai_messages,
+            temperature=0,
             extra_body=extra_body or None,
         )
         text = response.choices[0].message.content or ""

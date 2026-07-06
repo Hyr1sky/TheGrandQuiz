@@ -111,3 +111,15 @@ async def test_complete_omits_extra_body_when_thinking_enabled(
 
     call = captured["client"].chat.completions.calls[0]
     assert call["extra_body"] is None
+
+
+async def test_complete_uses_greedy_temperature_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    # issue 01 决策 4：出题（enrich）必须贪心解码——温度采样会让同一 message 每次录出不同题、毁掉
+    # record/replay 可复现（真机跨轮漂移的根因之一）。删掉 llm.py 的 temperature=0 → 本测试红。
+    captured = _patch_client(monkeypatch, _FakeResponse("ok", prompt_tokens=1, completion_tokens=1))
+    provider = OpenAICompatProvider({"enrich": RoleConfig(api_key="k", base_url="u", model="m")})
+
+    await provider.complete([Message(role="user", content="hi")], role="enrich")
+
+    call = captured["client"].chat.completions.calls[0]
+    assert call["temperature"] == 0

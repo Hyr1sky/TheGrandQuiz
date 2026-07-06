@@ -142,14 +142,21 @@ class LearningTask(BaseModel):
     """学习主题的容器与考核范围（"考我 React" 里的 "React"）：资源 / KnowledgeItem 都挂其下。
 
     ``domain`` = 粗领域（如"理科" / "前端"），建 task 时人工可选填，MVP 不抽取。
-    无时间戳字段（决策 2）。
+    ``language`` = 出题 / 判卷所用语言（默认"中文"，MVP 用 str 不用 enum）——经 assess_once 下传到
+    出题与判卷模板的 ``{{LANGUAGE}}`` 槽（见 question.py / grading.py）。它不进 task_id 派生
+    （改语言不换任务同一性），亦不影响 prompt 版本号（模板含字面 {{LANGUAGE}}、哈希对象不变）；
+    只有发出的 message 及 replay_key 随语言不同。无时间戳字段（决策 2）。
     """
 
     task_id: str
     title: str
     domain: str | None = None
+    language: str = "中文"
 
     @classmethod
-    def create(cls, title: str, domain: str | None = None) -> Self:
-        """工厂：``task_id = derive_id(title)``——确定性由构造点保证，调用方拿不到手写随机 id。"""
-        return cls(task_id=derive_id(title), title=title, domain=domain)
+    def create(cls, title: str, domain: str | None = None, language: str = "中文") -> Self:
+        """工厂：``task_id = derive_id(title)``——确定性由构造点保证，调用方拿不到手写随机 id。
+
+        ``language`` 默认"中文"；``task_id`` 只由 ``title`` 派生（语言不进同一性）。
+        """
+        return cls(task_id=derive_id(title), title=title, domain=domain, language=language)
