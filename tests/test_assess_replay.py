@@ -5,7 +5,7 @@ cassette 由 scripts/record_assess.py 对真实 qwen（出题/enrich）+ deepsee
 若改了 prompts/{question_generate,answer_grade}.md 或下方场景常量，messages 变 → replay_key 变 →
 ReplayMiss，本测试会红——即"prompt / 场景漂移需重录"的信号（golden fixture 的预期维护流）。
 
-下方场景常量必须与 scripts/record_assess.py 保持一致（含 items 顺序），否则 messages 对不上、回放落空。
+下方场景常量必须与 scripts/record_assess.py 一致（含 items 顺序），否则 messages 对不上、回放落空。
 """
 
 import json
