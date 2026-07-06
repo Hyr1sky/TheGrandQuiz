@@ -1,6 +1,6 @@
 # M8 — 质量回归 scorer（语言一致性 + 无重复）
 
-Status: ready-for-agent
+Status: done（merge 至 main 57913ac；四门全绿 261 passed；eval 10/10）
 Type: AFK
 
 > capstone：把 01/02 修复的行为在 eval 层变成持续回归守门。两个 scorer 均为规则断言、零 token、
@@ -31,3 +31,18 @@ Type: AFK
 - [01 — 出题语言可配置](01-question-language-configurable.md)
 - [02 — 无重复出题](02-no-duplicate-questions.md)
 - [04 — Eval Harness 骨架 + 8 规则用例 + 报告](04-m8-eval-harness-tier1.md)
+
+## Comments
+
+- 落地：两个 Tier-1 规则 scorer（`scorers.py`：language_consistency 按 CJK 比例分桶、no_duplicate 复用
+  domain public `dedup_key`）；两个回归探针假 provider（LanguageEcho / Dedup）；两个新用例 case9（英文
+  task 多轮语言一致）/ case10（多轮复考无重复 + 薄弱优先未破）；报告 8→10/10。
+- **顺带建了多轮 Solver**（Case 加 `answers`，跨轮复用 memory/store/recently_asked、每轮 rng=
+  new_rng(SEED+round_index) 镜像 run_quiz），单轮既有 8 用例字节不变——这也为 issue 04 里 case6/8 的
+  多轮忠实度 follow-up 铺好了地基（若要转，现在 Solver 已支持）。
+- 终审对抗验证（全 LOW）修一处：language_consistency 期望桶由 grader 硬编码 "en" 改为按
+  `sr.case.language` 派生（消除 yaml↔grader 语言约定漂移，对齐 AC "断言每题 == task 语言"）。
+- 已知限制（LOW，记录不阻塞）：(a) no_duplicate 的**集成级**回归 bite 部分依赖 dedup 假 provider 与
+  retry-note 的耦合——scorer 逻辑本身由 test_eval_scorers 缝-2 单测独立锁死，集成 case10 另有事件序列
+  兜底；(b) zh 桶阈值（CJK>0.6）与 prompt "技术术语可保留英文原词" 存张力——当前无 zh 语言用例触发，
+  属潜在健壮性缺口。两者若将来加中文 mixed 用例需回看。
