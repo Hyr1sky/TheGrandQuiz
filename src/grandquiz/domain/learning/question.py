@@ -70,6 +70,48 @@ def is_duplicate(text: str, asked_before: Sequence[str]) -> bool:
     return any(dedup_key(prev) == key for prev in asked_before)
 
 
+# meta 选项（反-tell 门 a）：泄漏题型的非真干扰项，prompt 已硬禁；这里兜底 egregious 泄漏。
+# 中文 meta 几乎都以指代性前缀起头（以上 / 上述 / 综上），英文用 all/none of the above。
+# 只认这些锚定形态、不做 bare 子串匹配——否则 "都对" 误伤 "两者都对齐"、"都不对" 误伤
+# "指针都不对齐边界"。均在 ``dedup_key`` 归一化（吸收大小写 / 全半角 / 标点）后判定。
+_META_PREFIXES_ZH: tuple[str, ...] = ("以上", "上述", "综上")
+_META_SUBSTRINGS_EN: tuple[str, ...] = ("alloftheabove", "noneoftheabove")
+
+
+def has_meta_option(options: Sequence[str]) -> bool:
+    """任一选项是 meta 选项 → True（反-tell 门 a，缝 2 纯函数）。
+
+    中文按指代性前缀（以上 / 上述 / 综上）匹配、英文按 "all/none of the above" 子串匹配，均在
+    ``dedup_key`` 归一化后判定。刻意不做 bare 短语（"都对"）子串匹配以免误伤合法选项；对既有假选项
+    （"正确选项 / 干扰项 / 值的快照 / 变量本身 / a value snapshot / the variable itself"）无一命中。
+    """
+    zh_prefixes = [dedup_key(p) for p in _META_PREFIXES_ZH]
+    for opt in options:
+        key = dedup_key(opt)
+        if any(prefix and key.startswith(prefix) for prefix in zh_prefixes):
+            return True
+        if any(sub in key for sub in _META_SUBSTRINGS_EN):
+            return True
+    return False
+
+
+def has_length_outlier(options: Sequence[str], answer_index: int) -> bool:
+    """正确项长度远超所有干扰项（> 最长干扰项的 2 倍）→ True（反-tell 门 b，缝 2）。
+
+    "正确项独长"是最廉价的表面 tell（模型忍不住把正解写全、干扰项敷衍）。按字符数（``len``，CJK 记
+    1）比较，阈值刻意保守（2×）只抓 egregious，平行选项恒放行。**只查"独长"一个方向**：正确项独短
+    往往是合法形态（正解是单一术语、干扰项是完整错误短语，如 ["变量", "外层的作用域链", "闭包捕获
+    环境"]），不作 tell 处理以免误伤。少于 2 项 / 无干扰项 / answer_index 越界 → False（交由既有
+    可判卷门处理，本门不与其抢先报错）。
+    """
+    if not 0 <= answer_index < len(options):
+        return False
+    distractor_lens = [len(opt) for i, opt in enumerate(options) if i != answer_index]
+    if not distractor_lens:
+        return False
+    return len(options[answer_index]) > 2 * max(distractor_lens)
+
+
 class QuestionError(Exception):
     """出题失败——有界重试用尽仍拿不到合法、锚定真实证据的 ``GeneratedQuestion``。
 
@@ -349,6 +391,23 @@ def _parse_mc(
     # （空 / 纯空白选项已由 options 的 NonEmptyStr 挡下。）
     if len(set(mc.options)) != len(mc.options):
         raise ModelRetry(f"选项含重复文本：{mc.options}——确定性判卷按文本比对，选项须两两可区分")
+    # 反-tell 门（缝 3）：只挡表面泄漏、不测 plausibility——干扰项 plausibility（"不懂概念能否排除"）
+    # 的真打分是 Tier 2 LLM-judge，显式不在本 issue。放在可判卷门之后（options ≥ 2、answer_index
+    # 合法已保证），故可安全区分正确项 / 干扰项。prompt 已把这些从软约束升为硬约束，这两道确定性门
+    # 只兜底 egregious 泄漏，阈值保守到不误伤既有平衡假选项。
+    # (a) meta 选项禁令（"以上都对 / 都不对 / all of the above" 等）。
+    if has_meta_option(mc.options):
+        raise ModelRetry(
+            "含 meta 选项（如'以上都对 / 都不对 / all of the above'）：每个干扰项须是具体的常见"
+            "误解或邻近但错的概念，不得用 meta 选项泄漏题型"
+        )
+    # (b) 长度离群：正确项 > 最长干扰项 2 倍、或 < 最短干扰项一半（答案被长度出卖）。
+    if has_length_outlier(mc.options, mc.answer_index):
+        raise ModelRetry(
+            "正确项与干扰项长度悬殊（答案被长度出卖）：请让所有选项在长度 / 具体度 / 语法上平行"
+        )
+    # 刻意不加"题干回声"（stem-echo）门：中文无可靠分词，按字 / n-gram 匹配误报率高（正解与题干
+    # 天然共享领域词），易误伤合法题；题干回声只在 prompt 里硬禁，其检测留给 Tier 2 judge。
     # 防幽灵题门（与开放题同规则）：cited_evidence 非空 + 每条都锚定被考 item 真实证据（子串即可）。
     if not mc.cited_evidence:
         raise ModelRetry("cited_evidence 不能为空：题必须引用被考知识点的原文证据")
