@@ -97,6 +97,14 @@ async def test_string_cited_evidence_is_coerced_to_list() -> None:
     assert provider.calls == 1  # 裸字符串被纳成列表 + 引文命中真实证据 → 无需重试
 
 
+async def test_substring_citation_is_accepted() -> None:
+    # 判卷锚定门放宽为子串（与出题门对称）：判卷只引长证据里一句短句，仍属真实原文，首次即过。
+    provider = _FixedProvider(json.dumps({"verdict": "对", "cited_evidence": ["捕获的是变量"]}))
+    verdict = await _grade(provider)
+    assert verdict.cited_evidence == ["捕获的是变量"]
+    assert provider.calls == 1  # 子串命中真实证据 → 无需重试
+
+
 @pytest.mark.parametrize("label", ["对", "勉强", "错"])
 async def test_all_three_verdicts_parse(label: str) -> None:
     provider = _FixedProvider(json.dumps({"verdict": label, "cited_evidence": [_QUOTE]}))

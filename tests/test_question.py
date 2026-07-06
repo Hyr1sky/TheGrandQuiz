@@ -112,6 +112,21 @@ async def test_forged_citation_is_rejected_as_ghost_question() -> None:
     assert provider.calls == 3  # 伪造引文持续被拒 → 重试用尽
 
 
+async def test_substring_citation_is_accepted() -> None:
+    # 锚定门放宽为子串（真机 dogfood 坑）：出题只引长证据里一句短句，仍属真实原文，首次即过。
+    # 旧门要整条 evidence 全等，把合法子串误判成幽灵引文、重试用尽后崩溃。
+    provider = _FixedProvider(
+        json.dumps({"question": "什么是闭包？", "cited_evidence": ["捕获的是变量"]})
+    )
+    emitter, _ = _emitter()
+
+    question = await generate_question(
+        _item(), provider=provider, emitter=emitter, parent_span_id="a"
+    )
+    assert question.cited_evidence == ["捕获的是变量"]
+    assert provider.calls == 1  # 子串命中真实证据 → 无需重试
+
+
 async def test_malformed_json_retries_then_raises() -> None:
     provider = _FixedProvider("这不是 JSON")
     emitter, _ = _emitter()
@@ -225,6 +240,18 @@ async def test_mc_forged_citation_is_rejected_as_ghost_question() -> None:
             _item(), provider=provider, emitter=emitter, parent_span_id="a", max_attempts=3
         )
     assert provider.calls == 3
+
+
+async def test_mc_substring_citation_is_accepted() -> None:
+    # 锚定门放宽为子串（与开放题同规则）：引真实证据的一句短句 → 首次即过、无重试。
+    provider = _FixedProvider(_mc_json(cited_evidence=["捕获的是变量"]))
+    emitter, _ = _emitter()
+
+    mc = await generate_multiple_choice(
+        _item(), provider=provider, emitter=emitter, parent_span_id="a"
+    )
+    assert mc.cited_evidence == ["捕获的是变量"]
+    assert provider.calls == 1  # 子串命中真实证据 → 无需重试
 
 
 async def test_mc_empty_option_retries_then_raises() -> None:

@@ -21,11 +21,43 @@ from grandquiz.domain.learning.models import (
     LearningResource,
     LearningTask,
     derive_id,
+    ungrounded_citations,
 )
 
 
 def _one_evidence() -> list[Evidence]:
     return [Evidence(quote="闭包捕获的是变量而非值")]
+
+
+# --- 引文锚定门（ungrounded_citations，防幽灵引文）-------------------------------
+
+_LONG_QUOTE = "闭包捕获的是变量而非值，因此循环里注册的回调共享同一个 i"
+
+
+def test_ungrounded_citations_accepts_exact_quote() -> None:
+    assert ungrounded_citations([_LONG_QUOTE], [_LONG_QUOTE]) == []
+
+
+def test_ungrounded_citations_accepts_substring() -> None:
+    # 核心放宽：出题 / 判卷只引长证据里一句短句 → 是子串 → 锚定成立（真机 dogfood 坑）。
+    assert ungrounded_citations(["捕获的是变量"], [_LONG_QUOTE]) == []
+
+
+def test_ungrounded_citations_rejects_fabricated() -> None:
+    # 伪造的"原文"不是任何证据的子串 → 判为未锚定（幽灵引文）。
+    assert ungrounded_citations(["这句原文根本不存在"], [_LONG_QUOTE]) == ["这句原文根本不存在"]
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "\t\n"])
+def test_ungrounded_citations_rejects_blank(blank: str) -> None:
+    # 空 / 纯空白引文视作未锚定——挡"引空串蒙混"（空串是任何字符串的子串，须显式拒）。
+    assert ungrounded_citations([blank], [_LONG_QUOTE]) == [blank]
+
+
+def test_ungrounded_citations_reports_only_the_ungrounded() -> None:
+    # 混合输入：只回未锚定的那条，锚定的（子串）放行。
+    cited = ["捕获的是变量", "凭空捏造的原文"]
+    assert ungrounded_citations(cited, [_LONG_QUOTE]) == ["凭空捏造的原文"]
 
 
 # --- derive_id 确定性 -------------------------------------------------------

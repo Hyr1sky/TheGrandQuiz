@@ -27,9 +27,11 @@ PRD 里的 **Out of Scope**（资源自动发现 / 向量库 / Web 前端 / 跨�
 | 4 | Reader subagent 执行器 | M3.1 内联调用（隔离上下文 + pydantic 校验 + ModelRetry 已是真的） | `kernel/subagent.py` 通用执行器 | 出现**第二个** subagent 时再抽（无独立 M，YAGNI） | 第二个 subagent 复用同一执行器、零重复 | ⬜ |
 | 5 | prompt 版本号 | ~~`MODEL_STARTED` 里手填 `prompt_version`~~ | prompt 模板独立存放（`prompts/*.md`）+ 内容 hash 版本号，trace 记版本号 | **✅ 已完成** | trace 能按 prompt 版本归因 eval 回归 | ✅ `domain/learning/prompts.py` + `prompts/reader_extract.md`（版本=内容 hash，Reader 加载） |
 | 6 | Responder（作答输入原语） | M3.2 落 `Responder` 协议 + `ScriptedResponder`；交互 CLI 落地后已加 `InteractiveResponder`（questionary 逐题问，见下节）——**交互形态已到**，仍缺"可挂起 / 可恢复"（凭 token 续答）一段 | 可挂起 / 可恢复的作答 turn（凭 token 恢复，跨 SSE / HTTP，与审批门同形） | **TBD**（随 `interfaces/api` 加固；**接口形状第一天按 `Responder` 协议定**，替换不改 `assess_once` 调用方） | ~~CLI 里逐题作答~~（✅ 已达）；关掉重开可凭 token 续答（仍缺） | ⬜ |
+| 7 | 考核轮次优雅降级 | CLI 边界 `try/except` 捕 `QuestionError` / `GradingError` → 跳过本轮（`app.py` 的 `run_quiz`）；`assess_once` 仍**原样冒泡**所有异常（保 eval / replay 契约，不吞 `ReplayMiss`） | kernel `RecoveryPolicy`：按异常类型统一裁决重试 / 跳过 / 挂起，跨所有 interface 生效，`assess_once` 调用方不再各自 `try/except` | **M6** | 出题 / 判卷失败由策略统一裁决、CLI 不再手写兜底 | ⬜ |
 
-其余 kernel 层（HookManager 异常隔离→M4、ContextBuilder→M5、RecoveryPolicy→M6、Eval harness→M8）
-不是"假实现"而是"尚未上线的层"，其排期见 [roadmap.md](roadmap.md) 增量路线，不在本表重复。
+其余 kernel 层（HookManager 异常隔离→M4、ContextBuilder→M5、Eval harness→M8）不是"假实现"而是
+"尚未上线的层"，其排期见 [roadmap.md](roadmap.md) 增量路线，不在本表重复。RecoveryPolicy（→M6）
+的 CLI 临时兜底已作为 **#7** 记账（那是"假实现"，故进表；层本身的排期仍见 roadmap）。
 
 ## M3.1 ingest 竖切落地的骨架标记
 
@@ -122,6 +124,26 @@ SQLite 持久化，兑现两条验收信号（跨会话薄弱点持久 / 入库 
 
 **grep 对账（交互 CLI 后）**：`grep -rn "SKELETON" src/` 仍为 **3** 处（#3 approval / #4 reader /
 #6 responder），与台账未完成行数 **3** 一致——#6 交互形态到位但 suspend/resume 未了，标记不撤。
+
+## 引文锚定门放宽 + 考核轮次优雅降级（dogfood 修复）落地的骨架标记
+
+真机 dogfood 暴露两处问题，修复引入 **#7 考核轮次优雅降级** 的假件（状态 ⬜，正式实现见里程碑 **M6**）：
+
+- **引文锚定门放宽为子串**（不是骨架欠账、是**规则修正**，故不进台账）：出题 / 判卷 / MC 三处校验门
+  原本要求 `cited_evidence` 与某条 `evidence.quote` **逐字全等**，把"Reader 抽长段落、模型引其中一句
+  短句"这类**合法子串**误判成幽灵引文 → 重试用尽 → 崩溃。改为 `models.ungrounded_citations`：引文是
+  某条证据的**子串**即算锚定（空 / 纯空白仍拒）。三处校验门共用这一条领域规则。
+- **考核轮次优雅降级**（#7 假件）：上条修复后，出题 / 判卷仍可能因别的原因重试用尽抛
+  `QuestionError` / `GradingError`；`assess_once` 按契约**原样冒泡**（保 eval / replay：`ReplayMiss`
+  等 harness 错误绝不能被静默吞）。故降级只能落在**生产界面边界**——`run_quiz` 用 `try/except` 捕这两类
+  "本轮可恢复"失败、跳过本轮继续，不崩整场会话。这是 M6 `RecoveryPolicy` 的临时替身。
+
+| 台账行 | 代码标记 | 位置 |
+|---|---|---|
+| #7 优雅降级 | `# SKELETON(M6)` | `src/grandquiz/interfaces/cli/app.py`（`run_quiz` 的 per-round `try/except`） |
+
+**grep 对账（本次修复后）**：`grep -rn "SKELETON" src/` 应为 **4** 处（#3 approval / #4 reader /
+#6 responder / #7 优雅降级），与台账未完成行数 **4**（#3 / #4 / #6 / #7）一致——两边对齐。
 
 ## 变更约定
 

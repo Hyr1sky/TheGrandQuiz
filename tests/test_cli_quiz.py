@@ -79,6 +79,17 @@ class _McProvider:
         )
 
 
+class _BrokenProvider:
+    """恒返回非法输出：出题槽 3 次重试用尽 → QuestionError（触发 CLI 本轮跳过分支）。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+        self.calls += 1
+        return Completion(text="这不是 JSON", usage=Usage(prompt_tokens=1, completion_tokens=1))
+
+
 def _make_event(event_type: str, payload: dict[str, Any]) -> AgentEvent:
     return AgentEvent(type=event_type, seq=0, ts=0.0, trace_id="t", payload=payload)
 
@@ -274,3 +285,28 @@ async def test_run_quiz_round_records_weak_and_prints_summary(tmp_path: Path) ->
     # 薄弱小结列出了概念。
     out = console.export_text()
     assert "薄弱" in out and "闭包" in out
+
+
+async def test_run_quiz_skips_round_on_question_error_without_crashing(tmp_path: Path) -> None:
+    # 出题恒失败 → QuestionError；run_quiz 应跳过本轮、不抛异常炸掉会话，仍走到薄弱小结。
+    # （dogfood 坑：QuestionError 原样冒泡会让整场 quiz 崩溃——CLI 边界兜底为"跳过本轮"。）
+    db = tmp_path / "learning.db"
+    _task, _item_id = _stock_sqlite(db, "React")
+    console = Console(record=True, width=100)
+
+    await run_quiz(
+        title="React",
+        rounds=1,
+        db_path=db,
+        provider=_BrokenProvider(),
+        responder=ScriptedResponder(answer="x"),
+        console=console,
+        seed=3,
+    )
+
+    out = console.export_text()
+    assert "本轮跳过" in out  # 打印了跳过提示、未抛异常
+    # 本轮未判卷 → 无薄弱账；小结走"没有遗留薄弱点"分支。
+    memory = SqliteLearningMemory(db)
+    assert memory.weak_item_ids() == set()
+    memory.close()

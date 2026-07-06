@@ -15,6 +15,7 @@ ID 派生约定（工厂在构造点保证确定性，调用方拿不到手写�
 
 import hashlib
 import unicodedata
+from collections.abc import Iterable
 from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints
@@ -34,6 +35,18 @@ def _as_str_list(value: object) -> object:
 
 # 出题 / 判卷 LLM 的 cited_evidence 字段共用：list[str]，但裸字符串会被宽容纳成单元素列表。
 CitedEvidence = Annotated[list[str], BeforeValidator(_as_str_list)]
+
+
+def ungrounded_citations(cited: Iterable[str], evidence_quotes: Iterable[str]) -> list[str]:
+    """返回未锚定到真实证据的引文——防"幽灵引文"（LLM 引伪造原文蒙混）。
+
+    一条引文算"锚定"当且仅当 strip 后非空、且**是某条 evidence.quote 的子串**
+    （逐字出现在真实原文里）。用子串而非逐字全等：Reader 常抽较长证据段，而出题 /
+    判卷模型倾向只引其中一句短句——那仍是真实原文、应放行；纯全等会把这类合法子串误判
+    成幽灵引文（真机 dogfood 踩过的坑）。空 / 纯空白引文视作未锚定。返回未锚定引文列表。
+    """
+    quotes = list(evidence_quotes)
+    return [c for c in cited if not (c.strip() and any(c.strip() in q for q in quotes))]
 
 
 def derive_id(*parts: str) -> str:

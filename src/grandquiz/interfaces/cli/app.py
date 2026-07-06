@@ -20,12 +20,15 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from rich.console import Console
+from rich.markup import escape
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.assessment import assess_once
+from grandquiz.domain.learning.grading import GradingError
 from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.models import LearningTask
+from grandquiz.domain.learning.question import QuestionError
 from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.interfaces.cli.interactive import InteractiveResponder
@@ -113,6 +116,8 @@ async def run_quiz(
 
     ``QuizEventPrinter`` 订阅事件流做 Rich 呈现（CLI = 事件脊柱的投影）。``responder`` 取消作答
     （``InteractiveResponder`` 抛 ``KeyboardInterrupt``）→ 优雅退出本次会话、仍打印已积累的薄弱点。
+    某轮出题 / 判卷重试用尽（``QuestionError`` / ``GradingError``）→ 只跳过该轮、继续下一轮，不崩
+    整场会话（M6 RecoveryPolicy 的临时兜底，见 docs/skeleton-ledger.md #7）。
     ``rng`` 用可变种子（CLI 非 replay）：每轮 ``new_rng(seed + 轮次)``。
     """
     _ensure_parent(db_path)
@@ -131,15 +136,24 @@ async def run_quiz(
             for round_index in range(rounds):
                 console.rule(f"第 {round_index + 1} / {rounds} 轮")
                 emitter = EventEmitter(sink, SystemClock(), trace_id=uuid.uuid4().hex)
-                await assess_once(
-                    task,
-                    store=store,
-                    provider=provider,
-                    responder=responder,
-                    memory=memory,
-                    emitter=emitter,
-                    rng=new_rng(seed + round_index),
-                )
+                try:
+                    await assess_once(
+                        task,
+                        store=store,
+                        provider=provider,
+                        responder=responder,
+                        memory=memory,
+                        emitter=emitter,
+                        rng=new_rng(seed + round_index),
+                    )
+                except (QuestionError, GradingError) as exc:
+                    # SKELETON(M6): 优雅降级本属 kernel RecoveryPolicy 统一裁决；MVP 先在 CLI 边界
+                    # 兜底——出题 / 判卷重试用尽（LLM 未能产合法输出）只跳过本轮、不崩整场会话。
+                    # 刻意只兜这两类"本轮可恢复"失败：assess_once 仍原样冒泡所有异常（保 eval /
+                    # replay 契约——ReplayMiss / provider 传输错误等会话级失败不该被静默吞），
+                    # 由 CLI 这个生产界面自行选择降级策略。见 docs/skeleton-ledger.md。
+                    console.print(f"[yellow]本轮跳过（{escape(str(exc))}）[/]")
+                    continue
         except KeyboardInterrupt:
             console.print("\n[dim]已退出本次考核会话。[/]")
 

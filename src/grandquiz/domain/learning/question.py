@@ -8,7 +8,8 @@ ADR-0004 的两个 LLM 槽之一（另一个是判卷）：出题走 **role=enri
 - **结构化输出契约（缝 3）**：provider 返回文本经 JSON 解析 + ``GeneratedQuestion`` pydantic
   校验；失败触发 ``ModelRetry``（有界重试，错误反馈进下一次上下文），用尽 → ``QuestionError``。
 - **出题校验门（缝 3，eval case 3）——防幽灵题**：``cited_evidence`` 非空，且其中**每条引文都必须
-  逐字命中被考 item 的某条 ``evidence.quote``**。题必须锚定真实存在的 item 且引真实证据，
+  锚定被考 item 的某条 ``evidence.quote``**（是其子串即可，见 ``ungrounded_citations``——放行
+  "Reader 抽长段落、出题引其中短句"）。题必须锚定真实存在的 item 且引真实证据，
   不满足 → ``ModelRetry``。这是运行时的门，不只是 eval 断言。
 - **事件上同一条脊柱**：照 ``runner.run_turn`` / ``Reader`` 的模式，每次调用 provider 发
   ``MODEL_STARTED`` →（``payload`` 含 messages 与 prompt_version）→ ``await provider.complete`` →
@@ -21,7 +22,12 @@ import json
 
 from pydantic import BaseModel, ValidationError
 
-from grandquiz.domain.learning.models import CitedEvidence, KnowledgeItem, NonEmptyStr
+from grandquiz.domain.learning.models import (
+    CitedEvidence,
+    KnowledgeItem,
+    NonEmptyStr,
+    ungrounded_citations,
+)
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.providers.base import Completion, Message, Provider
@@ -55,8 +61,8 @@ class ModelRetry(Exception):
 class GeneratedQuestion(BaseModel):
     """出题 LLM 的结构化输出契约：一道题 + 其锚定的原文证据引文。
 
-    ``question`` 非空（``NonEmptyStr``，strip 后为空也拒）；``cited_evidence`` 的非空与"逐字命中
-    被考 item 证据"由 ``generate_question`` 的校验门把关（防幽灵题）。刻意不产 ``item_id`` /
+    ``question`` 非空（``NonEmptyStr``，strip 后为空也拒）；``cited_evidence`` 的非空与"锚定
+    被考 item 证据（子串即可）"由 ``generate_question`` 的校验门把关。刻意不产 ``item_id`` /
     ``weak_item_id``——出题不记账，被考 item 由调用方指定、记账由判卷后的代码算（ADR-0004）。
     """
 
@@ -69,8 +75,8 @@ class MultipleChoiceQuestion(BaseModel):
 
     ``answer_index`` 是正确项在 ``options`` 里的下标——判卷走**确定性代码**（responder 所选项文本
     == ``options[answer_index]`` → 对 / 错），**不调 LLM**（PRD："选择题确定性比对"）。合法性
-    （``options`` ≥ 2、``answer_index`` 合法、``cited_evidence`` 非空且逐字锚定被考 item 证据）由
-    ``generate_multiple_choice`` 的校验门把关（防幽灵题 + 防不可判卷）。与出题同源：刻意不产
+    （``options`` ≥ 2、``answer_index`` 合法、``cited_evidence`` 非空且子串锚定被考 item 证据）
+    由 ``generate_multiple_choice`` 的校验门把关（防幽灵题 + 防不可判卷）。与出题同源：刻意不产
     ``item_id`` / ``weak_item_id``——出题不记账（ADR-0004）。
     """
 
@@ -184,10 +190,11 @@ def _parse(text: str, valid_quotes: set[str]) -> GeneratedQuestion:
         question = GeneratedQuestion.model_validate(data)
     except ValidationError as exc:
         raise ModelRetry(f"输出不符合 schema：{_stable_error_summary(exc)}") from exc
-    # 出题校验门（缝 3，eval case 3）：非空 + 每条引文逐字命中被考 item 的真实证据（防幽灵题）。
+    # 出题校验门（缝 3，eval case 3）：非空 + 每条引文都锚定被考 item 的真实证据（防幽灵题）。
+    # 锚定 = 引文是某条 evidence.quote 的子串（见 ungrounded_citations）——放行"抽长段落、引短句"。
     if not question.cited_evidence:
         raise ModelRetry("cited_evidence 不能为空：题必须引用被考知识点的原文证据")
-    ghost = [quote for quote in question.cited_evidence if quote not in valid_quotes]
+    ghost = ungrounded_citations(question.cited_evidence, valid_quotes)
     if ghost:
         raise ModelRetry(f"引用了不属于被考知识点的证据（幽灵引文）：{ghost}")
     return question
@@ -208,7 +215,7 @@ async def generate_multiple_choice(
 
     - **可判卷门**：``options`` 至少 2 项、``answer_index`` 是 ``options`` 的合法下标——否则确定性
       判卷（``grade_multiple_choice``）无从比对，出题即不合格。
-    - **防幽灵题门**：``cited_evidence`` 非空且每条逐字命中被考 item 的证据（与开放题同规则）。
+    - **防幽灵题门**：``cited_evidence`` 非空且每条锚定被考 item 证据（子串即可，与开放题同规则）。
 
     任一不满足 → ``ModelRetry``（反馈进下一次上下文）；重试预算耗尽 → ``QuestionError``。
     provider 传输异常照 ``_call_model`` 模式先闭合 model span 后原样冒泡（不吞）。
@@ -272,10 +279,10 @@ def _parse_mc(text: str, valid_quotes: set[str]) -> MultipleChoiceQuestion:
     # （空 / 纯空白选项已由 options 的 NonEmptyStr 挡下。）
     if len(set(mc.options)) != len(mc.options):
         raise ModelRetry(f"选项含重复文本：{mc.options}——确定性判卷按文本比对，选项须两两可区分")
-    # 防幽灵题门（与开放题同规则）：cited_evidence 非空 + 每条逐字命中被考 item 的真实证据。
+    # 防幽灵题门（与开放题同规则）：cited_evidence 非空 + 每条都锚定被考 item 真实证据（子串即可）。
     if not mc.cited_evidence:
         raise ModelRetry("cited_evidence 不能为空：题必须引用被考知识点的原文证据")
-    ghost = [quote for quote in mc.cited_evidence if quote not in valid_quotes]
+    ghost = ungrounded_citations(mc.cited_evidence, valid_quotes)
     if ghost:
         raise ModelRetry(f"引用了不属于被考知识点的证据（幽灵引文）：{ghost}")
     return mc

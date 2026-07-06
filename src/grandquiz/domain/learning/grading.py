@@ -5,8 +5,9 @@ ADR-0004 的两个 LLM 槽之二：判卷走 **role=basic**（deepseek），只�
 按 ``verdict`` 用代码算，**不由 LLM 产**——记账必须确定、可 eval、可回放。
 
 与出题同源的三条约束（结构化输出契约 / 判卷校验门 / 事件上脊柱）见 ``question.py`` 模块 docstring。
-判卷校验门（缝 3，与出题门对称）：``cited_evidence`` 非空，且每条引文都逐字命中被考 item 的
-``evidence.quote``——判卷必须锚定真实证据、可复查；空 / 幽灵引文 → ``ModelRetry``。
+判卷校验门（缝 3，与出题门对称）：``cited_evidence`` 非空，且每条引文都锚定被考 item 的
+``evidence.quote``（是其子串即可，见 ``ungrounded_citations``）——判卷必须锚定真实证据、可复查；
+空 / 幽灵引文 → ``ModelRetry``。
 """
 
 import json
@@ -14,7 +15,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ValidationError
 
-from grandquiz.domain.learning.models import CitedEvidence, KnowledgeItem
+from grandquiz.domain.learning.models import (
+    CitedEvidence,
+    KnowledgeItem,
+    ungrounded_citations,
+)
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.question import MultipleChoiceQuestion
 from grandquiz.kernel.events import EventEmitter, EventType
@@ -165,11 +170,11 @@ def _parse(text: str, valid_quotes: set[str]) -> Verdict:
         verdict = Verdict.model_validate(data)
     except ValidationError as exc:
         raise ModelRetry(f"输出不符合 schema：{_stable_error_summary(exc)}") from exc
-    # 判卷校验门（缝 3，与出题门对称）：cited_evidence 非空 + 每条引文逐字命中被考 item 的真实证据。
+    # 判卷校验门（缝 3，与出题门对称）：cited_evidence 非空 + 每条锚定被考 item 证据（子串即可）。
     # 防判卷 LLM 引伪造 / 空串"原文"蒙混——判决必须锚定真实证据、可复查。
     if not verdict.cited_evidence:
         raise ModelRetry("cited_evidence 不能为空：判卷必须引用原文证据")
-    ghost = [quote for quote in verdict.cited_evidence if quote not in valid_quotes]
+    ghost = ungrounded_citations(verdict.cited_evidence, valid_quotes)
     if ghost:
         raise ModelRetry(f"引用了不属于被考知识点的证据（幽灵引文）：{ghost}")
     return verdict
