@@ -17,9 +17,9 @@ from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.ingest import ingest_resource
 from grandquiz.domain.learning.models import KnowledgeItem, LearningTask
 from grandquiz.domain.learning.store import LearningStore
-from grandquiz.kernel.clock import ManualClock
-from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
-from grandquiz.kernel.trace import Span, TraceStore
+from grandquiz.evals.harness import build_event_harness as _harness
+from grandquiz.evals.harness import summarize_spans as _summ
+from grandquiz.kernel.events import AgentEvent, EventEmitter, EventType
 from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
 from grandquiz.providers.replay import Cassette, RecordingProvider, ReplayMiss, ReplayProvider
 
@@ -66,23 +66,6 @@ class _FixedProvider:
 
 def _keep_two(item: KnowledgeItem) -> bool:
     return item.concept in {"闭包", "事件循环"}
-
-
-def _harness() -> tuple[EventEmitter, list[AgentEvent], TraceStore]:
-    events: list[AgentEvent] = []
-    store = TraceStore(":memory:")
-    sink = EventSink()
-    sink.subscribe(events.append)
-    sink.subscribe(store.record)
-    emitter = EventEmitter(sink, ManualClock(), trace_id="run")
-    return emitter, events, store
-
-
-def _summ(spans: list[Span]) -> list[dict[str, Any]]:
-    return [
-        {"type": s.type, "start_ts": s.start_ts, "end_ts": s.end_ts, "children": _summ(s.children)}
-        for s in spans
-    ]
 
 
 async def test_happy_path_only_approved_items_enter_store() -> None:

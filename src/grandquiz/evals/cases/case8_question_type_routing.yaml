@@ -1,0 +1,21 @@
+# eval case 8：题型路由（route_question_type）——薄弱概念复考走追问（LLM 判卷路径）。
+# 首次接触 → 选择题的路由半由 case3 覆盖；本例补上薄弱 → 追问半，并断言判卷走 basic 槽（route
+# 真的把它分流到非选择题的 LLM 判卷路径，而非确定性 MC 判卷）——让 route_question_type 被真机走到。
+id: case8
+kind: assess
+setup:
+  stocked: true
+  preset:
+    - target: non_natural
+      verdict: "错"
+  verdict: "对"
+expected_events:
+  - assessment.started
+  - model.started
+  - model.ended
+  - learning.question_asked
+  - model.started
+  - model.ended
+  - learning.answer_judged
+  - learning.concept_state_changed
+  - assessment.ended

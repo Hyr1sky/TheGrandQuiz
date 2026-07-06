@@ -1,0 +1,23 @@
+# eval case 6：答对薄弱题 → 第一次答对转"观察中"（仍在表内）；连续第二次答对 → 销账移出。
+# 前置 [错, 对] 经真实状态机建到"观察中（连对 1）"（= 第一次答对半，grader 断前置态）；本轮再答对
+# → 观察中 + 对 → 销账（连对 2）。观察中复考路由到开放。薄弱 item != 自然选择，证明薄弱优先。
+id: case6
+kind: assess
+setup:
+  stocked: true
+  preset:
+    - target: non_natural
+      verdict: "错"
+    - target: non_natural
+      verdict: "对"
+  verdict: "对"
+expected_events:
+  - assessment.started
+  - model.started
+  - model.ended
+  - learning.question_asked
+  - model.started
+  - model.ended
+  - learning.answer_judged
+  - learning.concept_state_changed
+  - assessment.ended

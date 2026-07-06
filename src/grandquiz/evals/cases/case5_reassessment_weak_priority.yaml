@@ -1,0 +1,20 @@
+# eval case 5：复考选题 → 出的题 ∈ 代码构造的"薄弱优先"候选集（有薄弱概念时新概念不进集）。
+# 预置一个 != 全集随机自然选择的薄弱概念（喂一次错）；复考锁定它、路由到追问。
+id: case5
+kind: assess
+setup:
+  stocked: true
+  preset:
+    - target: non_natural
+      verdict: "错"
+  verdict: "对"
+expected_events:
+  - assessment.started
+  - model.started
+  - model.ended
+  - learning.question_asked
+  - model.started
+  - model.ended
+  - learning.answer_judged
+  - learning.concept_state_changed
+  - assessment.ended

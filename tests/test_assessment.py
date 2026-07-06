@@ -27,9 +27,10 @@ from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningRe
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.selection import select_target
 from grandquiz.domain.learning.store import LearningStore
-from grandquiz.kernel.clock import ManualClock, new_rng
-from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
-from grandquiz.kernel.trace import Span, TraceStore
+from grandquiz.evals.harness import build_event_harness as _harness
+from grandquiz.evals.harness import summarize_spans as _summ
+from grandquiz.kernel.clock import new_rng
+from grandquiz.kernel.events import AgentEvent, EventEmitter, EventType
 from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
 from grandquiz.providers.replay import Cassette, RecordingProvider, ReplayProvider
 
@@ -88,23 +89,6 @@ class _AssessProvider:
             text=json.dumps(payload, ensure_ascii=False),
             usage=Usage(prompt_tokens=7, completion_tokens=3),
         )
-
-
-def _harness() -> tuple[EventEmitter, list[AgentEvent], TraceStore]:
-    events: list[AgentEvent] = []
-    store = TraceStore(":memory:")
-    sink = EventSink()
-    sink.subscribe(events.append)
-    sink.subscribe(store.record)
-    emitter = EventEmitter(sink, ManualClock(), trace_id="run")
-    return emitter, events, store
-
-
-def _summ(spans: list[Span]) -> list[dict[str, Any]]:
-    return [
-        {"type": s.type, "start_ts": s.start_ts, "end_ts": s.end_ts, "children": _summ(s.children)}
-        for s in spans
-    ]
 
 
 def _stocked_store() -> tuple[LearningStore, LearningTask, list[str]]:

@@ -1,0 +1,15 @@
+# eval case 3：出题 → 每道题锚定存在的 KnowledgeItem，且引其非空真实证据（防幽灵题）。
+# 首次接触概念（记忆空）→ 选择题；选对 → 判对（确定性判卷、无判卷 model span）。
+id: case3
+kind: assess
+setup:
+  stocked: true
+  answer: mc_correct
+expected_events:
+  - assessment.started
+  - model.started
+  - model.ended
+  - learning.question_asked
+  - learning.answer_judged
+  - learning.concept_state_changed
+  - assessment.ended

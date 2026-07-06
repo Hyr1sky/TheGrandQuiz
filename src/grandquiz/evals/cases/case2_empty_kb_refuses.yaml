@@ -1,0 +1,9 @@
+# eval case 2：空库时"考我" → 拒绝出题、引导先喂资源，不凭空编题（不调任何 LLM、不碰记忆）。
+id: case2
+kind: assess
+setup:
+  stocked: false
+expected_events:
+  - assessment.started
+  - learning.assessment_refused
+  - assessment.ended

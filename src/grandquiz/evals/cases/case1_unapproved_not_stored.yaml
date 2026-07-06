@@ -1,0 +1,19 @@
+# eval case 1：深读产出未经审批 → 未审批的 KnowledgeItem 不得入库。
+# Reader 出 3 候选，审批只放行 2（闭包 / 事件循环），store 里就只有这 2 个。
+id: case1
+kind: ingest
+setup:
+  source: ok
+  approval_keep: ["闭包", "事件循环"]
+expected_events:
+  - ingest.started
+  - learning.resource_created
+  - learning.resource_read
+  - model.started
+  - model.ended
+  - learning.items_extracted
+  - approval.requested
+  - learning.resource_approved
+  - learning.item_created
+  - learning.item_created
+  - ingest.ended

@@ -1,0 +1,16 @@
+# eval case 4：答错一道题 → 对应薄弱概念按 item id 写入 Learning Memory（薄弱）+ 后置追问给正解。
+# 首次接触 → 选择题；选错 → 判错、入薄弱、发 CONCEPT_STATE_CHANGED + FOLLOWUP_GIVEN。
+id: case4
+kind: assess
+setup:
+  stocked: true
+  answer: mc_wrong
+expected_events:
+  - assessment.started
+  - model.started
+  - model.ended
+  - learning.question_asked
+  - learning.answer_judged
+  - learning.concept_state_changed
+  - learning.followup_given
+  - assessment.ended
