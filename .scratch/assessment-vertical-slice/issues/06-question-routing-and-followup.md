@@ -1,7 +1,10 @@
 # M3.4 — 题型路由 + 追问
 
-Status: ready-for-agent
+Status: done（路由 + MC 确定性判卷 + 追问 + 后置给正解 + eval case 8，commit 60d6b4c，CI 全绿）
 Type: AFK
+
+> **考核竖切主干（M3.1→M3.4）至此闭合**，8 个 eval 用例全覆盖。纯确定性路由/判卷、无人机边界。
+> 剩余为 M4-M8 的 kernel 层加硬（hooks/context/recovery/Memory-SQLite/eval-harness）+ 交互 CLI（台账 #6）。
 
 ## Parent
 
