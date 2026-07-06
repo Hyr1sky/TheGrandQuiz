@@ -10,13 +10,13 @@ LLM 只在集内被挑到——选题数据源是 Learning Memory（ADR-0003）�
 如 M3.2 的旧调用）时退化为全集随机，故本函数签名向后兼容、旧调用方无需改动。
 """
 
-from grandquiz.domain.learning.memory import LearningMemory
+from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.kernel.clock import Rng
 
 
 def select_target(
-    items: list[KnowledgeItem], *, rng: Rng, memory: LearningMemory | None = None
+    items: list[KnowledgeItem], *, rng: Rng, memory: Memory | None = None
 ) -> KnowledgeItem:
     """从 ``items`` 中确定性地选一个考核目标（``rng.choice``，同 seed 同结果）。
 

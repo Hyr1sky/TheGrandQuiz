@@ -15,31 +15,33 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     return sqlite3.connect(str(db_path))
 
 
-def migrate(conn: sqlite3.Connection) -> None:
-    """按 ``PRAGMA user_version`` 增量应用 ``migrations/*.sql``。
+def migrate(conn: sqlite3.Connection, migrations_dir: str | Path = _MIGRATIONS_DIR) -> None:
+    """按 ``PRAGMA user_version`` 增量应用 ``migrations_dir/*.sql``（通用迁移执行器）。
 
-    发现 migrations 目录下所有 ``.sql``，按文件名前导整数排序；对每个编号 > 当前
-    ``user_version`` 的文件，在一个事务里执行其 SQL，最后把 ``user_version`` 抬到
-    已应用的最高编号。中途失败则整文件回滚。
+    发现 ``migrations_dir`` 下所有 ``.sql``，按文件名前导整数排序；对每个编号 > 当前
+    ``user_version`` 的文件，把**其 SQL 与版本号推进放进同一事务**原子提交（DDL + ``PRAGMA
+    user_version`` 一起 COMMIT）。故中途某文件失败时 ``user_version`` 停在**最后成功编号**，
+    重跑从下一个未应用文件续上——不会"DDL 已提交但版本没跟上、重跑旧文件报错"。
+
+    ``migrations_dir`` 参数化让 migrate 成为**领域无关**的通用 runner：kernel 自身的
+    ``events`` 表走默认 ``kernel/migrations``（TraceStore 调 ``migrate(conn)`` 不变、向后兼容），
+    domain 层传入自己的迁移目录（如 ``domain/learning/migrations``）复用同一 runner——kernel
+    仍不认识任何领域表。``user_version`` 是 per-db 的，故 learning 数据须用独立 db 文件
+    （与 trace.db 分开），各自维护 ``user_version`` 与迁移序列、互不串号。
     """
     current = _user_version(conn)
-    highest = current
-    for number, path in _discover_migrations():
+    for number, path in _discover_migrations(Path(migrations_dir)):
         if number <= current:
             continue
         sql = path.read_text(encoding="utf-8")
-        # executescript 会先 COMMIT 再执行脚本；显式 BEGIN/COMMIT 把整个迁移文件包成
-        # 一个事务，中途失败未达 COMMIT，异常后 rollback，保证原子应用。
+        # DDL 与版本号推进同事务原子提交：executescript 先 COMMIT 挂起事务，再跑显式 BEGIN…COMMIT；
+        # PRAGMA user_version 写入随本事务落盘；失败未达 COMMIT → rollback，版本停在上一个成功编号。
+        # PRAGMA 不能参数化，number 是文件名解析出的 int，拼 f-string 安全。
         try:
-            conn.executescript(f"BEGIN;\n{sql}\nCOMMIT;")
+            conn.executescript(f"BEGIN;\n{sql}\nPRAGMA user_version = {number};\nCOMMIT;")
         except Exception:
             conn.rollback()
             raise
-        highest = number
-    if highest != current:
-        # PRAGMA 不能参数化；highest 是从文件名解析出来的 int，拼 f-string 安全。
-        conn.execute(f"PRAGMA user_version = {highest}")
-        conn.commit()
 
 
 def _user_version(conn: sqlite3.Connection) -> int:
@@ -47,9 +49,9 @@ def _user_version(conn: sqlite3.Connection) -> int:
     return int(row[0])
 
 
-def _discover_migrations() -> list[tuple[int, Path]]:
+def _discover_migrations(migrations_dir: Path) -> list[tuple[int, Path]]:
     migrations: list[tuple[int, Path]] = []
-    for path in sorted(_MIGRATIONS_DIR.glob("*.sql")):
+    for path in sorted(migrations_dir.glob("*.sql")):
         number = int(path.name.split("_", 1)[0])
         migrations.append((number, path))
     migrations.sort(key=lambda item: item[0])

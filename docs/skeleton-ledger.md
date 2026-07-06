@@ -21,8 +21,8 @@ PRD 里的 **Out of Scope**（资源自动发现 / 向量库 / Web 前端 / 跨�
 
 | # | 组件 / 缝 | M3 临时实现（fake） | 正式实现 | 替换里程碑 | 验收信号 | 状态 |
 |---|---|---|---|---|---|---|
-| 1 | Learning Memory | 进程内 dict（薄弱概念 + 三态 + 连对计数 + 判决历史） | SQLite 支持的 Memory 抽象（store / recall / policy） | **M7** | 跨会话薄弱点持久，重启后仍薄弱优先出题 | ⬜ |
-| 2 | KnowledgeItem / Resource 存储 | 进程内 dict | SQLite（复用 M2 的迁移机制，加 `000N_learning.sql`） | **M7** | 入库 item 重启后仍在、仍可锚定出题 | ⬜ |
+| 1 | Learning Memory | 进程内 dict（薄弱概念 + 三态 + 连对计数 + 判决历史） | SQLite 支持的 Memory 抽象（复用纯函数状态机 `apply_verdict`） | **M7** | 跨会话薄弱点持久，重启后仍薄弱优先出题 | ✅ `memory.py` 的 `SqliteLearningMemory`（`Memory` 协议 + `LearningMemory` dict 内存实现并存） |
+| 2 | KnowledgeItem / Resource 存储 | 进程内 dict | SQLite（复用 kernel 参数化 `migrate` + `domain/learning/migrations/0001_learning.sql`） | **M7** | 入库 item 重启后仍在、仍可锚定出题 | ✅ `store.py` 的 `SqliteLearningStore`（`Store` 协议 + `LearningStore` dict 内存实现并存） |
 | 3 | 审批门 | M3.1 已落 `ApprovalGate` 协议 + `ScriptedApprovalGate`（发 `approval.requested` 事件 + 脚本化决策）；CLI 阻塞 `prompt` 交互实现仍是后续 human 步骤 | 可挂起 / 可恢复 turn：凭 token 从待决状态恢复，跨 SSE / HTTP | **TBD**（随 `interfaces/api` 或专门加固；**接口形状第一天就按 suspend/resume 定**，故替换不改调用方） | 关掉 CLI 重开、凭 token 恢复同一次待审批会话 | ⬜ |
 | 4 | Reader subagent 执行器 | M3.1 内联调用（隔离上下文 + pydantic 校验 + ModelRetry 已是真的） | `kernel/subagent.py` 通用执行器 | 出现**第二个** subagent 时再抽（无独立 M，YAGNI） | 第二个 subagent 复用同一执行器、零重复 | ⬜ |
 | 5 | prompt 版本号 | ~~`MODEL_STARTED` 里手填 `prompt_version`~~ | prompt 模板独立存放（`prompts/*.md`）+ 内容 hash 版本号，trace 记版本号 | **✅ 已完成** | trace 能按 prompt 版本归因 eval 回归 | ✅ `domain/learning/prompts.py` + `prompts/reader_extract.md`（版本=内容 hash，Reader 加载） |
@@ -80,6 +80,27 @@ dict 假件（状态仍 ⬜，正式 SQLite 实现见里程碑 **M7**）：
 **grep 对账（M3.3 后）**：`grep -rn "SKELETON" src/` 应为 **5** 处（#1 memory / #2 store /
 #3 approval / #4 reader / #6 responder），与台账未完成行数 **5**（#1~#4、#6）一致——欠账已全部记账，
 两边对齐。
+
+## M7 存储 / Learning Memory 正式化为 SQLite 落地
+
+M7 把 **#1 Learning Memory** 与 **#2 KnowledgeItem / Resource 存储** 从进程内 dict 假件正式化为
+SQLite 持久化，兑现两条验收信号（跨会话薄弱点持久 / 入库 item 重启后仍在）。落地要点：
+
+- **抽协议、dict 降格为内存实现**：`store.py` 定义 `Store` 协议、`memory.py` 定义 `Memory` 协议；
+  原 dict 类（`LearningStore` / `LearningMemory`）保留原名、语义改为"测试 / 快速用的**内存实现**"
+  （不再是骨架欠账）。`ingest.py` / `assessment.py` / `selection.py` 的 store/memory 形参类型改为协议，
+  故 dict 版与 SQLite 版都满足、**调用方一行逻辑不改**即可替换（兑现"替换不改调用方"）。
+- **kernel `migrate` 参数化为通用 runner**：`kernel/db.py` 的 `migrate(conn, migrations_dir=…)`
+  默认仍走 `kernel/migrations`（`TraceStore` 调 `migrate(conn)` 不变、向后兼容），domain 传入
+  `domain/learning/migrations` 复用同一 runner——kernel 仍不认识任何领域表。learning 数据用**独立
+  db 文件**（与 trace.db 分开），各自 `PRAGMA user_version` 与迁移序列。
+- **schema 无时间戳列**（决策 2）；list 字段（evidence / verdict_history）存 JSON 文本；`trusted` 存
+  0/1；销账 = `DELETE` 行；`SqliteLearningMemory` 复用纯函数 `apply_verdict`（状态机不重写），脏行经
+  `ConceptRecord.model_validate` 被 M3.3 的不变量 validator 兜底。
+
+**grep 对账（M7 后）**：删除 `store.py` / `memory.py` 的 `# SKELETON(M7)` 标记后，
+`grep -rn "SKELETON" src/` 应为 **3** 处（#3 approval / #4 reader / #6 responder），与台账未完成行数
+**3** 一致——#1 / #2 已 ✅ 结清，两边对齐。
 
 ## 变更约定
 

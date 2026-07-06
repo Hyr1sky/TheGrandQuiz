@@ -40,7 +40,7 @@ from grandquiz.domain.learning.grading import (
     grade_answer,
     grade_multiple_choice,
 )
-from grandquiz.domain.learning.memory import LearningMemory
+from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.models import KnowledgeItem, LearningTask
 from grandquiz.domain.learning.question import (
     MultipleChoiceQuestion,
@@ -50,7 +50,7 @@ from grandquiz.domain.learning.question import (
 from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.routing import QuestionType, route_question_type
 from grandquiz.domain.learning.selection import select_target
-from grandquiz.domain.learning.store import LearningStore
+from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.clock import Rng
 from grandquiz.kernel.events import EventEmitter
 from grandquiz.providers.base import Provider
@@ -97,10 +97,10 @@ class AssessmentResult(BaseModel):
 async def assess_once(
     task: LearningTask,
     *,
-    store: LearningStore,
+    store: Store,
     provider: Provider,
     responder: Responder,
-    memory: LearningMemory,
+    memory: Memory,
     emitter: EventEmitter,
     rng: Rng,
 ) -> AssessmentResult:

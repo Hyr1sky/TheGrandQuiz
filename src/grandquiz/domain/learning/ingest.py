@@ -26,7 +26,7 @@ from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.fetch import FetchError, fetch_resource
 from grandquiz.domain.learning.models import KnowledgeItem, LearningResource, LearningTask
 from grandquiz.domain.learning.reader import Reader, ReaderError
-from grandquiz.domain.learning.store import LearningStore
+from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.events import EventEmitter
 from grandquiz.providers.base import Provider
 
@@ -49,7 +49,7 @@ async def ingest_resource(
     *,
     source: Callable[[str], str],
     provider: Provider,
-    store: LearningStore,
+    store: Store,
     approval: ApprovalGate,
     emitter: EventEmitter,
     max_bytes: int,

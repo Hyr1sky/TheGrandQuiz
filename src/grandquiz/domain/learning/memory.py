@@ -1,6 +1,12 @@
 """Learning Memory——薄弱概念的确定性台账（三态状态机 + 连对销账）。
 
-# SKELETON(M7): dict 假装持久化，正式 SQLite Memory 见 docs/skeleton-ledger.md #1
+``Memory`` 协议是记忆的结构化契约（选题 / 判卷编排依赖它）；两种实现满足它：
+
+- ``LearningMemory``：**进程内 dict**、无 I/O——测试 / 快速用的内存实现（不再是骨架欠账）。
+- ``SqliteLearningMemory``：**SQLite 持久化**——跨会话薄弱点留存、重启后仍薄弱优先出题（M7）。
+
+两者共用**纯函数状态机** ``apply_verdict``（状态转移不重写），故行为逐字段一致；因都满足
+``Memory`` 协议，调用方（``assess_once`` / ``select_target``）签名一字不改即可替换实现。
 
 ADR-0003："Learning Memory = 薄弱概念 × 表现历史，考核循环的持久层、选题优先级的唯一数据源"；
 ADR-0004："LLM 判卷，代码记账"——状态转移是**确定性纯代码**，不由 LLM 碰。记忆锚定
@@ -20,11 +26,16 @@ ADR-0004："LLM 判卷，代码记账"——状态转移是**确定性纯代码*
 跨会话持久与"重启后仍薄弱优先出题"的不变量留给 M7 验收。
 """
 
-from typing import Literal, Self
+import json
+from pathlib import Path
+from typing import Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from grandquiz.domain.learning.grading import VerdictLabel
+from grandquiz.kernel.db import connect, migrate
+
+_LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 # 记忆里只存这两个状态；销账 = 从 dict 移除（不是第三个枚举值）。
 ConceptState = Literal["薄弱", "观察中"]
@@ -114,8 +125,22 @@ def apply_verdict(
     )
 
 
+class Memory(Protocol):
+    """薄弱概念台账的结构化契约（``assess_once`` / ``select_target`` 的形参类型）。
+
+    dict 版（``LearningMemory``）与 SQLite 版（``SqliteLearningMemory``）都结构上满足它，
+    故调用方按此协议编程、可无改动地替换实现。唯一写入口是 ``record_verdict``（代码记账）；
+    其余三个是只读投影（供选题的薄弱优先候选集与断言）。销账 = 从台账移除。
+    """
+
+    def record_verdict(self, item_id: str, verdict: VerdictLabel) -> Transition: ...
+    def weak_item_ids(self) -> set[str]: ...
+    def state_of(self, item_id: str) -> ConceptState | None: ...
+    def record_of(self, item_id: str) -> ConceptRecord | None: ...
+
+
 class LearningMemory:
-    """薄弱概念的进程内台账（dict[item_id -> ConceptRecord]），纯 dict、无 I/O。
+    """薄弱概念的进程内台账（dict[item_id -> ConceptRecord]），测试 / 快速用的内存实现、无 I/O。
 
     唯一写入口是 ``record_verdict``（代码记账）；``weak_item_ids`` / ``state_of`` / ``record_of``
     是只读投影，供选题（薄弱优先候选集）与断言使用。销账 = 从 dict 移除。
@@ -163,3 +188,93 @@ class LearningMemory:
     def record_of(self, item_id: str) -> ConceptRecord | None:
         """某 item 的完整记录（含 verdict_history）；不在记忆 → None。只读投影。"""
         return self._records.get(item_id)
+
+
+class SqliteLearningMemory:
+    """薄弱概念的 SQLite 持久化台账（M7 正式实现，满足 ``Memory`` 协议）。
+
+    ``db_path`` 是 learning 数据的**独立 db 文件**（与 trace.db 分开）；``__init__`` 打开连接并跑
+    ``migrate``（幂等）。``record_verdict`` **复用纯函数 ``apply_verdict``**（状态机不重写）：读当前
+    行 → ``apply_verdict`` → 写回（``INSERT OR REPLACE``）/ 删除（销账 = ``DELETE`` 行）→ 返回
+    ``Transition``，逐字段与 dict 版一致。反序列化经 ``ConceptRecord.model_validate``——脏行
+    （如薄弱却 cc=1）在**构造点即被不变量 validator 拒**，令脏数据大声失败而非静默错误销账。
+    SQLite 是 I/O 但确定，schema 无时间戳列，不破坏 replay。
+    """
+
+    def __init__(self, db_path: str | Path) -> None:
+        self._conn = connect(db_path)
+        migrate(self._conn, _LEARNING_MIGRATIONS_DIR)
+
+    def record_verdict(self, item_id: str, verdict: VerdictLabel) -> Transition:
+        """按 ``verdict`` 更新 ``item_id`` 的记录并返回转移信息（销账 = ``DELETE`` 行）。"""
+        before = self._read_record(item_id)
+        from_state = before.state if before is not None else None
+        after = apply_verdict(before, verdict, item_id=item_id)
+        if after is None:
+            self._conn.execute("DELETE FROM learning_memory WHERE item_id = ?", (item_id,))
+            self._conn.commit()
+            if before is not None:
+                # 此前追踪、现已移除 → 销账（唯一路径：观察中 + 对）。透出触发销账的连对数（=2）。
+                return Transition(
+                    item_id=item_id,
+                    from_state=from_state,
+                    to_state="销账",
+                    consecutive_correct=before.consecutive_correct + 1,
+                )
+            # 此前未追踪、现仍未追踪 → 答对非薄弱概念，不入记忆。
+            return Transition(
+                item_id=item_id, from_state=None, to_state=None, consecutive_correct=0
+            )
+        self._write_record(after)
+        return Transition(
+            item_id=item_id,
+            from_state=from_state,
+            to_state=after.state,
+            consecutive_correct=after.consecutive_correct,
+        )
+
+    def weak_item_ids(self) -> set[str]:
+        """当前被追踪的概念 item_id 集合（薄弱 ∪ 观察中；不含已销账）——薄弱优先选题的数据源。"""
+        cursor = self._conn.execute("SELECT item_id FROM learning_memory")
+        return {str(row[0]) for row in cursor.fetchall()}
+
+    def state_of(self, item_id: str) -> ConceptState | None:
+        """某 item 当前状态（薄弱 / 观察中）；不在记忆（未追踪 / 已销账）→ None。"""
+        record = self._read_record(item_id)
+        return record.state if record is not None else None
+
+    def record_of(self, item_id: str) -> ConceptRecord | None:
+        """某 item 的完整记录（含 verdict_history）；不在记忆 → None。只读投影。"""
+        return self._read_record(item_id)
+
+    def close(self) -> None:
+        """关闭底层连接（跨会话验收：关闭后用同一 db_path 重开，薄弱点仍在、状态 / 连对不变）。"""
+        self._conn.close()
+
+    def _read_record(self, item_id: str) -> ConceptRecord | None:
+        row = self._conn.execute(
+            "SELECT item_id, state, consecutive_correct, verdict_history "
+            "FROM learning_memory WHERE item_id = ?",
+            (item_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        # model_validate 触发 M3.3 的不变量 model_validator：脏行（薄弱↔cc0 / 观察中↔cc1 破坏）
+        # 在此构造点即失败（ValidationError），而非被 apply_verdict 静默错误销账。
+        return ConceptRecord.model_validate(
+            {
+                "item_id": str(row[0]),
+                "state": row[1],
+                "consecutive_correct": int(row[2]),
+                "verdict_history": json.loads(row[3]),
+            }
+        )
+
+    def _write_record(self, record: ConceptRecord) -> None:
+        history_json = json.dumps(record.verdict_history, sort_keys=True, ensure_ascii=False)
+        self._conn.execute(
+            "INSERT OR REPLACE INTO learning_memory "
+            "(item_id, state, consecutive_correct, verdict_history) VALUES (?, ?, ?, ?)",
+            (record.item_id, record.state, record.consecutive_correct, history_json),
+        )
+        self._conn.commit()
