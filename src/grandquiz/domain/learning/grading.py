@@ -16,11 +16,24 @@ from pydantic import BaseModel, ValidationError
 
 from grandquiz.domain.learning.models import CitedEvidence, KnowledgeItem
 from grandquiz.domain.learning.prompts import load_prompt
+from grandquiz.domain.learning.question import MultipleChoiceQuestion
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.providers.base import Completion, Message, Provider
 
 # 判决三值——出题 / 判卷 / 记账全链路共用的枚举（assessment 的 AssessmentResult 亦复用之）。
 VerdictLabel = Literal["对", "勉强", "错"]
+
+
+def grade_multiple_choice(chosen: str, mc: MultipleChoiceQuestion) -> VerdictLabel:
+    """选择题确定性判卷（纯函数、**不调 LLM**）：所选项文本 == 正确项 → ``对``，否则 ``错``。
+
+    ADR-0004 / PRD："选择题确定性比对"——MC 不占 LLM 判卷槽，故 MC **判卷无判卷 model span、
+    无需 cassette、更确定**（MC 出题槽仍打真实 LLM、录放照旧）。MC 只有两值（对 / 错），无"勉强"
+    （选项非对即错）。``chosen`` 是
+    responder 返回的所选项文本，与 ``mc.options[mc.answer_index]`` 逐字比对——记账（薄弱与否）仍
+    由 ``assess_once`` 的代码按此 verdict 算，与开放题判卷统一走同一条记账路径。
+    """
+    return "对" if chosen == mc.options[mc.answer_index] else "错"
 
 
 def _stable_error_summary(exc: ValidationError) -> str:

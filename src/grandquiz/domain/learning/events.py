@@ -37,3 +37,8 @@ class LearningEvent:
     # 上脊柱（eval case 4 / 6，payload 含 from_state / to_state / consecutive_correct）。
     # **无转移时也发**（如答对未追踪概念 → from/to 皆 None），保证每轮记账都可断言、事件序列稳定。
     CONCEPT_STATE_CHANGED = "learning.concept_state_changed"
+
+    # M3.4 题型路由 + 追问：判决为"勉强 / 错"时的后置追问——给正解（确定性代码，从被考 item 的
+    # summary + evidence 组正解文本，非 LLM 产）。payload 含 item_id + correct_answer；判"对"不发。
+    # 在 CONCEPT_STATE_CHANGED 之后、assessment.ended 之前（见 assessment 模块 docstring 时序）。
+    FOLLOWUP_GIVEN = "learning.followup_given"

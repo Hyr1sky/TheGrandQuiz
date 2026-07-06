@@ -6,6 +6,11 @@ cassette 由 scripts/record_assess.py 对真实 qwen（出题/enrich）+ deepsee
 ReplayMiss，本测试会红——即"prompt / 场景漂移需重录"的信号（golden fixture 的预期维护流）。
 
 下方场景常量必须与 scripts/record_assess.py 一致（含 items 顺序），否则 messages 对不上、回放落空。
+
+M3.4（题型路由）后：**fresh memory 会路由到选择题（MC，用 question_multiple_choice prompt）**，
+而本 cassette 是按标准开放题（question_generate + answer_grade）录的。为让回放继续命中，这里把
+自然选中的 item 预置成**观察中**——观察中 → 路由到"开放"，正是 cassette 录制时用的那对 prompt；
+且被考 target 不变（薄弱优先集只此一项）。cassette 的重录属真机步骤（out of scope）。
 """
 
 import json
@@ -21,6 +26,7 @@ from grandquiz.domain.learning.models import (
     LearningTask,
 )
 from grandquiz.domain.learning.responder import ScriptedResponder
+from grandquiz.domain.learning.selection import select_target
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.events import EventEmitter, EventSink
@@ -69,12 +75,20 @@ async def test_recorded_assessment_replays_deterministically_without_live_calls(
     store, task = _stocked_store()
     emitter = EventEmitter(EventSink(), ManualClock(), trace_id="assess-replay")
 
+    # 把 seed 自然选中的 item 预置成"观察中"→ 路由到"开放"（= cassette 录制时用的 prompt 对），
+    # 且被考 target 不变（薄弱优先集只此一项）。否则 fresh memory 会路由到选择题、ReplayMiss。
+    memory = LearningMemory()
+    natural = select_target(store.items_for_task(task.task_id), rng=new_rng(_SEED)).item_id
+    memory.record_verdict(natural, "错")  # → 薄弱
+    memory.record_verdict(natural, "对")  # → 观察中
+    assert memory.state_of(natural) == "观察中"
+
     result = await assess_once(
         task,
         store=store,
         provider=replay,  # 纯回放：命中即返回、未命中 ReplayMiss；绝不触网、不烧 token
         responder=ScriptedResponder(answer=_DEFAULT_ANSWER),
-        memory=LearningMemory(),
+        memory=memory,
         emitter=emitter,
         rng=new_rng(_SEED),
     )

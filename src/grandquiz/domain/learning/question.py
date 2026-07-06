@@ -64,6 +64,22 @@ class GeneratedQuestion(BaseModel):
     cited_evidence: CitedEvidence
 
 
+class MultipleChoiceQuestion(BaseModel):
+    """选择题 LLM 的结构化输出契约：题干 + 选项 + 正确项下标 + 锚定的原文证据引文。
+
+    ``answer_index`` 是正确项在 ``options`` 里的下标——判卷走**确定性代码**（responder 所选项文本
+    == ``options[answer_index]`` → 对 / 错），**不调 LLM**（PRD："选择题确定性比对"）。合法性
+    （``options`` ≥ 2、``answer_index`` 合法、``cited_evidence`` 非空且逐字锚定被考 item 证据）由
+    ``generate_multiple_choice`` 的校验门把关（防幽灵题 + 防不可判卷）。与出题同源：刻意不产
+    ``item_id`` / ``weak_item_id``——出题不记账（ADR-0004）。
+    """
+
+    question: NonEmptyStr
+    options: list[NonEmptyStr]  # 非空（strip 后也非空）；两两可区分由 _parse_mc 的门把关
+    answer_index: int
+    cited_evidence: CitedEvidence
+
+
 async def generate_question(
     item: KnowledgeItem,
     *,
@@ -71,14 +87,18 @@ async def generate_question(
     emitter: EventEmitter,
     parent_span_id: str | None,
     max_attempts: int = 3,
+    prompt_name: str = "question_generate",
 ) -> GeneratedQuestion:
     """为 ``item`` 产出一道 grounded 题；持续失败 → ``QuestionError``。见模块 docstring。
 
     ``max_attempts``：1 次初始调用 + 最多 ``max_attempts - 1`` 次重试（默认 3；测试可收紧）。
+    ``prompt_name``：出题 system prompt 模板名——默认 ``question_generate``（标准开放题）；
+    追问深挖传 ``question_probe``（同一 schema、仅换 prompt 逼深一层）。trace 记的 prompt_version
+    随之反映所用变体，故 eval 回归可归因到具体题型 prompt（追问用例即靠此断言走了 probe）。
     """
     if max_attempts < 1:
         raise ValueError("max_attempts 至少为 1")
-    prompt = load_prompt("question_generate")
+    prompt = load_prompt(prompt_name)
     valid_quotes = {ev.quote for ev in item.evidence}
     evidence_block = "\n".join(f"- {ev.quote}" for ev in item.evidence)
     base_messages = [
@@ -171,3 +191,91 @@ def _parse(text: str, valid_quotes: set[str]) -> GeneratedQuestion:
     if ghost:
         raise ModelRetry(f"引用了不属于被考知识点的证据（幽灵引文）：{ghost}")
     return question
+
+
+async def generate_multiple_choice(
+    item: KnowledgeItem,
+    *,
+    provider: Provider,
+    emitter: EventEmitter,
+    parent_span_id: str | None,
+    max_attempts: int = 3,
+) -> MultipleChoiceQuestion:
+    """为 ``item`` 产一道锚定的选择题（首次接触概念的热身题型）；持续失败 → ``QuestionError``。
+
+    与 ``generate_question`` 同源（role=enrich、结构化输出契约、事件上脊柱、有界重试），仅多两条
+    MC 专属校验门（缝 3）：
+
+    - **可判卷门**：``options`` 至少 2 项、``answer_index`` 是 ``options`` 的合法下标——否则确定性
+      判卷（``grade_multiple_choice``）无从比对，出题即不合格。
+    - **防幽灵题门**：``cited_evidence`` 非空且每条逐字命中被考 item 的证据（与开放题同规则）。
+
+    任一不满足 → ``ModelRetry``（反馈进下一次上下文）；重试预算耗尽 → ``QuestionError``。
+    provider 传输异常照 ``_call_model`` 模式先闭合 model span 后原样冒泡（不吞）。
+    """
+    if max_attempts < 1:
+        raise ValueError("max_attempts 至少为 1")
+    prompt = load_prompt("question_multiple_choice")
+    valid_quotes = {ev.quote for ev in item.evidence}
+    evidence_block = "\n".join(f"- {ev.quote}" for ev in item.evidence)
+    base_messages = [
+        Message(role="system", content=prompt.text),
+        Message(
+            role="user",
+            content=(
+                "被考知识点：\n"
+                f"概念：{item.concept}\n"
+                f"摘要：{item.summary}\n"
+                "可引用的原文证据（cited_evidence 只能逐字从中挑选）：\n"
+                f"{evidence_block}"
+            ),
+        ),
+    ]
+    retry_note: str | None = None
+    last_error = ""
+    for _ in range(max_attempts):
+        messages = list(base_messages)
+        if retry_note is not None:
+            messages.append(Message(role="user", content=retry_note))
+        completion = await _call_model(
+            messages,
+            provider=provider,
+            emitter=emitter,
+            parent_span_id=parent_span_id,
+            prompt_version=prompt.version,
+        )
+        try:
+            return _parse_mc(completion.text, valid_quotes)
+        except ModelRetry as exc:
+            last_error = str(exc)
+            retry_note = f"上一次出题无法采用：{exc}。请只返回合法 JSON，且引用真实证据。"
+    raise QuestionError(f"选择题出题失败（{max_attempts} 次尝试仍无合法输出）：{last_error}")
+
+
+def _parse_mc(text: str, valid_quotes: set[str]) -> MultipleChoiceQuestion:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ModelRetry(f"非法 JSON：{exc}") from exc
+    try:
+        mc = MultipleChoiceQuestion.model_validate(data)
+    except ValidationError as exc:
+        raise ModelRetry(f"输出不符合 schema：{_stable_error_summary(exc)}") from exc
+    # 可判卷门：选项 ≥ 2、正确项下标合法——否则确定性判卷无从比对。
+    if len(mc.options) < 2:
+        raise ModelRetry(f"选项至少需 2 项（现 {len(mc.options)} 项）：选择题需可区分的干扰项")
+    if not 0 <= mc.answer_index < len(mc.options):
+        raise ModelRetry(
+            f"answer_index 越界：{mc.answer_index} 不在合法下标 [0, {len(mc.options)}) 内"
+        )
+    # 选项须两两可区分：确定性判卷按文本比对，重复选项会让"选了干扰项"被误判为对、污染薄弱账本。
+    # （空 / 纯空白选项已由 options 的 NonEmptyStr 挡下。）
+    if len(set(mc.options)) != len(mc.options):
+        raise ModelRetry(f"选项含重复文本：{mc.options}——确定性判卷按文本比对，选项须两两可区分")
+    # 防幽灵题门（与开放题同规则）：cited_evidence 非空 + 每条逐字命中被考 item 的真实证据。
+    if not mc.cited_evidence:
+        raise ModelRetry("cited_evidence 不能为空：题必须引用被考知识点的原文证据")
+    ghost = [quote for quote in mc.cited_evidence if quote not in valid_quotes]
+    if ghost:
+        raise ModelRetry(f"引用了不属于被考知识点的证据（幽灵引文）：{ghost}")
+    return mc

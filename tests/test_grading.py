@@ -9,8 +9,14 @@ from collections.abc import Sequence
 
 import pytest
 
-from grandquiz.domain.learning.grading import GradingError, Verdict, grade_answer
+from grandquiz.domain.learning.grading import (
+    GradingError,
+    Verdict,
+    grade_answer,
+    grade_multiple_choice,
+)
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem
+from grandquiz.domain.learning.question import MultipleChoiceQuestion
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Completion, Message, Role, Usage
@@ -140,6 +146,32 @@ class _RaisingProvider:
     async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
         self.calls += 1
         raise RuntimeError("网络超时")
+
+
+# --- M3.4 选择题确定性判卷（缝 2，纯代码不调 LLM）------------------------------------
+
+
+def _mc() -> MultipleChoiceQuestion:
+    return MultipleChoiceQuestion(
+        question="闭包捕获的是？",
+        options=["值的快照", "变量本身", "函数体"],
+        answer_index=1,
+        cited_evidence=[_QUOTE],
+    )
+
+
+@pytest.mark.parametrize(
+    ("chosen", "expected"),
+    [
+        ("变量本身", "对"),  # == options[answer_index] → 对
+        ("值的快照", "错"),  # 其它选项 → 错
+        ("函数体", "错"),
+        ("压根不在选项里的文本", "错"),  # 非选项文本 → 错（MC 无"勉强"）
+    ],
+)
+def test_grade_multiple_choice_is_deterministic(chosen: str, expected: str) -> None:
+    # 确定性判卷：所选项文本与正确项逐字比对，纯代码、不构造任何 provider / emitter。
+    assert grade_multiple_choice(chosen, _mc()) == expected
 
 
 async def test_provider_exception_closes_model_span_and_propagates() -> None:

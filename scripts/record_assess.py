@@ -21,6 +21,7 @@ from grandquiz.domain.learning.models import (
     LearningTask,
 )
 from grandquiz.domain.learning.responder import ScriptedResponder
+from grandquiz.domain.learning.selection import select_target
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
@@ -69,13 +70,21 @@ async def main() -> None:
     sink.subscribe(events.append)
     emitter = EventEmitter(sink, ManualClock(), trace_id="record-assess")
 
+    # M3.4 题型路由：把 seed 自然选中的 item 预置成"观察中"→ 路由到"开放"（标准出题 + LLM 判卷），
+    # 与 test_assess_replay 一致，故此 cassette 走 question_generate + answer_grade 两槽。
+    # fresh memory 会路由到选择题（MC 判卷是代码、无判卷槽），产出的是另一种 fixture。
+    memory = LearningMemory()
+    natural = select_target(store.items_for_task(task.task_id), rng=new_rng(_SEED)).item_id
+    memory.record_verdict(natural, "错")  # → 薄弱
+    memory.record_verdict(natural, "对")  # → 观察中
+
     try:
         result = await assess_once(
             task,
             store=store,
             provider=recording,
             responder=ScriptedResponder(answer=answer),
-            memory=LearningMemory(),
+            memory=memory,
             emitter=emitter,
             rng=new_rng(_SEED),
         )

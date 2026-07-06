@@ -11,7 +11,13 @@ from collections.abc import Sequence
 import pytest
 
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem
-from grandquiz.domain.learning.question import GeneratedQuestion, QuestionError, generate_question
+from grandquiz.domain.learning.question import (
+    GeneratedQuestion,
+    MultipleChoiceQuestion,
+    QuestionError,
+    generate_multiple_choice,
+    generate_question,
+)
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Completion, Message, Role, Usage
@@ -140,3 +146,139 @@ async def test_provider_exception_closes_model_span_and_propagates() -> None:
     assert [e.type for e in events] == [EventType.MODEL_STARTED, EventType.MODEL_ENDED]
     assert events[-1].payload["ok"] is False
     assert provider.calls == 1  # 基础设施异常不重试
+
+
+# --- M3.4 选择题出题（缝 3，MC 校验门）+ 追问 prompt 变体 ------------------------------
+
+
+def _mc_json(**overrides: object) -> str:
+    payload: dict[str, object] = {
+        "question": "闭包捕获的是什么？",
+        "options": ["值的快照", "变量本身"],
+        "answer_index": 1,
+        "cited_evidence": [_QUOTE],
+    }
+    payload.update(overrides)
+    return json.dumps(payload, ensure_ascii=False)
+
+
+async def test_valid_mc_output_becomes_multiple_choice() -> None:
+    provider = _FixedProvider(_mc_json())
+    emitter, events = _emitter()
+
+    mc = await generate_multiple_choice(
+        _item(), provider=provider, emitter=emitter, parent_span_id="a"
+    )
+
+    assert isinstance(mc, MultipleChoiceQuestion)
+    assert mc.options == ["值的快照", "变量本身"]
+    assert mc.answer_index == 1
+    assert mc.cited_evidence == [_QUOTE]
+    assert provider.calls == 1  # 首次即通过，无重试
+    assert provider.roles == ["enrich"]  # MC 出题也走 enrich 角色
+    assert [e.type for e in events] == [EventType.MODEL_STARTED, EventType.MODEL_ENDED]
+
+
+async def test_mc_too_few_options_retries_then_raises() -> None:
+    # 可判卷门：options < 2 → 无从比对 → ModelRetry 用尽 → QuestionError。
+    provider = _FixedProvider(_mc_json(options=["只有一项"], answer_index=0))
+    emitter, _ = _emitter()
+
+    with pytest.raises(QuestionError):
+        await generate_multiple_choice(
+            _item(), provider=provider, emitter=emitter, parent_span_id="a", max_attempts=2
+        )
+    assert provider.calls == 2
+
+
+async def test_mc_answer_index_out_of_range_retries_then_raises() -> None:
+    # 可判卷门：answer_index 越界 → ModelRetry 用尽 → QuestionError。
+    provider = _FixedProvider(_mc_json(answer_index=5))
+    emitter, _ = _emitter()
+
+    with pytest.raises(QuestionError):
+        await generate_multiple_choice(
+            _item(), provider=provider, emitter=emitter, parent_span_id="a", max_attempts=2
+        )
+    assert provider.calls == 2
+
+
+async def test_mc_empty_cited_evidence_retries_then_raises() -> None:
+    # 防幽灵题门：cited_evidence 为空 → ModelRetry 用尽 → QuestionError。
+    provider = _FixedProvider(_mc_json(cited_evidence=[]))
+    emitter, _ = _emitter()
+
+    with pytest.raises(QuestionError):
+        await generate_multiple_choice(
+            _item(), provider=provider, emitter=emitter, parent_span_id="a", max_attempts=2
+        )
+    assert provider.calls == 2
+
+
+async def test_mc_forged_citation_is_rejected_as_ghost_question() -> None:
+    # 防幽灵题门：引了不属于该 item 的伪造引文 → ModelRetry 用尽 → QuestionError。
+    provider = _FixedProvider(_mc_json(cited_evidence=["这句话材料里根本没有"]))
+    emitter, _ = _emitter()
+
+    with pytest.raises(QuestionError):
+        await generate_multiple_choice(
+            _item(), provider=provider, emitter=emitter, parent_span_id="a", max_attempts=3
+        )
+    assert provider.calls == 3
+
+
+async def test_mc_empty_option_retries_then_raises() -> None:
+    # 可判卷门：空 / 纯空白选项 → NonEmptyStr 拒 → ModelRetry 用尽 → QuestionError。
+    provider = _FixedProvider(_mc_json(options=["", "变量本身"], answer_index=1))
+    emitter, _ = _emitter()
+
+    with pytest.raises(QuestionError):
+        await generate_multiple_choice(
+            _item(), provider=provider, emitter=emitter, parent_span_id="a", max_attempts=2
+        )
+    assert provider.calls == 2
+
+
+async def test_mc_duplicate_options_retries_then_raises() -> None:
+    # 可判卷门：选项重复 → 文本比对判卷会被骗 → ModelRetry 用尽 → QuestionError。
+    provider = _FixedProvider(_mc_json(options=["变量本身", "变量本身"], answer_index=0))
+    emitter, _ = _emitter()
+
+    with pytest.raises(QuestionError):
+        await generate_multiple_choice(
+            _item(), provider=provider, emitter=emitter, parent_span_id="a", max_attempts=2
+        )
+    assert provider.calls == 2
+
+
+async def test_mc_provider_exception_closes_model_span_and_propagates() -> None:
+    # MC 出题同样：provider 基础设施异常 → 发 MODEL_ENDED(ok=False) 闭合 span，再原样冒泡、不重试。
+    provider = _RaisingProvider()
+    emitter, events = _emitter()
+
+    with pytest.raises(RuntimeError):
+        await generate_multiple_choice(
+            _item(), provider=provider, emitter=emitter, parent_span_id="a"
+        )
+    assert [e.type for e in events] == [EventType.MODEL_STARTED, EventType.MODEL_ENDED]
+    assert events[-1].payload["ok"] is False
+    assert provider.calls == 1
+
+
+async def test_probe_prompt_variant_reflected_in_trace_prompt_version() -> None:
+    # 追问复用 generate_question，仅换 prompt——断 model span 的 prompt_version 反映 probe 变体，
+    # 故 trace 能把追问题与标准开放题区分归因（eval 回归可定位到具体题型 prompt）。
+    provider = _FixedProvider(json.dumps({"question": "为什么？", "cited_evidence": [_QUOTE]}))
+    emitter, events = _emitter()
+
+    question = await generate_question(
+        _item(),
+        provider=provider,
+        emitter=emitter,
+        parent_span_id="a",
+        prompt_name="question_probe",
+    )
+
+    assert isinstance(question, GeneratedQuestion)  # 追问与开放共用 schema
+    started = next(e for e in events if e.type == EventType.MODEL_STARTED)
+    assert str(started.payload["prompt_version"]).startswith("question_probe@")
