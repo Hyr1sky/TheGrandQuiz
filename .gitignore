@@ -17,6 +17,9 @@ logs/
 *.db
 *.sqlite3
 
+# Agent worktrees (transient, harness-created for parallel AFK builds)
+.claude/worktrees/
+
 # Tooling caches
 .pytest_cache/
 .ruff_cache/
