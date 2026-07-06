@@ -1,6 +1,6 @@
 # M8-fix② — 无重复出题（代码记账的已问过台账 + 去重门）
 
-Status: ready-for-agent
+Status: done（merge 至 main 252b221；四门全绿 233 passed；grep SKELETON==台账未完成行==5）
 Type: AFK
 
 > 修真机 dogfood 暴露的"连续两轮题目内容完全相同"。复考锁定薄弱概念是设计意图（ADR-0003），
@@ -31,3 +31,17 @@ Type: AFK
 ## Blocked by
 
 None - can start immediately
+
+## Comments
+
+- 落地：会话内 `recently_asked: dict[item_id -> list[question]]`（`run_quiz` 持有、跨轮累积，`# SKELETON`）；
+  `assess_once` 加 `recently_asked=None`（默认无操作、向后兼容，保 04 eval + cassette 回放绿）；出题函数
+  加 `asked_before`，非空时注入「换角度」约束 + `_parse/_parse_mc` 归一化去重门→ModelRetry。不改 selection。
+- `dedup_key`/`is_duplicate` 取公有名（pyright strict 禁 import 下划线私有进测试；与 `apply_verdict`/
+  `build_span_tree` 同惯例）。`asked_before: Sequence[str] = ()`（ruff B006 禁可变默认）。
+- 终审对抗验证（correctness/determinism 两 lens 零发现）修一个 **MEDIUM**：台账此前只断长度不断内容，
+  `append("XXX")` 的 mutation 能存活——补断 `recently_asked[item_id] == 实际发出的题目文本`，并用 mutation
+  实测该断言会红。
+- 台账对账：补记了 73ebff0 漏登的 #7（考核轮次优雅降级）+ 新增 #8（去重台账）→ `grep SKELETON src/`==
+  台账未完成行==5，重新对齐。
+- 语义近重复（同题改写）仍放行——按 PRD 属 Tier-2 LLM-judge（二期），本 issue 只做归一化逐字去重。
