@@ -1,6 +1,6 @@
 # M8-fix③ — 选择题干扰项加硬（prompt + 确定性反-tell 门）
 
-Status: ready-for-agent
+Status: done（merge 至 main 6555fef；四门全绿 252 passed；eval 8/8）
 Type: AFK
 
 > 修真机 dogfood 暴露的"干扰项太弱、一眼可排除"。plausibility 的真打分是 Tier 2（LLM-judge，二期），
@@ -30,3 +30,15 @@ Type: AFK
 ## Blocked by
 
 None - can start immediately
+
+## Comments
+
+- 落地：`question_multiple_choice.md` 干扰项段升为硬约束+操作化；`_parse_mc` 并列新增 meta 门 +
+  长度离群门（保留 02 去重门 + 既有 grounding/可判卷门）。plausibility 真打分留 Tier 2。
+- 终审对抗验证修两处过激（build 门太激进）：meta 门原按 bare 子串 "都对"/"都不对" 匹配 → 误伤
+  "两者都对齐"/"指针都不对齐边界"（**MEDIUM**）→ 改按指代性前缀（以上/上述/综上）+ all/none of the
+  above 锚定匹配；长度门原双向（正确项独短也挡）→ 误伤"单一术语正解+长干扰"合法形态（**LOW**）→
+  改为只查"独长"一向。两处都补了回归测试并用 mutation 实测可杀。
+- stem-echo（题干回声）门刻意不做：中文无可靠分词、误报率高——留 Tier 2（brief 已授权此裁剪）。
+- prompt 内容哈希 bump（question_multiple_choice）；无 MC golden cassette，故 eval 8/8 仍绿、无 cassette
+  回放用例受影响。
