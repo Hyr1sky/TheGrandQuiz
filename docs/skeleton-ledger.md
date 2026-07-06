@@ -28,6 +28,7 @@ PRD 里的 **Out of Scope**（资源自动发现 / 向量库 / Web 前端 / 跨�
 | 5 | prompt 版本号 | ~~`MODEL_STARTED` 里手填 `prompt_version`~~ | prompt 模板独立存放（`prompts/*.md`）+ 内容 hash 版本号，trace 记版本号 | **✅ 已完成** | trace 能按 prompt 版本归因 eval 回归 | ✅ `domain/learning/prompts.py` + `prompts/reader_extract.md`（版本=内容 hash，Reader 加载） |
 | 6 | Responder（作答输入原语） | M3.2 落 `Responder` 协议 + `ScriptedResponder`；交互 CLI 落地后已加 `InteractiveResponder`（questionary 逐题问，见下节）——**交互形态已到**，仍缺"可挂起 / 可恢复"（凭 token 续答）一段 | 可挂起 / 可恢复的作答 turn（凭 token 恢复，跨 SSE / HTTP，与审批门同形） | **TBD**（随 `interfaces/api` 加固；**接口形状第一天按 `Responder` 协议定**，替换不改 `assess_once` 调用方） | ~~CLI 里逐题作答~~（✅ 已达）；关掉重开可凭 token 续答（仍缺） | ⬜ |
 | 7 | 考核轮次优雅降级 | CLI 边界 `try/except` 捕 `QuestionError` / `GradingError` → 跳过本轮（`app.py` 的 `run_quiz`）；`assess_once` 仍**原样冒泡**所有异常（保 eval / replay 契约，不吞 `ReplayMiss`） | kernel `RecoveryPolicy`：按异常类型统一裁决重试 / 跳过 / 挂起，跨所有 interface 生效，`assess_once` 调用方不再各自 `try/except` | **M6** | 出题 / 判卷失败由策略统一裁决、CLI 不再手写兜底 | ⬜ |
+| 8 | 已问过去重台账 | 会话内进程内 `dict[item_id -> list[question]]`（`app.py` 的 `run_quiz` 持有、跨轮累积，经 `assess_once` 下传出题函数做归一化去重） | 与 Learning Memory 并列的**跨会话 SQLite 去重表**（复用 kernel 参数化 `migrate`；关掉重开仍不重问旧题） | **TBD**（随跨会话去重需求或 `interfaces/api` 加固；**下传接口形状已按 `recently_asked` / `asked_before` 定**，替换不改 `assess_once` 调用方） | 关掉 CLI 重开、复考同一概念不再重问上次已问过的题 | ⬜ |
 
 其余 kernel 层（HookManager 异常隔离→M4、ContextBuilder→M5、Eval harness→M8）不是"假实现"而是
 "尚未上线的层"，其排期见 [roadmap.md](roadmap.md) 增量路线，不在本表重复。RecoveryPolicy（→M6）
@@ -144,6 +145,27 @@ SQLite 持久化，兑现两条验收信号（跨会话薄弱点持久 / 入库 
 
 **grep 对账（本次修复后）**：`grep -rn "SKELETON" src/` 应为 **4** 处（#3 approval / #4 reader /
 #6 responder / #7 优雅降级），与台账未完成行数 **4**（#3 / #4 / #6 / #7）一致——两边对齐。
+
+## M8-fix② 无重复出题落地的骨架标记
+
+M8 修真机 dogfood 的"连续两轮题目完全相同"（复考锁定薄弱概念是设计意图 / ADR-0003，要修的是
+"重问同一道题"）。修在**出题侧**（不动 selection，否则破坏薄弱优先复考）——引入 **#8 已问过去重台账**
+的**假件**（状态 ⬜，正式 SQLite 实现见里程碑 **TBD**）：
+
+- `run_quiz` 持有一份会话内进程内 `dict[item_id -> list[question]]`，跨轮累积；经 `assess_once` 的
+  `recently_asked` 形参（默认 `None` = 不去重、向后兼容）下传，出题函数收到被考 item 的已问列表
+  `asked_before`（默认空 = message / replay_key / prompt 版本号一字不变）。
+- 出题时把已问过的题注入 user message（"请换角度、勿重复"）；结构化输出门（`_parse` / `_parse_mc`）
+  加**归一化去重校验**（NFKC + 去空白 / 标点 + 转小写后命中即 `ModelRetry`，复用有界重试），即使 LLM
+  无视约束也保证重复题不到达学习者。dict 仍是假件——跨会话去重（关掉重开不重问旧题）留 SQLite 表。
+
+| 台账行 | 代码标记 | 位置 |
+|---|---|---|
+| #8 去重台账 | `# SKELETON` | `src/grandquiz/interfaces/cli/app.py`（`run_quiz` 持有的 `recently_asked` dict） |
+
+**grep 对账（M8-fix② 后）**：`grep -rn "SKELETON" src/` 应为 **5** 处（#3 approval / #4 reader /
+#6 responder / #7 优雅降级 / #8 去重台账），与台账未完成行数 **5**（#3 / #4 / #6 / #7 / #8）一致——
+两边对齐。
 
 ## 变更约定
 

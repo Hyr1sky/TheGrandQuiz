@@ -19,6 +19,8 @@ ADR-0004 的两个 LLM 槽之一（另一个是判卷）：出题走 **role=enri
 """
 
 import json
+import unicodedata
+from collections.abc import Sequence
 
 from pydantic import BaseModel, ValidationError
 
@@ -40,6 +42,32 @@ def _stable_error_summary(exc: ValidationError) -> str:
     让回放随 pydantic 版本漂移、毁掉逐字节回放（determinism 缝）。故只取稳定的 loc/type。
     """
     return "; ".join(f"{'.'.join(str(p) for p in e['loc'])}:{e['type']}" for e in exc.errors())
+
+
+def dedup_key(text: str) -> str:
+    """把一道题归一化成**去重 key**：NFKC + 去空白 / 标点 + 转小写后的裸文本（缝 2 纯函数）。
+
+    无重复出题门（缝 3）与会话内"已问过"台账都以此为相等判据。归一化吸收**表面差异**：
+    NFKC 把全 / 半角字母数字标点折叠一致；去所有空白（含中英文空格 / 制表 / 换行）与标点
+    （Unicode 类别以 ``P`` 开头）；``lower`` 抹平大小写。故"什么是闭包？"与" 什么是闭包 ?"
+    同 key、判为重复；换角度的题归一化后仍不同、放行——只挡逐字 / 近逐字重问同一道题
+    （语义近重复的判定属 Tier 2 LLM-judge，不在此确定性门内）。
+    """
+    normalized = unicodedata.normalize("NFKC", text)
+    return "".join(
+        ch.lower()
+        for ch in normalized
+        if not ch.isspace() and not unicodedata.category(ch).startswith("P")
+    )
+
+
+def is_duplicate(text: str, asked_before: Sequence[str]) -> bool:
+    """``text`` 归一化后命中 ``asked_before`` 里任一已问过的题 → True（缝 2 命中判定）。
+
+    空台账（首次出题、或不传台账的调用方）恒返回 False——去重是纯附加，不影响首题 / 既有调用方。
+    """
+    key = dedup_key(text)
+    return any(dedup_key(prev) == key for prev in asked_before)
 
 
 class QuestionError(Exception):
@@ -95,6 +123,7 @@ async def generate_question(
     max_attempts: int = 3,
     prompt_name: str = "question_generate",
     language: str = "中文",
+    asked_before: Sequence[str] = (),
 ) -> GeneratedQuestion:
     """为 ``item`` 产出一道 grounded 题；持续失败 → ``QuestionError``。见模块 docstring。
 
@@ -106,6 +135,10 @@ async def generate_question(
     用字面 ``str.replace`` 把模板里的 ``{{LANGUAGE}}`` 哨兵换成它（**不用 str.format**：模板含
     JSON schema 示例的字面花括号，format 会崩）。模板文件内容（含字面 ``{{LANGUAGE}}``）才是
     prompt 版本号的哈希对象，故版本号跨语言稳定；只有发出的 message 及 replay_key 按语言不同。
+    ``asked_before``：本会话内**已问过**该 item 的题目文本（会话内"已问过"台账，由 ``assess_once``
+    从 ``recently_asked`` 取被考 item 的已问列表下传，"LLM 判卷，代码记账"）。**仅当非空时**往 user
+    message 注入"请换角度、勿重复"的约束（为空时发出的 message 一字不改——保证首次出题及不传台账的
+    调用方 message / replay_key / prompt 版本不变），并在 ``_parse`` 的归一化去重门用它做重复判定。
     """
     if max_attempts < 1:
         raise ValueError("max_attempts 至少为 1")
@@ -125,6 +158,7 @@ async def generate_question(
             ),
         ),
     ]
+    _append_asked_before(base_messages, asked_before)
     retry_note: str | None = None
     last_error = ""
     for _ in range(max_attempts):
@@ -139,11 +173,28 @@ async def generate_question(
             prompt_version=prompt.version,
         )
         try:
-            return _parse(completion.text, valid_quotes)
+            return _parse(completion.text, valid_quotes, asked_before=asked_before)
         except ModelRetry as exc:
             last_error = str(exc)
             retry_note = f"上一次出题无法采用：{exc}。请只返回合法 JSON，且引用真实证据。"
     raise QuestionError(f"出题失败（{max_attempts} 次尝试仍无合法输出）：{last_error}")
+
+
+def _append_asked_before(messages: list[Message], asked_before: Sequence[str]) -> None:
+    """已问过台账非空时，往 user message 追加"请换角度、勿重复"的约束（为空则一字不改）。
+
+    出题与选择题出题共用（两处 ``base_messages`` 组装同一约束）。空台账时不追加任何 message——
+    保证首次出题及不传台账的调用方发出的 message / replay_key / prompt 版本号完全不变。
+    """
+    if not asked_before:
+        return
+    asked_block = "\n".join(f"- {q}" for q in asked_before)
+    messages.append(
+        Message(
+            role="user",
+            content=(f"已问过以下问题，请换一个角度提问、不要重复：\n{asked_block}"),
+        )
+    )
 
 
 async def _call_model(
@@ -186,7 +237,9 @@ async def _call_model(
     return completion
 
 
-def _parse(text: str, valid_quotes: set[str]) -> GeneratedQuestion:
+def _parse(
+    text: str, valid_quotes: set[str], asked_before: Sequence[str] = ()
+) -> GeneratedQuestion:
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -202,6 +255,10 @@ def _parse(text: str, valid_quotes: set[str]) -> GeneratedQuestion:
     ghost = ungrounded_citations(question.cited_evidence, valid_quotes)
     if ghost:
         raise ModelRetry(f"引用了不属于被考知识点的证据（幽灵引文）：{ghost}")
+    # 归一化去重门（缝 3）：新题归一化后命中会话内"已问过"台账 → ModelRetry（复用有界重试）。
+    # 即使 LLM 无视 user message 里的"换角度"约束，这道确定性门也保证重复题不会到达学习者。
+    if is_duplicate(question.question, asked_before):
+        raise ModelRetry("与已问过的题重复：请换一个角度提问，不要重复已考过的问题")
     return question
 
 
@@ -213,6 +270,7 @@ async def generate_multiple_choice(
     parent_span_id: str | None,
     max_attempts: int = 3,
     language: str = "中文",
+    asked_before: Sequence[str] = (),
 ) -> MultipleChoiceQuestion:
     """为 ``item`` 产一道锚定的选择题（首次接触概念的热身题型）；持续失败 → ``QuestionError``。
 
@@ -226,6 +284,8 @@ async def generate_multiple_choice(
     任一不满足 → ``ModelRetry``（反馈进下一次上下文）；重试预算耗尽 → ``QuestionError``。
     provider 传输异常照 ``_call_model`` 模式先闭合 model span 后原样冒泡（不吞）。
     ``language`` 同 ``generate_question``：字面替换模板 ``{{LANGUAGE}}`` 哨兵，版本号跨语言稳定。
+    ``asked_before`` 同 ``generate_question``：非空时注入"换角度"约束、并在 ``_parse_mc`` 归一化
+    去重门用作重复判定（为空则 message 一字不改）——会话内不重复出同一道选择题。
     """
     if max_attempts < 1:
         raise ValueError("max_attempts 至少为 1")
@@ -245,6 +305,7 @@ async def generate_multiple_choice(
             ),
         ),
     ]
+    _append_asked_before(base_messages, asked_before)
     retry_note: str | None = None
     last_error = ""
     for _ in range(max_attempts):
@@ -259,14 +320,16 @@ async def generate_multiple_choice(
             prompt_version=prompt.version,
         )
         try:
-            return _parse_mc(completion.text, valid_quotes)
+            return _parse_mc(completion.text, valid_quotes, asked_before=asked_before)
         except ModelRetry as exc:
             last_error = str(exc)
             retry_note = f"上一次出题无法采用：{exc}。请只返回合法 JSON，且引用真实证据。"
     raise QuestionError(f"选择题出题失败（{max_attempts} 次尝试仍无合法输出）：{last_error}")
 
 
-def _parse_mc(text: str, valid_quotes: set[str]) -> MultipleChoiceQuestion:
+def _parse_mc(
+    text: str, valid_quotes: set[str], asked_before: Sequence[str] = ()
+) -> MultipleChoiceQuestion:
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -292,4 +355,7 @@ def _parse_mc(text: str, valid_quotes: set[str]) -> MultipleChoiceQuestion:
     ghost = ungrounded_citations(mc.cited_evidence, valid_quotes)
     if ghost:
         raise ModelRetry(f"引用了不属于被考知识点的证据（幽灵引文）：{ghost}")
+    # 归一化去重门（缝 3，与开放题同规则）：题干归一化后命中会话内"已问过"台账 → ModelRetry。
+    if is_duplicate(mc.question, asked_before):
+        raise ModelRetry("与已问过的题重复：请换一个角度提问，不要重复已考过的问题")
     return mc

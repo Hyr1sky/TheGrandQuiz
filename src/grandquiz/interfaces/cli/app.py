@@ -131,6 +131,10 @@ async def run_quiz(
 
         sink = EventSink()
         sink.subscribe(QuizEventPrinter(console))
+        # SKELETON: 会话内进程内"已问过"台账（item_id → 已问过的题目文本），跨轮累积、经 assess_once
+        # 下传出题函数做去重——复考同一薄弱概念时每轮换角度、不逐字重问。正式版是与 Learning Memory
+        # 并列的跨会话 SQLite 去重表（跨会话持久），见 docs/skeleton-ledger.md #8。
+        recently_asked: dict[str, list[str]] = {}
         console.print(f"[bold]开始考核「{title}」——共 {rounds} 轮（Ctrl+C 随时退出）[/]")
         try:
             for round_index in range(rounds):
@@ -145,6 +149,7 @@ async def run_quiz(
                         memory=memory,
                         emitter=emitter,
                         rng=new_rng(seed + round_index),
+                        recently_asked=recently_asked,
                     )
                 except (QuestionError, GradingError) as exc:
                     # SKELETON(M6): 优雅降级本属 kernel RecoveryPolicy 统一裁决；MVP 先在 CLI 边界

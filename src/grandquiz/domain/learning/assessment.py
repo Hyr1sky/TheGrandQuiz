@@ -103,8 +103,16 @@ async def assess_once(
     memory: Memory,
     emitter: EventEmitter,
     rng: Rng,
+    recently_asked: dict[str, list[str]] | None = None,
 ) -> AssessmentResult:
-    """对 ``task`` 跑一轮单题考核，全程发事件。见模块 docstring。"""
+    """对 ``task`` 跑一轮单题考核，全程发事件。见模块 docstring。
+
+    ``recently_asked``：会话内**已问过**台账（item_id → 已问过的题目文本列表），由考核循环入口
+    （``run_quiz``）持有并跨轮累积、下传做去重（"LLM 判卷，代码记账"——已问过是代码持有的状态）。
+    默认 ``None`` = 不去重、向后兼容：既有测试 / eval harness 不传它时行为一字不变（出题函数收到
+    空 ``asked_before`` → message / replay_key / prompt 版本号不变）。取被考 item 的已问列表下传给
+    出题函数；成功发出 ``QUESTION_ASKED`` 后，把本轮新题文本追加进 ``recently_asked[item_id]``。
+    """
     # a. 开 assessment span（根）。此后任何未预期异常都必须闭合它（见末尾 except）。
     assessment_span = emitter.new_span_id()
     emitter.emit(_ASSESSMENT_STARTED, span_id=assessment_span, payload={"task_id": task.task_id})
@@ -132,6 +140,8 @@ async def assess_once(
 
         # e. 分型出题（role=enrich）+ 校验门（缝 3）。选择题走 MC 出题；追问用深挖 prompt 变体；
         #    开放走标准出题。三者都发 QUESTION_ASKED（带 question_type，锚定真实 item + 非空证据）。
+        #    从会话内"已问过"台账取被考 item 的已问列表下传做去重（None = 不去重、向后兼容）。
+        asked_before = recently_asked.get(target.item_id, []) if recently_asked is not None else []
         mc: MultipleChoiceQuestion | None = None
         if question_type == "选择题":
             mc = await generate_multiple_choice(
@@ -140,6 +150,7 @@ async def assess_once(
                 emitter=emitter,
                 parent_span_id=assessment_span,
                 language=task.language,
+                asked_before=asked_before,
             )
             question_text = mc.question
             asked_evidence = list(mc.cited_evidence)
@@ -152,6 +163,7 @@ async def assess_once(
                 parent_span_id=assessment_span,
                 prompt_name=prompt_name,
                 language=task.language,
+                asked_before=asked_before,
             )
             question_text = generated.question
             asked_evidence = list(generated.cited_evidence)
@@ -168,6 +180,9 @@ async def assess_once(
         emitter.emit(
             LearningEvent.QUESTION_ASKED, parent_span_id=assessment_span, payload=asked_payload
         )
+        # 记账：把本轮已出的题追加进会话内"已问过"台账，供后续复考该 item 时去重（代码记账）。
+        if recently_asked is not None:
+            recently_asked.setdefault(target.item_id, []).append(question_text)
 
         # f. 作答（注入的 responder，async）。选择题把 options 透传给 responder，开放 / 追问传 None
         #    （ScriptedResponder 忽略 options）。
