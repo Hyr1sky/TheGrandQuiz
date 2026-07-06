@@ -1,7 +1,10 @@
 # M3.3 — 薄弱记忆 + 状态机 + 薄弱优先复考
 
-Status: ready-for-agent
+Status: done（三态状态机 + 薄弱优先 + eval 4/5/6 完成，commit 4932a04，CI 全绿）
 Type: AFK
+
+> **纯确定性、无人机边界**：本增量全是代码（状态机 / 选题 / 销账），TDD 完成，无需真机调优。
+> Learning Memory 仍是 dict 假件（台账 #1，SKELETON M7）——跨会话持久化留给 M7。
 
 ## Parent
 
