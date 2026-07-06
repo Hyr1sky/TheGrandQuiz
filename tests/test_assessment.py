@@ -477,6 +477,66 @@ async def test_case6_one_correct_observes_two_correct_discharges() -> None:
     ) == ("观察中", "销账", 2)
 
 
+class _RecordingResponder:
+    """记录每次收到的 ``options``（async），恒返回注入 reply——断言 assess_once 的 options 透传。"""
+
+    def __init__(self, reply: str) -> None:
+        self._reply = reply
+        self.received_options: list[Sequence[str] | None] = []
+
+    async def answer(self, prompt: str, *, options: Sequence[str] | None = None) -> str:
+        self.received_options.append(options)
+        return self._reply
+
+
+async def test_mc_round_passes_options_to_responder() -> None:
+    # 选择题轮：assess_once 把 mc.options 透传给 responder（供交互式渲染成单选），与 QUESTION_ASKED
+    # 事件里的 options 是同一份候选。
+    store, task, _ids = _stocked_store()
+    memory = LearningMemory()
+    responder = _RecordingResponder(_MC_CORRECT)
+    emitter, events, trace = _harness()
+
+    result = await assess_once(
+        task,
+        store=store,
+        provider=_AssessProvider(verdict="对"),
+        responder=responder,
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+    )
+    trace.close()
+
+    assert result.question_type == "选择题"
+    assert responder.received_options == [[_MC_CORRECT, _MC_WRONG]]
+    asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
+    assert list(responder.received_options[0] or []) == asked.payload["options"]
+
+
+async def test_open_or_probe_round_passes_none_options_to_responder() -> None:
+    # 非选择题轮（薄弱 → 追问）：assess_once 传 options=None（自由作答，无候选项）。
+    store, task, item_ids = _stocked_store()
+    memory = LearningMemory()
+    memory.record_verdict(item_ids[0], "错")  # 薄弱 → 复考路由到追问（薄弱优先集只此一项）
+    responder = _RecordingResponder("我的作答")
+    emitter, _events, trace = _harness()
+
+    result = await assess_once(
+        task,
+        store=store,
+        provider=_AssessProvider(verdict="对"),
+        responder=responder,
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+    )
+    trace.close()
+
+    assert result.question_type == "追问"
+    assert responder.received_options == [None]
+
+
 async def _run_once(provider: Provider, emitter: EventEmitter) -> None:
     store, task, _ids = _stocked_store()
     await assess_once(

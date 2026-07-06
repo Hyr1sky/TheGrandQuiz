@@ -26,7 +26,7 @@ PRD 里的 **Out of Scope**（资源自动发现 / 向量库 / Web 前端 / 跨�
 | 3 | 审批门 | M3.1 已落 `ApprovalGate` 协议 + `ScriptedApprovalGate`（发 `approval.requested` 事件 + 脚本化决策）；CLI 阻塞 `prompt` 交互实现仍是后续 human 步骤 | 可挂起 / 可恢复 turn：凭 token 从待决状态恢复，跨 SSE / HTTP | **TBD**（随 `interfaces/api` 或专门加固；**接口形状第一天就按 suspend/resume 定**，故替换不改调用方） | 关掉 CLI 重开、凭 token 恢复同一次待审批会话 | ⬜ |
 | 4 | Reader subagent 执行器 | M3.1 内联调用（隔离上下文 + pydantic 校验 + ModelRetry 已是真的） | `kernel/subagent.py` 通用执行器 | 出现**第二个** subagent 时再抽（无独立 M，YAGNI） | 第二个 subagent 复用同一执行器、零重复 | ⬜ |
 | 5 | prompt 版本号 | ~~`MODEL_STARTED` 里手填 `prompt_version`~~ | prompt 模板独立存放（`prompts/*.md`）+ 内容 hash 版本号，trace 记版本号 | **✅ 已完成** | trace 能按 prompt 版本归因 eval 回归 | ✅ `domain/learning/prompts.py` + `prompts/reader_extract.md`（版本=内容 hash，Reader 加载） |
-| 6 | Responder（作答输入原语） | M3.2 已落 `Responder` 协议 + `ScriptedResponder`（注入固定 / 按序答案，确定性）；交互式 CLI Responder（阻塞 `prompt`）仍是后续 human 步骤 | 交互式 / 可挂起-恢复的作答 turn（凭 token 恢复，跨 SSE / HTTP，与审批门同形） | **TBD**（随 `interfaces/cli` 或 `interfaces/api`；**接口形状第一天按 `Responder` 协议定**，替换不改 `assess_once` 调用方） | CLI 里逐题作答；关掉重开可凭 token 续答 | ⬜ |
+| 6 | Responder（作答输入原语） | M3.2 落 `Responder` 协议 + `ScriptedResponder`；交互 CLI 落地后已加 `InteractiveResponder`（questionary 逐题问，见下节）——**交互形态已到**，仍缺"可挂起 / 可恢复"（凭 token 续答）一段 | 可挂起 / 可恢复的作答 turn（凭 token 恢复，跨 SSE / HTTP，与审批门同形） | **TBD**（随 `interfaces/api` 加固；**接口形状第一天按 `Responder` 协议定**，替换不改 `assess_once` 调用方） | ~~CLI 里逐题作答~~（✅ 已达）；关掉重开可凭 token 续答（仍缺） | ⬜ |
 
 其余 kernel 层（HookManager 异常隔离→M4、ContextBuilder→M5、RecoveryPolicy→M6、Eval harness→M8）
 不是"假实现"而是"尚未上线的层"，其排期见 [roadmap.md](roadmap.md) 增量路线，不在本表重复。
@@ -101,6 +101,27 @@ SQLite 持久化，兑现两条验收信号（跨会话薄弱点持久 / 入库 
 **grep 对账（M7 后）**：删除 `store.py` / `memory.py` 的 `# SKELETON(M7)` 标记后，
 `grep -rn "SKELETON" src/` 应为 **3** 处（#3 approval / #4 reader / #6 responder），与台账未完成行数
 **3** 一致——#1 / #2 已 ✅ 结清，两边对齐。
+
+## 交互 CLI 落地（#6 Responder 交互形态到位，suspend/resume 仍留后续）
+
+交互 CLI 把 **#6 Responder** 从"只有确定性 `ScriptedResponder`"推进到"交互形态已到"：
+
+- `Responder` 协议改 **async + 加 `options`**：`async def answer(self, prompt, *, options=None) -> str`。
+  `assess_once` 改 `await responder.answer(question_text, options=…)`——选择题透传 `mc.options`、
+  开放 / 追问传 `None`。`ScriptedResponder` 同步改 async（忽略 `options`），既有调用方（全经
+  `assess_once`）透明，无一处直接 `.answer()` 调用需改。
+- 新增 `interfaces/cli/InteractiveResponder`（questionary：`options` 非空 → `select` 单选，否则
+  `text` 自由输入；均用 `.ask_async()`，取消 → `KeyboardInterrupt` 由 quiz 命令捕获优雅退出）。
+- 新增 argparse 子命令路由（`interfaces/cli/app.py`，`grandquiz` 脚本入口指向它）：`ingest`
+  （读本地材料 → 真 Reader 深读 → keep-all 审批 → 入 SQLite）与 `quiz`（逐题交互考核，持久 SQLite，
+  薄弱点跨会话留存）。`QuizEventPrinter` 订阅事件流做 Rich 呈现——**CLI 是事件脊柱的消费者**。
+
+**仍留后续（故 #6 状态保持 ⬜、SKELETON 标记保留）**：可挂起 / 可恢复的作答 turn（凭 token 续答、
+跨 SSE / HTTP），随 `interfaces/api` 加固；接口形状已按 `Responder` 协议焊死，替换不改 `assess_once`。
+真机交互 tty 试跑（`grandquiz quiz` 逐题手答）属 human 步骤，不在 CI 内跑。
+
+**grep 对账（交互 CLI 后）**：`grep -rn "SKELETON" src/` 仍为 **3** 处（#3 approval / #4 reader /
+#6 responder），与台账未完成行数 **3** 一致——#6 交互形态到位但 suspend/resume 未了，标记不撤。
 
 ## 变更约定
 

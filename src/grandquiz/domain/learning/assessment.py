@@ -164,8 +164,11 @@ async def assess_once(
             LearningEvent.QUESTION_ASKED, parent_span_id=assessment_span, payload=asked_payload
         )
 
-        # f. 作答（注入的确定性 responder）。
-        answer = responder.answer(question_text)
+        # f. 作答（注入的 responder，async）。选择题把 options 透传给 responder，开放 / 追问传 None
+        #    （ScriptedResponder 忽略 options）。
+        answer = await responder.answer(
+            question_text, options=list(mc.options) if mc is not None else None
+        )
 
         # g. 分型判卷。选择题 → 确定性代码（**不调 LLM**，无判卷 model span）；开放 / 追问 → LLM
         #    判卷（role=basic）+ 校验门（缝 3）。两路统一得到 VerdictLabel + cited_evidence。
