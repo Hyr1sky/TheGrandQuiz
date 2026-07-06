@@ -32,3 +32,8 @@ class LearningEvent:
         "learning.question_asked"  # 出题：锚定真实 item + 非空 cited_evidence（case 3）
     )
     ANSWER_JUDGED = "learning.answer_judged"  # 判卷：verdict + weak_item_id（LLM 判卷，代码记账）
+
+    # M3.3 薄弱记忆 + 三态状态机：每轮判卷后代码记账（写 Learning Memory）都发此事件、把记账结果
+    # 上脊柱（eval case 4 / 6，payload 含 from_state / to_state / consecutive_correct）。
+    # **无转移时也发**（如答对未追踪概念 → from/to 皆 None），保证每轮记账都可断言、事件序列稳定。
+    CONCEPT_STATE_CHANGED = "learning.concept_state_changed"

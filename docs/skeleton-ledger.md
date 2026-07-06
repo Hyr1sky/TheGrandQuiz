@@ -63,6 +63,24 @@ M3.2 **不引入** #1 Learning Memory 的 dict 假件——单题竖切只发 `A
 #6 responder）。台账未完成行为 **5**（#1~#4、#6），差的一处仍是 **#1 Learning Memory**——M3.2 未触及，
 其 dict 假件将在 M3.3 引入选题 / 销账时补上代码标记。届时 grep 数应回到与未完成行数一致。
 
+## M3.3 薄弱记忆 + 三态状态机落地的骨架标记
+
+M3.3（判卷后代码记账：三态状态机 + 连对销账 + 薄弱优先复考）引入 **#1 Learning Memory** 的
+dict 假件（状态仍 ⬜，正式 SQLite 实现见里程碑 **M7**）：
+
+| 台账行 | 代码标记 | 位置 |
+|---|---|---|
+| #1 Learning Memory | `# SKELETON(M7)` | `src/grandquiz/domain/learning/memory.py`（`LearningMemory` 纯 dict：锚定 `item_id` 存 三态 + 连对计数 + 判决历史；`apply_verdict` 是纯函数状态机） |
+
+至此考核循环的后半段（选题 / 判卷 / 销账）在事件脊柱上打通：`selection.select_target` 接
+`memory` 走薄弱优先候选集（签名向后兼容，`memory=None` 退化全集），`assess_once` 判卷后由代码
+调 `memory.record_verdict` 记三态账并发 `learning.concept_state_changed`。dict 仍是假件——
+跨会话持久（重启后仍薄弱优先出题）留给 **M7** 用 SQLite 支持的 Memory 抽象替换，届时调用方签名不变。
+
+**grep 对账（M3.3 后）**：`grep -rn "SKELETON" src/` 应为 **5** 处（#1 memory / #2 store /
+#3 approval / #4 reader / #6 responder），与台账未完成行数 **5**（#1~#4、#6）一致——欠账已全部记账，
+两边对齐。
+
 ## 变更约定
 
 - 每个引入 / 消除骨架欠账的 PR，**必须同步改本表**（加行 / 改状态 / 删代码标记），与 issue 一一对应。

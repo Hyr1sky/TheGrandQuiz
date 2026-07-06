@@ -7,18 +7,19 @@ ADR-0004："LLM 判卷，代码记账"。这里的骨架是确定性代码：选
     assessment（根 span）
     ├── model（出题的 model span[enrich]，挂 assessment 下）
     └── model（判卷的 model span[basic]，挂 assessment 下）
-    · assessment_refused / question_asked / answer_judged 皆 parent=assessment span 的点事件
-      （无 span_id，不进树）
+    · assessment_refused / question_asked / answer_judged / concept_state_changed 皆
+      parent=assessment span 的点事件（无 span_id，不进树）
 
 失败分两支（照 ingest）：
 - **领域优雅分支**：空知识库 → 发 ``ASSESSMENT_REFUSED``（``reason=empty_kb``）+ 优雅返回
-  ``status="refused"``，**不调任何 LLM**（eval case 2）。
+  ``status="refused"``，**不调任何 LLM**、**不碰 memory**（eval case 2）。
 - **基础设施 / harness 失败**（``QuestionError`` / ``GradingError`` / ``ReplayMiss`` / provider 传输
   异常 / bug）→ 闭合 assessment span 后**原样冒泡**（不吞成 refused 以免掩盖 harness 错误；
   优雅降级属 M6 RecoveryPolicy）。
 
-M3.2 只发 ``ANSWER_JUDGED``（含 ``verdict`` + ``weak_item_id``），**不写任何记忆库**——薄弱状态机
-转移 / 销账 / 薄弱优先选题是 M3.3 的活。
+M3.3（薄弱记忆 + 三态状态机 + 薄弱优先复考）：选题读 ``memory`` 走薄弱优先候选集；判卷后由**代码**
+（非 LLM）调 ``memory.record_verdict`` 做三态转移 / 连对销账，并发 ``CONCEPT_STATE_CHANGED``
+（在 ``ANSWER_JUDGED`` 之后、``assessment.ended`` 之前）。体现 ADR-0004："LLM 判卷，代码记账"。
 """
 
 from typing import Literal
@@ -27,6 +28,7 @@ from pydantic import BaseModel
 
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.grading import VerdictLabel, grade_answer
+from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import LearningTask
 from grandquiz.domain.learning.question import generate_question
 from grandquiz.domain.learning.responder import Responder
@@ -47,14 +49,18 @@ _WEAK_VERDICTS: frozenset[VerdictLabel] = frozenset({"勉强", "错"})
 class AssessmentResult(BaseModel):
     """一次单题考核的结果：``refused``（空库拒答）或 ``judged``（出题 → 答 → 判卷完成）。
 
-    ``status="refused"`` 时 item_id / verdict / weak_item_id 皆 None；``status="judged"`` 时据本轮
-    考核填充（``weak_item_id`` 是代码按 ``verdict`` 算出的记账结果，非 LLM 产）。
+    ``status="refused"`` 时 item_id / verdict / weak_item_id / concept_state 皆 None；
+    ``status="judged"`` 时据本轮考核填充（``weak_item_id`` 是代码按 ``verdict`` 算出的记账结果，
+    非 LLM 产）。``concept_state`` 是本轮记账后被考 item 在 Learning Memory 里的**最终状态**快照
+    （薄弱 / 观察中，或 None=未追踪 / 已销账）——透出记账结果，便于直接断言，与 CONCEPT_STATE_CHANGED
+    事件互补（事件携完整转移，此处只留终态）。
     """
 
     status: Literal["refused", "judged"]
     item_id: str | None = None
     verdict: VerdictLabel | None = None
     weak_item_id: str | None = None
+    concept_state: str | None = None
 
 
 async def assess_once(
@@ -63,6 +69,7 @@ async def assess_once(
     store: LearningStore,
     provider: Provider,
     responder: Responder,
+    memory: LearningMemory,
     emitter: EventEmitter,
     rng: Rng,
 ) -> AssessmentResult:
@@ -86,8 +93,8 @@ async def assess_once(
             )
             return AssessmentResult(status="refused")
 
-        # c. 选题（确定性，种子化 rng）。薄弱优先候选集是 M3.3 的内部升级、签名不变。
-        target = select_target(items, rng=rng)
+        # c. 选题（确定性，种子化 rng）。有薄弱概念时代码构造薄弱优先候选集（新概念不进集）。
+        target = select_target(items, rng=rng, memory=memory)
 
         # d. 出题（role=enrich）+ 校验门（缝 3）。发 QUESTION_ASKED（锚定真实 item + 非空证据）。
         question = await generate_question(
@@ -130,7 +137,22 @@ async def assess_once(
             },
         )
 
-        # h. 闭合 assessment span。
+        # h. 代码记三态账（LLM 判卷、代码记账）：写 Learning Memory 并把转移上脊柱。
+        #    三态转移 / 连对销账全在 memory 的纯代码里；这里只把结果发成 CONCEPT_STATE_CHANGED
+        #    （在 ANSWER_JUDGED 之后、assessment.ended 之前）。
+        transition = memory.record_verdict(target.item_id, verdict.verdict)
+        emitter.emit(
+            LearningEvent.CONCEPT_STATE_CHANGED,
+            parent_span_id=assessment_span,
+            payload={
+                "item_id": transition.item_id,
+                "from_state": transition.from_state,
+                "to_state": transition.to_state,
+                "consecutive_correct": transition.consecutive_correct,
+            },
+        )
+
+        # i. 闭合 assessment span。
         emitter.emit(
             _ASSESSMENT_ENDED, span_id=assessment_span, payload={"ok": True, "status": "judged"}
         )
@@ -139,6 +161,7 @@ async def assess_once(
             item_id=target.item_id,
             verdict=verdict.verdict,
             weak_item_id=weak_item_id,
+            concept_state=memory.state_of(target.item_id),
         )
     except Exception as exc:
         # 非领域异常（QuestionError / GradingError / ReplayMiss / provider 基础设施错误 / bug）：

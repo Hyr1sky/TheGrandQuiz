@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import cast
 
 from grandquiz.domain.learning.assessment import assess_once
+from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import (
     Evidence,
     KnowledgeItem,
@@ -73,6 +74,7 @@ async def test_recorded_assessment_replays_deterministically_without_live_calls(
         store=store,
         provider=replay,  # 纯回放：命中即返回、未命中 ReplayMiss；绝不触网、不烧 token
         responder=ScriptedResponder(answer=_DEFAULT_ANSWER),
+        memory=LearningMemory(),
         emitter=emitter,
         rng=new_rng(_SEED),
     )
@@ -80,8 +82,10 @@ async def test_recorded_assessment_replays_deterministically_without_live_calls(
     assert result.status == "judged"
     assert result.verdict in _VERDICTS
     assert result.item_id is not None
-    # 代码记账与 verdict 一致：错 / 勉强 → weak_item_id 为被考 item；对 → None。
+    # 代码记账与 verdict 一致：错 / 勉强 → weak_item_id 为被考 item + 状态薄弱；对 → 未追踪。
     if result.verdict in {"错", "勉强"}:
         assert result.weak_item_id == result.item_id
+        assert result.concept_state == "薄弱"
     else:
         assert result.weak_item_id is None
+        assert result.concept_state is None

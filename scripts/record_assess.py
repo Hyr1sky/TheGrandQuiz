@@ -13,6 +13,7 @@ from pathlib import Path
 
 from grandquiz.domain.learning.assessment import assess_once
 from grandquiz.domain.learning.events import LearningEvent
+from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import (
     Evidence,
     KnowledgeItem,
@@ -74,6 +75,7 @@ async def main() -> None:
             store=store,
             provider=recording,
             responder=ScriptedResponder(answer=answer),
+            memory=LearningMemory(),
             emitter=emitter,
             rng=new_rng(_SEED),
         )
