@@ -11,8 +11,8 @@
 只读 ``event.payload``（脊柱契约：consumer 视 payload 为只读），不认识的事件类型静默略过。
 
 所有动态文本（作答 / LLM 题干选项 / 证据引文正解）插入前一律 ``rich.markup.escape``——真实内容常
-含 ``[...]`` 等 markup 元字符，未转义会让 Rich 抛 ``MarkupError``、经 EventSink 冒泡炸掉整轮考核
-（EventSink 不隔离订阅者异常，那是 M4 HookManager 的职责）。
+含 ``[...]`` 等 markup 元字符，未转义会让 Rich 抛 ``MarkupError``。``EventSink.publish`` 现已隔离
+订阅者异常（一个坏订阅者不再炸整轮），但转义仍是本消费者该做的正确防御：别把渲染搞乱、也别只靠隔离兜底。
 """
 
 from rich.console import Console

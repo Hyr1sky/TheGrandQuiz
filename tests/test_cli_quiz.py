@@ -161,7 +161,7 @@ def test_concept_state_change_renders_transition() -> None:
 
 def test_printer_escapes_markup_in_dynamic_text() -> None:
     # HIGH 修复：动态文本（作答/题干/选项/正解）含 markup 元字符（[/]、[bold]、未闭合的 [/red）
-    # 不能让 Rich 抛 MarkupError 炸掉整轮考核（EventSink 不隔离订阅者异常）——一律 escape。
+    # 不能让 Rich 抛 MarkupError——一律 escape（EventSink 现已隔离订阅者异常，转义仍是正确防御）。
     console = Console(record=True, width=80)
     printer = QuizEventPrinter(console)
     printer(
