@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, ValidationError
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.events import EventEmitter, EventType
+from grandquiz.kernel.recovery import ErrorClass
 from grandquiz.providers.base import Completion, Message, Provider
 
 
@@ -48,7 +49,10 @@ class ReaderError(Exception):
     """Reader 深读失败——有界重试用尽仍拿不到合法 ``ReaderOutput``。
 
     ingest 视其为"深读失败"：走与 fetch 失败同一分支（资源标记 failed、不产 item）。
+    ``error_class = RESOURCE_UNREADABLE`` 供 kernel ``RecoveryPolicy`` / 事件归因（单资源不可读）。
     """
+
+    error_class = ErrorClass.RESOURCE_UNREADABLE
 
 
 class ModelRetry(Exception):

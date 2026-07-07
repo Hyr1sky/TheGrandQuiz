@@ -27,12 +27,12 @@ PRD 里的 **Out of Scope**（资源自动发现 / 向量库 / Web 前端 / 跨�
 | 4 | Reader subagent 执行器 | M3.1 内联调用（隔离上下文 + pydantic 校验 + ModelRetry 已是真的） | `kernel/subagent.py` 通用执行器 | 出现**第二个** subagent 时再抽（无独立 M，YAGNI） | 第二个 subagent 复用同一执行器、零重复 | ⬜ |
 | 5 | prompt 版本号 | ~~`MODEL_STARTED` 里手填 `prompt_version`~~ | prompt 模板独立存放（`prompts/*.md`）+ 内容 hash 版本号，trace 记版本号 | **✅ 已完成** | trace 能按 prompt 版本归因 eval 回归 | ✅ `domain/learning/prompts.py` + `prompts/reader_extract.md`（版本=内容 hash，Reader 加载） |
 | 6 | Responder（作答输入原语） | M3.2 落 `Responder` 协议 + `ScriptedResponder`；交互 CLI 落地后已加 `InteractiveResponder`（questionary 逐题问，见下节）——**交互形态已到**，仍缺"可挂起 / 可恢复"（凭 token 续答）一段 | 可挂起 / 可恢复的作答 turn（凭 token 恢复，跨 SSE / HTTP，与审批门同形） | **TBD**（随 `interfaces/api` 加固；**接口形状第一天按 `Responder` 协议定**，替换不改 `assess_once` 调用方） | ~~CLI 里逐题作答~~（✅ 已达）；关掉重开可凭 token 续答（仍缺） | ⬜ |
-| 7 | 考核轮次优雅降级 | CLI 边界 `try/except` 捕 `QuestionError` / `GradingError` → 跳过本轮（`app.py` 的 `run_quiz`）；`assess_once` 仍**原样冒泡**所有异常（保 eval / replay 契约，不吞 `ReplayMiss`） | kernel `RecoveryPolicy`：按异常类型统一裁决重试 / 跳过 / 挂起，跨所有 interface 生效，`assess_once` 调用方不再各自 `try/except` | **M6** | 出题 / 判卷失败由策略统一裁决、CLI 不再手写兜底 | ⬜ |
+| 7 | 考核轮次优雅降级 | ~~CLI 边界 `try/except` 捕 `QuestionError` / `GradingError` → 跳过本轮~~ | kernel `RecoveryPolicy` + `ErrorClass`：读异常自带的 `error_class` 标统一裁决（`DEGRADED`→跳过 / 其余→冒泡），发 `RECOVERY_DECIDED` 上脊柱；`assess_once` 仍原样冒泡（签名逻辑一行不改）；CLI 不再硬编码 `except (QuestionError, GradingError)` | **M6** | 出题 / 判卷失败由策略统一裁决、CLI 不再手写异常清单兜底 | ✅ `kernel/recovery.py`（`ErrorClass` / `Decision` / `classify` / `RecoveryPolicy.decide`）；domain / providers 异常自标 `error_class`（`kernel↛domain` 门下不 `isinstance`）；`run_quiz` 改 `policy.decide` |
 | 8 | 已问过去重台账 | 会话内进程内 `dict[item_id -> list[question]]`（`app.py` 的 `run_quiz` 持有、跨轮累积，经 `assess_once` 下传出题函数做归一化去重） | 与 Learning Memory 并列的**跨会话 SQLite 去重表**（复用 kernel 参数化 `migrate`；关掉重开仍不重问旧题） | **TBD**（随跨会话去重需求或 `interfaces/api` 加固；**下传接口形状已按 `recently_asked` / `asked_before` 定**，替换不改 `assess_once` 调用方） | 关掉 CLI 重开、复考同一概念不再重问上次已问过的题 | ⬜ |
 
 其余 kernel 层（HookManager 异常隔离→M4、ContextBuilder→M5、Eval harness→M8）不是"假实现"而是
-"尚未上线的层"，其排期见 [roadmap.md](roadmap.md) 增量路线，不在本表重复。RecoveryPolicy（→M6）
-的 CLI 临时兜底已作为 **#7** 记账（那是"假实现"，故进表；层本身的排期仍见 roadmap）。
+"尚未上线的层"，其排期见 [roadmap.md](roadmap.md) 增量路线，不在本表重复。RecoveryPolicy（M6）
+的 CLI 临时兜底曾作为 **#7** 记账，现已由 `kernel/recovery.py` 正式化并结清（见本表 #7 与末节）。
 
 ## M3.1 ingest 竖切落地的骨架标记
 
@@ -166,6 +166,28 @@ M8 修真机 dogfood 的"连续两轮题目完全相同"（复考锁定薄弱概
 **grep 对账（M8-fix② 后）**：`grep -rn "SKELETON" src/` 应为 **5** 处（#3 approval / #4 reader /
 #6 responder / #7 优雅降级 / #8 去重台账），与台账未完成行数 **5**（#3 / #4 / #6 / #7 / #8）一致——
 两边对齐。
+
+## M6 RecoveryPolicy + ErrorClass 正式化落地（#7 结清）
+
+M6 把 **#7 考核轮次优雅降级** 从"CLI 边界硬编码 `except (QuestionError, GradingError)`"正式化为
+kernel 级统一裁决，兑现验收信号（出题 / 判卷失败由策略裁决、CLI 不再手写异常清单）。落地要点：
+
+- **不 `isinstance`、改异常自标**：`kernel↛domain` 已是 import-linter CI 门（issue 03），`recovery.py`
+  不能 import 领域异常。故分类只读异常自带的 `error_class` 标——`QuestionError` / `GradingError` →
+  `DEGRADED`，`FetchError` / `ReaderError` → `RESOURCE_UNREADABLE`，`ReplayMiss` → `FATAL`（各自
+  import kernel `ErrorClass`，domain / providers→kernel 是合法方向）。**未带标 → 默认 FATAL**（大声
+  失败，宁可冒泡不静默降级）。
+- **裁决极简、确定**：`classify` 纯函数；`RecoveryPolicy.decide` 无墙上时钟 / random——`DEGRADED`
+  → `SKIP`，其余（`FATAL` / `RESOURCE_UNREADABLE` / 未知）→ `PROPAGATE`。故 `ReplayMiss` 必冒泡、
+  **绝不 `SKIP`**（决策 6：eval / replay 契约不可破）。
+- **裁决上脊柱**：`decide` 发 `EventType.RECOVERY_DECIDED`（payload 含 error / error_class /
+  decision）——比旧的"静默冒泡"更可观测 / 可回放。
+- **`assess_once` 签名逻辑一行不改**（仍原样 raise；eval harness 里 `ReplayMiss` 照样硬失败）；
+  `run_quiz` 删硬编码 `except (QuestionError, GradingError)` + `SKELETON(M6)`，改 `policy.decide`。
+
+**grep 对账（M6 后）**：删除 `app.py` 的 `# SKELETON(M6)` 标记后，`grep -rn "SKELETON" src/` 应为
+**4** 处（#3 approval / #4 reader / #6 responder / #8 去重台账），与台账未完成行数 **4**（#3 / #4 /
+#6 / #8）一致——#7 已 ✅ 结清，两边对齐。
 
 ## 变更约定
 

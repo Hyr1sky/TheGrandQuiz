@@ -24,18 +24,17 @@ from rich.markup import escape
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.assessment import assess_once
-from grandquiz.domain.learning.grading import GradingError
 from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.models import LearningTask
 from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY, SqlitePreferenceMemory
-from grandquiz.domain.learning.question import QuestionError
 from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.interfaces.cli.interactive import InteractiveResponder
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
 from grandquiz.kernel.clock import SystemClock, new_rng
 from grandquiz.kernel.events import EventEmitter, EventSink
+from grandquiz.kernel.recovery import Decision, RecoveryPolicy
 from grandquiz.kernel.report import render_trace_html
 from grandquiz.kernel.trace import Span, TraceStore, build_span_tree
 from grandquiz.providers.base import Provider
@@ -157,8 +156,9 @@ async def run_quiz(
 
     ``QuizEventPrinter`` 订阅事件流做 Rich 呈现（CLI = 事件脊柱的投影）。``responder`` 取消作答
     （``InteractiveResponder`` 抛 ``KeyboardInterrupt``）→ 优雅退出本次会话、仍打印已积累的薄弱点。
-    某轮出题 / 判卷重试用尽（``QuestionError`` / ``GradingError``）→ 只跳过该轮、继续下一轮，不崩
-    整场会话（M6 RecoveryPolicy 的临时兜底，见 docs/skeleton-ledger.md #7）。
+    某轮失败由 kernel ``RecoveryPolicy`` 统一裁决：``DEGRADED``（出题 / 判卷重试用尽）→ 跳过该轮
+    继续下一轮；其余（``ReplayMiss`` 等 ``FATAL`` / 未知异常）→ 原样冒泡（绝不静默吞，保 eval /
+    replay 契约）。裁决经异常自带的 ``error_class`` 标做出、并发 ``RECOVERY_DECIDED`` 上脊柱。
     ``rng`` 用可变种子（CLI 非 replay）：每轮 ``new_rng(seed + 轮次)``。
 
     ``prefer_lang``：非 None 时先显式把 ``question_language`` 偏好写进持久 SQLite（跨会话留存），
@@ -194,6 +194,7 @@ async def run_quiz(
         sink.register(trace_store)  # 消费者即 processor：真机事件流落独立 trace 库
         # 一个 emitter 贯穿全会话：跨轮共享 trace_id，seq / span id 单调唯一（不逐轮重置、不撞号）。
         emitter = EventEmitter(sink, SystemClock(), trace_id=trace_id)
+        policy = RecoveryPolicy(emitter)  # 每轮失败统一裁决（读异常 error_class 标、发事件上脊柱）
         # SKELETON: 会话内进程内"已问过"台账（item_id → 已问过的题目文本），跨轮累积、经 assess_once
         # 下传出题函数做去重——复考同一薄弱概念时每轮换角度、不逐字重问。正式版是与 Learning Memory
         # 并列的跨会话 SQLite 去重表（跨会话持久），见 docs/skeleton-ledger.md #8。
@@ -214,14 +215,15 @@ async def run_quiz(
                         recently_asked=recently_asked,
                         preferences=preferences,
                     )
-                except (QuestionError, GradingError) as exc:
-                    # SKELETON(M6): 优雅降级本属 kernel RecoveryPolicy 统一裁决；MVP 先在 CLI 边界
-                    # 兜底——出题 / 判卷重试用尽（LLM 未能产合法输出）只跳过本轮、不崩整场会话。
-                    # 刻意只兜这两类"本轮可恢复"失败：assess_once 仍原样冒泡所有异常（保 eval /
-                    # replay 契约——ReplayMiss / provider 传输错误等会话级失败不该被静默吞），
-                    # 由 CLI 这个生产界面自行选择降级策略。见 docs/skeleton-ledger.md。
-                    console.print(f"[yellow]本轮跳过（{escape(str(exc))}）[/]")
-                    continue
+                except Exception as exc:
+                    # 统一裁决：assess_once 按契约原样冒泡一切异常（保 eval / replay——不吞
+                    # ReplayMiss 等 harness 错误）；本界面把裁决权交给 kernel RecoveryPolicy——
+                    # DEGRADED（出题 / 判卷重试用尽）→ 跳过本轮继续；其余（FATAL / 未知）→ 冒泡。
+                    # 分类只读异常自带的 error_class 标（kernel 领域无关），未带标 → FATAL 冒泡。
+                    if policy.decide(exc) is Decision.SKIP:
+                        console.print(f"[yellow]本轮跳过（{escape(str(exc))}）[/]")
+                        continue
+                    raise
         except KeyboardInterrupt:
             console.print("\n[dim]已退出本次考核会话。[/]")
 

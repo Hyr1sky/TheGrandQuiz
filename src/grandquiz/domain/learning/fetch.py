@@ -10,13 +10,18 @@ import hashlib
 from collections.abc import Callable, Collection
 from urllib.parse import urlparse
 
+from grandquiz.kernel.recovery import ErrorClass
+
 
 class FetchError(Exception):
     """抓取失败的归一异常——域名不在白名单 / 超大小上限 / 注入源抛异常都收敛成它。
 
     调用方据此把资源标记 ``failed``、发 ``RESOURCE_FETCH_FAILED``，不产生幽灵 item
     （eval case 7）。深读链路的"部分失败"应经它优雅降级，而非炸掉整条 ingest。
+    ``error_class = RESOURCE_UNREADABLE`` 供 kernel ``RecoveryPolicy`` / 事件归因（单资源不可读）。
     """
+
+    error_class = ErrorClass.RESOURCE_UNREADABLE
 
 
 def fetch_resource(

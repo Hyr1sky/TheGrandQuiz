@@ -26,6 +26,7 @@ class EventType:
     TURN_ENDED = "turn.ended"
     MODEL_STARTED = "model.started"
     MODEL_ENDED = "model.ended"
+    RECOVERY_DECIDED = "recovery.decided"
     ERROR = "error"
 
 

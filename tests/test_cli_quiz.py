@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import pytest
 from rich.console import Console
 
 from grandquiz.domain.learning.events import LearningEvent
@@ -28,6 +29,7 @@ from grandquiz.interfaces.cli.app import run_ingest, run_quiz
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
 from grandquiz.kernel.events import AgentEvent
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.replay import ReplayMiss
 
 _QUOTE = "闭包捕获变量而非值"
 _MC_CORRECT = "正确选项"
@@ -88,6 +90,13 @@ class _BrokenProvider:
     async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
         self.calls += 1
         return Completion(text="这不是 JSON", usage=Usage(prompt_tokens=1, completion_tokens=1))
+
+
+class _ReplayMissProvider:
+    """出题槽即抛 ReplayMiss（FATAL）：模拟 cassette 缺录 / harness bug，必须冒泡不被跳过。"""
+
+    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+        raise ReplayMiss("cassette 无此响应")
 
 
 def _make_event(event_type: str, payload: dict[str, Any]) -> AgentEvent:
@@ -310,3 +319,25 @@ async def test_run_quiz_skips_round_on_question_error_without_crashing(tmp_path:
     memory = SqliteLearningMemory(db)
     assert memory.weak_item_ids() == set()
     memory.close()
+
+
+async def test_run_quiz_propagates_fatal_error_never_swallowed(tmp_path: Path) -> None:
+    # ReplayMiss（FATAL）必冒泡出 run_quiz——RecoveryPolicy 裁 PROPAGATE，绝不静默"跳过本轮"
+    # （决策 6：eval / replay 契约不可破）。mutation：若 CLI 无条件 continue 或 ReplayMiss 被误标
+    # DEGRADED，异常会被吞、本测试红。
+    db = tmp_path / "learning.db"
+    _stock_sqlite(db, "React")
+    console = Console(record=True, width=100)
+
+    with pytest.raises(ReplayMiss):
+        await run_quiz(
+            title="React",
+            rounds=1,
+            db_path=db,
+            provider=_ReplayMissProvider(),
+            responder=ScriptedResponder(answer="x"),
+            console=console,
+            seed=3,
+        )
+
+    assert "本轮跳过" not in console.export_text()  # 绝不降级为跳过

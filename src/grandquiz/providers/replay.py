@@ -11,11 +11,18 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from grandquiz.kernel.recovery import ErrorClass
 from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
 
 
 class ReplayMiss(Exception):
-    """回放时键未命中——大声失败，绝不返回一个静默的错误答案。"""
+    """回放时键未命中——大声失败，绝不返回一个静默的错误答案。
+
+    ``error_class = FATAL``（决策 6）：cassette 缺录是 harness bug，kernel ``RecoveryPolicy`` 必
+    ``PROPAGATE``、**绝不** ``SKIP``——否则会把 eval / replay 配置错误静默吞成"本轮跳过"。
+    """
+
+    error_class = ErrorClass.FATAL
 
 
 def replay_key(messages: Sequence[Message], role: Role, model_id: str) -> str:

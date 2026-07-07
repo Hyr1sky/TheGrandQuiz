@@ -23,6 +23,7 @@ from grandquiz.domain.learning.models import (
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.question import MultipleChoiceQuestion
 from grandquiz.kernel.events import EventEmitter, EventType
+from grandquiz.kernel.recovery import ErrorClass
 from grandquiz.providers.base import Completion, Message, Provider
 
 # 判决三值——出题 / 判卷 / 记账全链路共用的枚举（assessment 的 AssessmentResult 亦复用之）。
@@ -49,8 +50,11 @@ def _stable_error_summary(exc: ValidationError) -> str:
 class GradingError(Exception):
     """判卷失败——有界重试用尽仍拿不到合法 ``Verdict``。
 
-    非领域优雅分支：``assess_once`` 视其为基础设施级失败，闭合 assessment span 后原样冒泡。
+    ``assess_once`` 视其为基础设施级失败、闭合 assessment span 后原样冒泡；``error_class``
+    标 ``DEGRADED`` 示"本轮可恢复"——由 kernel ``RecoveryPolicy`` 统一裁决为跳过本轮。
     """
+
+    error_class = ErrorClass.DEGRADED
 
 
 class ModelRetry(Exception):

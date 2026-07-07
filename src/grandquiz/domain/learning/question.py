@@ -32,6 +32,7 @@ from grandquiz.domain.learning.models import (
 )
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.events import EventEmitter, EventType
+from grandquiz.kernel.recovery import ErrorClass
 from grandquiz.providers.base import Completion, Message, Provider
 
 
@@ -115,9 +116,11 @@ def has_length_outlier(options: Sequence[str], answer_index: int) -> bool:
 class QuestionError(Exception):
     """出题失败——有界重试用尽仍拿不到合法、锚定真实证据的 ``GeneratedQuestion``。
 
-    非领域优雅分支：``assess_once`` 视其为基础设施级失败，闭合 assessment span 后原样冒泡
-    （不掩盖）；优雅降级属 M6 RecoveryPolicy。
+    ``assess_once`` 视其为基础设施级失败、闭合 assessment span 后原样冒泡（不掩盖）；
+    ``error_class = DEGRADED`` 标示"本轮可恢复"——由 kernel ``RecoveryPolicy`` 统一裁决为跳过本轮。
     """
+
+    error_class = ErrorClass.DEGRADED
 
 
 class ModelRetry(Exception):
