@@ -23,6 +23,7 @@ dev = [
     "pytest-asyncio>=0.24",
     "pre-commit>=4.0",
     "pyyaml>=6.0.3",
+    "import-linter>=2.0",
 ]
 
 [build-system]
@@ -64,3 +65,18 @@ venv = ".venv"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+# import-linter：把"kernel 领域无关"从 grep 约定升为 CI 自动门（issue 03）
+# kernel 是通用 Agent Runtime，禁止依赖任何上层（domain/interfaces/evals）。
+[tool.importlinter]
+root_package = "grandquiz"
+
+[[tool.importlinter.contracts]]
+name = "kernel 不得依赖上层（domain/interfaces/evals）"
+type = "forbidden"
+source_modules = ["grandquiz.kernel"]
+forbidden_modules = [
+    "grandquiz.domain",
+    "grandquiz.interfaces",
+    "grandquiz.evals",
+]
