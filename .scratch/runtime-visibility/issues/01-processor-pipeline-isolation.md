@@ -1,7 +1,13 @@
 # Processor 管线 + 异常隔离（kernel）
 
-Status: ready-for-agent
+Status: done（merge 至 main 6908b84；四门全绿 274 passed；两 mutation 门坐实隔离宽度）
 Type: AFK
+
+> 终审记：向后兼容路线（subscribe 保留 + register 新增 + 逐订阅者异常隔离），零 blast radius。
+> 现有三消费者仍以 callable 经 subscribe 注册（隔离对其同样生效）——**register() 的首个真生产调用方是
+> issue 02**（真机落 trace 把 TraceStore 作为 processor register），届时"消费者即 processor"自然兑现。
+> 补两 mutation 门：收窄成 except RuntimeError 会红（即当初 rich MarkupError 那类）、放宽成 except
+> BaseException 会红（Ctrl-C 必须冒泡）；顺手修 printer.py / test_cli_quiz.py 里过时的"不隔离"注释。
 
 > 事件脊柱的订阅者形式化：把可观测能力做成"加一个 processor"，并闭掉 EventSink 不隔离订阅者异常的
 > 已知坑（当初 Rich markup 崩的根因）。为后续 OTLP 导出留口。与 issue 03 可并行（文件不重叠）。

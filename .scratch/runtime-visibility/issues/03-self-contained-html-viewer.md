@@ -1,7 +1,13 @@
 # 自包含 HTML 渲染器（kernel 纯函数）
 
-Status: ready-for-agent
+Status: done（merge 至 main c7ef396；四门全绿 274 passed；HIGH span-森林测试门补齐）
 Type: AFK
+
+> 终审记：build 因 StructuredOutput 返回失败没自动跑对抗验证——我补跑了 4 路。修一个 HIGH：span 森林
+> 此前无独立断言（turn/model 也出现在事件流，删掉整片 span 渲染仍绿）→ 补断 <details class=span> +
+> 每 span latency/token 徽章（值 span 独有、异于 meta）+ meta 块独立断言。自包含检查从"无 https:// 子串"
+> （会误伤含 URL 的真机 payload）改为"无加载外部资源构造"。渲染器加固：meta/事件按序（determinism）+
+> json.dumps default=str。**本 issue 只交付纯渲染器；接 CLI 是 issue 04。**
 
 > "show, don't tell" 的载体：把一条 trace 渲染成可点开 / 截图 / commit 的自包含 HTML。
 > eval 报告与真机 trace 视图共用同一渲染器（eval 用例本身就是一条 trace）。对标 inspect_ai Inspect View。
