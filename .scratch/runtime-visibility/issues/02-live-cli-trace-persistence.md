@@ -1,7 +1,13 @@
 # 真机落 trace（CLI 注册 TraceStore processor + 独立 trace 库）
 
-Status: ready-for-agent
+Status: done（merge 至 main 43c3ddb；四门全绿 277 passed；assess_once/ingest_resource diff=0）
 Type: AFK
+
+> 终审记：run_quiz/run_ingest 经 issue 01 的 register(processor) 注册 TraceStore（register() 首个真
+> 生产调用方）落独立 trace.db；assess_once/ingest_resource 字节级不变。修：默认 trace 路径此前无测（生产
+> 路径）→ 补默认路径测试（mutation 实测可杀"塌回 learning.db"）；run_ingest store 泄漏 → 挪进 try +
+> None-guard；同路径 footgun（trace 静默为空）→ _resolve_trace_db 大声 ValueError。run_quiz 改整会话
+> 单 EventEmitter（一条 trace / 每轮一棵 assessment 根）。
 
 > 闭掉调查抓到的洞：真机 dogfood 的 CLI 目前不落 trace（只有 eval 装配订阅 TraceStore）。
 > 让真实考核 / 入库会话持久化，重启后可回看。可观测是脊柱投影——考核 workflow 逻辑零侵入。
