@@ -38,13 +38,15 @@ def test_migrate_default_creates_events_table() -> None:
 
 def test_migrate_learning_dir_creates_learning_tables() -> None:
     # 指向 domain learning migrations：建出 learning 四表，且不含 kernel 的 events 表（各自独立）。
-    # user_version = 已应用的最高迁移编号：0001（建四表）+ 0002（tasks 补 language 列）→ 2。
     conn = connect(":memory:")
     migrate(conn, _LEARNING_MIGRATIONS)
     tables = _tables(conn)
     assert tables >= _LEARNING_TABLES
     assert "events" not in tables
-    assert _user_version(conn) == 2
+    # user_version 抬到已应用迁移的最高编号（新增迁移文件时自动跟随，不写死具体数字——
+    # 与 migrate 内部"按文件名前导整数取最高"的推进逻辑一致）。
+    highest = max(int(p.name.split("_", 1)[0]) for p in _LEARNING_MIGRATIONS.glob("*.sql"))
+    assert _user_version(conn) == highest
     conn.close()
 
 

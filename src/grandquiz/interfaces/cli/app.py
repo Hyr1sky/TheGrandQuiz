@@ -7,7 +7,7 @@ CLI 是事件脊柱的消费者：``quiz`` 把 ``QuizEventPrinter`` 订阅到考
 ``run_quiz`` 把 provider / responder / console 作参数注入，故可测的粘合（文件读取 / 存在性检查 /
 空库分支 / 薄弱小结 / 事件呈现）都能用假件驱动断言，不碰真实 tty 或 LLM。
 
-无子命令 → 打印帮助（旧 ``repl.py`` 入口仍可用，见 ``repl.main``）。
+无子命令 → 打印帮助。
 """
 
 import argparse
@@ -28,6 +28,7 @@ from grandquiz.domain.learning.grading import GradingError
 from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.models import LearningTask
+from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY, SqlitePreferenceMemory
 from grandquiz.domain.learning.question import QuestionError
 from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import SqliteLearningStore
@@ -150,6 +151,7 @@ async def run_quiz(
     console: Console,
     seed: int,
     trace_db_path: Path | None = None,
+    prefer_lang: str | None = None,
 ) -> None:
     """对 ``title`` 任务跑 ``rounds`` 轮逐题考核；空库 → 提示先 ingest。会话结束打印薄弱点小结。
 
@@ -158,6 +160,10 @@ async def run_quiz(
     某轮出题 / 判卷重试用尽（``QuestionError`` / ``GradingError``）→ 只跳过该轮、继续下一轮，不崩
     整场会话（M6 RecoveryPolicy 的临时兜底，见 docs/skeleton-ledger.md #7）。
     ``rng`` 用可变种子（CLI 非 replay）：每轮 ``new_rng(seed + 轮次)``。
+
+    ``prefer_lang``：非 None 时先显式把 ``question_language`` 偏好写进持久 SQLite（跨会话留存），
+    再下传 Preference Memory 给 ``assess_once``——出题语言按 **偏好 > task 默认 > 中文** 覆盖。
+    偏好台账**每次会话都构造并下传**（哪怕本次未设），故上次会话设过的语言偏好本次仍生效。
 
     **每次会话一个 ``trace_id``**（一个 ``EventEmitter`` 贯穿全部轮次，故 ``seq`` / span id 跨轮
     唯一、落库后是一条 trace、每轮一棵 assessment 根 span）；发射的 AgentEvent 流经
@@ -168,6 +174,10 @@ async def run_quiz(
     _ensure_parent(db_path)
     store = SqliteLearningStore(db_path)
     memory = SqliteLearningMemory(db_path)
+    preferences = SqlitePreferenceMemory(db_path)  # 偏好与 store / memory 共用同一 learning db
+    if prefer_lang is not None:
+        # 显式设置出题语言偏好（confidence 恒 1.0），跨会话留存、后续覆盖 task 默认语言。
+        preferences.set_preference(QUESTION_LANGUAGE_KEY, prefer_lang)
     trace_store: TraceStore | None = None  # 空库分支不落 trace（无会话）；在 finally 里择机关闭
     try:
         task = LearningTask.create(title)
@@ -202,6 +212,7 @@ async def run_quiz(
                         emitter=emitter,
                         rng=new_rng(seed + round_index),
                         recently_asked=recently_asked,
+                        preferences=preferences,
                     )
                 except (QuestionError, GradingError) as exc:
                     # SKELETON(M6): 优雅降级本属 kernel RecoveryPolicy 统一裁决；MVP 先在 CLI 边界
@@ -219,6 +230,7 @@ async def run_quiz(
     finally:
         store.close()
         memory.close()
+        preferences.close()
         if trace_store is not None:
             trace_store.close()
 
@@ -315,7 +327,9 @@ async def _run_ingest_cli(*, title: str, material_path: Path, db_path: Path) -> 
         await provider.aclose()
 
 
-async def _run_quiz_cli(*, title: str, rounds: int, db_path: Path) -> None:
+async def _run_quiz_cli(
+    *, title: str, rounds: int, db_path: Path, prefer_lang: str | None = None
+) -> None:
     # 先查库（不构造 provider）：空库 / 错任务直接给指引——无需 LLM key，也免去无谓 HTTP 客户端。
     console = Console()
     _ensure_parent(db_path)
@@ -338,6 +352,7 @@ async def _run_quiz_cli(*, title: str, rounds: int, db_path: Path) -> None:
             responder=InteractiveResponder(),
             console=console,
             seed=int(time.time()),  # CLI 非 replay：可变种子（每次会话不同选题次序）
+            prefer_lang=prefer_lang,
         )
     finally:
         await provider.aclose()
@@ -356,6 +371,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_quiz.add_argument("title", help="学习任务标题")
     p_quiz.add_argument("--rounds", type=int, default=_DEFAULT_ROUNDS, help="考核轮数")
     p_quiz.add_argument("--db", type=Path, default=_DEFAULT_DB, help="SQLite 库路径")
+    p_quiz.add_argument(
+        "--prefer-lang",
+        default=None,
+        help="显式设出题语言偏好（如 英文 / en），跨会话留存并覆盖任务默认语言",
+    )
 
     p_report = sub.add_parser("report", help="跑 eval harness → 导出自包含 HTML 报告")
     p_report.add_argument(
@@ -394,7 +414,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
     elif args.command == "quiz":
         with contextlib.suppress(KeyboardInterrupt):
-            asyncio.run(_run_quiz_cli(title=args.title, rounds=args.rounds, db_path=args.db))
+            asyncio.run(
+                _run_quiz_cli(
+                    title=args.title,
+                    rounds=args.rounds,
+                    db_path=args.db,
+                    prefer_lang=args.prefer_lang,
+                )
+            )
     elif args.command == "report":
         # 报告不碰 provider / learning 库：全确定性假件驱动 harness，纯导出 HTML。
         from grandquiz.evals.harness import export_html_report
