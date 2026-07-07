@@ -15,7 +15,7 @@ import asyncio
 import contextlib
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -35,7 +35,8 @@ from grandquiz.interfaces.cli.interactive import InteractiveResponder
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
 from grandquiz.kernel.clock import SystemClock, new_rng
 from grandquiz.kernel.events import EventEmitter, EventSink
-from grandquiz.kernel.trace import TraceStore
+from grandquiz.kernel.report import render_trace_html
+from grandquiz.kernel.trace import Span, TraceStore, build_span_tree
 from grandquiz.providers.base import Provider
 from grandquiz.providers.llm import OpenAICompatProvider
 
@@ -246,6 +247,60 @@ def _print_weak_summary(
         console.print(f"  · {concept_by_id.get(item_id, item_id)} — {state}")
 
 
+# --- 导出子命令（report / trace → 自包含 HTML）------------------------------------------------
+#
+# 复用 issue 03 的 kernel.report.render_trace_html——两命令共用同一渲染器，绝不重实现渲染。
+
+
+def _sum_span_tokens(spans: Iterable[Span]) -> int:
+    """递归汇总 span 森林的 token 用量（复用 ``Span.tokens``，其底层是 ``Usage.total_tokens``）。"""
+    total = 0
+    for span in spans:
+        if span.tokens is not None:
+            total += span.tokens
+        total += _sum_span_tokens(span.children)
+    return total
+
+
+def export_trace_html(
+    trace_id: str,
+    *,
+    trace_db_path: Path,
+    out_path: Path | None = None,
+    console: Console | None = None,
+) -> Path:
+    """从独立 trace 库按 ``trace_id`` 读出某次会话 → ``render_trace_html`` → 写自包含 HTML 文件。
+
+    读不到该 ``trace_id`` → **大声报错**（抛 ``ValueError``），绝不静默产出空报告。默认输出路径为
+    trace 库同目录的 ``trace-<id>.html``。返回产出文件路径。
+    """
+    store = TraceStore(trace_db_path)
+    try:
+        events = store.events(trace_id)
+    finally:
+        store.close()
+    if not events:
+        raise ValueError(
+            f"trace 未找到：{trace_id}（库 {trace_db_path}）"
+            "——确认 trace_id 与 --trace-db 正确（每次会话结束会打印 trace_id + 库位置）"
+        )
+    spans = build_span_tree(events)
+    meta: dict[str, object] = {
+        "trace_id": trace_id,
+        "event_count": len(events),
+        "total_tokens": _sum_span_tokens(spans),
+    }
+    document = render_trace_html(events, spans, meta=meta, title=f"Trace {trace_id}")
+    resolved_out = (
+        out_path if out_path is not None else trace_db_path.parent / f"trace-{trace_id}.html"
+    )
+    _ensure_parent(resolved_out)
+    resolved_out.write_text(document, encoding="utf-8")
+    if console is not None:
+        console.print(f"[bold green]trace HTML 已导出：[/]{escape(str(resolved_out))}")
+    return resolved_out
+
+
 async def _run_ingest_cli(*, title: str, material_path: Path, db_path: Path) -> None:
     provider = OpenAICompatProvider.from_env()
     try:
@@ -302,6 +357,23 @@ def _build_parser() -> argparse.ArgumentParser:
     p_quiz.add_argument("--rounds", type=int, default=_DEFAULT_ROUNDS, help="考核轮数")
     p_quiz.add_argument("--db", type=Path, default=_DEFAULT_DB, help="SQLite 库路径")
 
+    p_report = sub.add_parser("report", help="跑 eval harness → 导出自包含 HTML 报告")
+    p_report.add_argument(
+        "--out", type=Path, default=None, help="报告输出目录（默认 ~/.grandquiz/eval-report）"
+    )
+
+    p_trace = sub.add_parser("trace", help="按 trace_id 从 trace 库导出自包含 HTML")
+    p_trace.add_argument("trace_id", help="要导出的会话 trace_id（会话结束时打印过）")
+    p_trace.add_argument(
+        "--db", type=Path, default=_DEFAULT_DB, help="learning 库路径（派生默认 trace 库位置）"
+    )
+    p_trace.add_argument(
+        "--trace-db", type=Path, default=None, help="独立 trace 库路径（默认同目录 trace.db）"
+    )
+    p_trace.add_argument(
+        "--out", type=Path, default=None, help="输出 HTML 文件（默认 trace-<id>.html）"
+    )
+
     return parser
 
 
@@ -323,6 +395,24 @@ def main(argv: Sequence[str] | None = None) -> None:
     elif args.command == "quiz":
         with contextlib.suppress(KeyboardInterrupt):
             asyncio.run(_run_quiz_cli(title=args.title, rounds=args.rounds, db_path=args.db))
+    elif args.command == "report":
+        # 报告不碰 provider / learning 库：全确定性假件驱动 harness，纯导出 HTML。
+        from grandquiz.evals.harness import export_html_report
+
+        console = Console()
+        out_dir = args.out if args.out is not None else _DEFAULT_DB.parent / "eval-report"
+        index_path = asyncio.run(export_html_report(out_dir))
+        console.print(f"[bold green]eval 报告已导出：[/]{escape(str(index_path))}（浏览器打开）")
+    elif args.command == "trace":
+        console = Console()
+        trace_db = _resolve_trace_db(args.db, args.trace_db)
+        try:
+            export_trace_html(
+                args.trace_id, trace_db_path=trace_db, out_path=args.out, console=console
+            )
+        except (ValueError, OSError) as exc:  # 读不到 id / 库路径问题 → 大声报错 + 非零退出
+            console.print(f"[red]{escape(str(exc))}[/]")
+            raise SystemExit(1) from exc
     else:
         parser.print_help()
 

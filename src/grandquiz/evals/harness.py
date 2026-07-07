@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -44,6 +45,7 @@ from grandquiz.domain.learning.selection import select_target
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
+from grandquiz.kernel.report import render_trace_html
 from grandquiz.kernel.trace import Span, TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
 
@@ -678,6 +680,121 @@ def render_report(reports: list[CaseReport]) -> str:
         for failure in r.failures:
             lines.append(f"    ✗ {failure}")
     return "\n".join(lines)
+
+
+# --- HTML 导出（附加：不改 run_case / run_all 的 pass/fail，也不改文本 render_report）-----------
+#
+# 复用 issue 03 的 kernel.report.render_trace_html 渲染每用例详情——一个 eval 用例本身就是一条
+# trace。索引页是本报告独有的跨用例汇总表（render_trace_html 只渲染单条 trace，不提供汇总），故
+# 在此另建一个小内联页；per-case 详情一律复用 render_trace_html，绝不重实现 trace 渲染。
+
+_REPORT_INDEX_CSS = """
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 1.5rem;
+  font: 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: #fafafa; color: #1b1b1b;
+}
+h1 { font-size: 1.2rem; margin: 0 0 0.75rem; }
+table.cases { border-collapse: collapse; width: 100%; overflow-x: auto; display: block; }
+table.cases th, table.cases td {
+  text-align: left; padding: 0.3rem 0.7rem; border-bottom: 1px solid #e2e2e2; vertical-align: top;
+}
+table.cases th { color: #666; font-weight: 600; }
+td.pass { color: #197f19; font-weight: 700; }
+td.fail { color: #b00; font-weight: 700; }
+tr.fail-detail td { color: #b00; }
+a { color: inherit; }
+@media (prefers-color-scheme: dark) {
+  body { background: #16181d; color: #d6d6d6; }
+  table.cases th, table.cases td { border-color: #262a31; }
+  td.pass { color: #5fbf5f; }
+  td.fail, tr.fail-detail td { color: #ff6b6b; }
+}
+"""
+
+
+def _render_report_index(reports: list[CaseReport]) -> str:
+    """跨用例汇总索引页（自包含、内联 CSS）：逐用例 pass/fail + token + prompt 版本，行链到详情页。
+
+    纯呈现：所有动态文本（case id / prompt 版本 / 失败明细）经 ``html.escape`` 转义后注入；相对链接
+    ``<a href="{id}.html">`` 指向同目录的每用例详情（各自自包含、无外部请求）。
+    """
+    passed = sum(r.passed for r in reports)
+    rows: list[str] = []
+    for r in reports:
+        mark = "PASS" if r.passed else "FAIL"
+        cls = "pass" if r.passed else "fail"
+        prompts = ", ".join(r.prompt_versions) if r.prompt_versions else "—"
+        href = html.escape(f"{r.case_id}.html", quote=True)
+        rows.append(
+            "<tr>"
+            f'<td><a href="{href}">{html.escape(r.case_id)}</a></td>'
+            f"<td>{html.escape(r.kind)}</td>"
+            f'<td class="{cls}">{mark}</td>'
+            f"<td>{r.total_tokens}</td>"
+            f"<td>{html.escape(prompts)}</td>"
+            "</tr>"
+        )
+        for failure in r.failures:  # 失败明细挂在该行下方（红字），便于一眼定位
+            cell = f'<td colspan="4">✗ {html.escape(failure)}</td>'
+            rows.append(f'<tr class="fail-detail"><td></td>{cell}</tr>')
+    body = (
+        f"<h1>Eval 报告 · {passed}/{len(reports)} 通过</h1>"
+        '<table class="cases"><thead><tr>'
+        "<th>case</th><th>kind</th><th>pass</th><th>tokens</th><th>prompts</th>"
+        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    )
+    return (
+        "<!doctype html>"
+        '<html lang="zh"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        "<title>Eval 报告</title>"
+        f"<style>{_REPORT_INDEX_CSS}</style>"
+        f"</head><body>{body}</body></html>"
+    )
+
+
+async def _solve_events_spans(case: Case) -> tuple[list[AgentEvent], list[Span]]:
+    """取某用例的 events + span 森林（供 render_trace_html）；solve 抛异常 → 空（详情页仍生成）。
+
+    与 ``run_case`` 各自独立 solve（run_case 的 pass/fail 判定保持权威、一行不改）；harness 全确定性
+    且快，重复 solve 可忽略。硬失败用例（solve 冒泡）不该炸掉整份报告——降级为无 span 的详情页。
+    """
+    try:
+        solved = await solve(case)
+    except Exception:  # 报告生成对任何 solve 异常降级，绝不中断全批导出
+        return [], []
+    return solved.events, solved.spans
+
+
+async def export_html_report(out_dir: Path) -> Path:
+    """跑 eval harness → 导出可点开的自包含 HTML：索引页 + 每用例一份 render_trace_html 详情。
+
+    多文件布局：``<out_dir>/index.html``（汇总表：逐用例 pass/fail + token + prompt 版本，链到详情）
+    + ``<out_dir>/<case_id>.html``（复用 issue 03 的 ``render_trace_html`` 渲染该用例的 span 树 +
+    事件流）。各文件相对链接、各自自包含、零外部请求。返回索引页路径。
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    reports: list[CaseReport] = []
+    for case in load_cases():
+        report = await run_case(case)  # 权威 pass/fail（不改）
+        events, spans = await _solve_events_spans(case)
+        meta: dict[str, Any] = {
+            "case_id": report.case_id,
+            "kind": report.kind,
+            "verdict": "PASS" if report.passed else "FAIL",
+            "total_tokens": report.total_tokens,
+            "prompt_versions": ", ".join(report.prompt_versions) if report.prompt_versions else "—",
+            "event_count": len(events),
+        }
+        detail = render_trace_html(events, spans, meta=meta, title=f"用例 {report.case_id}")
+        (out_dir / f"{report.case_id}.html").write_text(detail, encoding="utf-8")
+        reports.append(report)
+    index_path = out_dir / "index.html"
+    index_path.write_text(_render_report_index(reports), encoding="utf-8")
+    return index_path
 
 
 def main() -> int:
