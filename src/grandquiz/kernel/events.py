@@ -24,6 +24,12 @@ class EventType:
 
     TURN_STARTED = "turn.started"
     TURN_ENDED = "turn.ended"
+    # 有界 tool-calling 循环（run_agent_turn）：AGENT_TURN 是根 span，其下嵌 MODEL / TOOL_CALL。
+    # 命名沿用 ``<prefix>.started`` / ``.ended`` 约定，故 build_span_tree 无需改动即成对折叠。
+    AGENT_TURN_STARTED = "agent_turn.started"
+    AGENT_TURN_ENDED = "agent_turn.ended"
+    TOOL_CALL_STARTED = "tool_call.started"
+    TOOL_CALL_ENDED = "tool_call.ended"
     MODEL_STARTED = "model.started"
     MODEL_ENDED = "model.ended"
     RECOVERY_DECIDED = "recovery.decided"

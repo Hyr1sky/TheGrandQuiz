@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from grandquiz.kernel.recovery import ErrorClass
-from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
+from grandquiz.providers.base import Completion, Message, Provider, Role, ToolCall, Usage
 
 
 class ReplayMiss(Exception):
@@ -30,9 +30,13 @@ def replay_key(messages: Sequence[Message], role: Role, model_id: str) -> str:
 
     messages 走确定性 JSON（``sort_keys`` + 紧凑分隔符）；role / model_id 拼进被 hash 的原文，
     保证不同角色 / 模型即使 messages 相同也不撞键。
+
+    ``exclude_none`` 是刻意的：Message 后加的 ``tool_calls`` / ``tool_call_id`` 对纯文本消息为
+    None，被排除后其序列化与加 tool 字段前逐字节一致——既有 on-disk cassette（键是旧 schema 算的）
+    在 tool-calling 落地后仍命中，不失效。
     """
     messages_json = json.dumps(
-        [m.model_dump() for m in messages],
+        [m.model_dump(exclude_none=True) for m in messages],
         sort_keys=True,
         ensure_ascii=False,
         separators=(",", ":"),
@@ -64,15 +68,24 @@ class Cassette:
         if entry is None:
             return None
         usage_data: Any = entry.get("usage", {})
-        return Completion(text=str(entry["text"]), usage=Usage(**usage_data))
+        # tool_calls 可选：只有出工具的 completion 才带此键；纯文本条目仍是旧形状（无该键）。
+        tool_calls_data: Any = entry.get("tool_calls")
+        tool_calls = (
+            [ToolCall(**tc) for tc in tool_calls_data] if tool_calls_data is not None else None
+        )
+        return Completion(text=str(entry["text"]), tool_calls=tool_calls, usage=Usage(**usage_data))
 
     def put(self, key: str, completion: Completion, *, role: Role, model_id: str) -> None:
-        self._entries[key] = {
+        entry: dict[str, Any] = {
             "role": role,
             "model": model_id,
             "text": completion.text,
             "usage": completion.usage.model_dump(),
         }
+        # 只在真有工具调用时写 tool_calls 键——纯文本 completion 落盘形状不变（既有 cassette 不脏）。
+        if completion.tool_calls is not None:
+            entry["tool_calls"] = [tc.model_dump() for tc in completion.tool_calls]
+        self._entries[key] = entry
 
 
 class RecordingProvider:
