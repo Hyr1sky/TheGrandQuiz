@@ -175,6 +175,32 @@ def test_task_round_trip_with_and_without_domain() -> None:
     assert got is not None and got.domain == "理科"
 
 
+def test_task_round_trip_preserves_non_default_language() -> None:
+    # language 往返保真：默认中文与显式非中文都须原样存取（mutation：不写 / 不读 language 列 →
+    # English task 退回默认"中文" → 红）。
+    store = _sqlite()
+    chinese = LearningTask.create("React")  # 默认"中文"
+    english = LearningTask.create("Algorithms", language="English")
+    store.add_task(chinese)
+    store.add_task(english)
+    assert store.get_task(chinese.task_id) == chinese
+    got = store.get_task(english.task_id)
+    assert got == english
+    assert got is not None and got.language == "English"
+
+
+def test_matches_dict_store_on_task_language() -> None:
+    # dict↔SQLite parity 覆盖 language：同一 task 喂两版，读回逐字段相等（含 language）。
+    dict_store = LearningStore()
+    sqlite_store = _sqlite()
+    task = LearningTask.create("Algorithms", domain="CS", language="English")
+    for store in (dict_store, sqlite_store):
+        store.add_task(task)
+    assert sqlite_store.get_task(task.task_id) == dict_store.get_task(task.task_id)
+    got = sqlite_store.get_task(task.task_id)
+    assert got is not None and got.language == "English"
+
+
 def test_add_items_is_idempotent_overwrite() -> None:
     # INSERT OR REPLACE：同 item_id 二次入库覆盖、不重复成行（同 dict 版覆盖语义）。
     store = _sqlite()

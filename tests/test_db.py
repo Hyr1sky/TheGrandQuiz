@@ -38,12 +38,13 @@ def test_migrate_default_creates_events_table() -> None:
 
 def test_migrate_learning_dir_creates_learning_tables() -> None:
     # 指向 domain learning migrations：建出 learning 四表，且不含 kernel 的 events 表（各自独立）。
+    # user_version = 已应用的最高迁移编号：0001（建四表）+ 0002（tasks 补 language 列）→ 2。
     conn = connect(":memory:")
     migrate(conn, _LEARNING_MIGRATIONS)
     tables = _tables(conn)
     assert tables >= _LEARNING_TABLES
     assert "events" not in tables
-    assert _user_version(conn) == 1
+    assert _user_version(conn) == 2
     conn.close()
 
 

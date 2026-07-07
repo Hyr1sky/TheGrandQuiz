@@ -112,19 +112,19 @@ class SqliteLearningStore:
     def add_task(self, task: LearningTask) -> None:
         """幂等：``INSERT OR REPLACE``（同 ``task_id`` 覆盖，同 dict 版语义）。"""
         self._conn.execute(
-            "INSERT OR REPLACE INTO tasks (task_id, title, domain) VALUES (?, ?, ?)",
-            (task.task_id, task.title, task.domain),
+            "INSERT OR REPLACE INTO tasks (task_id, title, domain, language) VALUES (?, ?, ?, ?)",
+            (task.task_id, task.title, task.domain, task.language),
         )
         self._conn.commit()
 
     def get_task(self, task_id: str) -> LearningTask | None:
         row = self._conn.execute(
-            "SELECT task_id, title, domain FROM tasks WHERE task_id = ?", (task_id,)
+            "SELECT task_id, title, domain, language FROM tasks WHERE task_id = ?", (task_id,)
         ).fetchone()
         if row is None:
             return None
         return LearningTask.model_validate(
-            {"task_id": str(row[0]), "title": row[1], "domain": row[2]}
+            {"task_id": str(row[0]), "title": row[1], "domain": row[2], "language": row[3]}
         )
 
     # --- resources ---------------------------------------------------------

@@ -86,3 +86,23 @@ def test_items_and_weak_points_survive_close_and_reopen(tmp_path: Path) -> None:
 
     store2.close()
     memory2.close()
+
+
+def test_task_language_survives_close_and_reopen(tmp_path: Path) -> None:
+    # language 是出题 / 判卷语言（默认中文），非中文 task 跨 SQLite 往返须原样保真——
+    # 否则重开后退回默认"中文"，被拷问语言错乱。mutation：tasks 表删 language 列 /
+    # add_task 不写该列 / get_task 不读该列 → 重开后 language 退回"中文" → 本测试红。
+    db = tmp_path / "learning.db"
+
+    store1 = SqliteLearningStore(db)
+    task = LearningTask.create("Algorithms", domain="CS", language="English")
+    store1.add_task(task)
+    store1.close()
+    del store1
+
+    store2 = SqliteLearningStore(db)
+    reloaded = store2.get_task(task.task_id)
+    assert reloaded is not None
+    assert reloaded.language == "English"
+    assert reloaded == task  # 逐字段一致（含 domain / language）
+    store2.close()
