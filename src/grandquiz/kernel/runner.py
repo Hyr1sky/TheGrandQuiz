@@ -12,7 +12,7 @@
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.kernel.hooks import HookManager, HookVeto
 from grandquiz.kernel.recovery import Decision, RecoveryPolicy
-from grandquiz.kernel.tools import ToolRegistry
+from grandquiz.kernel.tools import ToolContext, ToolRegistry
 from grandquiz.providers.base import Completion, Message, Provider, ToolCall
 
 _TOOL_CALL_HOOK = "tool_call"
@@ -245,7 +245,10 @@ class Runner:
                     emitter=self._emitter,
                     parent_span_id=tool_span,
                 )
-            result = await self._tools.dispatch(tool_call.name, arguments)
+            # 执行上下文（kernel-generic）：把 emitter + 本次 TOOL_CALL span id 递给需要它的工具，
+            # 让工具内部事件挂在 TOOL_CALL 之下。kernel 不认识工具拿它做的领域事情。
+            ctx = ToolContext(emitter=self._emitter, parent_span_id=tool_span)
+            result = await self._tools.dispatch(tool_call.name, arguments, ctx=ctx)
         except HookVeto as exc:
             # 安全门阻断：fail-closed，闭合 span 后冒泡（绝不放行未中和的调用）。
             self._emitter.emit(
