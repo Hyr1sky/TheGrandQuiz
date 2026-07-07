@@ -35,11 +35,14 @@ from grandquiz.interfaces.cli.interactive import InteractiveResponder
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
 from grandquiz.kernel.clock import SystemClock, new_rng
 from grandquiz.kernel.events import EventEmitter, EventSink
+from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Provider
 from grandquiz.providers.llm import OpenAICompatProvider
 
 # --db 默认库路径：跨会话薄弱点留存的持久 SQLite。
 _DEFAULT_DB = Path.home() / ".grandquiz" / "learning.db"
+# 独立 trace 库文件名：与 learning.db 分开、同目录（各自 user_version / 迁移序列，互不串号）。
+_TRACE_DB_NAME = "trace.db"
 # 本地材料的占位 URL host（fetch 域名白名单放行它；真机远程抓取才走真实域名 + 注入防护）。
 _LOCAL_HOST = "local"
 _DEFAULT_MAX_BYTES = 8 * 1024 * 1024
@@ -51,6 +54,25 @@ def _ensure_parent(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _resolve_trace_db(db_path: Path, trace_db_path: Path | None) -> Path:
+    """独立 trace 库路径：显式传入优先，否则默认与 learning.db 同目录的 ``trace.db``。
+
+    两库各自 ``user_version``——同路径会让 learning 迁移先占版本号、TraceStore 跳过建 ``events`` 表、
+    ``record`` 被隔离静默吞掉 → trace 静默为空（违背"大声失败"），故拒绝同路径。
+    """
+    resolved = trace_db_path if trace_db_path is not None else db_path.parent / _TRACE_DB_NAME
+    if resolved == db_path:
+        raise ValueError(f"trace 库不能与 learning 库同路径（{db_path}）——请分开")
+    return resolved
+
+
+def _print_trace_location(console: Console, trace_id: str, trace_db_path: Path) -> None:
+    """会话结束打印 ``trace_id`` + 独立 trace 库位置（便于随手 ``grandquiz trace <id>`` 复盘）。"""
+    console.print(
+        f"[dim]本次会话 trace：[bold]{trace_id}[/]（存于 {escape(str(trace_db_path))}）[/]"
+    )
+
+
 async def run_ingest(
     *,
     title: str,
@@ -58,21 +80,33 @@ async def run_ingest(
     db_path: Path,
     provider: Provider,
     console: Console,
+    trace_db_path: Path | None = None,
 ) -> IngestResult:
     """读本地材料 → 真 Reader 深读 → 审批（MVP keep-all）→ 入 SQLite。返回 ``IngestResult``。
 
     ``source`` 注入文件内容、``url`` 用本地占位（域名白名单只放行 ``_LOCAL_HOST``）；``provider`` /
     ``console`` 作参数注入以便测试用假件驱动。``max_bytes`` 取内容实际字节与默认上限的较大者
     （本地材料不受远程大小上限约束，但仍走同一守卫路径）。
+
+    本次会话生成一个 ``trace_id``，并把发射的 AgentEvent 流经 ``EventSink.register`` 注册的
+    ``TraceStore`` 落进**独立 trace 库**（默认与 learning.db 同目录的 ``trace.db``）——落 trace 纯
+    经"注册 processor"实现，``ingest_resource`` 签名逻辑一行不改（可观测是脊柱投影、非业务耦合）。
+    会话结束打印 ``trace_id`` + 库位置。
     """
     content = material_path.read_text(encoding="utf-8")
     _ensure_parent(db_path)
+    resolved_trace_db = _resolve_trace_db(db_path, trace_db_path)
+    _ensure_parent(resolved_trace_db)
     store = SqliteLearningStore(db_path)
+    trace_store: TraceStore | None = None  # try 内构造 + None-guard 关闭，建失败不泄漏 store
     task = LearningTask.create(title)
     url = f"file://{_LOCAL_HOST}/{material_path.name}"
-
-    emitter = EventEmitter(EventSink(), SystemClock(), trace_id=uuid.uuid4().hex)
+    trace_id = uuid.uuid4().hex
     try:
+        sink = EventSink()
+        trace_store = TraceStore(resolved_trace_db)
+        sink.register(trace_store)  # 消费者即 processor：真机事件流落独立 trace 库
+        emitter = EventEmitter(sink, SystemClock(), trace_id=trace_id)
         result = await ingest_resource(
             task,
             url,
@@ -86,7 +120,10 @@ async def run_ingest(
         )
     finally:
         store.close()
+        if trace_store is not None:
+            trace_store.close()
     _print_ingest_result(console, title, result)
+    _print_trace_location(console, trace_id, resolved_trace_db)
     return result
 
 
@@ -111,6 +148,7 @@ async def run_quiz(
     responder: Responder,
     console: Console,
     seed: int,
+    trace_db_path: Path | None = None,
 ) -> None:
     """对 ``title`` 任务跑 ``rounds`` 轮逐题考核；空库 → 提示先 ingest。会话结束打印薄弱点小结。
 
@@ -119,18 +157,32 @@ async def run_quiz(
     某轮出题 / 判卷重试用尽（``QuestionError`` / ``GradingError``）→ 只跳过该轮、继续下一轮，不崩
     整场会话（M6 RecoveryPolicy 的临时兜底，见 docs/skeleton-ledger.md #7）。
     ``rng`` 用可变种子（CLI 非 replay）：每轮 ``new_rng(seed + 轮次)``。
+
+    **每次会话一个 ``trace_id``**（一个 ``EventEmitter`` 贯穿全部轮次，故 ``seq`` / span id 跨轮
+    唯一、落库后是一条 trace、每轮一棵 assessment 根 span）；发射的 AgentEvent 流经
+    ``EventSink.register`` 注册的 ``TraceStore`` 落进**独立 trace 库**（默认与 learning.db 同目录的
+    ``trace.db``）——落 trace 纯经"注册 processor"实现，``assess_once`` 签名逻辑一行不改（可观测
+    是脊柱投影、非业务耦合）。会话结束打印 ``trace_id`` + 库位置。
     """
     _ensure_parent(db_path)
     store = SqliteLearningStore(db_path)
     memory = SqliteLearningMemory(db_path)
+    trace_store: TraceStore | None = None  # 空库分支不落 trace（无会话）；在 finally 里择机关闭
     try:
         task = LearningTask.create(title)
         if not store.items_for_task(task.task_id):
             _print_needs_ingest(console, title)
             return
 
+        resolved_trace_db = _resolve_trace_db(db_path, trace_db_path)
+        _ensure_parent(resolved_trace_db)
+        trace_id = uuid.uuid4().hex
         sink = EventSink()
         sink.subscribe(QuizEventPrinter(console))
+        trace_store = TraceStore(resolved_trace_db)
+        sink.register(trace_store)  # 消费者即 processor：真机事件流落独立 trace 库
+        # 一个 emitter 贯穿全会话：跨轮共享 trace_id，seq / span id 单调唯一（不逐轮重置、不撞号）。
+        emitter = EventEmitter(sink, SystemClock(), trace_id=trace_id)
         # SKELETON: 会话内进程内"已问过"台账（item_id → 已问过的题目文本），跨轮累积、经 assess_once
         # 下传出题函数做去重——复考同一薄弱概念时每轮换角度、不逐字重问。正式版是与 Learning Memory
         # 并列的跨会话 SQLite 去重表（跨会话持久），见 docs/skeleton-ledger.md #8。
@@ -139,7 +191,6 @@ async def run_quiz(
         try:
             for round_index in range(rounds):
                 console.rule(f"第 {round_index + 1} / {rounds} 轮")
-                emitter = EventEmitter(sink, SystemClock(), trace_id=uuid.uuid4().hex)
                 try:
                     await assess_once(
                         task,
@@ -163,9 +214,12 @@ async def run_quiz(
             console.print("\n[dim]已退出本次考核会话。[/]")
 
         _print_weak_summary(console, store, memory, task)
+        _print_trace_location(console, trace_id, resolved_trace_db)
     finally:
         store.close()
         memory.close()
+        if trace_store is not None:
+            trace_store.close()
 
 
 def _print_needs_ingest(console: Console, title: str) -> None:

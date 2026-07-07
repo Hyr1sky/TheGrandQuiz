@@ -123,13 +123,19 @@ def build_span_tree(events: Iterable[AgentEvent]) -> list[Span]:
 class TraceStore:
     """订阅 AgentEvent 落 SQLite（append-only ``events`` 表），并能重建 span 树。
 
-    用法：``sink.subscribe(store.record)``。持久化任意 ``type`` 字符串 + 不透明 payload，
-    kernel 不认识领域事件类型——领域事件与 kernel 事件走同一条脊柱、同一张表。
+    用法：``sink.subscribe(store.record)``（Observer 回调）或 ``sink.register(store)``（富
+    ``Processor``——见 ``on_event``）。持久化任意 ``type`` 字符串 + 不透明 payload，kernel 不认识
+    领域事件类型——领域事件与 kernel 事件走同一条脊柱、同一张表。
     """
 
     def __init__(self, db_path: str | Path) -> None:
         self._conn = connect(db_path)
         migrate(self._conn)
+
+    def on_event(self, event: AgentEvent) -> None:
+        """``Processor`` 协议适配——委托到既有 ``record``（不改其语义）。让 TraceStore 能经
+        ``EventSink.register`` 注册为富消费者，与 ``subscribe(store.record)`` 行为等价。"""
+        self.record(event)
 
     def record(self, event: AgentEvent) -> None:
         payload_json = json.dumps(dict(event.payload), sort_keys=True, ensure_ascii=False)
