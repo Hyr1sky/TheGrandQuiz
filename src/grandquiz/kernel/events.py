@@ -27,6 +27,7 @@ class EventType:
     MODEL_STARTED = "model.started"
     MODEL_ENDED = "model.ended"
     RECOVERY_DECIDED = "recovery.decided"
+    HOOK_INVOKED = "hook.invoked"
     ERROR = "error"
 
 

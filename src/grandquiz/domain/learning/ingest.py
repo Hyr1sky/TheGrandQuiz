@@ -25,9 +25,15 @@ from grandquiz.domain.learning.approval import ApprovalGate
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.fetch import FetchError, fetch_resource
 from grandquiz.domain.learning.models import KnowledgeItem, LearningResource, LearningTask
-from grandquiz.domain.learning.reader import Reader, ReaderError
+from grandquiz.domain.learning.reader import (
+    UNTRUSTED_READ_HOOK,
+    Reader,
+    ReaderError,
+    neutralize_fence,
+)
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.events import EventEmitter
+from grandquiz.kernel.hooks import HookManager
 from grandquiz.providers.base import Provider
 
 # ingest 是 workflow span，用 kernel 级通用类型串（kernel 不认识 "ingest"，泛型建树即可）。
@@ -117,7 +123,11 @@ async def ingest_resource(
 
         # e. Reader 深读。重试用尽拿不到合法输出（ReaderError）→ 领域失败 → fail()。
         #    provider 基础设施异常 / ReplayMiss 非领域失败 → 冒泡到外层 except。
-        reader = Reader()
+        # 组装点：建 HookManager 并把注入中和注册到 UNTRUSTED_READ_HOOK 挂点，注入进 Reader（不在
+        # reader 内 new 全局的）。行为等价于旧的内联直调 neutralize_fence——内容仍被中和后才喂 LLM。
+        hooks = HookManager()
+        hooks.register_interceptor(UNTRUSTED_READ_HOOK, neutralize_fence)
+        reader = Reader(hooks=hooks)
         try:
             candidates = await reader.read(
                 resource,

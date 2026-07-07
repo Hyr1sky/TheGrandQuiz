@@ -85,11 +85,12 @@ async def test_happy_path_only_approved_items_enter_store() -> None:
         allowed_domains=_ALLOWED,
     )
 
-    # 事件流：资源建档 → model span → 候选 → 审批 → 通过 → K×入库，包在 ingest span 内。
+    # 事件流：资源建档 → 注入中和 hook → model span → 候选 → 审批 → 通过 → K×入库，包在 ingest 内。
     assert [e.type for e in events] == [
         _INGEST_STARTED,
         LearningEvent.RESOURCE_CREATED,
         LearningEvent.RESOURCE_READ,
+        EventType.HOOK_INVOKED,
         EventType.MODEL_STARTED,
         EventType.MODEL_ENDED,
         LearningEvent.ITEMS_EXTRACTED,

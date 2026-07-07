@@ -9,6 +9,7 @@ expected_events:
   - ingest.started
   - learning.resource_created
   - learning.resource_read
+  - hook.invoked  # 深读前经 HookManager 应用注入中和 interceptor（M4）
   - model.started
   - model.ended
   - learning.items_extracted
