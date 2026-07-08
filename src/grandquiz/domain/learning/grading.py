@@ -62,13 +62,18 @@ class ModelRetry(Exception):
 
 
 class Verdict(BaseModel):
-    """判卷 LLM 的结构化输出契约：三值判决 + 所引原文证据。
+    """判卷 LLM 的结构化输出契约：三值判决 + 一句话诊断理由 + 所引原文证据。
 
     刻意不含 ``weak_item_id``——薄弱记账由代码按 ``verdict`` 算（ADR-0004），不由 LLM 产。
     ``cited_evidence`` 非空由 ``grade_answer`` 的校验门把关（判卷必须引证据）。
+
+    ``reason``：判官对本次作答的一句话诊断（错 / 勉强：缺 / 偏了哪点；对：命中哪个要点），**只
+    展示、不驱动记账**——``weak_item_id`` / 三态转移仍由代码按 ``verdict`` 算。可选默认空串以保向后
+    兼容：旧 cassette / 旧模型输出无 ``reason`` 字段时照常解析（缺省为空），不触发校验门重试。
     """
 
     verdict: VerdictLabel
+    reason: str = ""
     cited_evidence: CitedEvidence
 
 

@@ -62,8 +62,9 @@ class _AssessProvider:
     ``verdict`` 只在 basic 判卷槽生效——MC 判卷是确定性代码、走不到这里，故 verdict 对 MC 无影响。
     """
 
-    def __init__(self, verdict: str) -> None:
+    def __init__(self, verdict: str, reason: str = "") -> None:
         self._verdict = verdict
+        self._reason = reason
         self.calls = 0
         self.roles: list[Role] = []
 
@@ -86,7 +87,11 @@ class _AssessProvider:
             else:  # 开放 / 追问 prompt → 产开放题 JSON（共用 schema）
                 payload = {"question": "该知识点的核心是什么？", "cited_evidence": [quote]}
         else:  # basic → 判卷
-            payload = {"verdict": self._verdict, "cited_evidence": [quote]}
+            payload = {
+                "verdict": self._verdict,
+                "reason": self._reason,
+                "cited_evidence": [quote],
+            }
         return Completion(
             text=json.dumps(payload, ensure_ascii=False),
             usage=Usage(prompt_tokens=7, completion_tokens=3),
@@ -121,6 +126,7 @@ async def _assess(
     memory: LearningMemory,
     *,
     verdict: str = "对",
+    reason: str = "",
     answer: str = "我的作答",
     focus: Focus = "mixed",
 ) -> tuple[AssessmentResult, list[AgentEvent]]:
@@ -134,7 +140,7 @@ async def _assess(
     result = await assess_once(
         task,
         store=store,
-        provider=_AssessProvider(verdict=verdict),
+        provider=_AssessProvider(verdict=verdict, reason=reason),
         responder=ScriptedResponder(answer=answer),
         memory=memory,
         emitter=emitter,
@@ -375,6 +381,39 @@ async def test_probe_path_wrong_answer_gives_followup() -> None:
         _ASSESSMENT_ENDED,
     ]
     assert memory.state_of(target) == "薄弱"  # 复考判错 → 仍薄弱（连对归 0）
+
+
+async def test_llm_verdict_reason_is_carried_into_answer_judged_payload() -> None:
+    # 判官一句话诊断（reason）additive 进 ANSWER_JUDGED payload——只展示、不驱动记账：
+    # verdict / weak_item_id / 三态转移仍由代码按 verdict 算，reason 不影响它们。
+    store, task, item_ids = _stocked_store()
+    target = item_ids[0]
+    memory = LearningMemory()
+    memory.record_verdict(target, "错")  # → 薄弱
+    memory.record_verdict(target, "对")  # → 观察中（开放路径 → 走 LLM 判卷）
+
+    result, events = await _assess(
+        store, task, memory, verdict="勉强", reason="方向对但没点出是变量本身", focus="weak"
+    )
+
+    judged = next(e for e in events if e.type == LearningEvent.ANSWER_JUDGED)
+    assert judged.payload["reason"] == "方向对但没点出是变量本身"
+    # 记账不受 reason 影响：勉强 → 仍按 verdict 记薄弱。
+    assert judged.payload["verdict"] == "勉强"
+    assert judged.payload["weak_item_id"] == target
+    assert result.weak_item_id == target
+
+
+async def test_mc_answer_judged_reason_is_empty() -> None:
+    # MC 判卷是确定性代码、无 LLM 判官 → 无 reason；payload 仍带 reason 键（值为空串），
+    # 保消费者（printer）取键不 KeyError。
+    store, task, _item_ids = _stocked_store()
+    memory = LearningMemory()  # fresh → 选择题（MC）
+
+    _result, events = await _assess(store, task, memory, answer=_MC_WRONG)
+
+    judged = next(e for e in events if e.type == LearningEvent.ANSWER_JUDGED)
+    assert judged.payload["reason"] == ""
 
 
 async def test_case4_wrong_answer_records_weak_by_item_id() -> None:

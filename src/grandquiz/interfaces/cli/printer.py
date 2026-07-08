@@ -31,6 +31,8 @@ from grandquiz.kernel.events import AgentEvent, EventType
 
 # 判决三值 → 着色（与 grading.VerdictLabel 一致）；未知判决回退 white。
 _VERDICT_STYLE: dict[str, str] = {"对": "green", "勉强": "yellow", "错": "red"}
+# 需展示判官诊断（reason）的判决——错 / 勉强（对不展示"问题："，见 _render_verdict）。
+_WEAK_VERDICTS: frozenset[str] = frozenset({"勉强", "错"})
 
 
 class QuizEventPrinter:
@@ -69,8 +71,14 @@ class QuizEventPrinter:
     def _render_verdict(self, event: AgentEvent) -> None:
         verdict = str(event.payload.get("verdict", ""))
         answer = str(event.payload.get("answer", ""))
+        reason = str(event.payload.get("reason", ""))
         style = _VERDICT_STYLE.get(verdict, "white")
         self._console.print(f"[{style}]判决：{escape(verdict)}[/]（你的作答：{escape(answer)}）")
+        # 判官诊断（reason）——只在错 / 勉强且有诊断时呈现"问题：…"，指出缺 / 偏了哪点（修 dogfood
+        # 的"答错看不出问题所在"）；判"对"或无诊断（MC 代码判卷）不打此行。reason 是 LLM 动态文本、
+        # 一律 escape。
+        if verdict in _WEAK_VERDICTS and reason:
+            self._console.print(f"  [dim]问题：{escape(reason)}[/]")
 
     def _render_followup(self, event: AgentEvent) -> None:
         correct_answer = str(event.payload.get("correct_answer", ""))

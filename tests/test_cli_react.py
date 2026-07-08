@@ -16,15 +16,20 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import pytest
 from rich.console import Console
 
 from grandquiz.domain.learning.events import LearningEvent
+from grandquiz.domain.learning.fetch import FetchError
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.models import LearningTask
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.domain.learning.tools import _ScopedEmitter  # pyright: ignore[reportPrivateUsage]
-from grandquiz.interfaces.cli.app import run_react
+from grandquiz.interfaces.cli.app import (
+    _file_source,  # pyright: ignore[reportPrivateUsage]
+    run_react,
+)
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
@@ -218,6 +223,63 @@ def test_printer_escapes_tool_name_markup() -> None:
     assert "weird[/x" in console.export_text()
 
 
+def test_printer_shows_reason_on_wrong_verdict() -> None:
+    # dogfood 痛点：答错看不出问题所在——判官 reason 以"问题：…"呈现，指出缺 / 偏了哪点。
+    console = Console(record=True, width=100)
+    QuizEventPrinter(console)(
+        _event(
+            LearningEvent.ANSWER_JUDGED,
+            {"verdict": "错", "answer": "我记不清了", "reason": "没有回答捕获的是变量还是值"},
+        )
+    )
+    out = console.export_text()
+    assert "问题：没有回答捕获的是变量还是值" in out
+
+
+def test_printer_shows_reason_on_borderline_verdict() -> None:
+    console = Console(record=True, width=100)
+    QuizEventPrinter(console)(
+        _event(
+            LearningEvent.ANSWER_JUDGED,
+            {"verdict": "勉强", "answer": "大概是变量吧", "reason": "方向对但不够精确"},
+        )
+    )
+    assert "问题：方向对但不够精确" in console.export_text()
+
+
+def test_printer_escapes_reason_markup() -> None:
+    # reason 是 LLM 动态文本、可含 markup 元字符 → 插入前 escape，不抛 MarkupError、字面呈现。
+    console = Console(record=True, width=100)
+    QuizEventPrinter(console)(
+        _event(
+            LearningEvent.ANSWER_JUDGED,
+            {"verdict": "错", "answer": "答", "reason": "漏了 [bold]变量[/] 这点 [/red"},
+        )
+    )
+    assert "[bold]变量[/]" in console.export_text()
+
+
+def test_printer_omits_problem_line_when_reason_empty() -> None:
+    # MC（代码判卷、无判官）reason 为空串 → 不打"问题："行，避免空诊断噪声。
+    console = Console(record=True, width=100)
+    QuizEventPrinter(console)(
+        _event(LearningEvent.ANSWER_JUDGED, {"verdict": "错", "answer": "干扰项", "reason": ""})
+    )
+    assert "问题：" not in console.export_text()
+
+
+def test_printer_correct_verdict_has_no_problem_line() -> None:
+    # 判"对"：不呈现"问题："（reason 只在错 / 勉强诊断）。
+    console = Console(record=True, width=100)
+    QuizEventPrinter(console)(
+        _event(
+            LearningEvent.ANSWER_JUDGED,
+            {"verdict": "对", "answer": "捕获的是变量本身", "reason": "命中要点"},
+        )
+    )
+    assert "问题：" not in console.export_text()
+
+
 # --------------------------------------------------------------------------- #
 # run_react 会话循环：入库 → 出题 → 答 → 判卷 多步轨迹装配跑通（脚本化 provider）
 # --------------------------------------------------------------------------- #
@@ -308,3 +370,58 @@ async def test_react_session_zero_token_replay(tmp_path: Path) -> None:
     assert _question_asked_payload(db1.parent / "trace.db", trace_id1) == _question_asked_payload(
         db2.parent / "trace.db", trace_id2
     )
+
+
+# --------------------------------------------------------------------------- #
+# _file_source 路径穿越守卫：解析后仍须在 materials_dir 内，否则拒（归一 FetchError）
+# --------------------------------------------------------------------------- #
+
+
+def test_file_source_reads_normal_local_file(tmp_path: Path) -> None:
+    # 正常 file://local/<名> 不被误伤：读到材料内容。
+    materials = tmp_path / "materials"
+    _seed_material(materials)
+    source = _file_source(materials)
+    assert "闭包" in source("file://local/py.md")
+
+
+def test_file_source_reads_normal_nested_file(tmp_path: Path) -> None:
+    # 子目录下的正常相对路径仍放行（守卫只挡越界，不挡目录内嵌套）。
+    materials = tmp_path / "materials"
+    (materials / "sub").mkdir(parents=True)
+    (materials / "sub" / "a.md").write_text("嵌套材料", encoding="utf-8")
+    source = _file_source(materials)
+    assert source("file://local/sub/a.md") == "嵌套材料"
+
+
+def test_file_source_rejects_dotdot_traversal(tmp_path: Path) -> None:
+    # 双点穿越逃出材料目录读任意文件 → 拒（FetchError），报错含目录路径。
+    materials = tmp_path / "materials"
+    materials.mkdir(parents=True)
+    secret = tmp_path / "secret.txt"
+    secret.write_text("绝密", encoding="utf-8")
+    source = _file_source(materials)
+    with pytest.raises(FetchError) as exc:
+        source("file://local/../secret.txt")
+    assert str(materials.resolve()) in str(exc.value)
+
+
+def test_file_source_rejects_deep_traversal_to_etc_passwd(tmp_path: Path) -> None:
+    # 经典攻击 file://local/../../etc/passwd 逃逸 → 拒，不读到目录外文件。
+    materials = tmp_path / "materials"
+    materials.mkdir(parents=True)
+    source = _file_source(materials)
+    with pytest.raises(FetchError):
+        source("file://local/../../../../../../etc/passwd")
+
+
+def test_file_source_rejects_absolute_path_escape(tmp_path: Path) -> None:
+    # 绝对路径注入（url path 以 / 开头指向目录外）→ 拒。
+    materials = tmp_path / "materials"
+    materials.mkdir(parents=True)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("目录外", encoding="utf-8")
+    source = _file_source(materials)
+    with pytest.raises(FetchError):
+        # 多段 ../ 归一后指向 tmp_path/outside.txt（materials 的父目录），越界。
+        source("file://local/../outside.txt")

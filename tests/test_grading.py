@@ -114,6 +114,24 @@ async def test_all_three_verdicts_parse(label: str) -> None:
     assert verdict.verdict == label
 
 
+async def test_reason_is_parsed_when_present() -> None:
+    # 判官一句话诊断进 reason（只展示、不驱动记账）。
+    provider = _FixedProvider(
+        json.dumps(
+            {"verdict": "勉强", "reason": "方向对但没点出是变量本身", "cited_evidence": [_QUOTE]}
+        )
+    )
+    verdict = await _grade(provider)
+    assert verdict.reason == "方向对但没点出是变量本身"
+
+
+async def test_reason_defaults_empty_for_backward_compat() -> None:
+    # 旧 cassette / 旧输出无 reason 字段 → 可选默认空串，照常解析（向后兼容）。
+    provider = _FixedProvider(json.dumps({"verdict": "对", "cited_evidence": [_QUOTE]}))
+    verdict = await _grade(provider)
+    assert verdict.reason == ""
+
+
 async def test_illegal_verdict_enum_retries_then_raises() -> None:
     # verdict 非三值枚举 → schema 校验失败 → ModelRetry 用尽 → GradingError。
     provider = _FixedProvider(json.dumps({"verdict": "满分", "cited_evidence": [_QUOTE]}))

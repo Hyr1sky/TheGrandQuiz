@@ -229,6 +229,10 @@ async def assess_once(
 
         # g. 分型判卷。选择题 → 确定性代码（**不调 LLM**，无判卷 model span）；开放 / 追问 → LLM
         #    判卷（role=basic）+ 校验门（缝 3）。两路统一得到 VerdictLabel + cited_evidence。
+        # verdict_reason：判官一句话诊断，只在开放 / 追问的 LLM 判卷槽产出（MC 判卷是代码、无判官
+        # → 空串）。additive 进 ANSWER_JUDGED 供 printer 展示；**不参与记账**（weak_item_id 仍按
+        # verdict 算）。
+        verdict_reason = ""
         if mc is not None:
             verdict_label: VerdictLabel = grade_multiple_choice(answer, mc)
             judged_evidence = list(mc.cited_evidence)
@@ -243,6 +247,7 @@ async def assess_once(
                 language=language,
             )
             verdict_label = verdict.verdict
+            verdict_reason = verdict.reason
             judged_evidence = list(verdict.cited_evidence)
 
         # h. 代码记账：verdict 属"勉强 / 错"→ weak_item_id = 被考 item；"对"→ None（不由 LLM 产）。
@@ -255,6 +260,7 @@ async def assess_once(
                 "verdict": verdict_label,
                 "weak_item_id": weak_item_id,
                 "answer": answer,
+                "reason": verdict_reason,
                 "cited_evidence": judged_evidence,
             },
         )

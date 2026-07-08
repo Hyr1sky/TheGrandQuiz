@@ -26,6 +26,7 @@ from rich.markup import escape
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.assessment import assess_once
+from grandquiz.domain.learning.fetch import FetchError
 from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.models import LearningTask
@@ -285,11 +286,21 @@ def _file_source(materials_dir: Path) -> Callable[[str], str]:
     把 ``file://local/<相对路径>`` 的 url 映射到 ``materials_dir/<相对路径>`` 读取；文件不存在等 IO
     异常由 ``fetch_resource`` 归一成 ``FetchError`` → ingest 走优雅失败分支（不炸整条会话）。url 的
     ``local`` host 必在 ingest 的域名白名单里（见 ``run_react`` 的 ``allowed_domains``）。
+
+    **路径穿越守卫**：url 的 path 是不可信输入——``file://local/../../etc/passwd`` 之类含
+    ``..`` / 绝对路径的 payload 会逃出 ``materials_dir`` 读任意文件。故解析后 ``resolve()`` 归一，
+    再校验最终路径仍在 ``materials_dir`` 内（``is_relative_to``）；越界一律**拒**（抛
+    ``FetchError``、报清楚哪个文件不在材料目录内）——``fetch_resource`` 原样透传 ``FetchError``，
+    ingest 走优雅失败分支、不炸会话。正常的 ``file://local/<名>`` / 目录内嵌套相对路径不受影响。
     """
+    base = materials_dir.resolve()
 
     def source(url: str) -> str:
         relative = urlparse(url).path.lstrip("/")
-        return (materials_dir / relative).read_text(encoding="utf-8")
+        target = (base / relative).resolve()
+        if not target.is_relative_to(base):
+            raise FetchError(f"文件 {relative} 不在材料目录 {base} 内")
+        return target.read_text(encoding="utf-8")
 
     return source
 

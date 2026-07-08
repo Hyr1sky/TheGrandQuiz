@@ -9,7 +9,7 @@
       "total_tokens": 403
     }
   },
-  "f469c234cf4fe1b92c056d74690b0fd783f13af153514351a4a1e7fd13b70689": {
+  "a5d89e4b091797f703211eaabbdf684e65a681fad55a648f280fb7ea5cf44e78": {
     "model": "deepseek-v4-flash",
     "role": "basic",
     "text": "{\"verdict\": \"错\", \"cited_evidence\": [\"闭包捕获的是变量本身而非当时的值快照\"]}",
