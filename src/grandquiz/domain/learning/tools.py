@@ -56,17 +56,30 @@ from grandquiz.providers.base import Provider
 class _ScopedEmitter(EventEmitter):
     """把被包装编排的**根 span** 重挂到给定 parent 之下的 emitter 包装（wrap 不改写）。
 
-    只用真 emitter 的**公开面**（``new_span_id`` / ``emit`` / ``trace_id``）委托 seq / span 计数与
-    发布；唯一改写：``emit`` 时把 ``parent_span_id is None`` 的事件重挂到 ``root_parent``。于是
-    被包装编排（``ingest_resource``）自建的根 span（``ingest.started`` / ``.ended``，本无父）成为
-    本次 TOOL_CALL span 的子节点，而内部 model / 点事件（都携显式 ``parent_span_id``）原样归位不变。
-    ``ingest_resource`` 因此一行不动，只是收到一个作用域化的 emitter——考官内核零改写。
+    组装持有 inner + ``__getattr__`` 全量委托：本包装不持有自己的 sink / clock / 计数器，只覆写
+    ``trace_id`` / ``new_span_id`` / ``emit`` 三个成员（把 seq / span 计数与发布委托 inner，单一
+    真源），其余**任意** EventEmitter 成员经 ``__getattr__`` 落到 inner。唯一改写：``emit`` 时把
+    ``parent_span_id is None`` 的事件重挂到 ``root_parent``。于是被包装编排（``ingest_resource``）
+    自建的根 span（``ingest.started`` / ``.ended``，本无父）成为本次 TOOL_CALL span 的子节点，而内部
+    model / 点事件（都携显式 ``parent_span_id``）原样归位不变。``ingest_resource`` 因此一行不动。
+
+    去掉了旧的 partial-subclass 脆弱（不调 ``super().__init__`` 却只覆写 3 方法——任何未覆写却触碰
+    实例态的继承成员会 AttributeError）：现在 ``__getattr__`` 把未覆写成员透明委托 inner，故 inner
+    未来新增任何方法 / 属性都不再炸（钉死于 test_cli_react）。仍名义上继承 EventEmitter 以保类型兼容
+    （装配点把 scoped 当 ``EventEmitter`` 用）。
     """
 
     def __init__(self, inner: EventEmitter, root_parent: str) -> None:
         # 刻意不调 super().__init__：本包装不持有自己的 sink / clock / 计数器，全部委托 inner。
         self._inner = inner
         self._root_parent = root_parent
+
+    def __getattr__(self, name: str) -> Any:
+        # 未覆写的成员（及此前缺失的内部态）透明委托 inner。``_inner`` 本身在 __init__ 里经普通
+        # setattr 落定，正常查找即命中、不会递归进本方法；加一道守卫防反序列化等场景的无限递归。
+        if name == "_inner":
+            raise AttributeError(name)
+        return getattr(self._inner, name)
 
     @property
     def trace_id(self) -> str:

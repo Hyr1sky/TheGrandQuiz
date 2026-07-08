@@ -8,11 +8,18 @@
 - ``FOLLOWUP_GIVEN`` → ``Panel``（标题="正解"）呈现 correct_answer
 - ``CONCEPT_STATE_CHANGED`` → 一行状态转移
 
+R1-S4 起还投影 ReAct 骨架的 kernel 级事件（``grandquiz react`` 的对话循环用）：
+
+- ``AGENT_TURN_STARTED`` → 一行回显本回合用户消息（dim）
+- ``TOOL_CALL_STARTED`` → 一行"调用工具 <name>"（dim）
+- ``TOOL_CALL_ENDED`` → 仅失败时一行提示（成功不噪声，避免与领域事件重复）
+
 只读 ``event.payload``（脊柱契约：consumer 视 payload 为只读），不认识的事件类型静默略过。
 
-所有动态文本（作答 / LLM 题干选项 / 证据引文正解）插入前一律 ``rich.markup.escape``——真实内容常
-含 ``[...]`` 等 markup 元字符，未转义会让 Rich 抛 ``MarkupError``。``EventSink.publish`` 现已隔离
-订阅者异常（一个坏订阅者不再炸整轮），但转义仍是本消费者该做的正确防御：别把渲染搞乱、也别只靠隔离兜底。
+所有动态文本（作答 / LLM 题干选项 / 证据引文正解 / 用户消息 / 工具名）插入前一律
+``rich.markup.escape``——真实内容常含 ``[...]`` 等 markup 元字符，未转义会让 Rich 抛
+``MarkupError``。``EventSink.publish`` 现已隔离订阅者异常（一个坏订阅者不再炸整轮），但转义仍是本
+消费者该做的正确防御：别把渲染搞乱、也别只靠隔离兜底。
 """
 
 from rich.console import Console
@@ -20,7 +27,7 @@ from rich.markup import escape
 from rich.panel import Panel
 
 from grandquiz.domain.learning.events import LearningEvent
-from grandquiz.kernel.events import AgentEvent
+from grandquiz.kernel.events import AgentEvent, EventType
 
 # 判决三值 → 着色（与 grading.VerdictLabel 一致）；未知判决回退 white。
 _VERDICT_STYLE: dict[str, str] = {"对": "green", "勉强": "yellow", "错": "red"}
@@ -41,6 +48,12 @@ class QuizEventPrinter:
             self._render_followup(event)
         elif event.type == LearningEvent.CONCEPT_STATE_CHANGED:
             self._render_state_change(event)
+        elif event.type == EventType.AGENT_TURN_STARTED:
+            self._render_agent_turn_started(event)
+        elif event.type == EventType.TOOL_CALL_STARTED:
+            self._render_tool_call_started(event)
+        elif event.type == EventType.TOOL_CALL_ENDED:
+            self._render_tool_call_ended(event)
 
     def _render_question(self, event: AgentEvent) -> None:
         payload = event.payload
@@ -70,3 +83,20 @@ class QuizEventPrinter:
         self._console.print(
             f"  · 概念状态：{from_state} → {to_state}（连对 {consecutive_correct}）"
         )
+
+    def _render_agent_turn_started(self, event: AgentEvent) -> None:
+        user_message = str(event.payload.get("user_message", ""))
+        self._console.print(f"[dim]› {escape(user_message)}[/]")
+
+    def _render_tool_call_started(self, event: AgentEvent) -> None:
+        tool_name = str(event.payload.get("tool_name", "?"))
+        self._console.print(f"[dim]· 调用工具 {escape(tool_name)}[/]")
+
+    def _render_tool_call_ended(self, event: AgentEvent) -> None:
+        # 成功不打印（避免与领域事件如 QUESTION_ASKED / ANSWER_JUDGED 重复）；失败给一行提示。
+        if event.payload.get("ok"):
+            return
+        error = str(event.payload.get("error", ""))
+        vetoed = event.payload.get("vetoed")
+        label = "工具被安全门阻断" if vetoed else "工具调用失败"
+        self._console.print(f"[yellow]{label}：{escape(error)}[/]")

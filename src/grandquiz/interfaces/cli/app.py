@@ -13,10 +13,12 @@ CLI 是事件脊柱的消费者：``quiz`` 把 ``QuizEventPrinter`` 订阅到考
 import argparse
 import asyncio
 import contextlib
+import sys
 import time
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from rich.console import Console
@@ -28,17 +30,24 @@ from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.models import LearningTask
 from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY, SqlitePreferenceMemory
+from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import SqliteLearningStore
+from grandquiz.domain.learning.tools import register_learning_tools
 from grandquiz.interfaces.cli.interactive import InteractiveResponder
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
 from grandquiz.kernel.clock import SystemClock, new_rng
 from grandquiz.kernel.events import EventEmitter, EventSink
 from grandquiz.kernel.recovery import Decision, RecoveryPolicy
 from grandquiz.kernel.report import render_trace_html
+from grandquiz.kernel.runner import Runner
+from grandquiz.kernel.tools import ToolRegistry
 from grandquiz.kernel.trace import Span, TraceStore, build_span_tree
 from grandquiz.providers.base import Provider
 from grandquiz.providers.llm import OpenAICompatProvider
+
+# ReAct 系统提示的版本化模板名（load_prompt 读 prompts/react_system.md，版本号进 trace）。
+_REACT_PROMPT_NAME = "react_system"
 
 # --db 默认库路径：跨会话薄弱点留存的持久 SQLite。
 _DEFAULT_DB = Path.home() / ".grandquiz" / "learning.db"
@@ -261,6 +270,104 @@ def _print_weak_summary(
         console.print(f"  · {concept_by_id.get(item_id, item_id)} — {state}")
 
 
+# --- react 子命令（真机 ReAct 对话 agent）----------------------------------------------------
+#
+# 复用现有装配件：register_learning_tools（ingest / query_weak / next_question / submit_answer）+
+# kernel Runner.run_agent_turn（有界 tool-calling 循环）+ QuizEventPrinter（事件脊柱的终端投影）+
+# 独立 trace 库。考官内核 / ingest 编排一行不改——react 只是新增命令 + 组装。
+
+
+def _file_source(materials_dir: Path) -> Callable[[str], str]:
+    """建**文件式** fetch 源（复用现有 ingest 那套读本地材料，非 httpx——真远程抓取仍缓办）。
+
+    把 ``file://local/<相对路径>`` 的 url 映射到 ``materials_dir/<相对路径>`` 读取；文件不存在等 IO
+    异常由 ``fetch_resource`` 归一成 ``FetchError`` → ingest 走优雅失败分支（不炸整条会话）。url 的
+    ``local`` host 必在 ingest 的域名白名单里（见 ``run_react`` 的 ``allowed_domains``）。
+    """
+
+    def source(url: str) -> str:
+        relative = urlparse(url).path.lstrip("/")
+        return (materials_dir / relative).read_text(encoding="utf-8")
+
+    return source
+
+
+async def run_react(
+    *,
+    title: str,
+    db_path: Path,
+    materials_dir: Path,
+    provider: Provider,
+    console: Console,
+    user_messages: Iterable[str],
+    seed: int,
+    trace_db_path: Path | None = None,
+    max_iterations: int = 8,
+) -> str:
+    """真机 ReAct 会话循环：逐条用户消息跑一次 ``run_agent_turn``，多回合共享同一 agent / 会话态。
+
+    组装：``provider`` + ``ToolRegistry``（经 ``register_learning_tools`` 注入真依赖：SQLite
+    store/memory + 文件式 fetch 源 + keep-all 审批门 + ``quiz_seed=seed``）+ 版本化 ReAct 系统提示
+    （``load_prompt`` 读 name@digest，进 trace）。**一个 ``Runner`` 贯穿全部回合**——
+    ``run_agent_turn`` 的历史裁剪（只留 user + final assistant）跨回合累积；``_QuizSession`` 待答态
+    经工具闭包在同一 registry 里跨回合留存（``next_question`` 出题、下回合 ``submit_answer`` 续）。
+
+    **一个 ``EventEmitter`` / ``trace_id`` 贯穿全会话**：``QuizEventPrinter`` 订阅做 Rich 呈现、
+    ``TraceStore`` 经 ``register`` 落**独立 trace 库**（默认与 learning.db 同目录 ``trace.db``）。
+    会话结束打印 ``trace_id`` + 库位置。返回 ``trace_id``。真机模型 dogfood 属人机边界、不在 AFK。
+    """
+    _ensure_parent(db_path)
+    resolved_trace_db = _resolve_trace_db(db_path, trace_db_path)
+    _ensure_parent(resolved_trace_db)
+    store = SqliteLearningStore(db_path)
+    memory = SqliteLearningMemory(db_path)
+    trace_store: TraceStore | None = None
+    trace_id = uuid.uuid4().hex
+    try:
+        task = LearningTask.create(title)
+        sink = EventSink()
+        sink.subscribe(QuizEventPrinter(console))
+        trace_store = TraceStore(resolved_trace_db)
+        sink.register(trace_store)  # 消费者即 processor：真机事件流落独立 trace 库
+        emitter = EventEmitter(sink, SystemClock(), trace_id=trace_id)
+
+        registry = ToolRegistry()
+        register_learning_tools(
+            registry,
+            task=task,
+            source=_file_source(materials_dir),
+            provider=provider,
+            store=store,
+            approval=ScriptedApprovalGate(keep=lambda _item: True),  # MVP keep-all（同 run_ingest）
+            memory=memory,
+            max_bytes=_DEFAULT_MAX_BYTES,
+            allowed_domains={_LOCAL_HOST},
+            quiz_seed=seed,
+        )
+        prompt = load_prompt(_REACT_PROMPT_NAME)
+        runner = Runner(
+            provider=provider,
+            emitter=emitter,
+            system_prompt=prompt.text,
+            prompt_version=prompt.version,  # prompt 版本号进 trace（架构约束）
+            tools=registry,
+            max_iterations=max_iterations,
+        )
+
+        console.print(f"[bold]ReAct 学习助手「{title}」——输入消息与我对话（Ctrl+D 退出）[/]")
+        for message in user_messages:
+            reply = await runner.run_agent_turn(message)
+            console.print(f"[bold cyan]助手[/]：{escape(reply)}")
+
+        _print_trace_location(console, trace_id, resolved_trace_db)
+        return trace_id
+    finally:
+        store.close()
+        memory.close()
+        if trace_store is not None:
+            trace_store.close()
+
+
 # --- 导出子命令（report / trace → 自包含 HTML）------------------------------------------------
 #
 # 复用 issue 03 的 kernel.report.render_trace_html——两命令共用同一渲染器，绝不重实现渲染。
@@ -360,6 +467,45 @@ async def _run_quiz_cli(
         await provider.aclose()
 
 
+def _stdin_messages(console: Console) -> Iterator[str]:
+    """从 stdin 逐行读用户消息（交互会话循环的输入源）：空行跳过，``exit`` / ``quit`` 或 EOF 退出。
+
+    做成生成器（而非一次读全部）让会话真正逐回合交互：``run_react`` 每 ``next()`` 拿一条消息、跑一
+    回合、打印回复，再回来取下一条。真机试跑（tty 逐回合对话）留给 human。
+    """
+    while True:
+        console.print("[bold]你[/]：", end="")
+        try:
+            line = sys.stdin.readline()
+        except KeyboardInterrupt:
+            break
+        if not line:  # EOF（Ctrl+D）
+            break
+        message = line.strip()
+        if not message:
+            continue
+        if message in {"exit", "quit", ":q"}:
+            break
+        yield message
+
+
+async def _run_react_cli(*, title: str, db_path: Path, materials_dir: Path) -> None:
+    console = Console()
+    provider = OpenAICompatProvider.from_env()
+    try:
+        await run_react(
+            title=title,
+            db_path=db_path,
+            materials_dir=materials_dir,
+            provider=provider,
+            console=console,
+            user_messages=_stdin_messages(console),
+            seed=int(time.time()),  # CLI 非 replay：可变种子（每次会话不同选题次序）
+        )
+    finally:
+        await provider.aclose()
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="grandquiz", description="考核驱动的个人学习工具")
     sub = parser.add_subparsers(dest="command")
@@ -377,6 +523,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--prefer-lang",
         default=None,
         help="显式设出题语言偏好（如 英文 / en），跨会话留存并覆盖任务默认语言",
+    )
+
+    p_react = sub.add_parser("react", help="真机 ReAct 对话——学材料 / 出题 / 判卷全经工具")
+    p_react.add_argument("title", help="学习任务标题（考核范围）")
+    p_react.add_argument("--db", type=Path, default=_DEFAULT_DB, help="SQLite 库路径")
+    p_react.add_argument(
+        "--materials-dir",
+        type=Path,
+        default=Path.cwd(),
+        help="本地材料目录（ingest 的 file://local/<文件名> 相对此目录解析，默认当前目录）",
     )
 
     p_report = sub.add_parser("report", help="跑 eval harness → 导出自包含 HTML 报告")
@@ -423,6 +579,11 @@ def main(argv: Sequence[str] | None = None) -> None:
                     db_path=args.db,
                     prefer_lang=args.prefer_lang,
                 )
+            )
+    elif args.command == "react":
+        with contextlib.suppress(KeyboardInterrupt):
+            asyncio.run(
+                _run_react_cli(title=args.title, db_path=args.db, materials_dir=args.materials_dir)
             )
     elif args.command == "report":
         # 报告不碰 provider / learning 库：全确定性假件驱动 harness，纯导出 HTML。
