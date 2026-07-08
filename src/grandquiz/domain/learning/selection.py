@@ -4,35 +4,68 @@
 种子化 rng**（``new_rng(seed)``），同 seed 恒得同结果，故整条考核竖切可逐字节回放
 （domain 自身禁 ``random`` / ``time``）。
 
-**薄弱优先**（M3.3，eval case 5）：有薄弱概念（Learning Memory 的薄弱 ∪ 观察中非空）时，
-候选集只含这些概念对应的 item（**新概念不进集**，先补最该补的）；否则从全集选。代码构造候选集、
-LLM 只在集内被挑到——选题数据源是 Learning Memory（ADR-0003）。``memory`` 为 None（未接记忆，
-如 M3.2 的旧调用）时退化为全集随机，故本函数签名向后兼容、旧调用方无需改动。
+**覆盖优先 + 兜底 remediation + 可选 focus**（R1-S7，eval case 5/6）：早先的"薄弱优先排他"
+（有薄弱 → 候选只含薄弱、排除新概念）会把一题答错永久**锁死**同一 item（dogfood：10 知识点
+只考 1、全追问全错死循环）。改为**会话内已考去重 + focus 分档**：
+
+- ``focus="mixed"``（默认）：候选 = **未考过（unasked）** 若非空 → 否则**薄弱** 若非空 → 否则全集。
+  关键——有薄弱 + 有未考过时选未考过（覆盖优先，不锁死），考完一遍才兜底回来复考薄弱。
+- ``focus="new"``（"考其他的 / 没考过的"）：未考过 若非空 → 否则全集（**不兜底薄弱**）。
+- ``focus="weak"``（"复习薄弱"）：薄弱 若非空 → 否则未考过 → 否则全集。
+
+``asked_item_ids`` 是**本会话已考过**的 item 集（由考核循环 / start_quiz 持有并跨轮累积下传）；
+默认空集 = 不去重，向后兼容旧调用方（首题、无会话态时行为不变）。候选集内仍 ``rng.choice`` 确定性
+选。``memory`` 为 None（未接记忆）时薄弱集为空，故 mixed / new 退化为"未考过优先、否则全集"。
 """
+
+from collections.abc import Collection
+from typing import Literal, assert_never
 
 from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.kernel.clock import Rng
 
+# 选题聚焦档位：覆盖优先（默认）/ 只考未考过 / 复习薄弱——assess_once / start_quiz 按用户意图下传。
+Focus = Literal["mixed", "new", "weak"]
+
+
+def _candidates(
+    focus: Focus,
+    *,
+    unasked: list[KnowledgeItem],
+    weak: list[KnowledgeItem],
+    items: list[KnowledgeItem],
+) -> list[KnowledgeItem]:
+    """按 focus 定候选集（纯代码；空列表 falsy → 落到下一优先级 / 全集兜底）。见模块 docstring。"""
+    if focus == "mixed":
+        return unasked or weak or items
+    if focus == "new":
+        return unasked or items
+    if focus == "weak":
+        return weak or unasked or items
+    assert_never(focus)  # 穷尽 Focus；未来加档位会在此炸出，而非静默落进某分支
+
 
 def select_target(
-    items: list[KnowledgeItem], *, rng: Rng, memory: Memory | None = None
+    items: list[KnowledgeItem],
+    *,
+    rng: Rng,
+    memory: Memory | None = None,
+    asked_item_ids: Collection[str] = frozenset(),
+    focus: Focus = "mixed",
 ) -> KnowledgeItem:
     """从 ``items`` 中确定性地选一个考核目标（``rng.choice``，同 seed 同结果）。
 
-    ``memory`` 为 None 或其薄弱集为空 → 从全部 ``items`` 选（保持 M3.2 行为）；否则候选集 =
-    薄弱 ∪ 观察中概念对应的 item（新概念被排除，eval case 5），从中选。薄弱概念的 item 若已不在
-    ``items`` 里致候选集为空 → 兜底回退全集（护栏，正常不该发生：记忆里的 item 应仍在库）。
+    候选集按 ``focus`` + ``asked_item_ids`` + ``memory`` 薄弱集构造（见模块 docstring）；空候选
+    在各 focus 下都最终兜底到全集，故绝不返回空 / raise（除非 ``items`` 本身为空）。
 
     空 ``items`` → ``ValueError``：空库时调用方应先走"拒答"分支（发 ``ASSESSMENT_REFUSED``），
     根本不该走到选题这一步（eval case 2）。这里的 raise 是防御性护栏，不是正常控制流。
     """
     if not items:
         raise ValueError("空知识库不该进入选题——调用方应先走拒答分支（eval case 2）")
-    if memory is not None:
-        weak_ids = memory.weak_item_ids()
-        if weak_ids:
-            candidates = [item for item in items if item.item_id in weak_ids]
-            if candidates:  # 兜底：候选集为空（薄弱 item 已不在库）时回退全集
-                return rng.choice(candidates)
-    return rng.choice(items)
+    asked = set(asked_item_ids)
+    unasked = [item for item in items if item.item_id not in asked]
+    weak_ids: set[str] = memory.weak_item_ids() if memory is not None else set()
+    weak = [item for item in items if item.item_id in weak_ids]
+    return rng.choice(_candidates(focus, unasked=unasked, weak=weak, items=items))

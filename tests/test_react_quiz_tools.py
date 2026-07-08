@@ -383,6 +383,40 @@ async def test_start_quiz_runs_count_rounds() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# 选题聚焦（R1-S7）：focus 透传 assess_once → select_target（mixed 覆盖优先 / weak 复习薄弱）
+# --------------------------------------------------------------------------- #
+
+
+async def test_start_quiz_focus_weak_targets_weak_concept() -> None:
+    # focus="weak"（"复习薄弱"）逐次透传每题 assess_once → select_target：锁定唯一薄弱概念，
+    # 即使有未考过的新概念。构造保证 mutation 可杀——薄弱项刻意放在 index 0，而 mixed 默认（quiz_seed
+    # 0）会选 index 1；若 focus 未透传（退回 mixed）则选中 装饰器 而非 闭包 → 断言变红。
+    task = LearningTask.create("Py")
+    store = LearningStore()
+    ids = _seed_store(store, task, ["闭包", "装饰器", "生成器"])
+    memory = LearningMemory()
+    memory.record_verdict(ids[0], "错")  # 仅 闭包（index 0）薄弱；装饰器 / 生成器 未追踪且未考过
+    assert memory.state_of(ids[0]) == "薄弱"
+    registry = ToolRegistry()
+    _register(
+        registry,
+        task=task,
+        store=store,
+        memory=memory,
+        provider=_OpenProvider(verdict="对"),  # 薄弱 → 追问（LLM 判卷路径）
+        responder=ScriptedResponder(answer="我的作答"),
+    )
+    emitter, _ = _emitter_with_events()
+
+    result = StartQuizResult.model_validate_json(
+        await registry.dispatch("start_quiz", {"count": 1, "focus": "weak"}, ctx=_ctx(emitter))
+    )
+
+    assert result.rounds[0].item_id == ids[0]  # focus=weak 锁定薄弱 闭包（!= mixed 会选的 装饰器）
+    assert result.rounds[0].concept == "闭包"
+
+
+# --------------------------------------------------------------------------- #
 # 空库优雅拒答：无题可考 → refused、零 LLM 调用
 # --------------------------------------------------------------------------- #
 

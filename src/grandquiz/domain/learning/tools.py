@@ -12,10 +12,11 @@
   工具边界）。
 - ``query_weak_concepts()``：**只读**——读 Learning Memory（薄弱 / 观察中 item）+ store（概念名）→
   返回薄弱概念摘要。无 LLM、确定性（context-free 工具，不需要 ctx）。
-- ``start_quiz(count?)``：**受控一问一答子流程**——内部跑 ``assess_once × count``（``assess_once``
-  一行不改），用**注入的 Responder** 逐题作答（MC 走 ``questionary.select`` 逐字选项文本 → 确定性
-  逐字判卷），共享 emitter（内部 assess_once span 嵌 TOOL_CALL 之下），返回结构化小结（考几题 /
-  每题判决 / 暴露哪些薄弱点）。**LLM 只触发它、拿小结，不进逐题循环、不复述题目、不自己判卷**——
+- ``start_quiz(count?, focus?)``：**受控一问一答子流程**——内部跑 ``assess_once × count``
+  （``assess_once`` 一行不改），用**注入的 Responder** 逐题作答（MC 走 ``questionary.select`` 逐字
+  选项文本 → 确定性逐字判卷），共享 emitter（内部 assess_once span 嵌 TOOL_CALL 之下），返回结构化
+  小结（考几题 / 每题判决 / 暴露哪些薄弱点）。**LLM 只触发它、拿小结，不进逐题循环、不复述题目、
+  不自己判卷**——
   取代 S2b 的软工具 ``next_question`` / ``submit_answer``（那套把逐轮编排压给 LLM，deepseek 守不住：
   编题 / 把 MC 答案加 "B. " 前缀毁逐字判卷 / 题目双重渲染 / confabulate）。
 
@@ -39,6 +40,7 @@ from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.models import LearningTask
 from grandquiz.domain.learning.preference import PreferenceMemory
 from grandquiz.domain.learning.responder import Responder
+from grandquiz.domain.learning.selection import Focus
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.clock import new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter
@@ -264,6 +266,7 @@ class StartQuizResult(BaseModel):
 
 class _StartQuizParams(BaseModel):
     count: int = 1  # 本次考核出题数（默认 1；handler 夹到 [1, _MAX_QUIZ_COUNT]）
+    focus: Focus = "mixed"  # 选题聚焦：mixed 覆盖优先（默认）/ new 只考没考过的 / weak 复习薄弱
 
 
 def _weak_concepts(task: LearningTask, store: Store, memory: Memory) -> list[WeakConcept]:
@@ -297,6 +300,11 @@ def make_start_quiz_tool(
     span 之下（``ctx.parent_span_id``），故整棵考核子树上同一条脊柱、进 trace；出题 / 判卷 / 记账的
     点事件（QUESTION_ASKED / ANSWER_JUDGED / …）携显式父原样透传。
 
+    ``focus``（工具入参，LLM 按用户意图逐次给）：选题聚焦档位，透传每题的 ``assess_once`` →
+    ``select_target``——``mixed``（默认）覆盖优先（先考未考过、考完一遍才兜底薄弱，修 dogfood
+    锁死）、``new`` 只考未考过、``weak`` 复习薄弱。``recently_asked`` 跨同一会话累积、其 keys 作
+    已考集喂选题，故连续 mixed 考核自然覆盖不同 item（不再锁死）。
+
     ``preferences``：透传给 ``assess_once`` 解析出题语言（**偏好 > task 默认 > 中文**）；``None`` 时
     行为不变（走 task 默认）。``recently_asked`` / ``_QuizSeedCounter`` 在闭包捕获、跨同一会话的多次
     ``start_quiz`` 累积（复考换角度去重 + 选题种子确定性推进）。空库 → 优雅返回 ``refused``（不调
@@ -326,6 +334,7 @@ def make_start_quiz_tool(
                     emitter=scoped,
                     rng=new_rng(seed_counter.next_seed()),
                     recently_asked=recently_asked,
+                    focus=params.focus,
                     preferences=preferences,
                 )
             except KeyboardInterrupt:
@@ -359,6 +368,8 @@ def make_start_quiz_tool(
         description=(
             "对当前任务发起一次考核：出 count 道题（默认 1）逐题问用户并判卷，"
             "返回考了几题 / 每题判决 / 暴露的薄弱点小结。不要复述题目或自行判卷。"
+            "focus 选题聚焦：mixed=覆盖优先（默认，先考没考过的），"
+            "new=只考没考过的（用户说'考其他的/换一批'时用），weak=复习薄弱（用户说'复习/考薄弱'时用）。"
         ),
         params=_StartQuizParams,
         handler=handler,

@@ -2,11 +2,13 @@
 # 预置一个 != 全集随机自然选择的薄弱概念（喂一次错）；两轮复考都锁定它（薄弱优先未破）。去重敏感
 # provider 默认重复同一道题，仅在 user message 见到"已问过"约束才换角度——删掉去重注入 / 去重门（02）
 # → 第二轮拿不到约束 → 退回默认题 → no_duplicate 变红。判卷恒判对：薄弱→观察中（追问）→销账（开放）。
+# focus="weak"（R1-S7）显式复习薄弱，两轮都锁定预置薄弱 item（mixed 默认会先考未考过的，见 case5）。
 id: case10
 kind: assess
 setup:
   stocked: true
   provider: dedup
+  focus: weak
   preset:
     - target: non_natural
       verdict: "错"

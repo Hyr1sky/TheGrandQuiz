@@ -1,20 +1,21 @@
-# eval case 5：复考选题 → 出的题 ∈ 代码构造的"薄弱优先"候选集（有薄弱概念时新概念不进集）。
-# 预置一个 != 全集随机自然选择的薄弱概念（喂一次错）；复考锁定它、路由到追问。
+# eval case 5：覆盖优先（mixed 默认，R1-S7 锁死回归）——有薄弱概念但本会话未考过任何题时，
+# 选题选**未考过**的自然选择项，**不锁死薄弱**。修 dogfood e342b709 的"6 题锁死同一 item ae#003"。
+# 预置一个 != 全集随机自然选择的薄弱概念（喂一次错）；mixed 覆盖优先仍选未考过的 natural（未追踪 →
+# 选择题、确定性判卷、无判卷 model span），而非回锁到已薄弱的 non_natural（旧排他策略会锁它 → 追问）。
 id: case5
 kind: assess
 setup:
   stocked: true
+  focus: mixed
   preset:
     - target: non_natural
       verdict: "错"
-  verdict: "对"
+  answer: mc_correct
 expected_events:
   - assessment.started
   - model.started
   - model.ended
   - learning.question_asked
-  - model.started
-  - model.ended
   - learning.answer_judged
   - learning.concept_state_changed
   - assessment.ended

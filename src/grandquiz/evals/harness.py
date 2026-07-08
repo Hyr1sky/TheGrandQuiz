@@ -41,7 +41,7 @@ from grandquiz.domain.learning.models import (
     LearningTask,
 )
 from grandquiz.domain.learning.responder import ScriptedResponder
-from grandquiz.domain.learning.selection import select_target
+from grandquiz.domain.learning.selection import Focus, select_target
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
@@ -364,6 +364,8 @@ class Case:
     provider: Literal["default", "language_echo", "dedup"] = "default"
     # task 出题 / 判卷语言（下传到 {{LANGUAGE}} 槽）；默认"中文"使既有用例装配不变。
     language: str = "中文"
+    # 选题聚焦（R1-S7）：mixed 覆盖优先（默认）/ new 只考未考过 / weak 复习薄弱。下传 assess_once。
+    focus: Focus = "mixed"
     # ingest 专属
     source: Literal["ok", "boom"] = "ok"
     approval_keep: list[str] = field(default_factory=_empty_strs)
@@ -382,6 +384,8 @@ def _parse_case(raw: Any) -> Case:
         provider: Literal["default", "language_echo", "dedup"] = (
             raw_provider if raw_provider in ("default", "language_echo", "dedup") else "default"
         )
+        raw_focus = str(setup.get("focus", "mixed"))
+        focus: Focus = raw_focus if raw_focus in ("mixed", "new", "weak") else "mixed"
         return Case(
             id=case_id,
             kind="assess",
@@ -393,6 +397,7 @@ def _parse_case(raw: Any) -> Case:
             answers=[str(a) for a in setup.get("answers", [])],
             provider=provider,
             language=str(setup.get("language", "中文")),
+            focus=focus,
         )
     src: Literal["ok", "boom"] = "boom" if str(setup.get("source", "ok")) == "boom" else "ok"
     return Case(
@@ -514,6 +519,7 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
             emitter=emitter,
             rng=new_rng(SEED + round_index),
             recently_asked=recently_asked,
+            focus=case.focus,
         )
         all_spans.extend(trace.span_tree("run"))
         trace.close()

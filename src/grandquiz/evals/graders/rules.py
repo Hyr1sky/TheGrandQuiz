@@ -307,35 +307,48 @@ def grade_case4(sr: SolveResult) -> list[str]:
     return failures
 
 
-# --- case 5：复考选题 → 出的题 ∈ 代码构造的"薄弱优先"候选集（有薄弱概念时新概念不进集）---------
+# --- case 5：覆盖优先（mixed 默认，R1-S7 锁死回归）——有薄弱但仍有未考过 → 选未考过、不锁死薄弱 --
 
 
 def grade_case5(sr: SolveResult) -> list[str]:
     failures: list[str] = []
     weak_target = sr.context.get("weak_target")
     natural = sr.context.get("natural")
+    result = _assess(sr)
+    if result is None:
+        return [f"result 不是 AssessmentResult：{sr.result!r}"]
     asked = _find(sr.events, LearningEvent.QUESTION_ASKED)
     if asked is None:
         return ["缺 QUESTION_ASKED"]
+    # 覆盖优先：本会话未考过任何 item → mixed 选未考过的自然选择项 natural，
+    # 不回锁到已薄弱的 non_natural（旧排他策略会锁 weak_target → 此两断言把它杀掉）。
     _check(
         failures,
-        asked.payload.get("item_id") == weak_target,
-        f"复考应锁定薄弱 item {weak_target}，实为 {asked.payload.get('item_id')}",
+        asked.payload.get("item_id") == natural,
+        f"覆盖优先应选未考过的 natural {natural}，实为 {asked.payload.get('item_id')}",
     )
     _check(
         failures,
-        asked.payload.get("item_id") != natural,
-        "薄弱优先应压过全集随机（被考 item 不应是自然选择）",
+        asked.payload.get("item_id") != weak_target,
+        "覆盖优先不应锁死薄弱 item（dogfood '6 题锁死同一 item' 回归）",
+    )
+    # natural 未追踪 → 路由选择题（不再因薄弱一律走追问）；确定性判卷，无判卷 model span。
+    _check(
+        failures,
+        asked.payload.get("question_type") == "选择题",
+        f"未考过的未追踪概念应路由选择题，实为 {asked.payload.get('question_type')}",
     )
     _check(
         failures,
-        asked.payload.get("question_type") == "追问",
-        f"薄弱概念复考应走追问，实为 {asked.payload.get('question_type')}",
+        result.question_type == "选择题",
+        f"result.question_type 应为选择题，实为 {result.question_type}",
     )
+    # MC 判卷是确定性代码：无判卷 basic 调用（route 未把 natural 分流到 LLM 判卷路径）。
+    _check(failures, sr.roles == ["enrich"], f"MC 路径应只出题（enrich）、无判卷，实为 {sr.roles}")
     return failures
 
 
-# --- case 6：答对薄弱题 → 第一次答对转观察中（仍在表内）；连续第二次答对 → 销账移出 ------------
+# --- case 6：focus="weak" 复习薄弱 + 三态销账——第一次答对转观察中；连续第二次答对 → 销账移出 ----
 
 
 def grade_case6(sr: SolveResult) -> list[str]:
@@ -350,9 +363,9 @@ def grade_case6(sr: SolveResult) -> list[str]:
     # 前置半（第一次答对 → 观察中、仍在表内）：由预置 [错, 对] 经真实状态机建立，跑 assess 前捕获。
     _check(failures, sr.context.get("pre_state") == "观察中", "前置：第一次答对应转观察中")
     _check(failures, sr.context.get("pre_in_weak") is True, "前置：观察中仍应在薄弱表内")
-    # 本轮（连续第二次答对 → 销账移出）：薄弱优先仍锁定 target，观察中 → 开放路径。
-    _check(failures, result.item_id == target, "复考应锁定该薄弱 item")
-    _check(failures, result.item_id != natural, "薄弱优先应压过全集随机")
+    # 本轮（连续第二次答对 → 销账移出）：focus=weak 仍锁定 target（观察中在薄弱集），观察中 → 开放。
+    _check(failures, result.item_id == target, "focus=weak 复考应锁定该薄弱 item")
+    _check(failures, result.item_id != natural, "focus=weak 应压过覆盖优先 / 全集随机")
     _check(failures, result.question_type == "开放", f"观察中应走开放，实为 {result.question_type}")
     _check(failures, result.verdict == "对", f"应判对，实为 {result.verdict}")
     _check(failures, sr.memory.state_of(target) is None, "连对第二次应销账（移出记忆）")

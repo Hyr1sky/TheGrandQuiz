@@ -50,7 +50,7 @@ from grandquiz.domain.learning.question import (
 )
 from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.routing import QuestionType, route_question_type
-from grandquiz.domain.learning.selection import select_target
+from grandquiz.domain.learning.selection import Focus, select_target
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.clock import Rng
 from grandquiz.kernel.events import EventEmitter
@@ -120,6 +120,7 @@ async def assess_once(
     emitter: EventEmitter,
     rng: Rng,
     recently_asked: dict[str, list[str]] | None = None,
+    focus: Focus = "mixed",
     preferences: PreferenceMemory | None = None,
 ) -> AssessmentResult:
     """对 ``task`` 跑一轮单题考核，全程发事件。见模块 docstring。
@@ -129,6 +130,12 @@ async def assess_once(
     默认 ``None`` = 不去重、向后兼容：既有测试 / eval harness 不传它时行为一字不变（出题函数收到
     空 ``asked_before`` → message / replay_key / prompt 版本号不变）。取被考 item 的已问列表下传给
     出题函数；成功发出 ``QUESTION_ASKED`` 后，把本轮新题文本追加进 ``recently_asked[item_id]``。
+    ``recently_asked`` 的 keys 同时作**本会话已考过**的 item 集下传选题（``asked_item_ids``），
+    实现 R1-S7 的覆盖优先：先考未考过的，考完一遍才兜底复考薄弱（修 dogfood 的"锁死同一 item"）。
+
+    ``focus``：选题聚焦档位（``mixed`` 默认 / ``new`` 只考未考过 / ``weak`` 复习薄弱），透传
+    ``select_target``。默认 ``mixed`` 向后兼容——旧调用方不传它时行为等价于"未考过优先、否则全集"
+    （无会话已考态时即全集随机，同改动前）。**仅影响选题调用处**：判卷 / 记账 / 事件序一律不动。
 
     ``preferences``：显式偏好台账（Preference Memory）。出题 / 判卷前经 ``_resolve_language`` 解析
     有效语言，优先级 **偏好（``question_language``）> task 默认 > 中文**——偏好覆盖 ``task.language``
@@ -155,8 +162,12 @@ async def assess_once(
             )
             return AssessmentResult(status="refused")
 
-        # c. 选题（确定性，种子化 rng）。有薄弱概念时代码构造薄弱优先候选集（新概念不进集）。
-        target = select_target(items, rng=rng, memory=memory)
+        # c. 选题（确定性，种子化 rng）。会话内已考过的 item（recently_asked 的 keys）+ focus 决定
+        #    候选集：mixed 覆盖优先（先考未考过、否则兜底薄弱），new 只考未考过，weak 复习薄弱。
+        asked_item_ids: set[str] = set(recently_asked) if recently_asked is not None else set()
+        target = select_target(
+            items, rng=rng, memory=memory, asked_item_ids=asked_item_ids, focus=focus
+        )
 
         # d. 题型路由（确定性代码，按被考概念在 Learning Memory 的状态选题型；决策上脊柱供断言）。
         question_type = route_question_type(memory.state_of(target.item_id))

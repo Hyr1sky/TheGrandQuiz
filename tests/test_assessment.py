@@ -25,7 +25,7 @@ from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource, LearningTask
 from grandquiz.domain.learning.responder import ScriptedResponder
-from grandquiz.domain.learning.selection import select_target
+from grandquiz.domain.learning.selection import Focus, select_target
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.evals.harness import build_event_harness as _harness
 from grandquiz.evals.harness import summarize_spans as _summ
@@ -122,11 +122,13 @@ async def _assess(
     *,
     verdict: str = "对",
     answer: str = "我的作答",
+    focus: Focus = "mixed",
 ) -> tuple[AssessmentResult, list[AgentEvent]]:
     """跑一轮考核（复用同一 ``memory`` 累积记账），返回 (result, events)。
 
     ``verdict`` 供开放 / 追问的 LLM 判卷槽；``answer`` 供选择题的确定性判卷（选 ``_MC_CORRECT`` /
-    ``_MC_WRONG`` 定对错）与作为作答文本。
+    ``_MC_WRONG`` 定对错）与作为作答文本。``focus`` 透传选题聚焦（R1-S7）：复考薄弱概念的用例传
+    ``"weak"`` 显式锁定薄弱集（默认 ``mixed`` 覆盖优先会先考未考过的新概念，不锁薄弱）。
     """
     emitter, events, trace = _harness()
     result = await assess_once(
@@ -137,6 +139,7 @@ async def _assess(
         memory=memory,
         emitter=emitter,
         rng=new_rng(_SEED),
+        focus=focus,
     )
     trace.close()
     return result, events
@@ -282,14 +285,14 @@ async def test_case8_routing_fresh_to_mc_then_weak_to_probe() -> None:
     assert asked1.payload["question_type"] == "选择题"
     assert memory.weak_item_ids() == set()
 
-    # 把某概念喂成薄弱（模拟此前答错）；复考时薄弱优先锁定它 → 路由到追问深挖。
+    # 把某概念喂成薄弱（模拟此前答错）；focus="weak"（"复习薄弱"）复考锁定它 → 路由到追问深挖。
     weak_item = item_ids[0]
     memory.record_verdict(weak_item, "错")
     assert memory.state_of(weak_item) == "薄弱"
 
-    _r2, e2 = await _assess(store, task, memory, verdict="对")
+    _r2, e2 = await _assess(store, task, memory, verdict="对", focus="weak")
     asked2 = next(e for e in e2 if e.type == LearningEvent.QUESTION_ASKED)
-    assert asked2.payload["item_id"] == weak_item  # 薄弱优先锁定
+    assert asked2.payload["item_id"] == weak_item  # focus=weak 锁定薄弱集
     assert asked2.payload["question_type"] == "追问"  # 薄弱 → 追问
 
 
@@ -308,9 +311,9 @@ async def test_observing_concept_routes_to_open_with_llm_grade_and_followup(
     memory.record_verdict(target, "对")  # → 观察中
     assert memory.state_of(target) == "观察中"
 
-    result, events = await _assess(store, task, memory, verdict=verdict)
+    result, events = await _assess(store, task, memory, verdict=verdict, focus="weak")
 
-    assert result.item_id == target  # 观察中仍在薄弱优先集，被锁定
+    assert result.item_id == target  # focus=weak 锁定薄弱集（含观察中）
     assert result.question_type == "开放"
     # 开放路径：出题 + 判卷两对 model span（LLM 判卷）。
     expected_stream = [
@@ -353,7 +356,7 @@ async def test_probe_path_wrong_answer_gives_followup() -> None:
     memory.record_verdict(target, "错")  # → 薄弱 → 复考走追问
     assert memory.state_of(target) == "薄弱"
 
-    result, events = await _assess(store, task, memory, verdict="错")
+    result, events = await _assess(store, task, memory, verdict="错", focus="weak")
 
     assert result.item_id == target
     assert result.question_type == "追问"
@@ -403,22 +406,42 @@ async def test_case4_wrong_answer_records_weak_by_item_id() -> None:
     )
 
 
-async def test_case5_reassessment_targets_weak_priority_candidate() -> None:
-    # eval case 5：有薄弱概念时，复考出题锚定薄弱优先候选集里的 item，新概念被排除。
+async def test_mixed_default_covers_unasked_not_locked_to_weak() -> None:
+    # R1-S7 覆盖优先（eval case 5，锁死回归）：mixed 默认下，有薄弱概念但本会话未考过任何题时，
+    # 选题选**未考过**的自然选择项，**不锁死薄弱**——修 dogfood "6 题锁死同一 item"。
     store, task, item_ids = _stocked_store()
     items = store.items_for_task(task.task_id)
-    # 全集随机（无记忆）本会选中的 item——用它作对照，证明薄弱优先确实压过了全集随机。
     natural = select_target(items, rng=new_rng(_SEED)).item_id
-    # 制造一个"不同于自然选择"的薄弱概念（喂一次错）。
-    weak_item = next(i for i in item_ids if i != natural)
+    weak_item = next(i for i in item_ids if i != natural)  # 薄弱 != 自然选择
     memory = LearningMemory()
     memory.record_verdict(weak_item, "错")
     assert memory.weak_item_ids() == {weak_item}
 
-    _result, events = await _assess(store, task, memory, verdict="对")
+    _result, events = await _assess(store, task, memory, answer=_MC_CORRECT)  # focus=mixed 默认
 
     asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
-    # 出题锚定薄弱概念，而非全集随机会选的新概念（薄弱优先候选集把新概念排除）。
+    # 覆盖优先：选未考过的 natural，不回锁到已薄弱的 weak_item（旧排他策略会锁 weak_item → 被杀）。
+    assert asked.payload["item_id"] == natural
+    assert asked.payload["item_id"] != weak_item
+    assert asked.payload["question_type"] == "选择题"  # natural 未追踪 → MC（不再全追问）
+
+
+async def test_focus_weak_targets_weak_priority_candidate() -> None:
+    # R1-S7 focus="weak"（"复习薄弱"，eval case 6 姊妹）：显式复习薄弱时锁定薄弱集里的 item，
+    # 新概念被排除（即使有未考过的自然选择项）。
+    store, task, item_ids = _stocked_store()
+    items = store.items_for_task(task.task_id)
+    # 全集随机本会选中的 item——用它作对照，证明 focus=weak 确实压过了覆盖优先 / 全集随机。
+    natural = select_target(items, rng=new_rng(_SEED)).item_id
+    weak_item = next(i for i in item_ids if i != natural)  # 薄弱 != 自然选择
+    memory = LearningMemory()
+    memory.record_verdict(weak_item, "错")
+    assert memory.weak_item_ids() == {weak_item}
+
+    _result, events = await _assess(store, task, memory, verdict="对", focus="weak")
+
+    asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
+    # focus=weak 锁定薄弱概念，而非全集随机会选的新概念。
     assert asked.payload["item_id"] == weak_item
     assert asked.payload["item_id"] != natural
     assert asked.payload["question_type"] == "追问"  # 薄弱 → 追问
@@ -434,9 +457,9 @@ async def test_case6_one_correct_observes_two_correct_discharges() -> None:
     memory.record_verdict(target, "错")  # 预置薄弱（!= natural）
     assert memory.state_of(target) == "薄弱"
 
-    # 答对一次 → 观察中（仍在记忆）；薄弱优先把复考锁定到 target；薄弱 → 追问路径。
-    r2, e2 = await _assess(store, task, memory, verdict="对")
-    assert r2.item_id == target != natural  # 真正区分薄弱优先 vs seed 巧合
+    # 答对一次 → 观察中（仍在记忆）；focus=weak 把复考锁定到 target；薄弱 → 追问路径。
+    r2, e2 = await _assess(store, task, memory, verdict="对", focus="weak")
+    assert r2.item_id == target != natural  # 真正区分 focus=weak vs seed 巧合
     assert r2.question_type == "追问"
     assert memory.state_of(target) == "观察中"
     assert target in memory.weak_item_ids()  # 观察中仍在表内，答对一次不销账
@@ -449,7 +472,7 @@ async def test_case6_one_correct_observes_two_correct_discharges() -> None:
     ) == ("薄弱", "观察中", 1)
 
     # 连续第二次答对 → 销账（从记忆移除）；观察中 → 开放路径。
-    r3, e3 = await _assess(store, task, memory, verdict="对")
+    r3, e3 = await _assess(store, task, memory, verdict="对", focus="weak")
     assert r3.item_id == target
     assert r3.question_type == "开放"
     assert memory.state_of(target) is None
@@ -504,7 +527,7 @@ async def test_open_or_probe_round_passes_none_options_to_responder() -> None:
     # 非选择题轮（薄弱 → 追问）：assess_once 传 options=None（自由作答，无候选项）。
     store, task, item_ids = _stocked_store()
     memory = LearningMemory()
-    memory.record_verdict(item_ids[0], "错")  # 薄弱 → 复考路由到追问（薄弱优先集只此一项）
+    memory.record_verdict(item_ids[0], "错")  # 薄弱 → focus=weak 复考路由到追问（薄弱集只此一项）
     responder = _RecordingResponder("我的作答")
     emitter, _events, trace = _harness()
 
@@ -516,6 +539,7 @@ async def test_open_or_probe_round_passes_none_options_to_responder() -> None:
         memory=memory,
         emitter=emitter,
         rng=new_rng(_SEED),
+        focus="weak",
     )
     trace.close()
 
