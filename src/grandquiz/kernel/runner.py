@@ -9,6 +9,7 @@
 工具执行是确定性代码，每趟重跑（不进 cassette）。
 """
 
+from grandquiz.kernel.context import ContextBuilder
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.kernel.hooks import HookManager, HookVeto
 from grandquiz.kernel.recovery import Decision, RecoveryPolicy
@@ -44,10 +45,15 @@ class Runner:
         hooks: HookManager | None = None,
         recovery: RecoveryPolicy | None = None,
         max_iterations: int = 8,
+        context_builder: ContextBuilder | None = None,
     ) -> None:
         self._provider = provider
         self._emitter = emitter
         self._system_prompt = system_prompt
+        # ReAct 上下文装配器（M5）：run_agent_turn 有它则经分区装配 messages（system 前言区 +
+        # 学情注入分区 → history → user）。None → 退回原 system + history（向后兼容，run_turn /
+        # 既有测试不破）。只作用于 ReAct 路径，不碰 run_turn。
+        self._context_builder = context_builder
         # prompt 版本号进 trace（架构约束）——此处只留种子；正式 prompt registry 是后续里程碑。
         self._prompt_version = prompt_version
         # tool-calling 循环的加硬件（run_agent_turn 用；run_turn 不碰）。全可选，保持 M1 构造兼容。
@@ -63,6 +69,18 @@ class Runner:
             messages.append(Message(role="system", content=self._system_prompt))
         messages.extend(self._history)
         return messages
+
+    def _agent_turn_messages(self, user_message: str) -> list[Message]:
+        """ReAct 一次 turn 的初始 messages：有 ContextBuilder 走分区装配（system 前言区 + 学情
+        注入 → history → user），否则退回原 ``system + history + user``（向后兼容）。
+
+        ``self._history`` 是跨轮裁剪后的历史（只 user + final assistant）；ContextBuilder 拿它 +
+        当前 user 装配，故当前 user 消息由装配统一追加（不在此重复）。builder 存在时 system 前言区
+        由其 system 分区提供（``self._system_prompt`` 在 ReAct 路径被 builder 接管、不再重复注入）。
+        """
+        if self._context_builder is not None:
+            return self._context_builder.build(self._history, user_message)
+        return [*self._messages(), Message(role="user", content=user_message)]
 
     async def run_turn(self, user_message: str) -> str:
         turn_span = self._emitter.new_span_id()
@@ -136,7 +154,7 @@ class Runner:
         )
 
         # 历史只在成功后提交（同 run_turn）：失败不留孤儿 user 消息。工具往返只进本地 call_messages
-        call_messages = [*self._messages(), Message(role="user", content=user_message)]
+        call_messages = self._agent_turn_messages(user_message)
         try:
             for _ in range(self._max_iterations):
                 completion = await self._generate(call_messages, parent_span_id=turn_span)

@@ -26,6 +26,7 @@ from rich.markup import escape
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.assessment import assess_once
+from grandquiz.domain.learning.context import learner_context_provider
 from grandquiz.domain.learning.fetch import FetchError
 from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
 from grandquiz.domain.learning.memory import SqliteLearningMemory
@@ -38,6 +39,7 @@ from grandquiz.domain.learning.tools import register_learning_tools
 from grandquiz.interfaces.cli.interactive import InteractiveResponder
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
 from grandquiz.kernel.clock import SystemClock, new_rng
+from grandquiz.kernel.context import ContextBuilder, Partition
 from grandquiz.kernel.events import EventEmitter, EventSink
 from grandquiz.kernel.recovery import Decision, RecoveryPolicy
 from grandquiz.kernel.report import render_trace_html
@@ -322,10 +324,13 @@ async def run_react(
 
     组装：``provider`` + ``ToolRegistry``（经 ``register_learning_tools`` 注入真依赖：SQLite
     store/memory/preferences + 文件式 fetch 源 + keep-all 审批门 + 注入的 ``responder`` +
-    ``quiz_seed=seed``）+ 版本化 ReAct 系统提示（``load_prompt`` 读 name@digest，进 trace）。
-    **一个 ``Runner`` 贯穿全部回合**——``run_agent_turn`` 的历史裁剪（只留 user + final assistant）
-    跨回合累积。R1-S6：考核走**受控子流程** ``start_quiz(count)``——LLM 只触发它、拿结构化小结，逐题
-    一问一答 + MC 选择器逐字提交都在工具内部的 ``assess_once`` 循环里（``responder`` 逐题作答），LLM
+    ``quiz_seed=seed``）+ **ContextBuilder 分区装配**（M5）：system 前言区（版本化 ReAct 系统提示，
+    ``load_prompt`` 读 name@digest，进 trace）+ 学情注入分区（``learner_context_provider`` 闭包，
+    每回合 build 现取最新薄弱点 + 偏好 → agent 不调工具即知学情、更聪明编排）。**一个 ``Runner``
+    贯穿全部回合**——``run_agent_turn`` 的历史裁剪（只留 user + final assistant）跨回合累积，学情
+    分区随之逐回合刷新。R1-S6：考核走**受控子流程** ``start_quiz(count)``——LLM 只触发它、拿结构化
+    小结，逐题一问一答 + MC 选择器逐字提交都在工具内部的 ``assess_once`` 循环里（``responder`` 逐题
+    作答），LLM
     不进逐题循环、不复述题目、不自己判卷。``preferences`` 透传给 ``start_quiz`` → ``assess_once``
     解析出题语言（偏好 > task 默认 > 中文；跨会话留存，可由 ``quiz --prefer-lang`` 预先设定）。
 
@@ -365,13 +370,29 @@ async def run_react(
             quiz_seed=seed,
         )
         prompt = load_prompt(_REACT_PROMPT_NAME)
+        # ContextBuilder（M5）分区装配：system 前言区（版本化 react 系统提示）+ 学情注入分区
+        # （domain provider，闭包捕获 store/memory/preferences/task → 每回合 build 现取最新薄弱
+        # 点 + 偏好）。domain→kernel 合法：ContextBuilder 只认名字 + 字符串 provider。学情分区内容
+        # 为空（无薄弱、无偏好）时 build 自动跳过、不注入空块。预算 / 压缩接缝已在 ContextBuilder
+        # 留好（下一程接 context compression），本处不设 budget。
+        context_builder = ContextBuilder(
+            [
+                Partition(name="system", provider=prompt.text),
+                Partition(
+                    name="memory",
+                    provider=learner_context_provider(
+                        store=store, memory=memory, preferences=preferences, task=task
+                    ),
+                ),
+            ]
+        )
         runner = Runner(
             provider=provider,
             emitter=emitter,
-            system_prompt=prompt.text,
             prompt_version=prompt.version,  # prompt 版本号进 trace（架构约束）
             tools=registry,
             max_iterations=max_iterations,
+            context_builder=context_builder,
         )
 
         console.print(f"[bold]ReAct 学习助手「{title}」——输入消息与我对话（Ctrl+D 退出）[/]")

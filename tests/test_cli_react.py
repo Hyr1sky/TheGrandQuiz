@@ -22,7 +22,7 @@ from rich.console import Console
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.fetch import FetchError
 from grandquiz.domain.learning.memory import SqliteLearningMemory
-from grandquiz.domain.learning.models import LearningTask
+from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource, LearningTask
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.domain.learning.tools import _ScopedEmitter  # pyright: ignore[reportPrivateUsage]
@@ -370,6 +370,73 @@ async def test_react_session_zero_token_replay(tmp_path: Path) -> None:
     assert _question_asked_payload(db1.parent / "trace.db", trace_id1) == _question_asked_payload(
         db2.parent / "trace.db", trace_id2
     )
+
+
+# --------------------------------------------------------------------------- #
+# run_react 装配 ContextBuilder：学情记忆（薄弱 + 偏好）注入 ReAct 系统前言区
+# --------------------------------------------------------------------------- #
+
+
+class _CaptureReactProvider:
+    """记录 ReAct 决策槽（role=basic + react 系统提示）收到的 messages，恒收敛 final、不调工具。"""
+
+    def __init__(self) -> None:
+        self.react_messages: list[list[Message]] = []
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        system = messages[0].content if messages and messages[0].role == "system" else ""
+        if role == "basic" and "考核驱动的学习助手" in system:
+            self.react_messages.append(list(messages))
+        return Completion(text="好的。", usage=Usage(prompt_tokens=1, completion_tokens=1))
+
+
+def _seed_weak_concept(db_path: Path) -> None:
+    """在 run_react 打开的同一 learning db 里预置一个判错的薄弱概念（跨会话留存的确定性替身）。"""
+    task = LearningTask.create("Py")
+    resource = LearningResource.create(task_id=task.task_id, url=_MATERIAL_URL)
+    item = KnowledgeItem.create(
+        resource_id=resource.resource_id,
+        index=0,
+        concept="闭包",
+        summary="闭包捕获的是变量引用",
+        evidence=[Evidence(quote=_QUOTE)],
+        confidence=0.9,
+    )
+    store = SqliteLearningStore(db_path)
+    store.add_task(task)
+    store.add_resource(resource)
+    store.add_items([item])
+    store.close()
+    memory = SqliteLearningMemory(db_path)
+    memory.record_verdict(item.item_id, "错")  # → 薄弱
+    memory.close()
+
+
+async def test_react_injects_learner_context_into_system(tmp_path: Path) -> None:
+    # 兑现"记忆互通复用"：预置薄弱概念后，agent 不调工具就在系统前言区看到它（学情注入分区）。
+    db = tmp_path / "learning.db"
+    _seed_weak_concept(db)
+    provider = _CaptureReactProvider()
+    await run_react(
+        title="Py",
+        db_path=db,
+        materials_dir=tmp_path,
+        provider=provider,
+        responder=ScriptedResponder(answer=_MC_WRONG),
+        console=Console(record=True, width=100),
+        user_messages=["我哪里薄弱"],
+        seed=42,
+        trace_db_path=tmp_path / "trace.db",
+    )
+    assert provider.react_messages, "ReAct 决策槽应被调用"
+    system_blocks = [m.content for m in provider.react_messages[0] if m.role == "system"]
+    joined = "\n".join(system_blocks)
+    assert "闭包" in joined  # 薄弱概念名注入
+    assert "薄弱" in joined  # 状态注入
+    # 学情块与 react 系统提示是分开的两条 system 消息（分区装配，非拼进一条）。
+    assert len(system_blocks) == 2
 
 
 # --------------------------------------------------------------------------- #
