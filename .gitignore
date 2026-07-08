@@ -35,3 +35,6 @@ htmlcov/
 
 # Node (future frontend / pyright bundled runtime)
 node_modules/
+
+# Localdata
+localtemp
