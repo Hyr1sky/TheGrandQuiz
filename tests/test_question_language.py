@@ -52,7 +52,9 @@ class _LanguageEchoProvider:
         self.calls = 0
         self.roles: list[Role] = []
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         self.roles.append(role)
         system = messages[0].content

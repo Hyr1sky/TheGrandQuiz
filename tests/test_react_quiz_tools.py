@@ -88,7 +88,9 @@ class _McProvider:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         payload: dict[str, Any]
         if role == "enrich":
@@ -113,7 +115,9 @@ class _OpenProvider:
         self.calls = 0
         self._verdict = verdict
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         payload: dict[str, Any]
         if role == "enrich":

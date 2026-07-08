@@ -56,7 +56,9 @@ async def test_history_accumulates_across_turns() -> None:
 
 
 class _RaisingProvider:
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         raise RuntimeError("boom")
 
 
@@ -66,7 +68,9 @@ class _FlakyProvider:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         if self.calls == 1:
             raise RuntimeError("boom")

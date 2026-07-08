@@ -4,21 +4,45 @@
 env 缺变量即报错、messages / response 映射、disable_thinking → extra_body 的开关逻辑。
 """
 
+import json
+from collections.abc import Sequence
+from typing import Any, cast
+
 import pytest
+from openai import omit
+from pydantic import BaseModel
 
 import grandquiz.providers.llm as llm_mod
-from grandquiz.providers.base import Message
+from grandquiz.kernel.clock import ManualClock
+from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
+from grandquiz.kernel.runner import Runner
+from grandquiz.kernel.tools import Tool, ToolRegistry
+from grandquiz.providers.base import Completion, Message, Role, ToolCall, ToolSpec
 from grandquiz.providers.llm import OpenAICompatProvider, RoleConfig
 
 
+class _FakeFunction:
+    def __init__(self, name: str, arguments: str) -> None:
+        self.name = name
+        self.arguments = arguments
+
+
+class _FakeToolCall:
+    def __init__(self, id: str, name: str, arguments: str) -> None:
+        self.id = id
+        self.type = "function"
+        self.function = _FakeFunction(name, arguments)
+
+
 class _FakeMessage:
-    def __init__(self, content: str | None) -> None:
+    def __init__(self, content: str | None, tool_calls: list[_FakeToolCall] | None = None) -> None:
         self.content = content
+        self.tool_calls = tool_calls
 
 
 class _FakeChoice:
-    def __init__(self, content: str | None) -> None:
-        self.message = _FakeMessage(content)
+    def __init__(self, content: str | None, tool_calls: list[_FakeToolCall] | None = None) -> None:
+        self.message = _FakeMessage(content, tool_calls)
 
 
 class _FakeUsage:
@@ -28,8 +52,14 @@ class _FakeUsage:
 
 
 class _FakeResponse:
-    def __init__(self, content: str | None, prompt_tokens: int, completion_tokens: int) -> None:
-        self.choices = [_FakeChoice(content)]
+    def __init__(
+        self,
+        content: str | None,
+        prompt_tokens: int,
+        completion_tokens: int,
+        tool_calls: list[_FakeToolCall] | None = None,
+    ) -> None:
+        self.choices = [_FakeChoice(content, tool_calls)]
         self.usage = _FakeUsage(prompt_tokens, completion_tokens)
 
 
@@ -123,3 +153,212 @@ async def test_complete_uses_greedy_temperature_zero(monkeypatch: pytest.MonkeyP
 
     call = captured["client"].chat.completions.calls[0]
     assert call["temperature"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# R1-S5：function-calling 接线——发 tools / 解析 tool_calls / assistant+tool 消息映射
+# --------------------------------------------------------------------------- #
+
+
+async def test_complete_sends_tools_as_openai_function_specs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # tools 非空 → 映射成 OpenAI tools=[{"type":"function","function":{...}}]。删掉 llm.py 发 tools
+    # 的分支 → 本测试红（真机 bug 的复现门：provider 从不发 tools）。
+    captured = _patch_client(monkeypatch, _FakeResponse("ok", prompt_tokens=1, completion_tokens=1))
+    provider = OpenAICompatProvider({"basic": RoleConfig(api_key="k", base_url="u", model="m")})
+    schema = {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}
+
+    await provider.complete(
+        [Message(role="user", content="hi")],
+        role="basic",
+        tools=[ToolSpec(name="echo", description="回声 text", parameters=schema)],
+    )
+
+    call = captured["client"].chat.completions.calls[0]
+    assert call["tools"] == [
+        {
+            "type": "function",
+            "function": {"name": "echo", "description": "回声 text", "parameters": schema},
+        }
+    ]
+
+
+async def test_complete_omits_tools_when_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 向后兼容：不传 tools → tools 走 omit 哨兵（等价"线上不带该参数"），既有纯文本路径不变。
+    captured = _patch_client(monkeypatch, _FakeResponse("ok", prompt_tokens=1, completion_tokens=1))
+    provider = OpenAICompatProvider({"basic": RoleConfig(api_key="k", base_url="u", model="m")})
+
+    await provider.complete([Message(role="user", content="hi")], role="basic")
+
+    call = captured["client"].chat.completions.calls[0]
+    assert call["tools"] is omit
+
+
+async def test_complete_parses_tool_calls_from_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # response 带 tool_calls（arguments 是 JSON 串）→ Completion.tool_calls（arguments 转回 dict）。
+    _patch_client(
+        monkeypatch,
+        _FakeResponse(
+            None,
+            prompt_tokens=5,
+            completion_tokens=2,
+            tool_calls=[_FakeToolCall("call_1", "echo", '{"text": "hi"}')],
+        ),
+    )
+    provider = OpenAICompatProvider({"basic": RoleConfig(api_key="k", base_url="u", model="m")})
+
+    reply = await provider.complete([Message(role="user", content="hi")], role="basic")
+
+    assert reply.text == ""  # tool_calls 分支下 content 常为 None → 归一到空串
+    assert reply.tool_calls is not None
+    assert len(reply.tool_calls) == 1
+    assert reply.tool_calls[0].id == "call_1"
+    assert reply.tool_calls[0].name == "echo"
+    assert reply.tool_calls[0].arguments == {"text": "hi"}  # JSON 字符串 → dict（边界解码）
+    assert reply.usage.prompt_tokens == 5
+
+
+async def test_complete_returns_text_when_no_tool_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 无 tool_calls → 走旧路径取 .content，tool_calls 为 None（纯文本 completion 不变）。
+    _patch_client(monkeypatch, _FakeResponse("纯文本", prompt_tokens=2, completion_tokens=2))
+    provider = OpenAICompatProvider({"basic": RoleConfig(api_key="k", base_url="u", model="m")})
+
+    reply = await provider.complete([Message(role="user", content="hi")], role="basic")
+
+    assert reply.text == "纯文本"
+    assert reply.tool_calls is None
+
+
+async def test_complete_maps_assistant_tool_calls_and_tool_result_messages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 出栈消息映射：assistant 带 tool_calls（内部 dict → JSON 串）；role="tool" 结果消息
+    # → {"role":"tool","tool_call_id","content"}。content 为空的 assistant 归一到 None。
+    captured = _patch_client(monkeypatch, _FakeResponse("ok", prompt_tokens=1, completion_tokens=1))
+    provider = OpenAICompatProvider({"basic": RoleConfig(api_key="k", base_url="u", model="m")})
+
+    messages = [
+        Message(role="system", content="sys"),
+        Message(role="user", content="q"),
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[ToolCall(id="call_1", name="echo", arguments={"text": "hi"})],
+        ),
+        Message(role="tool", content="echoed:hi", tool_call_id="call_1"),
+    ]
+    await provider.complete(messages, role="basic")
+
+    sent = cast("list[dict[str, Any]]", captured["client"].chat.completions.calls[0]["messages"])
+    assert sent[0] == {"role": "system", "content": "sys"}
+    assert sent[1] == {"role": "user", "content": "q"}
+    assert sent[2] == {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "echo", "arguments": json.dumps({"text": "hi"})},
+            }
+        ],
+    }
+    assert sent[3] == {"role": "tool", "tool_call_id": "call_1", "content": "echoed:hi"}
+
+
+# --------------------------------------------------------------------------- #
+# R1-S5：ToolRegistry.tool_specs() —— pydantic 入参 schema → 通用 ToolSpec
+# --------------------------------------------------------------------------- #
+
+
+class _EchoParams(BaseModel):
+    text: str
+
+
+def _echo_tool() -> Tool:
+    async def handler(params: _EchoParams) -> str:
+        return f"echoed:{params.text}"
+
+    return Tool(name="echo", description="回声 text", params=_EchoParams, handler=handler)
+
+
+def test_tool_specs_generates_from_pydantic_schema() -> None:
+    registry = ToolRegistry()
+    registry.register(_echo_tool())
+
+    specs = registry.tool_specs()
+
+    assert len(specs) == 1
+    spec = specs[0]
+    assert isinstance(spec, ToolSpec)
+    assert spec.name == "echo"
+    assert spec.description == "回声 text"
+    # parameters 直接来自 pydantic model_json_schema()——含 properties.text 与 required。
+    assert spec.parameters == _EchoParams.model_json_schema()
+    assert spec.parameters["properties"]["text"]["type"] == "string"
+
+
+def test_tool_specs_empty_registry_is_empty_list() -> None:
+    assert ToolRegistry().tool_specs() == []
+
+
+# --------------------------------------------------------------------------- #
+# R1-S5：run_agent_turn 把 tool_specs 传给 provider + MODEL_STARTED 记 role（修 trace 空 role）
+# --------------------------------------------------------------------------- #
+
+
+class _CapturingProvider:
+    """记下最后一次 complete 收到的 tools / role；给回 final 文本（无 tool_calls → 终止）。"""
+
+    def __init__(self) -> None:
+        self.tools_seen: Sequence[ToolSpec] | None = None
+        self.role_seen: Role | None = None
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: object = None,
+    ) -> Completion:
+        self.tools_seen = tools  # type: ignore[assignment]
+        self.role_seen = role
+        return Completion(text="done")
+
+
+def _events_emitter() -> tuple[EventEmitter, list[AgentEvent]]:
+    events: list[AgentEvent] = []
+    sink = EventSink()
+    sink.subscribe(events.append)
+    return EventEmitter(sink, ManualClock(), trace_id="t"), events
+
+
+async def test_run_agent_turn_forwards_tool_specs_to_provider() -> None:
+    provider = _CapturingProvider()
+    emitter, _ = _events_emitter()
+    registry = ToolRegistry()
+    registry.register(_echo_tool())
+    runner = Runner(provider=provider, emitter=emitter, tools=registry)
+
+    await runner.run_agent_turn("q")
+
+    assert provider.tools_seen is not None
+    names = [s.name for s in provider.tools_seen]
+    assert names == ["echo"]
+
+
+async def test_run_agent_turn_records_role_in_model_started_payload() -> None:
+    provider = _CapturingProvider()
+    emitter, events = _events_emitter()
+    runner = Runner(provider=provider, emitter=emitter)
+
+    await runner.run_agent_turn("q")
+
+    started = [e for e in events if e.type == EventType.MODEL_STARTED]
+    assert len(started) == 1
+    # 修 dogfood trace 里 role 为空：ReAct 生成显式 role="basic" 且落进 model.started payload。
+    assert started[0].payload["role"] == "basic"
+    assert provider.role_seen == "basic"

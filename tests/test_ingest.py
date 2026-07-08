@@ -59,7 +59,9 @@ class _FixedProvider:
         self.text = text
         self.calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         return Completion(text=self.text, usage=Usage(prompt_tokens=7, completion_tokens=3))
 
@@ -202,7 +204,7 @@ async def test_whole_ingest_slice_is_deterministic_under_replay(tmp_path: Path) 
             self.calls = 0
 
         async def complete(
-            self, messages: Sequence[Message], *, role: Role = "basic"
+            self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
         ) -> Completion:
             self.calls += 1
             return Completion(text=_READER_JSON, usage=Usage(prompt_tokens=7, completion_tokens=3))
@@ -252,7 +254,7 @@ async def test_provider_exception_propagates_and_closes_ingest_span() -> None:
 
     class _Raising:
         async def complete(
-            self, messages: Sequence[Message], *, role: Role = "basic"
+            self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
         ) -> Completion:
             raise RuntimeError("网络超时")
 

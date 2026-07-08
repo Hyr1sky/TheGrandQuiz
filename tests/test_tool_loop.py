@@ -57,7 +57,9 @@ class _ScriptedProvider:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         tool_results = [m for m in messages if m.role == "tool"]
         if tool_results:
@@ -78,7 +80,9 @@ class _AlwaysToolProvider:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         return Completion(
             text="",
@@ -89,7 +93,9 @@ class _AlwaysToolProvider:
 class _FinalOnlyProvider:
     """从不出 tool_call，直接给 final 文本（无工具路径）。"""
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         return Completion(text="just an answer", usage=Usage(prompt_tokens=2, completion_tokens=2))
 
 
@@ -234,7 +240,9 @@ class _RetryProvider:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         tool_results = [m for m in messages if m.role == "tool"]
         if tool_results and "error" not in tool_results[-1].content:
@@ -257,7 +265,9 @@ async def test_degraded_tool_error_is_fed_back_and_recovers() -> None:
 
 
 class _FatalProvider:
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         return Completion(
             text="",
             tool_calls=[ToolCall(id="c1", name="echo", arguments={"text": "boom"})],

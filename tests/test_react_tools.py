@@ -195,7 +195,9 @@ class _ScriptedReactIngestProvider:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         joined = "\n".join(m.content for m in messages)
         if "不可信抓取内容" in joined:  # 内部 Reader 深读调用

@@ -13,9 +13,11 @@ from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.kernel.hooks import HookManager, HookVeto
 from grandquiz.kernel.recovery import Decision, RecoveryPolicy
 from grandquiz.kernel.tools import ToolContext, ToolRegistry
-from grandquiz.providers.base import Completion, Message, Provider, ToolCall
+from grandquiz.providers.base import Completion, Message, Provider, Role, ToolCall
 
 _TOOL_CALL_HOOK = "tool_call"
+# ReAct 编排固定走 basic 角色（已确认 deepseek 支持 function-calling）；显式常量避免散落字面量。
+_REACT_ROLE: Role = "basic"
 
 
 class MaxIterationsExceeded(RuntimeError):
@@ -176,19 +178,28 @@ class Runner:
         raise MaxIterationsExceeded(self._max_iterations)
 
     async def _generate(self, call_messages: list[Message], *, parent_span_id: str) -> Completion:
-        """发一次 MODEL span 并调 provider；错误闭合 span（ok=False）后原样冒泡。"""
+        """发一次 MODEL span 并调 provider；错误闭合 span（ok=False）后原样冒泡。
+
+        ReAct 生成走 ``role="basic"``（已确认 deepseek 支持 function-calling），并把注册表的
+        ``tool_specs()`` 一并传给 ``provider.complete(tools=...)``——否则真 provider 从不发 tools、
+        模型只能用文本"扮演"调工具（dogfood 的 11 agent_turn / 0 tool_call 根因）。``role`` 显式记进
+        MODEL_STARTED payload，修 trace 里 role 为空。
+        """
         model_span = self._emitter.new_span_id()
         self._emitter.emit(
             EventType.MODEL_STARTED,
             span_id=model_span,
             parent_span_id=parent_span_id,
             payload={
+                "role": _REACT_ROLE,
                 "messages": [m.model_dump() for m in call_messages],
                 "prompt_version": self._prompt_version,
             },
         )
         try:
-            completion = await self._provider.complete(call_messages, role="basic")
+            completion = await self._provider.complete(
+                call_messages, role=_REACT_ROLE, tools=self._tools.tool_specs()
+            )
         except Exception as exc:
             self._emitter.emit(
                 EventType.ERROR,

@@ -141,7 +141,9 @@ class AssessFakeProvider:
         self.calls = 0
         self.roles: list[Role] = []
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         self.roles.append(role)
         text = "\n".join(m.content for m in messages)
@@ -173,7 +175,9 @@ class IngestFakeProvider:
         self.calls = 0
         self.roles: list[Role] = []
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         self.roles.append(role)
         return Completion(text=self.text, usage=Usage(prompt_tokens=7, completion_tokens=3))
@@ -221,7 +225,9 @@ class LanguageEchoAssessProvider:
         self.roles: list[Role] = []
         self._enrich_calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         self.roles.append(role)
         quote = _extract_quote(messages)
@@ -264,7 +270,9 @@ class DedupAssessProvider:
         self.calls = 0
         self.roles: list[Role] = []
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         self.roles.append(role)
         quote = _extract_quote(messages)
@@ -437,7 +445,7 @@ class _CountingFake(Protocol):
     roles: list[Role]
 
     async def complete(
-        self, messages: Sequence[Message], *, role: Role = "basic"
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
     ) -> Completion: ...
 
 

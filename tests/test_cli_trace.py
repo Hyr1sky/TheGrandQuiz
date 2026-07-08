@@ -50,7 +50,9 @@ _READER_JSON = json.dumps(
 class _ReaderProvider:
     """ingest 用假 provider：恒返回固定候选 JSON（供 run_ingest 的 Reader 槽）。"""
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         return Completion(text=_READER_JSON, usage=Usage(prompt_tokens=7, completion_tokens=3))
 
 
@@ -64,7 +66,9 @@ class _McProvider:
     def __init__(self) -> None:
         self._enrich_calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         payload: dict[str, Any]
         if role == "enrich":
             self._enrich_calls += 1

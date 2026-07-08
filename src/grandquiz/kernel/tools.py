@@ -21,6 +21,7 @@ from pydantic import BaseModel, ValidationError
 
 from grandquiz.kernel.events import EventEmitter
 from grandquiz.kernel.recovery import ErrorClass
+from grandquiz.providers.base import ToolSpec
 
 
 class ModelRetry(Exception):
@@ -86,6 +87,23 @@ class ToolRegistry:
 
     def __contains__(self, name: str) -> bool:
         return name in self._tools
+
+    def tool_specs(self) -> list[ToolSpec]:
+        """把每个 ``Tool`` 的 pydantic 入参模型 ``model_json_schema()`` 摊平成 provider 中立的
+        ``ToolSpec`` 列表——runner 转手喂给 ``provider.complete(tools=...)`` 做 function-calling。
+
+        kernel→providers 是既有合法依赖（providers 是 runtime 下层，不含 domain）；registry 仍不认识
+        工具的领域语义，只交出"名字 + 描述 + 入参 JSON Schema"三样通用信息。按名排序保证同一
+        registry 每次产出同序 → 不给下游引入非确定性。
+        """
+        return [
+            ToolSpec(
+                name=tool.name,
+                description=tool.description,
+                parameters=tool.params.model_json_schema(),
+            )
+            for tool in sorted(self._tools.values(), key=lambda t: t.name)
+        ]
 
     async def dispatch(
         self, name: str, arguments: Mapping[str, Any], *, ctx: ToolContext | None = None

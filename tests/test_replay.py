@@ -32,7 +32,9 @@ class _CountingProvider:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         last_user = next((m.content for m in reversed(messages) if m.role == "user"), "")
         return Completion(

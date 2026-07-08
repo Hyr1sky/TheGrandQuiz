@@ -11,17 +11,85 @@ CI 回放传 ``ReplayProvider(cassette)``，调用方不变。
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
-from openai import AsyncOpenAI
-from openai.types.chat import ChatCompletionMessageParam
+from openai import AsyncOpenAI, Omit, omit
+from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 
-from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.base import Completion, Message, Role, ToolCall, ToolSpec, Usage
 
 _TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _to_oai_messages(messages: Sequence[Message]) -> list[ChatCompletionMessageParam]:
+    """本 runtime 的 ``Message`` → OpenAI 线上形状（provider 边界做内部 dict ⇄ JSON 串译码）。
+
+    - assistant 带 ``tool_calls``：内部 ``arguments`` dict 在此转成 OpenAI 要求的 JSON **字符串**；
+      ``content`` 空串归一到 ``None``（OpenAI 对工具请求消息的惯例）。
+    - ``role="tool"`` 结果消息 → ``{"role":"tool","tool_call_id","content"}``。
+    - 其余（system / user / 无工具 assistant）→ ``{"role","content"}``（旧形状不变）。
+    """
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        if m.role == "assistant" and m.tool_calls:
+            out.append(
+                {
+                    "role": "assistant",
+                    "content": m.content or None,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.name,
+                                "arguments": json.dumps(tc.arguments, ensure_ascii=False),
+                            },
+                        }
+                        for tc in m.tool_calls
+                    ],
+                }
+            )
+        elif m.role == "tool":
+            out.append({"role": "tool", "tool_call_id": m.tool_call_id, "content": m.content})
+        else:
+            out.append({"role": m.role, "content": m.content})
+    return cast("list[ChatCompletionMessageParam]", out)
+
+
+def _to_oai_tools(tools: Sequence[ToolSpec]) -> list[ChatCompletionToolParam]:
+    """``ToolSpec`` 列表 → OpenAI 原生 ``tools=[{"type":"function","function":{...}}]``。"""
+    specs: list[dict[str, Any]] = [
+        {
+            "type": "function",
+            "function": {
+                "name": t.name,
+                "description": t.description,
+                "parameters": t.parameters,
+            },
+        }
+        for t in tools
+    ]
+    return cast("list[ChatCompletionToolParam]", specs)
+
+
+def _parse_tool_calls(message: Any) -> list[ToolCall] | None:
+    """OpenAI ``response.choices[0].message.tool_calls`` → 内部 ``ToolCall`` 列表（无则 None）。
+
+    边界解码：每个 ``function.arguments`` 是 JSON **字符串**，在此转回内部 dict——与出栈映射对称。
+    """
+    raw = getattr(message, "tool_calls", None)
+    if not raw:
+        return None
+    parsed: list[ToolCall] = []
+    for tc in raw:
+        arguments_json: str = tc.function.arguments or "{}"
+        arguments: dict[str, Any] = json.loads(arguments_json)
+        parsed.append(ToolCall(id=tc.id, name=tc.function.name, arguments=arguments))
+    return parsed
 
 
 @dataclass(frozen=True)
@@ -75,31 +143,40 @@ class OpenAICompatProvider:
         """各角色解析后的 model id——喂 Recording/Replay 算 replay 键（防跨模型串键）。"""
         return {role: cfg.model for role, cfg in self._configs.items()}
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
         config = self._configs[role]
         client = self._clients[role]
-        oai_messages = cast(
-            "list[ChatCompletionMessageParam]",
-            [{"role": m.role, "content": m.content} for m in messages],
-        )
+        oai_messages = _to_oai_messages(messages)
         extra_body: dict[str, object] = {}
         if config.disable_thinking:
             extra_body["enable_thinking"] = False
-        # temperature=0：出题（enrich）必须贪心解码——温度采样会让同一 message 每次录出不同题，
-        # 毁掉 record/replay 的可复现（replay_key 只按 message 算、不含温度，故这不改键、只稳定录制
-        # 输出）；判卷（basic）同样设 0 求判决稳定。
+        # tools 走 omit 哨兵：无工具 → 与"不传该参数"等价（线上请求逐字节不变），既有纯文本
+        # completion 路径与 golden cassette 完全不受影响（replay_key 也不含 tools）。
+        oai_tools: list[ChatCompletionToolParam] | Omit = _to_oai_tools(tools) if tools else omit
         response = await client.chat.completions.create(
             model=config.model,
             messages=oai_messages,
+            # temperature=0：出题（enrich）必须贪心解码——温度采样会让同一 message 每次录出不同题，
+            # 毁掉 record/replay 的可复现（replay_key 只按 message 算、不含温度，故这不改键、只稳定
+            # 录制输出）；判卷 / ReAct（basic）同样设 0 求判决稳定。
             temperature=0,
             extra_body=extra_body or None,
+            tools=oai_tools,
         )
-        text = response.choices[0].message.content or ""
+        message = response.choices[0].message
+        tool_calls = _parse_tool_calls(message)
+        text = message.content or ""
         usage = Usage(
             prompt_tokens=response.usage.prompt_tokens if response.usage else 0,
             completion_tokens=response.usage.completion_tokens if response.usage else 0,
         )
-        return Completion(text=text, usage=usage)
+        return Completion(text=text, tool_calls=tool_calls, usage=usage)
 
     async def aclose(self) -> None:
         """关闭底层 HTTP 客户端（长生命周期 provider 退出时调用）。"""

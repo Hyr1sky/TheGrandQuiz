@@ -36,7 +36,9 @@ class _FixedProvider:
         self.text = text
         self.calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         return Completion(text=self.text, usage=Usage(prompt_tokens=5, completion_tokens=2))
 
@@ -172,7 +174,9 @@ class _RaisingProvider:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         raise RuntimeError("网络超时")
 
@@ -216,7 +220,9 @@ class _CapturingProvider:
         self.text = text
         self.user_content = ""
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.user_content = next(m.content for m in messages if m.role == "user")
         return Completion(text=self.text, usage=Usage(prompt_tokens=5, completion_tokens=2))
 

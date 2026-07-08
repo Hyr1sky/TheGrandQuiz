@@ -64,7 +64,9 @@ class _ReactScriptProvider:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         system = messages[0].content if messages and messages[0].role == "system" else ""
         if role == "enrich":  # 出题槽：恒出选择题（正确项在下标 0）

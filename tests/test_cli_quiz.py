@@ -53,7 +53,9 @@ _READER_JSON = json.dumps(
 class _ReaderProvider:
     """ingest 用假 provider：恒返回固定候选 JSON（供 run_ingest 的 Reader 槽）。"""
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         return Completion(text=_READER_JSON, usage=Usage(prompt_tokens=7, completion_tokens=3))
 
 
@@ -63,7 +65,9 @@ class _McProvider:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         payload: dict[str, Any]
         if role == "enrich":
@@ -87,7 +91,9 @@ class _BrokenProvider:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         self.calls += 1
         return Completion(text="这不是 JSON", usage=Usage(prompt_tokens=1, completion_tokens=1))
 
@@ -95,7 +101,9 @@ class _BrokenProvider:
 class _ReplayMissProvider:
     """出题槽即抛 ReplayMiss（FATAL）：模拟 cassette 缺录 / harness bug，必须冒泡不被跳过。"""
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         raise ReplayMiss("cassette 无此响应")
 
 

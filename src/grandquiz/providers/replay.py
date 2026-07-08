@@ -12,7 +12,15 @@ from pathlib import Path
 from typing import Any
 
 from grandquiz.kernel.recovery import ErrorClass
-from grandquiz.providers.base import Completion, Message, Provider, Role, ToolCall, Usage
+from grandquiz.providers.base import (
+    Completion,
+    Message,
+    Provider,
+    Role,
+    ToolCall,
+    ToolSpec,
+    Usage,
+)
 
 
 class ReplayMiss(Exception):
@@ -98,10 +106,18 @@ class RecordingProvider:
         self._cassette = cassette
         self._model_for_role = model_for_role
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
         model_id = self._model_for_role[role]
+        # tools 不进 replay_key（一条轨迹里 registry 固定、同 messages 同 tools）——保既有 golden
+        # cassette 命中不变；但录制时须把 tools 透传给 inner，否则真 provider 又收不到工具。
         key = replay_key(messages, role, model_id)
-        completion = await self._inner.complete(messages, role=role)
+        completion = await self._inner.complete(messages, role=role, tools=tools)
         self._cassette.put(key, completion, role=role, model_id=model_id)
         return completion
 
@@ -113,7 +129,14 @@ class ReplayProvider:
         self._cassette = cassette
         self._model_for_role = model_for_role
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        # tools 只影响录制阶段真 provider 收到什么；回放只按 replay_key 查 cassette，故忽略 tools。
         model_id = self._model_for_role[role]
         key = replay_key(messages, role, model_id)
         completion = self._cassette.get(key)

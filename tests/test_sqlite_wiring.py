@@ -47,14 +47,18 @@ _READER_JSON = json.dumps(
 class _ReaderProvider:
     """Reader 槽用：恒返回固定候选 JSON。"""
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         return Completion(text=_READER_JSON, usage=Usage(prompt_tokens=7, completion_tokens=3))
 
 
 class _AssessProvider:
     """出题 / 判卷槽：enrich 出题（MC → 选择题 JSON），basic 判卷；从 prompt 回抽真实证据。"""
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         text = "\n".join(m.content for m in messages)
         if role == "enrich" and "answer_index" in text:  # 选择题出题（正确项恒在下标 0）
             payload: dict[str, object] = {

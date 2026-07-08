@@ -142,7 +142,9 @@ _CORRECT = "变量本身"
 class _LanguageEchoProvider:
     """从 system prompt 里被替换后的 ``请用 <语言>`` 指令判定语言，返回对应语言的 MC JSON。"""
 
-    async def complete(self, messages: Sequence[Message], *, role: Role = "basic") -> Completion:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
         system = messages[0].content
         english = "请用 英文" in system
         payload = {

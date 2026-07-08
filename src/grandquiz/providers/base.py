@@ -1,11 +1,27 @@
 """Provider 协议 + 所有 LLM provider 共享的 message / usage 类型。"""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field, computed_field
 
 Role = Literal["basic", "enrich"]
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    """一个工具的**通用**声明——喂给 provider 让 LLM 知道有哪些工具可调。
+
+    刻意 provider 中立（不含 kernel 的 ``Tool`` / pydantic 语义）：``kernel.ToolRegistry`` 从每个
+    ``Tool`` 的 pydantic 入参模型 ``model_json_schema()`` 生成 ``ToolSpec`` 列表，OpenAI 兼容
+    provider 再把它译成 ``tools=[{"type":"function","function":{...}}]``。``parameters`` 是一份 JSON
+    Schema dict（对象 schema），直接落进 OpenAI function 的 ``parameters`` 字段。
+    """
+
+    name: str
+    description: str
+    parameters: dict[str, Any]
 
 
 class ToolCall(BaseModel):
@@ -59,8 +75,17 @@ class Completion(BaseModel):
 
 
 class Provider(Protocol):
-    """两个命名角色（basic / enrich）对应 .env 的两套 LLM 配置；角色间路由后续再加。"""
+    """两个命名角色（basic / enrich）对应 .env 的两套 LLM 配置；角色间路由后续再加。
+
+    ``tools`` 默认 ``None`` → 向后兼容：既有调用方（纯文本 completion）不传即无工具。传非空则
+    provider 把它作为可调工具集告知 LLM（OpenAI 兼容 provider 译成原生 ``tools`` 字段）。
+    不认识 function-calling 的 provider（echo / record / replay）忽略或透传该参数、行为不变。
+    """
 
     async def complete(
-        self, messages: Sequence[Message], *, role: Role = "basic"
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
     ) -> Completion: ...
