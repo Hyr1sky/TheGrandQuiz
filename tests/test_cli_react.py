@@ -21,6 +21,7 @@ from rich.console import Console
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.models import LearningTask
+from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.domain.learning.tools import _ScopedEmitter  # pyright: ignore[reportPrivateUsage]
 from grandquiz.interfaces.cli.app import run_react
@@ -57,8 +58,8 @@ class _ReactScriptProvider:
 
     真机里 role=basic 同槽承担三件事，本假件按系统提示区分：ReAct 决策（react 系统提示）、Reader
     深读（"深读器"提示）、判卷（"判卷官"提示）；role=enrich 出题。ReAct 决策据"是否已有 tool 结果"
-    决定继续调工具 or 收敛 final，据最后一条 user 消息关键词选工具。计自身调用次数（验证零 token
-    回放）。
+    决定继续调工具 or 收敛 final，据最后一条 user 消息关键词选工具（R1-S6：考核触发 start_quiz，
+    逐题一问一答在工具内部跑）。计自身调用次数（验证零 token 回放）。
     """
 
     def __init__(self) -> None:
@@ -97,27 +98,30 @@ class _ReactScriptProvider:
             )
         if "入库" in last_user:
             call = ToolCall(id="c1", name="ingest", arguments={"url": _MATERIAL_URL})
-        elif "考" in last_user:
-            call = ToolCall(id="c2", name="next_question", arguments={})
-        else:
-            call = ToolCall(id="c3", name="submit_answer", arguments={"answer": _MC_WRONG})
+        else:  # "考我一题" → 触发受控考核子流程（逐题一问一答在 start_quiz 内部跑，LLM 不进循环）
+            call = ToolCall(id="c2", name="start_quiz", arguments={"count": 1})
         return Completion(
             text="", tool_calls=[call], usage=Usage(prompt_tokens=4, completion_tokens=1)
         )
 
 
-_SESSION = ["请把材料入库", "考我一题", "我选干扰项内容"]
+_SESSION = ["请把材料入库", "考我一题"]
 
 
 async def _drive_react(
     *, provider: Any, db_path: Path, materials_dir: Path, console: Console
 ) -> str:
-    """把一整条三回合会话（入库→出题→答）喂给 run_react，返回 trace_id。"""
+    """把一整条两回合会话（入库 → 触发 start_quiz 考一题）喂给 run_react，返回 trace_id。
+
+    考核内部逐题作答由注入的 ``ScriptedResponder`` 提供：恒选干扰项文本（逐字提交 → 确定性判错 →
+    薄弱账落库），这正是 R1-S6 里 MC 选择器"逐字选项文本"契约的确定性替身（真机走 questionary）。
+    """
     return await run_react(
         title="Py",
         db_path=db_path,
         materials_dir=materials_dir,
         provider=provider,
+        responder=ScriptedResponder(answer=_MC_WRONG),
         console=console,
         user_messages=_SESSION,
         seed=42,
@@ -190,9 +194,9 @@ def _event(event_type: str, payload: dict[str, Any]) -> AgentEvent:
 def test_printer_renders_tool_call_started() -> None:
     console = Console(record=True, width=80)
     QuizEventPrinter(console)(
-        _event(EventType.TOOL_CALL_STARTED, {"tool_name": "next_question", "arguments": {}})
+        _event(EventType.TOOL_CALL_STARTED, {"tool_name": "start_quiz", "arguments": {}})
     )
-    assert "next_question" in console.export_text()
+    assert "start_quiz" in console.export_text()
 
 
 def test_printer_renders_agent_turn_user_message_escaped() -> None:
@@ -244,9 +248,10 @@ async def test_react_session_ingest_then_quiz_then_judge(tmp_path: Path) -> None
     assert memory.state_of(item_id) == "薄弱"
     memory.close()
 
-    # 事件脊柱按序穿过整条竖切：入库(ITEM_CREATED) → 出题 → 判卷 → 记账 → 追问，三个 AGENT_TURN。
+    # 事件脊柱按序穿过整条竖切：入库(ITEM_CREATED) → 出题 → 判卷 → 记账 → 追问，两个 AGENT_TURN
+    # （R1-S6：考核收敛成单次 start_quiz 工具调用——逐题问答在工具内部跑，不再占额外对话回合）。
     types = _event_types(trace_db, trace_id)
-    assert types.count(EventType.AGENT_TURN_STARTED) == 3
+    assert types.count(EventType.AGENT_TURN_STARTED) == 2
     for expected in (
         LearningEvent.ITEM_CREATED,
         LearningEvent.QUESTION_ASKED,

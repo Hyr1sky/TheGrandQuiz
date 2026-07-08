@@ -272,9 +272,11 @@ def _print_weak_summary(
 
 # --- react 子命令（真机 ReAct 对话 agent）----------------------------------------------------
 #
-# 复用现有装配件：register_learning_tools（ingest / query_weak / next_question / submit_answer）+
-# kernel Runner.run_agent_turn（有界 tool-calling 循环）+ QuizEventPrinter（事件脊柱的终端投影）+
+# 复用现有装配件：register_learning_tools（ingest / query_weak / start_quiz）+ kernel
+# Runner.run_agent_turn（有界 tool-calling 循环）+ QuizEventPrinter（事件脊柱的终端投影）+
 # 独立 trace 库。考官内核 / ingest 编排一行不改——react 只是新增命令 + 组装。
+# R1-S6：交互考核硬化为受控子流程——LLM 只触发 start_quiz(count)，逐题一问一答 + MC 选择器逐字提交
+# 都在工具内部的 assess_once 循环里跑（LLM 不进逐题循环、不复述题目、不自己判卷）。
 
 
 def _file_source(materials_dir: Path) -> Callable[[str], str]:
@@ -298,6 +300,7 @@ async def run_react(
     db_path: Path,
     materials_dir: Path,
     provider: Provider,
+    responder: Responder,
     console: Console,
     user_messages: Iterable[str],
     seed: int,
@@ -307,10 +310,13 @@ async def run_react(
     """真机 ReAct 会话循环：逐条用户消息跑一次 ``run_agent_turn``，多回合共享同一 agent / 会话态。
 
     组装：``provider`` + ``ToolRegistry``（经 ``register_learning_tools`` 注入真依赖：SQLite
-    store/memory + 文件式 fetch 源 + keep-all 审批门 + ``quiz_seed=seed``）+ 版本化 ReAct 系统提示
-    （``load_prompt`` 读 name@digest，进 trace）。**一个 ``Runner`` 贯穿全部回合**——
-    ``run_agent_turn`` 的历史裁剪（只留 user + final assistant）跨回合累积；``_QuizSession`` 待答态
-    经工具闭包在同一 registry 里跨回合留存（``next_question`` 出题、下回合 ``submit_answer`` 续）。
+    store/memory/preferences + 文件式 fetch 源 + keep-all 审批门 + 注入的 ``responder`` +
+    ``quiz_seed=seed``）+ 版本化 ReAct 系统提示（``load_prompt`` 读 name@digest，进 trace）。
+    **一个 ``Runner`` 贯穿全部回合**——``run_agent_turn`` 的历史裁剪（只留 user + final assistant）
+    跨回合累积。R1-S6：考核走**受控子流程** ``start_quiz(count)``——LLM 只触发它、拿结构化小结，逐题
+    一问一答 + MC 选择器逐字提交都在工具内部的 ``assess_once`` 循环里（``responder`` 逐题作答），LLM
+    不进逐题循环、不复述题目、不自己判卷。``preferences`` 透传给 ``start_quiz`` → ``assess_once``
+    解析出题语言（偏好 > task 默认 > 中文；跨会话留存，可由 ``quiz --prefer-lang`` 预先设定）。
 
     **一个 ``EventEmitter`` / ``trace_id`` 贯穿全会话**：``QuizEventPrinter`` 订阅做 Rich 呈现、
     ``TraceStore`` 经 ``register`` 落**独立 trace 库**（默认与 learning.db 同目录 ``trace.db``）。
@@ -321,6 +327,7 @@ async def run_react(
     _ensure_parent(resolved_trace_db)
     store = SqliteLearningStore(db_path)
     memory = SqliteLearningMemory(db_path)
+    preferences = SqlitePreferenceMemory(db_path)  # 与 store / memory 共用同一 learning db
     trace_store: TraceStore | None = None
     trace_id = uuid.uuid4().hex
     try:
@@ -342,6 +349,8 @@ async def run_react(
             memory=memory,
             max_bytes=_DEFAULT_MAX_BYTES,
             allowed_domains={_LOCAL_HOST},
+            responder=responder,  # start_quiz 逐题作答（真机 InteractiveResponder）
+            preferences=preferences,  # 出题语言偏好透传给 assess_once
             quiz_seed=seed,
         )
         prompt = load_prompt(_REACT_PROMPT_NAME)
@@ -364,6 +373,7 @@ async def run_react(
     finally:
         store.close()
         memory.close()
+        preferences.close()
         if trace_store is not None:
             trace_store.close()
 
@@ -498,6 +508,7 @@ async def _run_react_cli(*, title: str, db_path: Path, materials_dir: Path) -> N
             db_path=db_path,
             materials_dir=materials_dir,
             provider=provider,
+            responder=InteractiveResponder(),  # start_quiz 逐题作答：questionary 选择器 / 文本输入
             console=console,
             user_messages=_stdin_messages(console),
             seed=int(time.time()),  # CLI 非 replay：可变种子（每次会话不同选题次序）

@@ -4,7 +4,7 @@
 合法；``kernel↛domain`` 由 import-linter 守）。工具是 **wrap 不是改写**——``ingest_resource`` /
 ``Memory`` / ``Store`` 的签名逻辑一行不动，只是被薄薄一层包起来注册进 ``ToolRegistry``。
 
-两个非交互同步工具（不做交互考核 / 不提取 kernel subagent，见 R1-S2 边界）：
+三个工具（R1-S6：交互考核硬化为受控子流程，见下）：
 
 - ``ingest(url)``：wrap ``ingest_resource`` → 返回结构化结果（入库知识点数 + 概念名列表）。内部
   span（fetch / Reader model / item_created）经 ``_ScopedEmitter`` **重挂在本次 TOOL_CALL 之下**、
@@ -12,44 +12,37 @@
   工具边界）。
 - ``query_weak_concepts()``：**只读**——读 Learning Memory（薄弱 / 观察中 item）+ store（概念名）→
   返回薄弱概念摘要。无 LLM、确定性（context-free 工具，不需要 ctx）。
+- ``start_quiz(count?)``：**受控一问一答子流程**——内部跑 ``assess_once × count``（``assess_once``
+  一行不改），用**注入的 Responder** 逐题作答（MC 走 ``questionary.select`` 逐字选项文本 → 确定性
+  逐字判卷），共享 emitter（内部 assess_once span 嵌 TOOL_CALL 之下），返回结构化小结（考几题 /
+  每题判决 / 暴露哪些薄弱点）。**LLM 只触发它、拿小结，不进逐题循环、不复述题目、不自己判卷**——
+  取代 S2b 的软工具 ``next_question`` / ``submit_answer``（那套把逐轮编排压给 LLM，deepseek 守不住：
+  编题 / 把 MC 答案加 "B. " 前缀毁逐字判卷 / 题目双重渲染 / confabulate）。
 
-组装点（CLI / react 装配）用 ``register_learning_tools`` 把两者一并注册；工具的领域依赖
-（task / source / provider / store / approval / memory …）在此闭包捕获，per-call 只多收一个 ``url``
-与（ingest 才用的）``ToolContext``。
+组装点（CLI / react 装配）用 ``register_learning_tools`` 把三者一并注册（``start_quiz`` 仅当注入了
+``responder`` 时注册——无 responder 无从逐题作答）；工具的领域依赖（task / source / provider /
+store / approval / memory / responder / preferences …）在此闭包捕获，per-call 只多收工具入参与
+（context-aware 工具才用的）``ToolContext``。
 """
 
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel
 
 from grandquiz.domain.learning.approval import ApprovalGate
-from grandquiz.domain.learning.assessment import (
-    _WEAK_VERDICTS,  # pyright: ignore[reportPrivateUsage]
-    _compose_solution,  # pyright: ignore[reportPrivateUsage]
-    _resolve_language,  # pyright: ignore[reportPrivateUsage]
-)
-from grandquiz.domain.learning.events import LearningEvent
-from grandquiz.domain.learning.grading import (
-    VerdictLabel,
-    grade_answer,
-    grade_multiple_choice,
-)
+from grandquiz.domain.learning.assessment import AssessmentResult, assess_once
+from grandquiz.domain.learning.grading import VerdictLabel
 from grandquiz.domain.learning.ingest import ingest_resource
 from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.models import LearningTask
-from grandquiz.domain.learning.question import (
-    MultipleChoiceQuestion,
-    generate_multiple_choice,
-    generate_question,
-)
-from grandquiz.domain.learning.routing import QuestionType, route_question_type
-from grandquiz.domain.learning.selection import select_target
+from grandquiz.domain.learning.preference import PreferenceMemory
+from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.clock import new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter
-from grandquiz.kernel.tools import ModelRetry, Tool, ToolContext, ToolRegistry
+from grandquiz.kernel.tools import Tool, ToolContext, ToolRegistry
 from grandquiz.providers.base import Provider
 
 
@@ -141,15 +134,6 @@ class _QueryWeakParams(BaseModel):
     pass
 
 
-class _NextQuestionParams(BaseModel):
-    # 无入参：task 在闭包捕获（考核对象即会话任务），选题 / 题型全由代码定。
-    pass
-
-
-class _SubmitAnswerParams(BaseModel):
-    answer: str  # 学习者对上一道 next_question 的作答文本（选择题传所选项文本）。
-
-
 def make_ingest_tool(
     task: LearningTask,
     *,
@@ -226,276 +210,157 @@ def make_query_weak_concepts_tool(task: LearningTask, *, store: Store, memory: M
 
 
 # --------------------------------------------------------------------------- #
-# 交互考核：next_question / submit_answer（对话回合驱动，不需 suspend/resume #6）
+# 交互考核受控子流程：start_quiz（一问一答，assess_once × N，LLM 不进逐题循环）
 # --------------------------------------------------------------------------- #
 
-
-@dataclass
-class _PendingQuestion:
-    """会话内**待答态**：一次 ``next_question`` 出题后、``submit_answer`` 判卷前的挂起快照。
-
-    ``mc`` 非 None 表示选择题（判卷走 ``grade_multiple_choice`` 确定性代码、不打 LLM）；为 None 则
-    是开放 / 追问（判卷走 ``grade_answer`` LLM 槽）。判卷 / 记账用到的一切（被考 item、题干、题型、
-    MC 对象）都在此持久，故 ``submit_answer`` 无需重跑出题、跨对话回合边界续上（replay 时同样 LLM
-    输出重建同一待答态）。
-    """
-
-    target_item_id: str
-    question_text: str
-    question_type: QuestionType
-    mc: MultipleChoiceQuestion | None
-    asked_evidence: list[str]
-
-
-def _empty_pending() -> dict[str, "_PendingQuestion"]:
-    # 显式类型工厂（照 trace.Span._empty_children）：裸 default_factory=dict 会被推成 Unknown。
-    return {}
-
-
-def _empty_asked() -> dict[str, list[str]]:
-    return {}
+# start_quiz 单次调用的出题上限：挡 LLM 传超大 count 把一次工具调用拖成长跑（保守取 20）。
+_MAX_QUIZ_COUNT = 20
 
 
 @dataclass
-class _QuizSession:
-    """交互考核的**会话作用域**状态（进程内、按 task 键），与 S2 工具闭包同一套会话依赖并列。
+class _QuizSeedCounter:
+    """受控考核循环的**选题种子推进器**（进程内、跨同一会话的多次 start_quiz 调用累积）。
 
-    ``pending``：每个 task 至多一道挂起待答题；``recently_asked``：会话内"已问过"台账（同
-    ``assess_once`` 的 ``recently_asked``，复考同一薄弱概念时换角度去重）；``seed`` + ``_counter``：
-    种子化选题的确定性推进——每次 ``next_question`` 用 ``new_rng(seed + counter)`` 并把 counter
-    自增（**禁墙上时钟 / 全局 random**；replay 时同 seed + 同调用序 → 同选题）。
+    每题取 ``seed + counter`` 并把 counter 自增（**禁墙上时钟 / 全局 random**——replay 时同 seed +
+    同题序 → 同选题）；同 ``run_quiz`` 的 ``seed + 轮次``，只是把计数器提升为跨调用会话态，故连续
+    两次 ``start_quiz`` 不会因种子重置而复现同一选题序。
     """
 
     seed: int
     _counter: int = 0
-    pending: dict[str, _PendingQuestion] = field(default_factory=_empty_pending)
-    recently_asked: dict[str, list[str]] = field(default_factory=_empty_asked)
 
     def next_seed(self) -> int:
-        """取本次出题的选题种子并确定性推进会话计数器（同 ``run_quiz`` 的 ``seed + 轮次``）。"""
         seed = self.seed + self._counter
         self._counter += 1
         return seed
 
 
-class NextQuestionResult(BaseModel):
-    """``next_question`` 回给 ReAct 的结构化结果：题 + 题型 +（选择题才有的）options。
+class QuizRoundResult(BaseModel):
+    """``start_quiz`` 小结里的**单题结果**：被考概念 + 判决 + 记账后终态（全由代码算，非 LLM 产）。
 
-    ``status="refused"``（空库）时其余字段为 None；``status="asked"`` 时透出 item_id / 题干 /
-    题型 / options（**刻意不含 answer_index**——不泄露答案键给作答方，同 ``QUESTION_ASKED`` 事件）。
-    """
-
-    status: Literal["asked", "refused"]
-    item_id: str | None = None
-    question: str | None = None
-    question_type: QuestionType | None = None
-    options: list[str] | None = None
-
-
-class SubmitAnswerResult(BaseModel):
-    """``submit_answer`` 回给 ReAct 的结构化结果：判决 + 记账终态 +（勉强 / 错才有的）追问正解。
-
-    ``weak_item_id`` / ``concept_state`` 是代码按 verdict 算出的记账结果（非 LLM 产，ADR-0004）；
-    ``followup`` 仅在判"勉强 / 错"时非 None（``_compose_solution`` 从被考 item 的 summary + evidence
-    确定性组出正解），判"对"为 None。
+    ``concept_state`` 是本题记账后被考 item 在 Learning Memory 的最终状态（薄弱 / 观察中，或
+    None=未追踪 / 已销账），透出记账结果供 LLM 转述——与逐题的 ``CONCEPT_STATE_CHANGED`` 事件互补。
     """
 
     item_id: str
+    concept: str
     verdict: VerdictLabel
-    weak_item_id: str | None = None
     concept_state: str | None = None
-    followup: str | None = None
 
 
-def make_next_question_tool(
+class StartQuizResult(BaseModel):
+    """``start_quiz`` 回给 ReAct 的**结构化小结**——LLM 据此转述，不复述题目 / 不自己判卷。
+
+    ``status="refused"``（空库）时 ``asked=0`` / ``rounds=[]`` / ``weak=[]``；``status="completed"``
+    时 ``asked`` 为实际考过题数（用户中途取消则少于请求 count），``rounds`` 逐题判决，``weak`` 是
+    本次考核后当前任务仍被追踪的薄弱概念（按 item_id 升序，同 ``query_weak_concepts`` 口径）。
+    """
+
+    status: Literal["completed", "refused"]
+    asked: int
+    rounds: list[QuizRoundResult]
+    weak: list[WeakConcept]
+
+
+class _StartQuizParams(BaseModel):
+    count: int = 1  # 本次考核出题数（默认 1；handler 夹到 [1, _MAX_QUIZ_COUNT]）
+
+
+def _weak_concepts(task: LearningTask, store: Store, memory: Memory) -> list[WeakConcept]:
+    """当前任务被追踪的薄弱概念摘要（按 item_id 升序）——与 ``query_weak_concepts`` 同一口径。"""
+    concept_by_id = {item.item_id: item.concept for item in store.items_for_task(task.task_id)}
+    return [
+        WeakConcept(item_id=item_id, concept=concept_by_id[item_id], state=state)
+        for item_id in sorted(memory.weak_item_ids())
+        if item_id in concept_by_id and (state := memory.state_of(item_id)) is not None
+    ]
+
+
+def make_start_quiz_tool(
     task: LearningTask,
     *,
     provider: Provider,
     store: Store,
     memory: Memory,
-    session: _QuizSession,
+    responder: Responder,
+    preferences: PreferenceMemory | None = None,
+    quiz_seed: int = 0,
 ) -> Tool:
-    """建 ``next_question()`` 工具：选题 → 题型路由 → 分型出题 → 发 ``QUESTION_ASKED`` → 存待答态。
+    """建 ``start_quiz(count)`` 工具：受控一问一答子流程，内部跑 ``assess_once × count``。
 
-    **只组合** assessment 的确定性子函数（``select_target`` / ``route_question_type`` /
-    ``generate_multiple_choice`` / ``generate_question`` / ``_resolve_language``），零逻辑重复；
-    出题的 LLM 槽（role=enrich）与 ``QUESTION_ASKED`` 事件都挂在本次 TOOL_CALL span 之下
-    （``ctx.parent_span_id``）、上同一条脊柱。待答态入会话（按 task 键）供 ``submit_answer`` 用。
+    **只组合** ``assess_once``（一行不改）：逐题选题 / 出题（role=enrich）/ 判卷（MC 走确定性代码、
+    开放走 role=basic）/ 记账全在 ``assess_once`` 的确定性骨架里，本工具只做 **N 题编排 + 收小结**。
+    每题作答走**注入的 Responder**（真机 ``InteractiveResponder`` 的 ``questionary.select`` 逐字
+    返回所选项文本 → ``grade_multiple_choice`` 逐字比对，从根杜绝 "B. " 前缀污染判卷）。
+
+    内部 ``assess_once`` 的 assessment 根 span（本无父）经 ``_ScopedEmitter`` 重挂到本次 TOOL_CALL
+    span 之下（``ctx.parent_span_id``），故整棵考核子树上同一条脊柱、进 trace；出题 / 判卷 / 记账的
+    点事件（QUESTION_ASKED / ANSWER_JUDGED / …）携显式父原样透传。
+
+    ``preferences``：透传给 ``assess_once`` 解析出题语言（**偏好 > task 默认 > 中文**）；``None`` 时
+    行为不变（走 task 默认）。``recently_asked`` / ``_QuizSeedCounter`` 在闭包捕获、跨同一会话的多次
+    ``start_quiz`` 累积（复考换角度去重 + 选题种子确定性推进）。空库 → 优雅返回 ``refused``（不调
+    任何 LLM）；用户中途取消作答（Responder 抛 ``KeyboardInterrupt``）→ 结束考核、返回已完成部分。
     """
+    seed_counter = _QuizSeedCounter(seed=quiz_seed)
+    recently_asked: dict[str, list[str]] = {}
 
-    async def handler(_params: _NextQuestionParams, ctx: ToolContext) -> str:
-        items = store.items_for_task(task.task_id)
-        if not items:  # 空库优雅拒答（同 assess_once）：不调任何 LLM、不碰 memory。
-            ctx.emitter.emit(
-                LearningEvent.ASSESSMENT_REFUSED,
-                parent_span_id=ctx.parent_span_id,
-                payload={"task_id": task.task_id, "reason": "empty_kb"},
-            )
-            return NextQuestionResult(status="refused").model_dump_json()
-
-        # 选题（确定性、会话计数器推进的种子化 rng）→ 题型路由（读 Learning Memory 状态）。
-        target = select_target(items, rng=new_rng(session.next_seed()), memory=memory)
-        question_type = route_question_type(memory.state_of(target.item_id))
-        language = _resolve_language(task, None)
-        asked_before = session.recently_asked.get(target.item_id, [])
-
-        # 分型出题（role=enrich）：选择题走 MC 出题；追问用深挖 prompt 变体；开放走标准出题。
-        mc: MultipleChoiceQuestion | None = None
-        if question_type == "选择题":
-            mc = await generate_multiple_choice(
-                target,
-                provider=provider,
-                emitter=ctx.emitter,
-                parent_span_id=ctx.parent_span_id,
-                language=language,
-                asked_before=asked_before,
-            )
-            question_text = mc.question
-            asked_evidence = list(mc.cited_evidence)
-        else:
-            prompt_name = "question_probe" if question_type == "追问" else "question_generate"
-            generated = await generate_question(
-                target,
-                provider=provider,
-                emitter=ctx.emitter,
-                parent_span_id=ctx.parent_span_id,
-                prompt_name=prompt_name,
-                language=language,
-                asked_before=asked_before,
-            )
-            question_text = generated.question
-            asked_evidence = list(generated.cited_evidence)
-
-        asked_payload: dict[str, Any] = {
-            "item_id": target.item_id,
-            "question": question_text,
-            "cited_evidence": asked_evidence,
-            "question_type": question_type,
-        }
-        if mc is not None:
-            asked_payload["options"] = list(mc.options)  # answer_index 不进事件（不泄答案键）
-        ctx.emitter.emit(
-            LearningEvent.QUESTION_ASKED, parent_span_id=ctx.parent_span_id, payload=asked_payload
+    async def handler(params: _StartQuizParams, ctx: ToolContext) -> str:
+        # 作用域化 emitter：把每题 assessment 根 span 重挂到本次 TOOL_CALL 之下（隔离在工具边界）。
+        scoped: EventEmitter = (
+            _ScopedEmitter(ctx.emitter, ctx.parent_span_id)
+            if ctx.parent_span_id is not None
+            else ctx.emitter
         )
-
-        # 记账 + 持久待答态：已问台账追加本题（复考去重）；待答态入会话供 submit_answer 续上。
-        session.recently_asked.setdefault(target.item_id, []).append(question_text)
-        session.pending[task.task_id] = _PendingQuestion(
-            target_item_id=target.item_id,
-            question_text=question_text,
-            question_type=question_type,
-            mc=mc,
-            asked_evidence=asked_evidence,
-        )
-        return NextQuestionResult(
-            status="asked",
-            item_id=target.item_id,
-            question=question_text,
-            question_type=question_type,
-            options=list(mc.options) if mc is not None else None,
+        concept_by_id = {it.item_id: it.concept for it in store.items_for_task(task.task_id)}
+        count = min(max(params.count, 1), _MAX_QUIZ_COUNT)  # 夹到 [1, 上限]，挡 0 / 负 / 超大
+        rounds: list[QuizRoundResult] = []
+        for _ in range(count):
+            try:
+                result: AssessmentResult = await assess_once(
+                    task,
+                    store=store,
+                    provider=provider,
+                    responder=responder,
+                    memory=memory,
+                    emitter=scoped,
+                    rng=new_rng(seed_counter.next_seed()),
+                    recently_asked=recently_asked,
+                    preferences=preferences,
+                )
+            except KeyboardInterrupt:
+                # 用户取消作答：结束本次考核，返回已完成部分（不把取消当空作答污染判卷）。
+                break
+            if result.status == "refused":
+                # 空库：无题可考，优雅拒答（不调任何 LLM）——首题即 refused，直接返回。
+                return StartQuizResult(
+                    status="refused", asked=0, rounds=[], weak=[]
+                ).model_dump_json()
+            # judged 分支：item_id / verdict 必非 None（AssessmentResult 契约）；防御性收窄。
+            if result.item_id is None or result.verdict is None:
+                continue
+            rounds.append(
+                QuizRoundResult(
+                    item_id=result.item_id,
+                    concept=concept_by_id.get(result.item_id, result.item_id),
+                    verdict=result.verdict,
+                    concept_state=result.concept_state,
+                )
+            )
+        return StartQuizResult(
+            status="completed",
+            asked=len(rounds),
+            rounds=rounds,
+            weak=_weak_concepts(task, store, memory),
         ).model_dump_json()
 
     return Tool(
-        name="next_question",
-        description="对当前任务出下一道考核题（自动选薄弱概念 + 路由题型），返回题干与选项。",
-        params=_NextQuestionParams,
-        handler=handler,
-        wants_context=True,
-    )
-
-
-def make_submit_answer_tool(
-    task: LearningTask,
-    *,
-    provider: Provider,
-    store: Store,
-    memory: Memory,
-    session: _QuizSession,
-) -> Tool:
-    """建 ``submit_answer(answer)`` 工具：读待答态 → 判卷 → 记账 → 发事件 → 清态 → 返回判决 + 追问。
-
-    **判卷 / 记账绝不由 ReAct LLM 决定**（不变量）：MC 判卷走确定性代码、开放走 ``grade_answer``；
-    ``weak_item_id`` 由代码按 verdict 算、``record_verdict`` 写 Learning Memory——都在本工具的确定性
-    代码里（ADR-0004"LLM 判卷，代码记账"）。事件序 ``ANSWER_JUDGED`` → ``CONCEPT_STATE_CHANGED``
-    →（勉强 / 错）``FOLLOWUP_GIVEN``，全挂在本次 TOOL_CALL span 之下。无待答态 → ``ModelRetry``
-    （提示 ReAct 先调 ``next_question``）。判完清待答态（挡二次提交）。
-    """
-
-    async def handler(params: _SubmitAnswerParams, ctx: ToolContext) -> str:
-        pending = session.pending.get(task.task_id)
-        if pending is None:
-            raise ModelRetry("尚无待答题：请先调用 next_question 出题，再提交作答。")
-        items = store.items_for_task(task.task_id)
-        target = next((it for it in items if it.item_id == pending.target_item_id), None)
-        if target is None:  # 护栏：待答 item 已不在库（正常不该发生）——清态并让模型重来。
-            del session.pending[task.task_id]
-            raise ModelRetry("待答题对应的知识点已不在库，请重新 next_question 出题。")
-
-        # 分型判卷：MC 走确定性代码（不打 LLM、无判卷 model span）；开放 / 追问走 LLM basic 槽。
-        if pending.mc is not None:
-            verdict_label: VerdictLabel = grade_multiple_choice(params.answer, pending.mc)
-            judged_evidence = list(pending.mc.cited_evidence)
-        else:
-            verdict = await grade_answer(
-                target,
-                pending.question_text,
-                params.answer,
-                provider=provider,
-                emitter=ctx.emitter,
-                parent_span_id=ctx.parent_span_id,
-                language=_resolve_language(task, None),
-            )
-            verdict_label = verdict.verdict
-            judged_evidence = list(verdict.cited_evidence)
-
-        # 代码记账：weak_item_id 由 verdict 算（非 LLM 产），发 ANSWER_JUDGED。
-        weak_item_id = target.item_id if verdict_label in _WEAK_VERDICTS else None
-        ctx.emitter.emit(
-            LearningEvent.ANSWER_JUDGED,
-            parent_span_id=ctx.parent_span_id,
-            payload={
-                "item_id": target.item_id,
-                "verdict": verdict_label,
-                "weak_item_id": weak_item_id,
-                "answer": params.answer,
-                "cited_evidence": judged_evidence,
-            },
-        )
-        # 代码记三态账：写 Learning Memory，把转移上脊柱（CONCEPT_STATE_CHANGED）。
-        transition = memory.record_verdict(target.item_id, verdict_label)
-        ctx.emitter.emit(
-            LearningEvent.CONCEPT_STATE_CHANGED,
-            parent_span_id=ctx.parent_span_id,
-            payload={
-                "item_id": transition.item_id,
-                "from_state": transition.from_state,
-                "to_state": transition.to_state,
-                "consecutive_correct": transition.consecutive_correct,
-            },
-        )
-        # 后置追问：判"勉强 / 错"→ 给正解（确定性代码组文本），发 FOLLOWUP_GIVEN；判"对"不发。
-        followup: str | None = None
-        if verdict_label in _WEAK_VERDICTS:
-            followup = _compose_solution(target)
-            ctx.emitter.emit(
-                LearningEvent.FOLLOWUP_GIVEN,
-                parent_span_id=ctx.parent_span_id,
-                payload={"item_id": target.item_id, "correct_answer": followup},
-            )
-
-        del session.pending[task.task_id]  # 清待答态：一题一答，挡二次提交。
-        return SubmitAnswerResult(
-            item_id=target.item_id,
-            verdict=verdict_label,
-            weak_item_id=weak_item_id,
-            concept_state=memory.state_of(target.item_id),
-            followup=followup,
-        ).model_dump_json()
-
-    return Tool(
-        name="submit_answer",
-        description="提交对上一道 next_question 的作答，返回判决与（答错时的）正解追问。",
-        params=_SubmitAnswerParams,
+        name="start_quiz",
+        description=(
+            "对当前任务发起一次考核：出 count 道题（默认 1）逐题问用户并判卷，"
+            "返回考了几题 / 每题判决 / 暴露的薄弱点小结。不要复述题目或自行判卷。"
+        ),
+        params=_StartQuizParams,
         handler=handler,
         wants_context=True,
     )
@@ -512,14 +377,19 @@ def register_learning_tools(
     memory: Memory,
     max_bytes: int,
     allowed_domains: Collection[str],
+    responder: Responder | None = None,
+    preferences: PreferenceMemory | None = None,
     quiz_seed: int = 0,
 ) -> None:
-    """组装点：注册 ``ingest`` / ``query_weak_concepts`` / ``next_question`` / ``submit_answer``。
+    """组装点：注册 ``ingest`` / ``query_weak_concepts`` /（有 responder 时）``start_quiz``。
 
     领域依赖在此注入并被各工具闭包捕获；注册后 ReAct 主体（``run_agent_turn``）即可按名调它们，
-    kernel 侧 registry / dispatch 完全不认识这些工具的领域语义（kernel 领域无关）。交互考核的
-    ``next_question`` / ``submit_answer`` 共享同一 ``_QuizSession``（待答态 + 已问台账 + 种子化选题
-    计数器）；``quiz_seed`` 给选题种子（replay 传固定值 → 可复现，CLI 可传可变值）。
+    kernel 侧 registry / dispatch 完全不认识这些工具的领域语义（kernel 领域无关）。
+
+    ``responder`` 为 ``None`` 时**不注册** ``start_quiz``——受控考核无从逐题作答（如 S2 的 ingest /
+    query 单测装配无需交互作答）；真机 react 装配注入 ``InteractiveResponder`` 后即可考核。
+    ``preferences`` 透传给 ``start_quiz`` → ``assess_once`` 解析出题语言；``quiz_seed`` 给选题种子
+    （replay 传固定值 → 可复现，CLI 可传可变值）。
     """
     registry.register(
         make_ingest_tool(
@@ -533,14 +403,15 @@ def register_learning_tools(
         )
     )
     registry.register(make_query_weak_concepts_tool(task, store=store, memory=memory))
-    session = _QuizSession(seed=quiz_seed)
-    registry.register(
-        make_next_question_tool(
-            task, provider=provider, store=store, memory=memory, session=session
+    if responder is not None:
+        registry.register(
+            make_start_quiz_tool(
+                task,
+                provider=provider,
+                store=store,
+                memory=memory,
+                responder=responder,
+                preferences=preferences,
+                quiz_seed=quiz_seed,
+            )
         )
-    )
-    registry.register(
-        make_submit_answer_tool(
-            task, provider=provider, store=store, memory=memory, session=session
-        )
-    )

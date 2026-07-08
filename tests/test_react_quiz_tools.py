@@ -1,17 +1,17 @@
-"""R1-S2b：交互考核工具——``next_question`` / ``submit_answer``（对话回合驱动）。
+"""R1-S6：交互考核硬化为**受控子流程**——``start_quiz(count)`` 替软工具。
 
-把 ``assess_once`` 的"出题→答→判卷"拆成两个 context-aware 同步工具，以对话回合边界当暂停点
-（不需 suspend/resume #6）：
+背景（dogfood f0bf345）：S2b 的 ``next_question`` / ``submit_answer`` 把逐轮编排压给 LLM，
+deepseek 守不住——编题 / 串题 / 把 MC 答案加 "B. " 前缀毁掉逐字判卷（#2）/ 题目双重渲染（#1）/
+confabulate（#3）。硬化方向：**一问一答受控子流程**，LLM 只**触发** start_quiz、拿结构化小结，
+**不进逐题循环**、不复述题目、不自己判卷。
 
-- ``next_question()``：选题 + 题型路由 + 分型出题（LLM enrich 槽）→ 发 ``QUESTION_ASKED`` →
-  返回题 + options；**持久化待答态**到会话（按 task 键）。
-- ``submit_answer(answer)``：读待答态 → 判卷（MC 走确定性代码、开放走 LLM basic 槽）→ 代码算
-  ``weak_item_id`` → ``record_verdict`` → 发 ``ANSWER_JUDGED`` / ``CONCEPT_STATE_CHANGED`` →
-  （勉强 / 错）``FOLLOWUP_GIVEN`` → 清待答态 → 返回判决 + 追问。
+``start_quiz(count)`` 内部跑 ``assess_once × N``（**assess_once 一行不改**），用**注入的 Responder**
+逐题作答（MC 走 ``questionary.select`` 逐字选项文本 → ``grade_multiple_choice`` 逐字比对 → #2 从根
+消失），共享 emitter（内部 span 嵌 TOOL_CALL 之下），返回结构化小结（考几题 / 暴露哪些薄弱点）。
 
-确定性核心（待答态持久 / MC 判卷不打 LLM / 记账事件序 / 跨两工具步可回放）走 TDD；出题 / 判卷两
-LLM 槽本身经脚本化 / 回放 provider 验证（不 unit-TDD LLM）。两工具**只组合** assessment 的现有
-子函数（selection/routing/question/grading/memory/_compose_solution），零逻辑重复。
+确定性核心（受控循环 / MC 逐字判卷 / 记账事件序 / 语言偏好透传 / 记放一致）走 TDD；出题 / 判卷两
+LLM 槽本身经脚本化 / 回放 provider 验证（不 unit-TDD LLM）。start_quiz **只组合** ``assess_once``，
+零逻辑重复。
 """
 
 import json
@@ -26,15 +26,20 @@ from grandquiz.domain.learning.models import (
     LearningResource,
     LearningTask,
 )
+from grandquiz.domain.learning.preference import (
+    QUESTION_LANGUAGE_KEY,
+    DictPreferenceMemory,
+    PreferenceMemory,
+)
+from grandquiz.domain.learning.responder import Responder, ScriptedResponder
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.domain.learning.tools import (
-    NextQuestionResult,
-    SubmitAnswerResult,
+    StartQuizResult,
     register_learning_tools,
 )
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
-from grandquiz.kernel.tools import ModelRetry, ToolContext, ToolRegistry
+from grandquiz.kernel.tools import ToolContext, ToolRegistry
 from grandquiz.providers.base import Completion, Message, Role, Usage
 from grandquiz.providers.replay import Cassette, RecordingProvider, ReplayProvider
 
@@ -77,13 +82,16 @@ def _emitter_with_events() -> tuple[EventEmitter, list[AgentEvent]]:
 
 
 def _ctx(emitter: EventEmitter) -> ToolContext:
-    """造一个带 TOOL_CALL 根 span 的执行上下文（工具把内部事件挂到它之下）。"""
+    """造一个带 TOOL_CALL 根 span 的执行上下文（start_quiz 把内部 assess_once span 挂到它之下）。"""
     span = emitter.new_span_id()
     return ToolContext(emitter=emitter, parent_span_id=span)
 
 
 class _McProvider:
-    """enrich 出选择题（正确项恒在下标 0）；basic 判卷（本路径用不到）。计自身调用次数。"""
+    """enrich 出选择题（正确项恒在下标 0，题干按调用序变化以避免会话内去重门误伤）。
+
+    ``basic`` 判卷本路径用不到（MC 判卷走确定性代码）。计自身调用次数（验证 MC 判卷不打 LLM）。
+    """
 
     def __init__(self) -> None:
         self.calls = 0
@@ -92,10 +100,9 @@ class _McProvider:
         self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
     ) -> Completion:
         self.calls += 1
-        payload: dict[str, Any]
         if role == "enrich":
-            payload = {
-                "question": "闭包的核心是什么？",
+            payload: dict[str, Any] = {
+                "question": f"闭包的核心是什么？#{self.calls}",
                 "options": [_MC_CORRECT, _MC_WRONG],
                 "answer_index": 0,
                 "cited_evidence": [_QUOTE],
@@ -130,6 +137,61 @@ class _OpenProvider:
         )
 
 
+class _LanguageCapturingProvider:
+    """出选择题并记录每次 enrich 出题的 system 提示（供断言语言偏好确已透传进出题槽）。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.enrich_systems: list[str] = []
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        self.calls += 1
+        if role == "enrich":
+            system = next((m.content for m in messages if m.role == "system"), "")
+            self.enrich_systems.append(system)
+            payload: dict[str, Any] = {
+                "question": "闭包的核心是什么？",
+                "options": [_MC_CORRECT, _MC_WRONG],
+                "answer_index": 0,
+                "cited_evidence": [_QUOTE],
+            }
+        else:
+            payload = {"verdict": "错", "cited_evidence": [_QUOTE]}
+        return Completion(
+            text=json.dumps(payload, ensure_ascii=False),
+            usage=Usage(prompt_tokens=7, completion_tokens=3),
+        )
+
+
+class _SelectByIndexResponder:
+    """模拟 ``questionary.select``：按下标返回**逐字**选项文本（MC 选择器契约——修 #2 的根）。
+
+    真机 ``InteractiveResponder`` 走 questionary select、返回所选项原文；本类是它的确定性替身，
+    同样**逐字**返回 ``options[index]``（绝不加 "B. " 之类前缀）。
+    """
+
+    def __init__(self, index: int) -> None:
+        self._index = index
+
+    async def answer(self, prompt: str, *, options: Sequence[str] | None = None) -> str:
+        assert options is not None, "选择题必给 options"
+        return options[self._index]
+
+
+class _PrefixResponder:
+    """故意给所选项加前缀（模拟软工具时代 LLM 把 MC 答案写成 "A. xxx" 的坏行为，复现 #2）。"""
+
+    def __init__(self, index: int, prefix: str) -> None:
+        self._index = index
+        self._prefix = prefix
+
+    async def answer(self, prompt: str, *, options: Sequence[str] | None = None) -> str:
+        assert options is not None
+        return f"{self._prefix}{options[self._index]}"
+
+
 def _register(
     registry: ToolRegistry,
     *,
@@ -137,6 +199,8 @@ def _register(
     store: LearningStore,
     memory: LearningMemory,
     provider: Any,
+    responder: Responder,
+    preferences: PreferenceMemory | None = None,
     quiz_seed: int = 0,
 ) -> None:
     register_learning_tools(
@@ -145,10 +209,12 @@ def _register(
         source=lambda _u: "",
         provider=provider,
         store=store,
-        approval=None,  # type: ignore[arg-type]  # 交互考核工具不碰 ingest 依赖
+        approval=None,  # type: ignore[arg-type]  # start_quiz 不碰 ingest 依赖
         memory=memory,
         max_bytes=1,
         allowed_domains={"local"},
+        responder=responder,
+        preferences=preferences,
         quiz_seed=quiz_seed,
     )
 
@@ -162,60 +228,43 @@ def _payload_of(events: list[AgentEvent], event_type: str) -> Mapping[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-# MC 路径：首次接触 → 选择题 → 提交作答（MC 判卷走确定性代码、不打 LLM）
+# MC 受控子流程：出题 → 逐字选项作答 → 确定性判卷 → 记账（LLM 不进逐题循环）
 # --------------------------------------------------------------------------- #
 
 
-async def test_next_question_asks_mc_and_persists_pending() -> None:
+async def test_start_quiz_mc_wrong_records_weak_and_gives_followup() -> None:
     task = LearningTask.create("Py")
     store = LearningStore()
-    _seed_store(store, task, ["闭包"])  # fresh memory → 路由到选择题
-    provider = _McProvider()
-    registry = ToolRegistry()
-    _register(registry, task=task, store=store, memory=LearningMemory(), provider=provider)
-    emitter, events = _emitter_with_events()
-
-    raw = await registry.dispatch("next_question", {}, ctx=_ctx(emitter))
-    result = NextQuestionResult.model_validate_json(raw)
-
-    assert result.status == "asked"
-    assert result.question_type == "选择题"
-    assert result.options == [_MC_CORRECT, _MC_WRONG]  # options 透给用户视图
-    # 出题上脊柱：QUESTION_ASKED 携真实 item + 非空证据 + 题型 + options（answer_index 不泄漏）
-    asked = _payload_of(events, "learning.question_asked")
-    assert asked["question_type"] == "选择题"
-    assert asked["cited_evidence"] == [_QUOTE]
-    assert asked["options"] == [_MC_CORRECT, _MC_WRONG]
-    assert "answer_index" not in asked
-    assert provider.calls == 1  # 只出题这一次 enrich
-
-
-async def test_submit_wrong_mc_grades_records_weak_and_gives_followup() -> None:
-    task = LearningTask.create("Py")
-    store = LearningStore()
-    ids = _seed_store(store, task, ["闭包"])
+    ids = _seed_store(store, task, ["闭包"])  # fresh memory → 路由到选择题
     memory = LearningMemory()
     provider = _McProvider()
     registry = ToolRegistry()
-    _register(registry, task=task, store=store, memory=memory, provider=provider)
+    _register(
+        registry,
+        task=task,
+        store=store,
+        memory=memory,
+        provider=provider,
+        responder=ScriptedResponder(answer=_MC_WRONG),
+    )
     emitter, events = _emitter_with_events()
 
-    await registry.dispatch("next_question", {}, ctx=_ctx(emitter))
-    calls_after_ask = provider.calls
-    raw = await registry.dispatch("submit_answer", {"answer": _MC_WRONG}, ctx=_ctx(emitter))
-    result = SubmitAnswerResult.model_validate_json(raw)
+    raw = await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+    result = StartQuizResult.model_validate_json(raw)
 
-    assert result.verdict == "错"
-    assert result.weak_item_id == ids[0]
-    assert result.concept_state == "薄弱"
-    assert result.followup is not None and "闭包" in result.followup
-    # MC 判卷走确定性代码：submit 阶段**零** LLM 调用（不占 basic 判卷槽）
-    assert provider.calls == calls_after_ask
-    # 记账落进 Learning Memory（代码记账）
+    assert result.status == "completed"
+    assert result.asked == 1
+    assert [(r.concept, r.verdict) for r in result.rounds] == [("闭包", "错")]
+    assert result.rounds[0].concept_state == "薄弱"
+    # 小结含暴露的薄弱点（供 LLM 转述）
+    assert [(w.concept, w.state) for w in result.weak] == [("闭包", "薄弱")]
+    # 代码记账落进 Learning Memory
     assert memory.state_of(ids[0]) == "薄弱"
-    # 事件序：ANSWER_JUDGED → CONCEPT_STATE_CHANGED → FOLLOWUP_GIVEN
-    types = [t for t in _types(events) if t.startswith("learning.")]
-    assert types == [
+    # MC 判卷走确定性代码：整轮**只** 1 次 enrich（出题），无 basic 判卷调用
+    assert provider.calls == 1
+    # 事件序（内部 assess_once 经 scoped emitter 挂 TOOL_CALL 下）：出题 → 判卷 → 记账 → 追问
+    learning = [t for t in _types(events) if t.startswith("learning.")]
+    assert learning == [
         "learning.question_asked",
         "learning.answer_judged",
         "learning.concept_state_changed",
@@ -225,126 +274,206 @@ async def test_submit_wrong_mc_grades_records_weak_and_gives_followup() -> None:
     assert judged["verdict"] == "错" and judged["weak_item_id"] == ids[0]
 
 
-async def test_submit_correct_mc_no_weak_no_followup() -> None:
+async def test_start_quiz_mc_correct_no_weak_no_followup() -> None:
     task = LearningTask.create("Py")
     store = LearningStore()
     ids = _seed_store(store, task, ["闭包"])
     memory = LearningMemory()
-    provider = _McProvider()
     registry = ToolRegistry()
-    _register(registry, task=task, store=store, memory=memory, provider=provider)
+    _register(
+        registry,
+        task=task,
+        store=store,
+        memory=memory,
+        provider=_McProvider(),
+        responder=ScriptedResponder(answer=_MC_CORRECT),
+    )
     emitter, events = _emitter_with_events()
 
-    await registry.dispatch("next_question", {}, ctx=_ctx(emitter))
-    raw = await registry.dispatch("submit_answer", {"answer": _MC_CORRECT}, ctx=_ctx(emitter))
-    result = SubmitAnswerResult.model_validate_json(raw)
+    result = StartQuizResult.model_validate_json(
+        await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+    )
 
-    assert result.verdict == "对"
-    assert result.weak_item_id is None
-    assert result.followup is None
+    assert result.rounds[0].verdict == "对"
+    assert result.weak == []
     assert memory.state_of(ids[0]) is None  # 答对未追踪概念 → 不追踪
     assert "learning.followup_given" not in _types(events)
 
 
 # --------------------------------------------------------------------------- #
-# 待答态生命周期：无待答态拒答 / 提交后清态 / 重复提交拒答
+# MC 选择器逐字选项文本（修 #2）：逐字命中 → 对；带前缀 → 错（复现软工具时代的坏行为）
 # --------------------------------------------------------------------------- #
 
 
-async def test_submit_without_pending_raises_model_retry() -> None:
+async def test_mc_verbatim_option_grades_correct() -> None:
     task = LearningTask.create("Py")
     store = LearningStore()
     _seed_store(store, task, ["闭包"])
     registry = ToolRegistry()
-    _register(registry, task=task, store=store, memory=LearningMemory(), provider=_McProvider())
+    _register(
+        registry,
+        task=task,
+        store=store,
+        memory=LearningMemory(),
+        provider=_McProvider(),
+        responder=_SelectByIndexResponder(index=0),  # 逐字返回正确项文本（无 "B. " 前缀）
+    )
     emitter, _ = _emitter_with_events()
-
-    try:
-        await registry.dispatch("submit_answer", {"answer": _MC_CORRECT}, ctx=_ctx(emitter))
-    except ModelRetry:
-        pass
-    else:
-        raise AssertionError("无待答态提交应抛 ModelRetry（提示先 next_question）")
+    result = StartQuizResult.model_validate_json(
+        await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+    )
+    assert result.rounds[0].verdict == "对"  # 逐字选项 → 确定性判卷命中
 
 
-async def test_pending_cleared_after_submit_blocks_double_submit() -> None:
+async def test_mc_prefixed_correct_option_grades_wrong() -> None:
+    # 复现 #2：若把正确项加 "A. " 前缀（软工具时代 LLM 的坏行为）→ 逐字比对不命中 → 误判为错。
+    # 硬化后 start_quiz 走选择器逐字提交，从根杜绝该前缀污染（见上一测试）。
     task = LearningTask.create("Py")
     store = LearningStore()
     _seed_store(store, task, ["闭包"])
     registry = ToolRegistry()
-    _register(registry, task=task, store=store, memory=LearningMemory(), provider=_McProvider())
+    _register(
+        registry,
+        task=task,
+        store=store,
+        memory=LearningMemory(),
+        provider=_McProvider(),
+        responder=_PrefixResponder(index=0, prefix="A. "),  # 正确项被加前缀
+    )
     emitter, _ = _emitter_with_events()
-
-    await registry.dispatch("next_question", {}, ctx=_ctx(emitter))
-    await registry.dispatch("submit_answer", {"answer": _MC_CORRECT}, ctx=_ctx(emitter))
-    try:
-        await registry.dispatch("submit_answer", {"answer": _MC_CORRECT}, ctx=_ctx(emitter))
-    except ModelRetry:
-        pass
-    else:
-        raise AssertionError("提交后待答态应被清空——二次提交无待答态、应抛 ModelRetry")
+    result = StartQuizResult.model_validate_json(
+        await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+    )
+    assert result.rounds[0].verdict == "错"  # 前缀毁掉逐字命中——正是选择器要杜绝的
 
 
 # --------------------------------------------------------------------------- #
-# 开放路径：观察中 → 开放题 → LLM 判卷（basic 槽真被调用）
+# 受控循环跑 N 题：一次 start_quiz 考 count 题，LLM 不进逐题循环
 # --------------------------------------------------------------------------- #
 
 
-async def test_open_path_uses_llm_grading() -> None:
+async def test_start_quiz_runs_count_rounds() -> None:
     task = LearningTask.create("Py")
     store = LearningStore()
-    ids = _seed_store(store, task, ["闭包"])
-    memory = LearningMemory()
-    memory.record_verdict(ids[0], "错")  # → 薄弱
-    memory.record_verdict(ids[0], "对")  # → 观察中（路由到开放）
-    provider = _OpenProvider(verdict="对")
+    _seed_store(store, task, ["闭包", "装饰器"])
     registry = ToolRegistry()
-    _register(registry, task=task, store=store, memory=memory, provider=provider)
-    emitter, _events = _emitter_with_events()
-
-    ask = NextQuestionResult.model_validate_json(
-        await registry.dispatch("next_question", {}, ctx=_ctx(emitter))
+    provider = _McProvider()
+    _register(
+        registry,
+        task=task,
+        store=store,
+        memory=LearningMemory(),
+        provider=provider,
+        # 两题都逐字选对：概念保持未追踪，两题都路由到选择题（受控循环逐题跑、判卷全走确定性代码）。
+        responder=ScriptedResponder(answer=_MC_CORRECT),
     )
-    assert ask.question_type == "开放"
-    assert ask.options is None  # 开放题无 options
-    calls_after_ask = provider.calls
-    raw = await registry.dispatch(
-        "submit_answer", {"answer": "闭包捕获的是引用"}, ctx=_ctx(emitter)
-    )
-    result = SubmitAnswerResult.model_validate_json(raw)
+    emitter, events = _emitter_with_events()
 
-    # 开放判卷占 basic 槽：submit 阶段确有一次 LLM 调用
-    assert provider.calls == calls_after_ask + 1
-    assert result.verdict == "对"
-    # 观察中（连对 1）+ 再对 → 连对 2 达销账阈值 → 掌握销账 → 终态 None（记账由代码做）
-    assert result.concept_state is None
-    assert result.followup is None
-    assert memory.state_of(ids[0]) is None
+    result = StartQuizResult.model_validate_json(
+        await registry.dispatch("start_quiz", {"count": 2}, ctx=_ctx(emitter))
+    )
+
+    assert result.asked == 2
+    assert [r.verdict for r in result.rounds] == ["对", "对"]
+    # 两题各一次 QUESTION_ASKED / ANSWER_JUDGED（受控循环逐题跑）
+    assert _types(events).count("learning.question_asked") == 2
+    assert _types(events).count("learning.answer_judged") == 2
+    # MC 判卷走确定性代码：两题共 2 次 enrich（出题）、零 basic 判卷调用
+    assert provider.calls == 2
 
 
 # --------------------------------------------------------------------------- #
-# 记放一致：next_question + submit_answer 跨两工具步，整轨迹零 token 回放
+# 空库优雅拒答：无题可考 → refused、零 LLM 调用
 # --------------------------------------------------------------------------- #
 
 
-async def test_two_tool_steps_record_then_replay_is_identical(tmp_path: Path) -> None:
+async def test_start_quiz_empty_kb_refused() -> None:
+    task = LearningTask.create("Py")
+    store = LearningStore()  # 空库
+    provider = _McProvider()
+    registry = ToolRegistry()
+    _register(
+        registry,
+        task=task,
+        store=store,
+        memory=LearningMemory(),
+        provider=provider,
+        responder=ScriptedResponder(answer=_MC_CORRECT),
+    )
+    emitter, _ = _emitter_with_events()
+
+    result = StartQuizResult.model_validate_json(
+        await registry.dispatch("start_quiz", {"count": 3}, ctx=_ctx(emitter))
+    )
+
+    assert result.status == "refused"
+    assert result.asked == 0
+    assert result.rounds == []
+    assert result.weak == []
+    assert provider.calls == 0  # 空库不调任何 LLM
+
+
+# --------------------------------------------------------------------------- #
+# 语言偏好透传（补 S2b/S4 欠账）：偏好 > task 默认 > 中文
+# --------------------------------------------------------------------------- #
+
+
+async def test_start_quiz_passes_language_preference() -> None:
+    task = LearningTask.create("Py")  # task.language 默认中文
+    store = LearningStore()
+    _seed_store(store, task, ["闭包"])
+    preferences = DictPreferenceMemory()
+    preferences.set_preference(QUESTION_LANGUAGE_KEY, "英文")  # 偏好压过 task 默认
+    provider = _LanguageCapturingProvider()
+    registry = ToolRegistry()
+    _register(
+        registry,
+        task=task,
+        store=store,
+        memory=LearningMemory(),
+        provider=provider,
+        responder=ScriptedResponder(answer=_MC_WRONG),
+        preferences=preferences,
+    )
+    emitter, _ = _emitter_with_events()
+
+    await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+
+    # 出题槽的 system 提示确以偏好语言（英文）替换了 {{LANGUAGE}} 哨兵（透传到 assess_once）。
+    # 精确锚定替换点 "请用 <语言> 提问"——模板正文另含字面"英文原词"，故只查裸"英文"会假通过。
+    assert provider.enrich_systems
+    assert "请用 英文 提问" in provider.enrich_systems[0]
+    assert "请用 中文 提问" not in provider.enrich_systems[0]  # 未被 task 默认语言（中文）占位
+
+
+# --------------------------------------------------------------------------- #
+# 记放一致：一次 start_quiz（开放路径，出题 + 判卷两 LLM 槽）整轨迹零 token 回放
+# --------------------------------------------------------------------------- #
+
+
+async def test_start_quiz_record_then_replay_is_identical(tmp_path: Path) -> None:
     task = LearningTask.create("Py")
     cassette_path = tmp_path / "quiz.json"
 
-    async def drive(provider: Any) -> tuple[SubmitAnswerResult, list[AgentEvent]]:
+    async def drive(provider: Any) -> tuple[StartQuizResult, list[AgentEvent]]:
         store = LearningStore()
         ids = _seed_store(store, task, ["闭包"])
         memory = LearningMemory()
         memory.record_verdict(ids[0], "错")  # → 薄弱
         memory.record_verdict(ids[0], "对")  # → 观察中 → 开放题（出题 + 判卷两 LLM 槽都被录）
         registry = ToolRegistry()
-        _register(registry, task=task, store=store, memory=memory, provider=provider, quiz_seed=42)
-        emitter, events = _emitter_with_events()
-        await registry.dispatch("next_question", {}, ctx=_ctx(emitter))
-        raw = await registry.dispatch(
-            "submit_answer", {"answer": "闭包捕获引用"}, ctx=_ctx(emitter)
+        _register(
+            registry,
+            task=task,
+            store=store,
+            memory=memory,
+            provider=provider,
+            responder=ScriptedResponder(answer="闭包捕获引用"),
+            quiz_seed=42,
         )
-        return SubmitAnswerResult.model_validate_json(raw), events
+        emitter, events = _emitter_with_events()
+        raw = await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+        return StartQuizResult.model_validate_json(raw), events
 
     # Pass 1：录制——inner 真跑，出题 + 判卷两 LLM 槽进 cassette。
     inner = _OpenProvider(verdict="勉强")
