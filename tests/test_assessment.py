@@ -447,6 +447,39 @@ async def test_focus_weak_targets_weak_priority_candidate() -> None:
     assert asked.payload["question_type"] == "追问"  # 薄弱 → 追问
 
 
+async def test_multi_round_threads_asked_for_coverage_not_repeat() -> None:
+    # R1-S7 覆盖追踪（锁死回归·assess_once 串联侧）：同一会话连考两轮、**两轮同一 seed**，
+    # assess_once 把 recently_asked 已考 item 串成 asked_item_ids 下传选题 → 第二轮避开第一轮的
+    # item（尽管同 seed）。去掉这条串联（传 set() 而非 recently_asked keys）→ 同 seed 同全集 →
+    # 第二轮必重复同一 item → 本断言被杀。钉死 verify 指出的、命门之外未覆盖的那条链。
+    store, task, ids = _stocked_store()
+    memory = LearningMemory()
+    recently_asked: dict[str, list[str]] = {}
+
+    async def _round() -> str:
+        emitter, events, trace = _harness()
+        await assess_once(
+            task,
+            store=store,
+            provider=_AssessProvider(verdict="对"),
+            responder=ScriptedResponder(
+                answer=_MC_CORRECT
+            ),  # fresh → MC、选对 → 不入薄弱、memory 恒空
+            memory=memory,
+            emitter=emitter,
+            rng=new_rng(_SEED),  # 两轮同 seed：覆盖靠 asked 串联而非 rng 变化
+            recently_asked=recently_asked,
+        )
+        trace.close()
+        asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
+        return str(asked.payload["item_id"])
+
+    first = await _round()
+    second = await _round()
+    assert first != second  # 第二轮避开第一轮已考项（去掉 asked 串联即两轮同 item → 被杀）
+    assert {first, second} <= set(ids)
+
+
 async def test_case6_one_correct_observes_two_correct_discharges() -> None:
     # eval case 6：连对两次才销账（观察中→销账），且薄弱优先把复考锁定到薄弱 item。
     # 薄弱 item 刻意 != 全集随机自然选择，才能真正区分薄弱优先 vs seed 巧合（照 case 5 同款对照）。
