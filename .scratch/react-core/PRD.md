@@ -1,6 +1,6 @@
 # PRD：Phase R1 — 最小 ReAct 核（对话 agent 托考官为工具/子代理）
 
-Status: draft（待 slice 审定后发 issue）
+Status: done（R1 收官 2026-07-08，main d2ded87，405 passed 五门全绿）——S1 tool 循环 / S2 非交互工具 / S2b→S6 受控考核 / S4 react CLI / S5 function-calling / S7 覆盖选题 / S8 判官reason+路径守卫 / S3 ContextBuilder。下一程：context compression（预算/压缩，接 S3 留的缝）→ R2 轨迹 eval + 迭代 gate → R3 自进化。
 Triage: ready-for-agent
 
 ## Problem Statement
