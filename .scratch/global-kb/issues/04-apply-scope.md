@@ -1,6 +1,6 @@
 # GKB-S4 — `apply_scope` + `resource_ids` scope 参数（修 #1 考错库）
 
-Status: ready-for-agent
+Status: done（merge 至 main `f7cc8e1`，五门全绿 433 passed；apply_scope 纯函数 + resource_ids scope + empty_scope 拒答，5 mutation 全杀、默认路径 cassette 逐字节保留。scope-honor（30 seed 全落 scope 内）+ empty_scope（0 LLM 调用）已测。多资源 eval 用例留 S7。）
 Type: AFK（多资源 eval 用例属 GKB-S7；本 slice 走单元 + 事件断言）
 
 ## Parent
