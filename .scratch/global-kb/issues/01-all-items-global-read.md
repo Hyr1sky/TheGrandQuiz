@@ -1,6 +1,6 @@
 # GKB-S1 — `all_items()` 全局读 + 切读（修 #2 跨会话丢知识）
 
-Status: ready-for-agent
+Status: done（merge 至 main `c7ac2f5`，五门全绿 418 passed；串行对抗验证 6 mutation 全杀、不 flaky、cassette 逐字节保留。额外一致切了 quiz CLI 路径两处同族读点；test_react_tools 一处"跨任务隔离"用例按全局 KB 翻转。）
 Type: AFK
 
 ## Parent
