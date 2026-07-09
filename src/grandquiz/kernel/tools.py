@@ -21,7 +21,7 @@ from pydantic import BaseModel, ValidationError
 
 from grandquiz.kernel.events import EventEmitter
 from grandquiz.kernel.recovery import ErrorClass
-from grandquiz.providers.base import ToolSpec
+from grandquiz.providers.base import ToolSpec, malformed_arguments_raw
 
 
 class ModelRetry(Exception):
@@ -121,6 +121,15 @@ class ToolRegistry:
         tool = self._tools.get(name)
         if tool is None:
             raise ModelRetry(f"未知工具 {name!r}（可选：{sorted(self._tools)}）")
+        # provider 边界标记的"参数非法"态（畸形 / 非对象 JSON）：在 pydantic 校验前拦下，抛与"校验
+        # 不过"同一 ModelRetry(DEGRADED)——两者共用一条 M6 恢复路径。必须显式拦（不能只靠 pydantic）
+        # 无必填字段的工具会把标记 dict 当合法空入参静默放行、静默跑工具，掩盖畸形（见 dogfood
+        # 762884ba 的坏 tool_call）。原始畸形串进错误文本，回灌让 LLM 看清吐了什么、下一轮改对。
+        malformed = malformed_arguments_raw(arguments)
+        if malformed is not None:
+            raise ModelRetry(
+                f"工具 {name!r} 入参非法（无法解析为 JSON 对象）：{malformed!r}——请重发合法 JSON"
+            )
         try:
             validated = tool.params.model_validate(dict(arguments))
         except ValidationError as exc:

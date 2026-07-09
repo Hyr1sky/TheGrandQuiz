@@ -19,7 +19,14 @@ from grandquiz.kernel.recovery import ErrorClass, RecoveryPolicy, classify
 from grandquiz.kernel.runner import MaxIterationsExceeded, Runner
 from grandquiz.kernel.tools import ModelRetry, Tool, ToolRegistry
 from grandquiz.kernel.trace import Span, TraceStore
-from grandquiz.providers.base import Completion, Message, Role, ToolCall, Usage
+from grandquiz.providers.base import (
+    Completion,
+    Message,
+    Role,
+    ToolCall,
+    Usage,
+    mark_malformed_arguments,
+)
 from grandquiz.providers.replay import Cassette, RecordingProvider, ReplayProvider
 
 # --------------------------------------------------------------------------- #
@@ -131,6 +138,36 @@ async def test_dispatch_invalid_args_raises_degraded_model_retry() -> None:
         await registry.dispatch("echo", {})  # 缺 text
     assert classify(ei.value) is ErrorClass.DEGRADED
     assert calls == []  # 校验失败前绝不进 handler
+
+
+async def test_dispatch_malformed_arguments_raises_degraded_model_retry() -> None:
+    # provider 边界标记的"参数非法"态（畸形 JSON）→ dispatch 认出 → ModelRetry(DEGRADED)，与"合法但
+    # 校验不过"同一条恢复路径。畸形参数绝不进 handler（不拿垃圾入参跑工具）。
+    registry, calls = _registry_with_echo()
+    with pytest.raises(ModelRetry) as ei:
+        await registry.dispatch("echo", mark_malformed_arguments('{"text": "hi"'))
+    assert classify(ei.value) is ErrorClass.DEGRADED
+    assert calls == []
+
+
+async def test_dispatch_malformed_args_rejected_even_for_no_field_tool() -> None:
+    # 关键鲁棒性：无必填字段的工具（如 query_weak_concepts）若把畸形参数当合法空 dict，pydantic 会
+    # 静默放行、静默跑工具——掩盖畸形。凭 sentinel 一律拒（DEGRADED），无论工具 schema 有无必填。
+    class _NoParams(BaseModel):
+        pass
+
+    called: list[int] = []
+
+    async def handler(_params: _NoParams) -> str:
+        called.append(1)
+        return "ok"
+
+    registry = ToolRegistry()
+    registry.register(Tool(name="noop", description="无入参", params=_NoParams, handler=handler))
+    with pytest.raises(ModelRetry) as ei:
+        await registry.dispatch("noop", mark_malformed_arguments("这根本不是 JSON"))
+    assert classify(ei.value) is ErrorClass.DEGRADED
+    assert called == []  # 畸形参数绝不触发 handler（不静默跑工具）
 
 
 def test_register_rejects_duplicate_name() -> None:
@@ -262,6 +299,45 @@ async def test_degraded_tool_error_is_fed_back_and_recovers() -> None:
     # RecoveryPolicy 裁了一次 SKIP（DEGRADED 回灌）
     decided = [e for e in events if e.type == EventType.RECOVERY_DECIDED]
     assert len(decided) == 1 and decided[0].payload["decision"] == "skip"
+
+
+class _MalformedThenFinalProvider:
+    """首轮出一个 arguments 畸形的 echo tool_call（provider 边界已标记"参数非法"）；见到回灌的
+    错误 tool 结果后收敛 final。复现 dogfood "神了"：坏 tool_call 不该崩会话，应降级回灌后自愈。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        self.calls += 1
+        tool_results = [m for m in messages if m.role == "tool"]
+        if tool_results:
+            return Completion(text=f"final: {tool_results[-1].content}")
+        return Completion(
+            text="",
+            tool_calls=[
+                ToolCall(id="c1", name="echo", arguments=mark_malformed_arguments('{"text"'))
+            ],
+        )
+
+
+async def test_malformed_tool_call_recovers_via_degraded_feedback() -> None:
+    # 端到端：一轮里 LLM 吐畸形 tool_call → dispatch 拒（DEGRADED）→ RecoveryPolicy SKIP 回灌错误 →
+    # LLM 下一轮收敛 final。绝不崩会话；echo handler 从未真跑（畸形参数被 dispatch 拦下）。
+    emitter, events = _emitter_with_events()
+    registry, calls = _registry_with_echo()
+    runner = Runner(
+        provider=_MalformedThenFinalProvider(), emitter=emitter, tools=registry, max_iterations=6
+    )
+    reply = await runner.run_agent_turn("q")
+    assert reply.startswith("final: tool error:")  # 错误作为 tool 结果回灌
+    assert calls == []  # 畸形入参从未抵达 handler
+    decided = [e for e in events if e.type == EventType.RECOVERY_DECIDED]
+    assert len(decided) == 1 and decided[0].payload["decision"] == "skip"
+    ended = [e for e in events if e.type == EventType.AGENT_TURN_ENDED]
+    assert len(ended) == 1 and ended[0].payload["ok"] is True  # 会话正常收敛、非崩溃
 
 
 class _FatalProvider:

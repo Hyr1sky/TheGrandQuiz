@@ -1,12 +1,36 @@
 """Provider 协议 + 所有 LLM provider 共享的 message / usage 类型。"""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field, computed_field
 
 Role = Literal["basic", "enrich"]
+
+# 畸形 tool_call 参数的**线上契约**（provider 边界 ⇄ kernel dispatch 共用）：真实 provider 解析
+# ``function.arguments``（OpenAI 给的 JSON 串）时，若串畸形 / 非对象，无法产出合法入参 dict——不在
+# provider 边界裸抛 ``JSONDecodeError`` 炸会话，而是把原始畸形串裹进这个保留 key 标成"参数非法"的
+# 可恢复态。``ToolCall.arguments`` 是 ``dict[str, Any]``，故此标记随 ToolCall 一路流到
+# ``ToolRegistry.dispatch``：dispatch 认出它 → 抛 ``ModelRetry(DEGRADED)`` → 走 M6 RecoveryPolicy
+# 与"合法但校验不过"**同一条**降级恢复路径（回灌"参数非法，请重试"让 LLM 改对）。key 用极不可能与
+# 真实入参撞名的前缀，避免误判合法参数。常量住 base.py（``ToolCall`` 定义处）：kernel→providers 是
+# 合法依赖方向，dispatch import 它即可，反向（providers→kernel）被分层守卫禁止。
+MALFORMED_TOOL_ARGUMENTS_KEY = "__grandquiz_malformed_tool_arguments__"
+
+
+def mark_malformed_arguments(raw: str) -> dict[str, Any]:
+    """把原始畸形 arguments 串裹成"参数非法"标记 dict（provider 边界解析失败时用）。"""
+    return {MALFORMED_TOOL_ARGUMENTS_KEY: raw}
+
+
+def malformed_arguments_raw(arguments: Mapping[str, Any]) -> str | None:
+    """若 ``arguments`` 是"参数非法"标记态，返回原始畸形串；否则 ``None``（合法入参，照常校验）。
+
+    dispatch 用它判定是否走 ``ModelRetry`` 降级——单一判定入口，sentinel key 不散落各处。
+    """
+    value = arguments.get(MALFORMED_TOOL_ARGUMENTS_KEY)
+    return value if isinstance(value, str) else None
 
 
 @dataclass(frozen=True)

@@ -20,7 +20,15 @@ from typing import Any, cast
 from openai import AsyncOpenAI, Omit, omit
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 
-from grandquiz.providers.base import Completion, Message, Role, ToolCall, ToolSpec, Usage
+from grandquiz.providers.base import (
+    Completion,
+    Message,
+    Role,
+    ToolCall,
+    ToolSpec,
+    Usage,
+    mark_malformed_arguments,
+)
 
 _TRUTHY = {"1", "true", "yes", "on"}
 
@@ -80,6 +88,13 @@ def _parse_tool_calls(message: Any) -> list[ToolCall] | None:
     """OpenAI ``response.choices[0].message.tool_calls`` → 内部 ``ToolCall`` 列表（无则 None）。
 
     边界解码：每个 ``function.arguments`` 是 JSON **字符串**，在此转回内部 dict——与出栈映射对称。
+
+    **对畸形参数鲁棒（dogfood 762884ba）**：LLM 乱吐坏 tool_call 是常态。``json.loads`` 抛
+    ``JSONDecodeError``（串畸形）或解出非对象（裸数组 / 标量）时**不裸抛炸会话**，而是把原始畸形串
+    裹进 ``mark_malformed_arguments`` 的"参数非法"标记态。该标记随 ``ToolCall.arguments`` 流到
+    ``ToolRegistry.dispatch``：dispatch 认出它 → ``ModelRetry(DEGRADED)`` → 走 M6 RecoveryPolicy 与
+    "合法但校验不过"**同一条**降级恢复路径（回灌错误让 LLM 下一轮改对）。合法对象参数照原样解码，
+    既有路径逐字节不变（不影响 record/replay：本函数只在真 provider 边界跑，cassette 不经此路径）。
     """
     raw = getattr(message, "tool_calls", None)
     if not raw:
@@ -87,7 +102,18 @@ def _parse_tool_calls(message: Any) -> list[ToolCall] | None:
     parsed: list[ToolCall] = []
     for tc in raw:
         arguments_json: str = tc.function.arguments or "{}"
-        arguments: dict[str, Any] = json.loads(arguments_json)
+        try:
+            decoded: Any = json.loads(arguments_json)
+        except json.JSONDecodeError:
+            decoded = None
+            is_object = False
+        else:
+            is_object = isinstance(decoded, dict)
+        arguments = (
+            cast("dict[str, Any]", decoded)
+            if is_object
+            else mark_malformed_arguments(arguments_json)
+        )
         parsed.append(ToolCall(id=tc.id, name=tc.function.name, arguments=arguments))
     return parsed
 

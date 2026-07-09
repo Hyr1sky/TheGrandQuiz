@@ -397,7 +397,19 @@ async def run_react(
 
         console.print(f"[bold]ReAct 学习助手「{title}」——输入消息与我对话（Ctrl+D 退出）[/]")
         for message in user_messages:
-            reply = await runner.run_agent_turn(message)
+            # 单轮兜底（dogfood "神了" 的会话级鲁棒）：run_agent_turn 内部已把可恢复的坏 tool_call
+            # 走 M6 DEGRADED 回灌自愈；但若仍冒出未预期异常（FATAL 工具错 / MaxIterations / provider
+            # 炸），只兜**这一轮**——打印友好提示后继续下一条消息，不让一轮坏 turn 杀整场会话。历史只
+            # 在成功轮提交，失败轮不留孤儿 user 消息，故下一轮上下文干净。KeyboardInterrupt 是
+            # BaseException、不被这里捕获，照旧优雅退出（main 的 suppress + _stdin_messages 处理）。
+            try:
+                reply = await runner.run_agent_turn(message)
+            except Exception as exc:
+                # 会话级兜底：一轮坏 turn 不杀整场（同 run_quiz 逐轮兜底的形状）。
+                console.print(
+                    f"[yellow]这一轮出了点问题，已跳过（{escape(str(exc))}）。继续对话。[/]"
+                )
+                continue
             console.print(f"[bold cyan]助手[/]：{escape(reply)}")
 
         _print_trace_location(console, trace_id, resolved_trace_db)

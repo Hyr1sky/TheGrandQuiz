@@ -373,6 +373,57 @@ async def test_react_session_zero_token_replay(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# run_react 会话循环：单轮冒未预期异常被兜住，不杀整场会话（修 dogfood "神了" 崩溃）
+# --------------------------------------------------------------------------- #
+
+
+class _CrashFirstTurnProvider:
+    """首轮（user 含"崩"）model 调用直接抛未预期异常；其余轮正常收敛 final。计调用次数。
+
+    模拟 run_agent_turn 里冒出的未预期异常（模型层炸 / MaxIterations 等）——会话循环须兜住这一轮、
+    继续下一轮，绝不让一轮坏 turn 杀整场（dogfood "神了" 的会话级鲁棒）。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        self.calls += 1
+        user_messages = [m for m in messages if m.role == "user"]
+        last_user = user_messages[-1].content if user_messages else ""
+        if "崩" in last_user:
+            raise RuntimeError("模型炸了")  # 未打标 → FATAL，会从 run_agent_turn 冒出
+        return Completion(text="好的，收到。", usage=Usage(prompt_tokens=1, completion_tokens=1))
+
+
+async def test_react_session_survives_crashing_turn(tmp_path: Path) -> None:
+    materials = tmp_path / "materials"
+    _seed_material(materials)
+    db = tmp_path / "learning.db"
+    console = Console(record=True, width=100)
+
+    provider = _CrashFirstTurnProvider()
+    trace_id = await run_react(
+        title="Py",
+        db_path=db,
+        materials_dir=materials,
+        provider=provider,
+        responder=ScriptedResponder(answer=_MC_WRONG),
+        console=console,
+        user_messages=["让你崩一下", "正常问一句"],
+        seed=42,
+        trace_db_path=tmp_path / "trace.db",
+    )
+
+    out = console.export_text()
+    # 第一轮崩溃被兜住（打印友好提示），第二轮仍正常回复——整场会话没被一轮坏 turn 杀掉。
+    assert "好的，收到。" in out
+    assert provider.calls == 2  # 两轮都跑到（坏轮没吞掉后续轮）
+    assert trace_id  # 会话正常结束、返回 trace_id（未从 run_react 冒泡崩溃）
+
+
+# --------------------------------------------------------------------------- #
 # run_react 装配 ContextBuilder：学情记忆（薄弱 + 偏好）注入 ReAct 系统前言区
 # --------------------------------------------------------------------------- #
 

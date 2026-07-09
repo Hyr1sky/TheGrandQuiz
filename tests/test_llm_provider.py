@@ -17,7 +17,14 @@ from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import Tool, ToolRegistry
-from grandquiz.providers.base import Completion, Message, Role, ToolCall, ToolSpec
+from grandquiz.providers.base import (
+    Completion,
+    Message,
+    Role,
+    ToolCall,
+    ToolSpec,
+    malformed_arguments_raw,
+)
 from grandquiz.providers.llm import OpenAICompatProvider, RoleConfig
 
 
@@ -219,6 +226,55 @@ async def test_complete_parses_tool_calls_from_response(
     assert reply.tool_calls[0].name == "echo"
     assert reply.tool_calls[0].arguments == {"text": "hi"}  # JSON 字符串 → dict（边界解码）
     assert reply.usage.prompt_tokens == 5
+
+
+async def test_complete_tolerates_malformed_tool_call_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # dogfood（trace 762884ba）："神了" → 模型吐 tool_call 但 arguments 是畸形 JSON（缺右括号）。
+    # 此前 _parse_tool_calls 直接 json.loads → JSONDecodeError 裸抛、炸整场 react 会话。现容错：
+    # 不抛裸异常，把畸形参数表示成"参数非法"的可恢复态（保留 sentinel key），交 kernel dispatch 走
+    # ModelRetry(DEGRADED) 恢复路径。删掉 llm.py 的 try/except → 本测试红（JSONDecodeError 冒出）。
+    _patch_client(
+        monkeypatch,
+        _FakeResponse(
+            None,
+            prompt_tokens=5,
+            completion_tokens=2,
+            tool_calls=[_FakeToolCall("call_1", "echo", '{"text": "hi"')],  # 缺右括号 → 畸形
+        ),
+    )
+    provider = OpenAICompatProvider({"basic": RoleConfig(api_key="k", base_url="u", model="m")})
+
+    reply = await provider.complete([Message(role="user", content="hi")], role="basic")
+
+    assert reply.tool_calls is not None
+    assert len(reply.tool_calls) == 1
+    assert reply.tool_calls[0].name == "echo"
+    # 畸形参数被标记为"参数非法"，不当合法入参（原始畸形串留痕，供回灌诊断）。
+    assert malformed_arguments_raw(reply.tool_calls[0].arguments) == '{"text": "hi"'
+
+
+async def test_complete_marks_non_object_json_arguments_malformed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # JSON 合法但不是对象（如裸数组 / 裸标量）——同样非法入参：dispatch 无从按 pydantic 对象 schema
+    # 校验，故也标记为"参数非法"走同一 DEGRADED 恢复路径（不让非 dict 值漏进 dispatch 炸 dict()）。
+    _patch_client(
+        monkeypatch,
+        _FakeResponse(
+            None,
+            prompt_tokens=5,
+            completion_tokens=2,
+            tool_calls=[_FakeToolCall("call_1", "echo", "[1, 2, 3]")],  # 合法 JSON、但非对象
+        ),
+    )
+    provider = OpenAICompatProvider({"basic": RoleConfig(api_key="k", base_url="u", model="m")})
+
+    reply = await provider.complete([Message(role="user", content="hi")], role="basic")
+
+    assert reply.tool_calls is not None
+    assert malformed_arguments_raw(reply.tool_calls[0].arguments) == "[1, 2, 3]"
 
 
 async def test_complete_returns_text_when_no_tool_calls(monkeypatch: pytest.MonkeyPatch) -> None:
