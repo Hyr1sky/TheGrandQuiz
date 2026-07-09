@@ -266,6 +266,9 @@ class StartQuizResult(BaseModel):
 class _StartQuizParams(BaseModel):
     count: int = 1  # 本次考核出题数（默认 1；handler 夹到 [1, _MAX_QUIZ_COUNT]）
     focus: Focus = "mixed"  # 选题聚焦：mixed 覆盖优先（默认）/ new 只考没考过的 / weak 复习薄弱
+    # 目录式 scope（GKB-S4）：按 exact resource_id 收窄考哪些材料；None（默认）= 全库。LLM 从目录
+    # 清单认出用户意图对应的 resource_id 填入（命中不了 → 拿不到 id → 别填，assess_once 诚实拒答）。
+    resource_ids: list[str] | None = None
 
 
 def _weak_concepts(store: Store, memory: Memory) -> list[WeakConcept]:
@@ -303,6 +306,11 @@ def make_start_quiz_tool(
     锁死）、``new`` 只考未考过、``weak`` 复习薄弱。``recently_asked`` 跨同一会话累积、其 keys 作
     已考集喂选题，故连续 mixed 考核自然覆盖不同 item（不再锁死）。
 
+    ``resource_ids``（工具入参，目录式 scope，GKB-S4，修 #1 考错库）：按 exact resource_id 把候选
+    池收窄到指定材料，透传每题 ``assess_once`` → ``apply_scope``（选题前的确定性预过滤）。``None``
+    （默认）= 全库。LLM 从注入的目录清单认出用户意图对应的 resource_id 填入；命中为空 →
+    ``assess_once`` 发 ``empty_scope`` 拒答（诚实说"还没这主题的材料"，不静默考别的库）。
+
     ``preferences``：透传给 ``assess_once`` 解析出题语言（**偏好 > 中文**）；``None`` 时行为不变
     （走"中文"兜底）。``recently_asked`` / ``_QuizSeedCounter`` 在闭包捕获、跨同一会话的多次
     ``start_quiz`` 累积（复考换角度去重 + 选题种子确定性推进）。空库 → 优雅返回 ``refused``（不调
@@ -333,6 +341,7 @@ def make_start_quiz_tool(
                     recently_asked=recently_asked,
                     focus=params.focus,
                     preferences=preferences,
+                    resource_ids=params.resource_ids,
                 )
             except KeyboardInterrupt:
                 # 用户取消作答：结束本次考核，返回已完成部分（不把取消当空作答污染判卷）。
@@ -367,6 +376,8 @@ def make_start_quiz_tool(
             "返回考了几题 / 每题判决 / 暴露的薄弱点小结。不要复述题目或自行判卷。"
             "focus 选题聚焦：mixed=覆盖优先（默认，先考没考过的），"
             "new=只考没考过的（用户说'考其他的/换一批'时用），weak=复习薄弱（用户说'复习/考薄弱'时用）。"
+            "resource_ids 目录式 scope：用户点名某份材料时，从目录清单里认出对应的 resource_id 填入"
+            "（可多选），只从这些材料出题；不指定=全库。认不出对应材料就别填，宁可诚实拒答也不考错库。"
         ),
         params=_StartQuizParams,
         handler=handler,

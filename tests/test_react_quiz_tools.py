@@ -463,6 +463,69 @@ async def test_start_quiz_recalls_items_from_global_kb() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# 目录式 scope 透传（GKB-S4，修 #1 考错库）：resource_ids 收窄到指定材料 / 空命中拒答
+# --------------------------------------------------------------------------- #
+
+
+async def test_start_quiz_scope_honors_resource_ids() -> None:
+    # scope 透传：库里有两份材料，resource_ids=[resA] → start_quiz 只从 resA 出题（透传 assess_once
+    # → apply_scope）。不传 scope（全库随机）本可能选中 resB，故本断言钉死过滤而非巧合。
+    store = LearningStore()
+    a_ids = _seed_store(store, ["闭包", "变量提升"], url="file://local/a")
+    b_ids = _seed_store(store, ["事件循环"], url="file://local/b")
+    res_a = a_ids[0].rsplit("#", 1)[0]
+    provider = _McProvider()
+    registry = ToolRegistry()
+    _register(
+        registry,
+        store=store,
+        memory=LearningMemory(),
+        provider=provider,
+        responder=ScriptedResponder(answer=_MC_CORRECT),
+    )
+    emitter, _ = _emitter_with_events()
+
+    result = StartQuizResult.model_validate_json(
+        await registry.dispatch(
+            "start_quiz", {"count": 3, "resource_ids": [res_a]}, ctx=_ctx(emitter)
+        )
+    )
+
+    assert result.status == "completed"
+    assert result.asked >= 1
+    assert all(r.item_id in a_ids for r in result.rounds)  # 全在 scope 内（resA）
+    assert not any(r.item_id in b_ids for r in result.rounds)  # 绝不出 scope 外（resB）
+
+
+async def test_start_quiz_empty_scope_refused() -> None:
+    # 点了库里没有的 resource_id → 过滤后空 → empty_scope 拒答（诚实，不静默考别的库），零 LLM。
+    store = LearningStore()
+    _seed_store(store, ["闭包"])
+    provider = _McProvider()
+    registry = ToolRegistry()
+    _register(
+        registry,
+        store=store,
+        memory=LearningMemory(),
+        provider=provider,
+        responder=ScriptedResponder(answer=_MC_CORRECT),
+    )
+    emitter, events = _emitter_with_events()
+
+    result = StartQuizResult.model_validate_json(
+        await registry.dispatch(
+            "start_quiz", {"count": 3, "resource_ids": ["幽灵资源"]}, ctx=_ctx(emitter)
+        )
+    )
+
+    assert result.status == "refused"
+    assert result.asked == 0 and result.rounds == []
+    assert provider.calls == 0  # 空 scope 在选题前拒答，绝不调 LLM
+    refused = _payload_of(events, "learning.assessment_refused")
+    assert refused["reason"] == "empty_scope"
+
+
+# --------------------------------------------------------------------------- #
 # 语言偏好透传：偏好 > 硬兜底"中文"（ADR-0005：语言只来自偏好）
 # --------------------------------------------------------------------------- #
 

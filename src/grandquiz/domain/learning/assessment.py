@@ -50,7 +50,7 @@ from grandquiz.domain.learning.question import (
 )
 from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.routing import QuestionType, route_question_type
-from grandquiz.domain.learning.selection import Focus, select_target
+from grandquiz.domain.learning.selection import Focus, apply_scope, select_target
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.clock import Rng
 from grandquiz.kernel.events import EventEmitter
@@ -121,6 +121,7 @@ async def assess_once(
     recently_asked: dict[str, list[str]] | None = None,
     focus: Focus = "mixed",
     preferences: PreferenceMemory | None = None,
+    resource_ids: list[str] | None = None,
 ) -> AssessmentResult:
     """对**全局 KB** 跑一轮单题考核，全程发事件。见模块 docstring。
 
@@ -144,29 +145,39 @@ async def assess_once(
     ``{{LANGUAGE}}`` 槽（"LLM 判卷，代码记账"：语言解析是确定性代码）。默认 ``None`` = 不读偏好、
     向后兼容：既有测试 / eval harness 不传它时有效语言 == "中文"、发出的 message / replay_key 一字
     不变。
+
+    ``resource_ids``：**目录式 scope**（GKB-S4，修 #1 考错库）——把全库候选池按 exact resource_id
+    收窄到指定材料再选题（``apply_scope``，纯代码、无模糊匹配）。默认 ``None`` = 全库
+    （``apply_scope`` 恒等返回，字节等价旧行为：既有测试 / eval / cassette 一字不变）。语义匹配是
+    LLM 的活（目录注入让它把用户意图翻成 exact resource_id），代码只做确定性精确过滤。判空分两支：
+    None scope 且全库空 → ``empty_kb``（旧语义）；非 None scope 且过滤后空 → 新 ``empty_scope``
+    （在 ``select_target`` **之前**、**不调任何 LLM**——命中不了诚实拒答，不静默考别的库）。
     """
     # a. 开 assessment span（根）。此后任何未预期异常都必须闭合它（见末尾 except）。
-    #    先读全库候选池（全局 KB，非 task 局部——修 #2 跨会话丢知识），ASSESSMENT_STARTED payload
-    #    带**候选池大小**（判别力字段，取代已退役的恒定 task_id；scope 命中数留 S4）。
-    items = store.all_items()
+    #    先读全库候选池（全局 KB，非 task 局部——修 #2 跨会话丢知识），再按 scope 收窄（apply_scope，
+    #    resource_ids=None → 恒等全库）。ASSESSMENT_STARTED payload 带**有效 resource_ids + 命中数**
+    #    （candidate_pool_size = scope 后池大小 = 命中数；判别力字段，供 trace/eval 断言选了哪库）。
+    items = apply_scope(store.all_items(), resource_ids)
     assessment_span = emitter.new_span_id()
     emitter.emit(
         _ASSESSMENT_STARTED,
         span_id=assessment_span,
-        payload={"candidate_pool_size": len(items)},
+        payload={"candidate_pool_size": len(items), "resource_ids": resource_ids},
     )
     try:
-        # b. 空库拒答（eval case 2）：不调任何 LLM，优雅返回 refused。
+        # b. 空库 / 空 scope 拒答：不调任何 LLM，优雅返回 refused。两支——None scope 且全库空 →
+        #    empty_kb（eval case 2，逐字节不动）；非 None scope 过滤后空 → empty_scope（在选题前）。
         if not items:
+            reason = "empty_kb" if resource_ids is None else "empty_scope"
             emitter.emit(
                 LearningEvent.ASSESSMENT_REFUSED,
                 parent_span_id=assessment_span,
-                payload={"reason": "empty_kb"},
+                payload={"reason": reason},
             )
             emitter.emit(
                 _ASSESSMENT_ENDED,
                 span_id=assessment_span,
-                payload={"ok": True, "status": "refused", "reason": "empty_kb"},
+                payload={"ok": True, "status": "refused", "reason": reason},
             )
             return AssessmentResult(status="refused")
 

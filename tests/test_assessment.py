@@ -126,12 +126,15 @@ async def _assess(
     reason: str = "",
     answer: str = "我的作答",
     focus: Focus = "mixed",
+    resource_ids: list[str] | None = None,
+    rng_seed: int = _SEED,
 ) -> tuple[AssessmentResult, list[AgentEvent]]:
     """跑一轮考核（复用同一 ``memory`` 累积记账），返回 (result, events)。
 
     ``verdict`` 供开放 / 追问的 LLM 判卷槽；``answer`` 供选择题的确定性判卷（选 ``_MC_CORRECT`` /
     ``_MC_WRONG`` 定对错）与作为作答文本。``focus`` 透传选题聚焦（R1-S7）：复考薄弱概念的用例传
     ``"weak"`` 显式锁定薄弱集（默认 ``mixed`` 覆盖优先会先考未考过的新概念，不锁薄弱）。
+    ``resource_ids`` 透传目录式 scope（GKB-S4）；``rng_seed`` 供 scope-honor 用例跨多 seed 取样。
     """
     emitter, events, trace = _harness()
     result = await assess_once(
@@ -140,8 +143,9 @@ async def _assess(
         responder=ScriptedResponder(answer=answer),
         memory=memory,
         emitter=emitter,
-        rng=new_rng(_SEED),
+        rng=new_rng(rng_seed),
         focus=focus,
+        resource_ids=resource_ids,
     )
     trace.close()
     return result, events
@@ -649,3 +653,170 @@ async def test_whole_assessment_slice_is_deterministic_under_replay(tmp_path: Pa
     assert inner.calls == 1
     trace1.close()
     trace2.close()
+
+
+# --------------------------------------------------------------------------- #
+# 目录式 scope（GKB-S4，修 #1 考错库）：resource_ids 收窄候选池 + empty_scope 拒答
+# --------------------------------------------------------------------------- #
+
+# 两资源全库：resA 含"闭包"/"变量提升"两 item，resB 含"事件循环"一 item。所有 evidence 引文都在
+# _QUOTES 里（假 provider 靠它从 prompt 回抽真实证据），故任一被考 item 都能正常出题。
+_RES_A_DATA = _ITEM_DATA[:2]  # 闭包 / 变量提升
+_RES_B_DATA = _ITEM_DATA[2:]  # 事件循环
+
+
+def _two_resource_store() -> tuple[LearningStore, str, str, list[str], list[str]]:
+    """建跨两资源的全库，返回 (store, resA_id, resB_id, resA_item_ids, resB_item_ids)。"""
+    store = LearningStore()
+    res_a = LearningResource.create(url="https://example.com/a")
+    res_b = LearningResource.create(url="https://example.com/b")
+    store.add_resource(res_a)
+    store.add_resource(res_b)
+    a_items = [
+        KnowledgeItem.create(
+            resource_id=res_a.resource_id,
+            index=index,
+            concept=concept,
+            summary=f"{concept} 摘要",
+            evidence=[Evidence(quote=quote)],
+            confidence=0.9,
+        )
+        for index, (concept, quote) in enumerate(_RES_A_DATA)
+    ]
+    b_items = [
+        KnowledgeItem.create(
+            resource_id=res_b.resource_id,
+            index=index,
+            concept=concept,
+            summary=f"{concept} 摘要",
+            evidence=[Evidence(quote=quote)],
+            confidence=0.9,
+        )
+        for index, (concept, quote) in enumerate(_RES_B_DATA)
+    ]
+    store.add_items(a_items)
+    store.add_items(b_items)
+    return (
+        store,
+        res_a.resource_id,
+        res_b.resource_id,
+        [it.item_id for it in a_items],
+        [it.item_id for it in b_items],
+    )
+
+
+async def test_assessment_started_carries_scope_on_full_kb_path() -> None:
+    # 默认全库路径（resource_ids=None）：ASSESSMENT_STARTED payload 带 resource_ids=None + 命中数
+    # = 全库大小（判别力字段上脊柱，供 trace/eval 断言"考了哪个库"）。
+    store, *_rest = _two_resource_store()
+    _result, events = await _assess(store, LearningMemory(), answer=_MC_CORRECT)
+    started = next(e for e in events if e.type == _ASSESSMENT_STARTED)
+    assert started.payload["resource_ids"] is None
+    assert started.payload["candidate_pool_size"] == 3  # 全库 3 item
+
+
+async def test_scope_honored_all_questions_from_scoped_resource() -> None:
+    # scope-honor（核心验收）：resource_ids=[resA] → 所有出题 item 的 resource_id ∈ resA，绝不出
+    # resB 的题。跨多 seed 取样证明是过滤而非 seed 巧合；且 scope 内确实随机（>1 个不同 item）。
+    store, res_a, _res_b, a_ids, b_ids = _two_resource_store()
+    asked_items: set[str] = set()
+    for seed in range(30):
+        _result, events = await _assess(
+            store,
+            LearningMemory(),  # 每轮 fresh → 稳定路由到 MC
+            answer=_MC_CORRECT,
+            resource_ids=[res_a],
+            rng_seed=seed,
+        )
+        started = next(e for e in events if e.type == _ASSESSMENT_STARTED)
+        assert started.payload["resource_ids"] == [res_a]
+        assert started.payload["candidate_pool_size"] == len(a_ids)  # 命中数 = resA item 数
+        asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
+        asked_items.add(str(asked.payload["item_id"]))
+    assert asked_items <= set(a_ids)  # 全在 scope 内
+    assert not (asked_items & set(b_ids))  # 绝不出 scope 外（resB）的题
+    assert len(asked_items) > 1  # scope 内确实随机（非恒返首个 / seed 巧合）
+
+
+async def test_scope_single_item_resource_always_targets_it() -> None:
+    # scope 收到只含一个 item 的资源 → 所有 seed 都考那一个 item（过滤确定性）。
+    store, _res_a, res_b, _a_ids, b_ids = _two_resource_store()
+    for seed in range(15):
+        result, events = await _assess(
+            store, LearningMemory(), answer=_MC_CORRECT, resource_ids=[res_b], rng_seed=seed
+        )
+        asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
+        assert asked.payload["item_id"] == b_ids[0]
+        assert result.item_id == b_ids[0]
+
+
+async def test_multi_resource_scope_covers_both() -> None:
+    # 多资源 scope（resource_ids=[resA, resB]）= 全库并集：命中数 = 全库，出题可落任一资源。
+    store, res_a, res_b, a_ids, b_ids = _two_resource_store()
+    asked_items: set[str] = set()
+    for seed in range(30):
+        _result, events = await _assess(
+            store, LearningMemory(), answer=_MC_CORRECT, resource_ids=[res_a, res_b], rng_seed=seed
+        )
+        started = next(e for e in events if e.type == _ASSESSMENT_STARTED)
+        assert started.payload["candidate_pool_size"] == 3
+        asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
+        asked_items.add(str(asked.payload["item_id"]))
+    assert asked_items <= set(a_ids) | set(b_ids)
+    assert asked_items & set(a_ids) and asked_items & set(b_ids)  # 两资源都能被选到
+
+
+async def test_empty_scope_refuses_without_calling_any_llm() -> None:
+    # empty_scope 拒答：非 None scope 过滤后为空（点了库里没有的 resource_id）→ 在选题前、不调任何
+    # LLM 发 ASSESSMENT_REFUSED(reason="empty_scope")；诚实拒答而非静默考别的库（修 #1）。
+    emitter, events, trace = _harness()
+    store, *_rest = _two_resource_store()
+    provider = _AssessProvider(verdict="对")
+    memory = LearningMemory()
+
+    result = await assess_once(
+        store=store,
+        provider=provider,
+        responder=ScriptedResponder(answer=_MC_CORRECT),
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        resource_ids=["不在库里的幽灵资源"],
+    )
+    trace.close()
+
+    assert result.status == "refused"
+    assert result.item_id is None and result.verdict is None
+    # 事件流：started → refused(empty_scope) → ended，无 model span、无记账。
+    assert [e.type for e in events] == [
+        _ASSESSMENT_STARTED,
+        LearningEvent.ASSESSMENT_REFUSED,
+        _ASSESSMENT_ENDED,
+    ]
+    assert EventType.MODEL_STARTED not in {e.type for e in events}
+    assert LearningEvent.CONCEPT_STATE_CHANGED not in {e.type for e in events}
+    assert provider.calls == 0  # 选题前拒答，绝不调 LLM
+    refused = next(e for e in events if e.type == LearningEvent.ASSESSMENT_REFUSED)
+    assert refused.payload["reason"] == "empty_scope"
+    started = next(e for e in events if e.type == _ASSESSMENT_STARTED)
+    assert started.payload["resource_ids"] == ["不在库里的幽灵资源"]
+    assert started.payload["candidate_pool_size"] == 0
+
+
+async def test_empty_scope_distinct_from_empty_kb_reason() -> None:
+    # 判空两支的语义区分：非 None scope 即便全库本身为空，也判 empty_scope（非 empty_kb）——
+    # "你点的材料没有"而非"库里啥都没有"。empty_kb 仍专属 resource_ids=None + 全库空。
+    emitter, events, trace = _harness()
+    result = await assess_once(
+        store=LearningStore(),  # 全库空
+        provider=_AssessProvider(verdict="对"),
+        responder=ScriptedResponder(answer=_MC_CORRECT),
+        memory=LearningMemory(),
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        resource_ids=["任意 id"],  # 非 None → empty_scope 胜出
+    )
+    trace.close()
+    assert result.status == "refused"
+    refused = next(e for e in events if e.type == LearningEvent.ASSESSMENT_REFUSED)
+    assert refused.payload["reason"] == "empty_scope"

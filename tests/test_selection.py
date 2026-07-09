@@ -15,7 +15,7 @@ import pytest
 
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem
-from grandquiz.domain.learning.selection import select_target
+from grandquiz.domain.learning.selection import apply_scope, select_target
 from grandquiz.kernel.clock import new_rng
 
 
@@ -224,3 +224,73 @@ def test_weak_focus_ghost_weak_falls_back() -> None:
     memory.record_verdict("不在库里的幽灵 item", "错")
     chosen = select_target(items, rng=new_rng(3), memory=memory, focus="weak")
     assert chosen in items
+
+
+# --- apply_scope（GKB-S4 目录式 scope 上游预过滤，纯函数、确定性、无模糊匹配）---------------
+
+
+def _multi_resource_items() -> list[KnowledgeItem]:
+    # 跨两个资源的 item，按 item_id 升序排列（resA#000/001、resB#000/001）——scope 过滤须保此序。
+    def _mk(resource_id: str, index: int, concept: str) -> KnowledgeItem:
+        return KnowledgeItem.create(
+            resource_id=resource_id,
+            index=index,
+            concept=concept,
+            summary=f"{concept} 摘要",
+            evidence=[Evidence(quote=f"{concept} 证据")],
+            confidence=0.9,
+        )
+
+    return [
+        _mk("resA", 0, "A0"),
+        _mk("resA", 1, "A1"),
+        _mk("resB", 0, "B0"),
+        _mk("resB", 1, "B1"),
+    ]
+
+
+def test_apply_scope_none_returns_items_identity() -> None:
+    # resource_ids=None → 恒等返回同一 list（默认全库、字节等价旧行为，不复制、不过滤）。
+    items = _multi_resource_items()
+    assert apply_scope(items, None) is items
+
+
+def test_apply_scope_single_resource_filters_exact_id() -> None:
+    # 非 None → 只留 resource_id 精确命中的 item（exact-id，无模糊匹配）。
+    items = _multi_resource_items()
+    scoped = apply_scope(items, ["resA"])
+    assert [it.item_id for it in scoped] == ["resA#000", "resA#001"]
+
+
+def test_apply_scope_multi_resource_selects_both() -> None:
+    # 多资源 scope：命中并集，保输入序。
+    items = _multi_resource_items()
+    scoped = apply_scope(items, ["resA", "resB"])
+    assert scoped == items  # 全命中 + 保序 → 与输入逐项相等
+
+
+def test_apply_scope_preserves_input_order_ignoring_resource_ids_order() -> None:
+    # resource_ids 的先后**不**影响输出序：只做成员归属、绝不按 scope 重排（保 item_id 升序，
+    # 否则破 rng.choice 下标稳定 → replay 对不齐）。传 [resB, resA] 仍得升序 resA…resB。
+    items = _multi_resource_items()
+    scoped = apply_scope(items, ["resB", "resA"])
+    assert [it.item_id for it in scoped] == ["resA#000", "resA#001", "resB#000", "resB#001"]
+
+
+def test_apply_scope_no_hit_returns_empty() -> None:
+    # 命中为空（scope 里全是库里没有的 id）→ 空列表，调用方据此走 empty_scope 拒答。
+    items = _multi_resource_items()
+    assert apply_scope(items, ["resC"]) == []
+
+
+def test_apply_scope_empty_resource_ids_returns_empty() -> None:
+    # 非 None 空列表 → 无命中 → 空（与 None 的全库恒等严格区分）。
+    items = _multi_resource_items()
+    assert apply_scope(items, []) == []
+
+
+def test_apply_scope_duplicate_resource_ids_no_duplicate_items() -> None:
+    # scope 里重复 id 不产生重复 item（set 成员判定），保序不变。
+    items = _multi_resource_items()
+    scoped = apply_scope(items, ["resA", "resA"])
+    assert [it.item_id for it in scoped] == ["resA#000", "resA#001"]

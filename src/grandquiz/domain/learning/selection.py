@@ -29,6 +29,26 @@ from grandquiz.kernel.clock import Rng
 Focus = Literal["mixed", "new", "weak"]
 
 
+def apply_scope(items: list[KnowledgeItem], resource_ids: list[str] | None) -> list[KnowledgeItem]:
+    """目录式 scope 的**上游预过滤**（纯代码、确定性，无模糊匹配）——GKB-S4，修 #1 考错库。
+
+    ``resource_ids is None`` → **恒等返回** ``items``（默认全库；字节等价旧行为）。否则按
+    **exact resource_id** 保序过滤出 ``item.resource_id in set(resource_ids)`` 的 item——**保
+    item_id 升序、绝不重排序**（重排即破 ``select_target`` 里 ``rng.choice`` 的下标稳定 → replay
+    对不齐）。``resource_ids`` 的先后不影响输出序（只做成员归属，不按 scope 排序）；空命中（含非
+    None 空列表）→ 空列表，调用方据此走 ``empty_scope`` 拒答。
+
+    语义匹配是 LLM 的活（S3 目录注入 + 工具 description 让它把用户意图翻成 exact resource_id），
+    这里只做代码侧的**精确成员过滤**——刻意不写模糊子串 / 分词匹配（绕开大小写 / 中文规范化
+    parity 陷阱，replay 逐字节稳）。是 ``select_target`` **之前**的一层过滤，``select_target`` 签名
+    及其既有 caller 零改。
+    """
+    if resource_ids is None:
+        return items
+    allowed = set(resource_ids)
+    return [item for item in items if item.resource_id in allowed]
+
+
 def _candidates(
     focus: Focus,
     *,
