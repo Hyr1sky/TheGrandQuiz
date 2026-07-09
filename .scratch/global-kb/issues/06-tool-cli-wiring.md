@@ -1,6 +1,6 @@
 # GKB-S6 — start_quiz 工具装配 + react/quiz CLI 端到端接线
 
-Status: ready-for-agent
+Status: done（merge 至 main `e4a2ab7`，五门全绿 498 passed；start_quiz 描述统一+2 工具输入示例、question_type 参数级透传断言、端到端 scripted 轨迹（多资源库→scope honor + 题型 honor），3 mutation 全杀。发现 S3-S5 已接好运行管道、本 slice 只补缺口。真机体验属用户 dogfood。）
 Type: AFK（真机体验属你 dogfood；建绿走 scripted/replay provider，轨迹 cassette 我录）
 
 ## Parent
