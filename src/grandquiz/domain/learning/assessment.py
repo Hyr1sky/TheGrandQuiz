@@ -41,7 +41,7 @@ from grandquiz.domain.learning.grading import (
     grade_multiple_choice,
 )
 from grandquiz.domain.learning.memory import Memory
-from grandquiz.domain.learning.models import KnowledgeItem, LearningTask
+from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY, PreferenceMemory
 from grandquiz.domain.learning.question import (
     MultipleChoiceQuestion,
@@ -64,19 +64,19 @@ _ASSESSMENT_ENDED = "assessment.ended"
 _WEAK_VERDICTS: frozenset[VerdictLabel] = frozenset({"勉强", "错"})
 
 
-def _resolve_language(task: LearningTask, preferences: PreferenceMemory | None) -> str:
-    """按 **偏好 > task 默认 > 中文** 解析出题 / 判卷的有效语言（确定性代码，非 LLM）。
+def _resolve_language(preferences: PreferenceMemory | None) -> str:
+    """按 **偏好(question_language) > 硬兜底"中文"** 解析出题 / 判卷有效语言（确定性代码，非 LLM）。
 
-    显式设置的 ``question_language`` 偏好压过 ``LearningTask.language``（改语言不换任务同一性，
-    偏好是跨任务的个人设置）；无偏好则用 task 自带语言（其默认已是"中文"）；task 语言若为空串则
-    退到硬兜底"中文"。``preferences`` 为 ``None``（不传偏好的调用方 / 既有 eval harness）时行为不
-    变：直接走 task 默认——保证向后兼容，去掉偏好覆盖这一支即让"偏好压过 task"的断言转红。
+    ``LearningTask`` 已消解（ADR-0005）：语言是**跨全库的个人设置**，只来自 Preference Memory，
+    不再是材料 / 任务属性。显式设置且非空的 ``question_language`` 偏好生效；否则退到硬兜底"中文"。
+    ``preferences`` 为 ``None``（不传偏好的调用方 / 既有 eval harness）时直接走"中文"兜底——向后
+    兼容（旧 task.language 默认亦是"中文"，故既有默认路径 message / replay_key 一字不变）。
     """
     if preferences is not None:
         pref = preferences.get_preference(QUESTION_LANGUAGE_KEY)
         if pref is not None and pref.value:
             return pref.value
-    return task.language or "中文"
+    return "中文"
 
 
 def _compose_solution(item: KnowledgeItem) -> str:
@@ -111,7 +111,6 @@ class AssessmentResult(BaseModel):
 
 
 async def assess_once(
-    task: LearningTask,
     *,
     store: Store,
     provider: Provider,
@@ -123,7 +122,10 @@ async def assess_once(
     focus: Focus = "mixed",
     preferences: PreferenceMemory | None = None,
 ) -> AssessmentResult:
-    """对 ``task`` 跑一轮单题考核，全程发事件。见模块 docstring。
+    """对**全局 KB** 跑一轮单题考核，全程发事件。见模块 docstring。
+
+    ``LearningTask`` 已消解（ADR-0005）：候选池 = 全库（``store.all_items()``），无 task 分区、无
+    task 入参；出题 / 判卷语言只来自 ``preferences``（偏好 > 中文，见 ``_resolve_language``）。
 
     ``recently_asked``：会话内**已问过**台账（item_id → 已问过的题目文本列表），由考核循环入口
     （``run_quiz``）持有并跨轮累积、下传做去重（"LLM 判卷，代码记账"——已问过是代码持有的状态）。
@@ -138,23 +140,28 @@ async def assess_once(
     （无会话已考态时即全集随机，同改动前）。**仅影响选题调用处**：判卷 / 记账 / 事件序一律不动。
 
     ``preferences``：显式偏好台账（Preference Memory）。出题 / 判卷前经 ``_resolve_language`` 解析
-    有效语言，优先级 **偏好（``question_language``）> task 默认 > 中文**——偏好覆盖 ``task.language``
-    后下传出题 / 判卷的 ``{{LANGUAGE}}`` 槽（"LLM 判卷，代码记账"：语言解析是确定性代码）。默认
-    ``None`` = 不读偏好、向后兼容：既有测试 / eval harness 不传它时有效语言 == ``task.language``、
-    发出的 message / replay_key 一字不变。
+    有效语言，优先级 **偏好（``question_language``）> 硬兜底"中文"**——偏好下传出题 / 判卷的
+    ``{{LANGUAGE}}`` 槽（"LLM 判卷，代码记账"：语言解析是确定性代码）。默认 ``None`` = 不读偏好、
+    向后兼容：既有测试 / eval harness 不传它时有效语言 == "中文"、发出的 message / replay_key 一字
+    不变。
     """
     # a. 开 assessment span（根）。此后任何未预期异常都必须闭合它（见末尾 except）。
+    #    先读全库候选池（全局 KB，非 task 局部——修 #2 跨会话丢知识），ASSESSMENT_STARTED payload
+    #    带**候选池大小**（判别力字段，取代已退役的恒定 task_id；scope 命中数留 S4）。
+    items = store.all_items()
     assessment_span = emitter.new_span_id()
-    emitter.emit(_ASSESSMENT_STARTED, span_id=assessment_span, payload={"task_id": task.task_id})
+    emitter.emit(
+        _ASSESSMENT_STARTED,
+        span_id=assessment_span,
+        payload={"candidate_pool_size": len(items)},
+    )
     try:
-        # b. 空库拒答（eval case 2）：不调任何 LLM，优雅返回 refused。选题候选池 = 全库（全局 KB，
-        #    非 task 局部）——换标题开会话仍能考到此前 ingest 的知识（修 #2 跨会话丢知识）。
-        items = store.all_items()
+        # b. 空库拒答（eval case 2）：不调任何 LLM，优雅返回 refused。
         if not items:
             emitter.emit(
                 LearningEvent.ASSESSMENT_REFUSED,
                 parent_span_id=assessment_span,
-                payload={"task_id": task.task_id, "reason": "empty_kb"},
+                payload={"reason": "empty_kb"},
             )
             emitter.emit(
                 _ASSESSMENT_ENDED,
@@ -173,8 +180,8 @@ async def assess_once(
         # d. 题型路由（确定性代码，按被考概念在 Learning Memory 的状态选题型；决策上脊柱供断言）。
         question_type = route_question_type(memory.state_of(target.item_id))
 
-        # 有效语言解析（确定性代码）：偏好 > task 默认 > 中文。下传出题 / 判卷的 {{LANGUAGE}} 槽。
-        language = _resolve_language(task, preferences)
+        # 有效语言解析（确定性代码）：偏好 > 中文。下传出题 / 判卷的 {{LANGUAGE}} 槽。
+        language = _resolve_language(preferences)
 
         # e. 分型出题（role=enrich）+ 校验门（缝 3）。选择题走 MC 出题；追问用深挖 prompt 变体；
         #    开放走标准出题。三者都发 QUESTION_ASKED（带 question_type，锚定真实 item + 非空证据）。

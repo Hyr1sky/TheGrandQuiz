@@ -1,4 +1,4 @@
-"""学习领域模型——纯 pydantic 数据结构（LearningTask / LearningResource / KnowledgeItem）。
+"""学习领域模型——纯 pydantic 数据结构（LearningResource / KnowledgeItem）。
 
 两条确定性纪律在此落地（否则 replay 与跨轮次记账永远对不齐）：
 
@@ -9,8 +9,9 @@
   （注入时钟），模型不存 ``created_at``。
 
 ID 派生约定（工厂在构造点保证确定性，调用方拿不到手写随机 id）：
-``task_id = derive_id(title)``；``resource_id = derive_id(task_id, url)``；
-``item_id = f"{resource_id}#{index:03d}"``（``index`` 为 Reader 输出中的序号）。
+``resource_id = derive_id(url)``（**内容寻址**，同 URL 全局唯一，见 ADR-0005——``LearningTask``
+已消解、知识进同一全局 KB）；``item_id = f"{resource_id}#{index:03d}"``（``index`` 为 Reader 输出中
+的序号），资源内唯一不变（ADR-0002 边界不动）。
 """
 
 import hashlib
@@ -117,46 +118,25 @@ class KnowledgeItem(BaseModel):
 
 
 class LearningResource(BaseModel):
-    """挂在 LearningTask 下的一个学习资源（待深读 / 已深读 / 深读失败）。
+    """全局 KB 里的一个学习资源（待深读 / 已深读 / 深读失败），**内容寻址**（ADR-0005）。
 
-    ``trusted`` 默认 False——抓取的网页 / GitHub 内容是不可信输入（注入防护，深读前不得当可信）；
-    ``status`` 深读失败 → ``"failed"``，不产生幽灵 item（eval case 7）。无时间戳字段（决策 2）：
-    创建 / 深读时序来自事件流。
+    ``resource_id = derive_id(url)``——同 URL 全局唯一，不再挂在某个 ``LearningTask`` 下
+    （``LearningTask`` 已消解）；重 ingest 同一 URL → 同 resource_id → ``INSERT OR REPLACE`` 天然
+    去重。``topic`` = 资源级软标签（"这份材料讲什么"的一句话，Reader 抽，本 slice 先建列、留空，
+    S3 填），是目录式 scope 清单的人类可读来源。``trusted`` 默认 False——抓取的网页 / GitHub 内容
+    是不可信输入（注入防护，深读前不得当可信）；``status`` 深读失败 → ``"failed"``，不产生幽灵
+    item（eval case 7）。无时间戳字段（决策 2）：创建 / 深读时序来自事件流。
     """
 
     resource_id: str
-    task_id: str
     url: str
     raw_content: str | None = None
     content_hash: str | None = None
     trusted: bool = False
     status: Literal["pending", "read", "failed"] = "pending"
+    topic: str | None = None
 
     @classmethod
-    def create(cls, *, task_id: str, url: str) -> Self:
-        """工厂：``resource_id = derive_id(task_id, url)``。"""
-        return cls(resource_id=derive_id(task_id, url), task_id=task_id, url=url)
-
-
-class LearningTask(BaseModel):
-    """学习主题的容器与考核范围（"考我 React" 里的 "React"）：资源 / KnowledgeItem 都挂其下。
-
-    ``domain`` = 粗领域（如"理科" / "前端"），建 task 时人工可选填，MVP 不抽取。
-    ``language`` = 出题 / 判卷所用语言（默认"中文"，MVP 用 str 不用 enum）——经 assess_once 下传到
-    出题与判卷模板的 ``{{LANGUAGE}}`` 槽（见 question.py / grading.py）。它不进 task_id 派生
-    （改语言不换任务同一性），亦不影响 prompt 版本号（模板含字面 {{LANGUAGE}}、哈希对象不变）；
-    只有发出的 message 及 replay_key 随语言不同。无时间戳字段（决策 2）。
-    """
-
-    task_id: str
-    title: str
-    domain: str | None = None
-    language: str = "中文"
-
-    @classmethod
-    def create(cls, title: str, domain: str | None = None, language: str = "中文") -> Self:
-        """工厂：``task_id = derive_id(title)``——确定性由构造点保证，调用方拿不到手写随机 id。
-
-        ``language`` 默认"中文"；``task_id`` 只由 ``title`` 派生（语言不进同一性）。
-        """
-        return cls(task_id=derive_id(title), title=title, domain=domain, language=language)
+    def create(cls, *, url: str) -> Self:
+        """工厂：``resource_id = derive_id(url)``（内容寻址，同 URL 全局唯一）。"""
+        return cls(resource_id=derive_id(url), url=url)

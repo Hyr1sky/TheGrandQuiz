@@ -14,7 +14,8 @@ import grandquiz.domain.learning
 from grandquiz.kernel.db import connect, migrate
 
 _KERNEL_TABLES = {"events"}
-_LEARNING_TABLES = {"tasks", "resources", "knowledge_items", "learning_memory"}
+# 全局 KB 终态（ADR-0005，迁移 0004 弃 tasks 表）：resources 内容寻址、无 tasks 表。
+_LEARNING_TABLES = {"resources", "knowledge_items", "learning_memory", "preferences"}
 _LEARNING_MIGRATIONS = Path(grandquiz.domain.learning.__file__).parent / "migrations"
 
 
@@ -43,6 +44,7 @@ def test_migrate_learning_dir_creates_learning_tables() -> None:
     tables = _tables(conn)
     assert tables >= _LEARNING_TABLES
     assert "events" not in tables
+    assert "tasks" not in tables  # ADR-0005：迁移 0004 弃 tasks 表（LearningTask 消解）
     # user_version 抬到已应用迁移的最高编号（新增迁移文件时自动跟随，不写死具体数字——
     # 与 migrate 内部"按文件名前导整数取最高"的推进逻辑一致）。
     highest = max(int(p.name.split("_", 1)[0]) for p in _LEARNING_MIGRATIONS.glob("*.sql"))

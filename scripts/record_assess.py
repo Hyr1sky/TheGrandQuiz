@@ -18,7 +18,6 @@ from grandquiz.domain.learning.models import (
     Evidence,
     KnowledgeItem,
     LearningResource,
-    LearningTask,
 )
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.selection import select_target
@@ -47,9 +46,7 @@ async def main() -> None:
     recording = RecordingProvider(provider, cassette, provider.model_for_role)
 
     store = LearningStore()
-    task = LearningTask.create("样例主题")
-    resource = LearningResource.create(task_id=task.task_id, url=_URL)
-    store.add_task(task)
+    resource = LearningResource.create(url=_URL)
     store.add_resource(resource)
     store.add_items(
         [
@@ -74,13 +71,12 @@ async def main() -> None:
     # 与 test_assess_replay 一致，故此 cassette 走 question_generate + answer_grade 两槽。
     # fresh memory 会路由到选择题（MC 判卷是代码、无判卷槽），产出的是另一种 fixture。
     memory = LearningMemory()
-    natural = select_target(store.items_for_task(task.task_id), rng=new_rng(_SEED)).item_id
+    natural = select_target(store.all_items(), rng=new_rng(_SEED)).item_id
     memory.record_verdict(natural, "错")  # → 薄弱
     memory.record_verdict(natural, "对")  # → 观察中
 
     try:
         result = await assess_once(
-            task,
             store=store,
             provider=recording,
             responder=ScriptedResponder(answer=answer),

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.ingest import ingest_resource
-from grandquiz.domain.learning.models import KnowledgeItem, LearningTask
+from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import EventEmitter, EventSink
@@ -44,7 +44,6 @@ async def main() -> None:
     emitter = EventEmitter(EventSink(), ManualClock(), trace_id="record")
     try:
         result = await ingest_resource(
-            LearningTask.create("样例主题"),
             _URL,
             source=lambda _url: content,
             provider=recording,

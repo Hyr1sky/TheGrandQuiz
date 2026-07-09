@@ -20,7 +20,7 @@ import pytest
 from grandquiz.domain.learning.assessment import assess_once
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import LearningMemory
-from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource, LearningTask
+from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.question import (
     QuestionError,
     dedup_key,
@@ -215,11 +215,9 @@ class _DupProvider:
         )
 
 
-def _single_item_store() -> tuple[LearningStore, LearningTask, str]:
+def _single_item_store() -> tuple[LearningStore, str]:
     store = LearningStore()
-    task = LearningTask.create("闭包")
-    resource = LearningResource.create(task_id=task.task_id, url="https://example.com/closure")
-    store.add_task(task)
+    resource = LearningResource.create(url="https://example.com/closure")
     store.add_resource(resource)
     item = KnowledgeItem.create(
         resource_id=resource.resource_id,
@@ -230,13 +228,13 @@ def _single_item_store() -> tuple[LearningStore, LearningTask, str]:
         confidence=0.9,
     )
     store.add_items([item])
-    return store, task, item.item_id
+    return store, item.item_id
 
 
 async def test_session_reassessment_produces_no_verbatim_duplicate() -> None:
     # 会话内同一薄弱 item 复考两轮：run_quiz 持有的"已问过"台账跨轮累积、经 assess_once 下传出题；
     # 断两轮 QUESTION_ASKED 的题目文本归一化后不相等（会话内零逐字重复）。
-    store, task, item_id = _single_item_store()
+    store, item_id = _single_item_store()
     memory = LearningMemory()
     memory.record_verdict(item_id, "错")  # 预置薄弱 → 复考锁定同一 item
 
@@ -246,7 +244,6 @@ async def test_session_reassessment_produces_no_verbatim_duplicate() -> None:
     for round_index in range(2):
         emitter, events = _emitter()
         await assess_once(
-            task,
             store=store,
             provider=_DupProvider(),
             responder=ScriptedResponder(answer="我的作答"),

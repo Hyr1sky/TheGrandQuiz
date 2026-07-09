@@ -5,8 +5,9 @@
 - **dict ↔ SQLite parity（逐字段含 confidence）**：同一 set 序列喂 dict 版与 SQLite 版，
   ``get_preference`` 逐字段一致（key / value / confidence 全比，吸取 01 教训别漏字段）。
 - **跨会话留存**：SQLite 版 set → 关闭连接、丢弃对象 → 同一 db_path 重开 → get 仍在、confidence 稳。
-- **出题语言覆盖优先级（偏好 > task 默认 > 中文）**：assess_once 读偏好覆盖 task.language 下传出题；
-  去掉覆盖（mutation）则"pref=英文 / task=中文 → 应出英文"断言转红。
+- **出题语言优先级（偏好 > 硬兜底"中文"）**：assess_once 读 ``question_language`` 偏好下传出题
+  （``LearningTask`` 已消解，语言只来自偏好，ADR-0005）；去掉偏好覆盖（mutation）则"pref=英文 →
+  应出英文"断言转红。
 - **确定性无 clock / random 泄漏**：preference 模块不 import time / random / datetime / uuid，
   confidence 恒 1.0（显式设置、不随时间漂移）。
 """
@@ -22,7 +23,6 @@ from grandquiz.domain.learning.models import (
     Evidence,
     KnowledgeItem,
     LearningResource,
-    LearningTask,
 )
 from grandquiz.domain.learning.preference import (
     QUESTION_LANGUAGE_KEY,
@@ -126,7 +126,7 @@ def test_preference_module_has_no_clock_or_random_leak() -> None:
     assert not (imported & forbidden), f"泄漏了非确定性模块：{imported & forbidden}"
 
 
-# --- 出题语言覆盖优先级（偏好 > task 默认 > 中文）-----------------------------------
+# --- 出题语言优先级（偏好 > 硬兜底"中文"）------------------------------------------
 #
 # 自包含（不 import 共享 harness）：脚本化假 provider 从被替换后的 system prompt 判定语言，
 # 回一道对应语言的 MC JSON——既证明有效语言确被下传替换进 message，又让题干可按 CJK 比例断言语言。
@@ -164,10 +164,9 @@ def _cjk_ratio(text: str) -> float:
     return han / len(chars)
 
 
-def _stocked_store(task: LearningTask) -> LearningStore:
+def _stocked_store() -> LearningStore:
     store = LearningStore()
-    store.add_task(task)
-    resource = LearningResource.create(task_id=task.task_id, url="mem://closure")
+    resource = LearningResource.create(url="mem://closure")
     store.add_resource(resource)
     store.add_items(
         [
@@ -184,14 +183,13 @@ def _stocked_store(task: LearningTask) -> LearningStore:
     return store
 
 
-async def _question_asked(task: LearningTask, *, preferences: PreferenceMemory | None) -> str:
+async def _question_asked(*, preferences: PreferenceMemory | None) -> str:
     events: list[AgentEvent] = []
     sink = EventSink()
     sink.subscribe(events.append)
     emitter = EventEmitter(sink, ManualClock(), trace_id="pref")
     await assess_once(
-        task,
-        store=_stocked_store(task),
+        store=_stocked_store(),
         provider=_LanguageEchoProvider(),
         responder=ScriptedResponder(answer=_CORRECT),
         memory=LearningMemory(),
@@ -204,36 +202,31 @@ async def _question_asked(task: LearningTask, *, preferences: PreferenceMemory |
     )
 
 
-async def test_preference_overrides_task_default_language() -> None:
-    # 偏好 > task 默认：task.language=中文，偏好 question_language=英文 → 出英文题。
-    # mutation：assess_once 若不读偏好覆盖（恒用 task.language）→ 出中文题 → 本断言转红。
-    task = LearningTask.create("闭包")  # language 默认中文
+async def test_preference_sets_question_language_to_english() -> None:
+    # 偏好生效：question_language=英文 → 出英文题（ADR-0005：语言只来自偏好，无 task 默认）。
+    # mutation：assess_once 若不读偏好（恒用"中文"兜底）→ 出中文题 → 本断言转红。
     prefs = DictPreferenceMemory()
     prefs.set_preference(QUESTION_LANGUAGE_KEY, "英文")
-    question = await _question_asked(task, preferences=prefs)
+    question = await _question_asked(preferences=prefs)
     assert _cjk_ratio(question) < 0.1  # 英文题（偏好生效）
 
 
-async def test_task_default_used_when_no_preference() -> None:
-    # task 默认 > 中文兜底：无偏好时用 task.language（此处显式设英文）→ 出英文题。
-    task = LearningTask.create("closures", language="英文")
-    prefs = DictPreferenceMemory()  # 未设 question_language
-    question = await _question_asked(task, preferences=prefs)
-    assert _cjk_ratio(question) < 0.1  # 英文题（task 默认生效）
-
-
-async def test_chinese_fallback_when_neither_preference_nor_english_task() -> None:
-    # 中文兜底：task 默认中文、无偏好、不传 preferences → 出中文题。
-    task = LearningTask.create("闭包")
-    question = await _question_asked(task, preferences=None)
+async def test_chinese_fallback_when_preferences_none() -> None:
+    # 中文兜底：不传 preferences（None）→ 出中文题（偏好 > 中文，无偏好即兜底）。
+    question = await _question_asked(preferences=None)
     assert _cjk_ratio(question) > 0.6  # 中文题
 
 
-async def test_preference_beats_english_task_when_set_to_chinese() -> None:
-    # 偏好压过 task 默认（反向）：task.language=英文，但偏好设中文 → 出中文题。
-    # 证明优先级是"偏好覆盖 task"而非"task 覆盖偏好"。
-    task = LearningTask.create("closures", language="英文")
+async def test_chinese_fallback_when_preference_unset() -> None:
+    # 中文兜底：传了偏好台账但未设 question_language → 仍出中文题（无该键即兜底）。
+    prefs = DictPreferenceMemory()  # 未设 question_language
+    question = await _question_asked(preferences=prefs)
+    assert _cjk_ratio(question) > 0.6  # 中文题
+
+
+async def test_preference_set_to_chinese_asks_in_chinese() -> None:
+    # 显式把偏好设中文 → 出中文题（与英文用例对称，证明偏好确实驱动语言）。
     prefs = DictPreferenceMemory()
     prefs.set_preference(QUESTION_LANGUAGE_KEY, "中文")
-    question = await _question_asked(task, preferences=prefs)
-    assert _cjk_ratio(question) > 0.6  # 中文题（偏好压过英文 task）
+    question = await _question_asked(preferences=prefs)
+    assert _cjk_ratio(question) > 0.6  # 中文题

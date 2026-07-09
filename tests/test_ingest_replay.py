@@ -12,7 +12,7 @@ from typing import cast
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.ingest import ingest_resource
-from grandquiz.domain.learning.models import KnowledgeItem, LearningTask
+from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import EventEmitter, EventSink
@@ -38,7 +38,6 @@ async def test_recorded_ingest_replays_deterministically_without_live_calls() ->
     emitter = EventEmitter(EventSink(), ManualClock(), trace_id="replay")
 
     result = await ingest_resource(
-        LearningTask.create("样例主题"),
         "https://example.com/sample",
         source=lambda _url: content,
         provider=replay,  # 纯回放：命中即返回、未命中 ReplayMiss；绝不触网、不烧 token

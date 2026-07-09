@@ -19,7 +19,6 @@
 from collections.abc import Callable
 
 from grandquiz.domain.learning.memory import Memory
-from grandquiz.domain.learning.models import LearningTask
 from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY, PreferenceMemory
 from grandquiz.domain.learning.store import Store
 
@@ -32,15 +31,14 @@ _PREFERENCE_LABELS: list[tuple[str, str]] = [
 ]
 
 
-def render_learner_context(
-    *, store: Store, memory: Memory, preferences: PreferenceMemory, task: LearningTask
-) -> str:
+def render_learner_context(*, store: Store, memory: Memory, preferences: PreferenceMemory) -> str:
     """把当前薄弱概念 + 偏好渲成紧凑"学情"文本；无薄弱且无偏好 → 空串（分区据此被跳过）。
 
-    确定性：薄弱概念按 ``item_id`` 升序（不随 set 迭代序漂移）；无时序输入。
+    确定性：薄弱概念按 ``item_id`` 升序（不随 set 迭代序漂移）；无时序输入。薄弱概念名走**全库**
+    读（``store.all_items()``，全局 KB——``LearningTask`` 已消解，无 task 分区，ADR-0005）。
     """
     sections: list[str] = []
-    weak = _render_weak(store, memory, task)
+    weak = _render_weak(store, memory)
     if weak:
         sections.append(weak)
     prefs = _render_preferences(preferences)
@@ -52,7 +50,7 @@ def render_learner_context(
 
 
 def learner_context_provider(
-    *, store: Store, memory: Memory, preferences: PreferenceMemory, task: LearningTask
+    *, store: Store, memory: Memory, preferences: PreferenceMemory
 ) -> Callable[[], str]:
     """返回捕获引用的闭包，供 ``ContextBuilder`` 作 memory 分区的 provider（每次 build 现取）。
 
@@ -61,14 +59,12 @@ def learner_context_provider(
     """
 
     def provider() -> str:
-        return render_learner_context(
-            store=store, memory=memory, preferences=preferences, task=task
-        )
+        return render_learner_context(store=store, memory=memory, preferences=preferences)
 
     return provider
 
 
-def _render_weak(store: Store, memory: Memory, task: LearningTask) -> str:
+def _render_weak(store: Store, memory: Memory) -> str:
     """渲当前薄弱 / 观察中概念：``概念名（状态）``，按 item_id 升序、顿号分隔。空 → 空串。"""
     weak_ids = memory.weak_item_ids()
     if not weak_ids:

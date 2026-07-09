@@ -17,7 +17,7 @@ from grandquiz.domain.learning.assessment import assess_once
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.ingest import ingest_resource
 from grandquiz.domain.learning.memory import LearningMemory
-from grandquiz.domain.learning.models import KnowledgeItem, LearningTask
+from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock, new_rng
@@ -45,13 +45,11 @@ async def main() -> None:
     provider = OpenAICompatProvider.from_env()
     store = LearningStore()
     memory = LearningMemory()
-    task = LearningTask.create("AI Agent Evals")
 
     try:
         # 1) 喂 URL → 真 Reader 深读入库（内容注入本地材料，url 作标识）。
         emitter = EventEmitter(EventSink(), ManualClock(), trace_id="ingest")
         ingest = await ingest_resource(
-            task,
             _URL,
             source=lambda _url: content,
             provider=provider,
@@ -74,7 +72,6 @@ async def main() -> None:
             sink.subscribe(events.append)
             round_emitter = EventEmitter(sink, ManualClock(), trace_id=f"assess-{rnd}")
             result = await assess_once(
-                task,
                 store=store,
                 provider=provider,
                 responder=ScriptedResponder(answer=_ANSWER),

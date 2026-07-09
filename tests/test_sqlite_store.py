@@ -1,15 +1,16 @@
 """SqliteLearningStore 测试（M7）——与 dict 版 ``LearningStore`` 行为等价 + 模型往返保真。
 
-行为等价：add/get、set_status、items_for_resource / items_for_task 的两跳聚合与稳定序，逐条比对
-dict 版结果。往返保真：KnowledgeItem / Resource / Task 经 SQLite 存取后**逐字段一致**——含中文、
-evidence 的 JSON 序列化（多条 + ``locator=None`` / 有值）、``raw_content=None``、``trusted`` 布尔、
-``domain=None`` / ``concept_key=None``。用 ``:memory:`` db（单连接内足够；跨会话验收见
-test_sqlite_persistence.py）。
+行为等价：add/get、set_status、items_for_resource / all_items 的稳定序，逐条比对 dict 版结果。
+往返保真：KnowledgeItem / Resource 经 SQLite 存取后**逐字段一致**——含中文、evidence 的 JSON
+序列化（多条 + ``locator=None`` / 有值）、``raw_content=None``、``trusted`` 布尔、``topic``
+（None / 有值）、``concept_key=None``。``LearningTask`` 已消解（ADR-0005）：resource 内容寻址
+（``resource_id = derive_id(url)``）、进全局 KB 单池、无 tasks 表。用 ``:memory:`` db（单连接内
+足够；跨会话验收见 test_sqlite_persistence.py）。
 """
 
 from pathlib import Path
 
-from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource, LearningTask
+from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.store import LearningStore, SqliteLearningStore, Store
 
 
@@ -31,33 +32,46 @@ def _sqlite() -> SqliteLearningStore:
 # --- 与 dict 版行为等价 ------------------------------------------------------------
 
 
-def test_add_and_get_task() -> None:
-    store = _sqlite()
-    task = LearningTask.create("React")
-    store.add_task(task)
-    assert store.get_task(task.task_id) == task
-    assert store.get_task("nope") is None
-
-
-def test_add_task_is_idempotent() -> None:
-    store = _sqlite()
-    task = LearningTask.create("React")
-    store.add_task(task)
-    store.add_task(task)  # 幂等：INSERT OR REPLACE，不报错、不重复
-    assert store.get_task(task.task_id) == task
-
-
 def test_add_and_get_resource() -> None:
     store = _sqlite()
-    resource = LearningResource.create(task_id="t", url="https://example.com/a")
+    resource = LearningResource.create(url="https://example.com/a")
     store.add_resource(resource)
     assert store.get_resource(resource.resource_id) == resource
     assert store.get_resource("nope") is None
 
 
+def test_same_url_reingest_dedups_to_single_resource() -> None:
+    # 内容寻址去重（ADR-0005）：同 URL 二次 add → 同 resource_id → INSERT OR REPLACE 覆盖、不重复。
+    store = _sqlite()
+    first = LearningResource.create(url="https://example.com/a")
+    store.add_resource(first)
+    again = LearningResource.create(url="https://example.com/a").model_copy(
+        update={"status": "read", "topic": "闭包"}
+    )
+    store.add_resource(again)
+    assert first.resource_id == again.resource_id  # 同 URL 同 id
+    got = store.get_resource(first.resource_id)
+    assert got is not None
+    assert got.status == "read" and got.topic == "闭包"  # 后写覆盖
+
+
+def test_resource_topic_round_trips_none_and_value() -> None:
+    # topic 列往返：默认 None 与有值都须原样存取（mutation：不写 / 不读 topic 列 → 红）。
+    store = _sqlite()
+    plain = LearningResource.create(url="https://example.com/plain")
+    tagged = LearningResource.create(url="https://example.com/tagged").model_copy(
+        update={"topic": "代理通信协议"}
+    )
+    store.add_resource(plain)
+    store.add_resource(tagged)
+    assert store.get_resource(plain.resource_id) == plain
+    got = store.get_resource(tagged.resource_id)
+    assert got is not None and got.topic == "代理通信协议"
+
+
 def test_set_resource_status_updates_stored_resource() -> None:
     store = _sqlite()
-    resource = LearningResource.create(task_id="t", url="https://example.com/a")
+    resource = LearningResource.create(url="https://example.com/a")
     store.add_resource(resource)
     store.set_resource_status(resource.resource_id, "failed")
     updated = store.get_resource(resource.resource_id)
@@ -84,26 +98,11 @@ def test_items_for_resource_returns_only_that_resource_in_order() -> None:
     assert [i.concept for i in got] == ["闭包", "提升"]
 
 
-def test_items_for_task_aggregates_across_that_task_resources() -> None:
-    store = _sqlite()
-    ra = LearningResource.create(task_id="A", url="https://example.com/a")
-    rb = LearningResource.create(task_id="A", url="https://example.com/b")
-    rc = LearningResource.create(task_id="B", url="https://example.com/c")
-    for r in (ra, rb, rc):
-        store.add_resource(r)
-    store.add_items([_item(ra.resource_id, 0, "x"), _item(rb.resource_id, 0, "y")])
-    store.add_items([_item(rc.resource_id, 0, "z")])
-
-    got = store.items_for_task("A")
-    assert {i.concept for i in got} == {"x", "y"}
-    assert [i.concept for i in store.items_for_task("B")] == ["z"]
-
-
 def test_matches_dict_store_on_shared_scenario() -> None:
     # 同一操作序列喂 dict 版与 SQLite 版，读回结果逐条相等（行为等价的直接断言）。
     dict_store = LearningStore()
     sqlite_store = _sqlite()
-    ra = LearningResource.create(task_id="A", url="https://example.com/a")
+    ra = LearningResource.create(url="https://example.com/a")
     items = [_item(ra.resource_id, i, c) for i, c in enumerate(["闭包", "提升", "作用域"])]
     for store in (dict_store, sqlite_store):
         store.add_resource(ra)
@@ -112,7 +111,7 @@ def test_matches_dict_store_on_shared_scenario() -> None:
     assert sqlite_store.items_for_resource(ra.resource_id) == dict_store.items_for_resource(
         ra.resource_id
     )
-    assert sqlite_store.items_for_task("A") == dict_store.items_for_task("A")
+    assert sqlite_store.all_items() == dict_store.all_items()
 
 
 # --- 模型往返保真（含中文 / evidence JSON / None 列 / bool） -------------------------
@@ -145,7 +144,7 @@ def test_knowledge_item_round_trip_field_by_field() -> None:
 def test_resource_round_trip_preserves_none_and_bool() -> None:
     store = _sqlite()
     # 深读前：raw_content / content_hash 为 None，trusted False，status pending。
-    pending = LearningResource.create(task_id="t", url="https://example.com/x")
+    pending = LearningResource.create(url="https://example.com/x")
     store.add_resource(pending)
     assert store.get_resource(pending.resource_id) == pending
     # 深读后：回填内容 + hash、trusted 显式 True（验 bool 往返 0/1 不失真）、status read。
@@ -161,44 +160,6 @@ def test_resource_round_trip_preserves_none_and_bool() -> None:
     got = store.get_resource(pending.resource_id)
     assert got == read
     assert got is not None and got.trusted is True
-
-
-def test_task_round_trip_with_and_without_domain() -> None:
-    store = _sqlite()
-    plain = LearningTask.create("React")
-    with_domain = LearningTask.create("线性代数", domain="理科")
-    store.add_task(plain)
-    store.add_task(with_domain)
-    assert store.get_task(plain.task_id) == plain
-    got = store.get_task(with_domain.task_id)
-    assert got == with_domain
-    assert got is not None and got.domain == "理科"
-
-
-def test_task_round_trip_preserves_non_default_language() -> None:
-    # language 往返保真：默认中文与显式非中文都须原样存取（mutation：不写 / 不读 language 列 →
-    # English task 退回默认"中文" → 红）。
-    store = _sqlite()
-    chinese = LearningTask.create("React")  # 默认"中文"
-    english = LearningTask.create("Algorithms", language="English")
-    store.add_task(chinese)
-    store.add_task(english)
-    assert store.get_task(chinese.task_id) == chinese
-    got = store.get_task(english.task_id)
-    assert got == english
-    assert got is not None and got.language == "English"
-
-
-def test_matches_dict_store_on_task_language() -> None:
-    # dict↔SQLite parity 覆盖 language：同一 task 喂两版，读回逐字段相等（含 language）。
-    dict_store = LearningStore()
-    sqlite_store = _sqlite()
-    task = LearningTask.create("Algorithms", domain="CS", language="English")
-    for store in (dict_store, sqlite_store):
-        store.add_task(task)
-    assert sqlite_store.get_task(task.task_id) == dict_store.get_task(task.task_id)
-    got = sqlite_store.get_task(task.task_id)
-    assert got is not None and got.language == "English"
 
 
 def test_add_items_is_idempotent_overwrite() -> None:
@@ -232,12 +193,11 @@ def test_tmp_path_file_db_works(tmp_path: Path) -> None:
 
 
 def test_multi_resource_order_matches_dict_and_is_item_id_sorted() -> None:
-    # 跨实现顺序契约（M7 终审修复）：多资源任务下 dict 与 SQLite 的 items_for_task 顺序须一致
+    # 跨实现顺序契约（M7 终审修复）：多资源下 dict 与 SQLite 的 all_items 顺序须一致
     # （都按 item_id 升序）——否则 select_target 的 rng.choice 跨实现会选中不同 item。
-    task = LearningTask.create("React")
     # 两资源，resource_id 由 url 派生（哈希序 != 插入序），构造能暴露分歧的多资源场景。
-    r_a = LearningResource.create(task_id=task.task_id, url="https://example.com/z")
-    r_b = LearningResource.create(task_id=task.task_id, url="https://example.com/a")
+    r_a = LearningResource.create(url="https://example.com/z")
+    r_b = LearningResource.create(url="https://example.com/a")
     items = [
         _item(r_a.resource_id, 0, "闭包"),
         _item(r_b.resource_id, 0, "作用域"),
@@ -245,19 +205,18 @@ def test_multi_resource_order_matches_dict_and_is_item_id_sorted() -> None:
     ]
     stores: list[Store] = [LearningStore(), _sqlite()]
     for store in stores:
-        store.add_task(task)
         store.add_resource(r_a)
         store.add_resource(r_b)
         store.add_items(items)
 
     expected = sorted(item.item_id for item in items)  # 按 item_id 升序的确定性顺序
-    ids = [[i.item_id for i in store.items_for_task(task.task_id)] for store in stores]
+    ids = [[i.item_id for i in store.all_items()] for store in stores]
     assert ids[0] == expected  # dict 版
     assert ids[1] == expected  # SQLite 版
     assert ids[0] == ids[1]  # 两实现顺序一致 → 选题跨实现不漂移
 
 
-# --- all_items：全库全局读（不 join resources、不按 task 过滤，按 item_id 升序） --------
+# --- all_items：全库全局读（不按 resource 过滤，按 item_id 升序） --------------------
 
 
 def test_all_items_empty_returns_empty() -> None:
@@ -265,10 +224,10 @@ def test_all_items_empty_returns_empty() -> None:
 
 
 def test_all_items_returns_whole_kb_item_id_sorted() -> None:
-    # 跨 task 全库读：不按 task_id 过滤，全部 item 按 item_id 升序（修 #2 的读语义）。
+    # 跨资源全库读：不按 resource 过滤，全部 item 按 item_id 升序（修 #2 的读语义）。
     store = _sqlite()
-    ra = LearningResource.create(task_id="A", url="https://example.com/a")
-    rb = LearningResource.create(task_id="B", url="https://example.com/b")
+    ra = LearningResource.create(url="https://example.com/a")
+    rb = LearningResource.create(url="https://example.com/b")
     for r in (ra, rb):
         store.add_resource(r)
     store.add_items([_item(ra.resource_id, 0, "x"), _item(rb.resource_id, 0, "y")])
@@ -282,11 +241,11 @@ def test_all_items_parity_dict_vs_sqlite_across_hash_prefixes() -> None:
     # SQLite 的 all_items() 序列**逐条相等**（跨资源、稳定按 item_id 升序，不依赖插入序）。
     dict_store = LearningStore()
     sqlite_store = _sqlite()
-    # 三个 url 派生出不同哈希前缀的 resource_id（哈希序 != 插入序），分挂不同 task。
+    # 三个 url 派生出不同哈希前缀的 resource_id（哈希序 != 插入序）。
     resources = [
-        LearningResource.create(task_id="A", url="https://example.com/z"),
-        LearningResource.create(task_id="B", url="https://example.com/a"),
-        LearningResource.create(task_id="A", url="https://example.com/m"),
+        LearningResource.create(url="https://example.com/z"),
+        LearningResource.create(url="https://example.com/a"),
+        LearningResource.create(url="https://example.com/m"),
     ]
     items = [
         _item(r.resource_id, i, c)

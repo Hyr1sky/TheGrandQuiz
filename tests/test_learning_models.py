@@ -19,7 +19,6 @@ from grandquiz.domain.learning.models import (
     Evidence,
     KnowledgeItem,
     LearningResource,
-    LearningTask,
     derive_id,
     ungrounded_citations,
 )
@@ -92,28 +91,26 @@ def test_derive_id_normalizes_unicode_nfc() -> None:
 # --- 工厂 ID 派生 -----------------------------------------------------------
 
 
-def test_task_create_id_is_deterministic() -> None:
-    assert LearningTask.create("React").task_id == LearningTask.create("React").task_id
-    assert LearningTask.create("React").task_id != LearningTask.create("Rust").task_id
-    assert LearningTask.create("React").task_id == derive_id("React")
-
-
-def test_task_create_carries_optional_domain() -> None:
-    assert LearningTask.create("React").domain is None
-    assert LearningTask.create("React", domain="前端").domain == "前端"
-
-
-def test_resource_create_id_derives_from_task_and_url() -> None:
-    task = LearningTask.create("React")
+def test_resource_create_id_is_content_addressed_from_url() -> None:
+    # 内容寻址（ADR-0005）：resource_id = derive_id(url)，同 URL 全局唯一（不再有 task_id 入参）。
     url = "https://example.com/a"
-    r1 = LearningResource.create(task_id=task.task_id, url=url)
-    r2 = LearningResource.create(task_id=task.task_id, url=url)
-    assert r1.resource_id == r2.resource_id == derive_id(task.task_id, url)
-    other = LearningResource.create(task_id=task.task_id, url="https://example.com/b")
+    r1 = LearningResource.create(url=url)
+    r2 = LearningResource.create(url=url)
+    assert r1.resource_id == r2.resource_id == derive_id(url)
+    other = LearningResource.create(url="https://example.com/b")
     assert other.resource_id != r1.resource_id
-    # 抓取内容默认不可信、状态默认 pending（注入防护 + 不产生幽灵 item）
+    # 抓取内容默认不可信、状态默认 pending（注入防护 + 不产生幽灵 item）；topic 软标签默认 None。
     assert r1.trusted is False
     assert r1.status == "pending"
+    assert r1.topic is None
+
+
+def test_resource_topic_round_trips_when_set() -> None:
+    # topic 软标签（S3 由 Reader 填）：带值时原样往返，不只测默认 None。
+    resource = LearningResource.create(url="https://example.com/a").model_copy(
+        update={"topic": "代理通信协议"}
+    )
+    assert LearningResource(**resource.model_dump()).topic == "代理通信协议"
 
 
 def test_item_create_id_is_resource_scoped_and_zero_padded() -> None:
@@ -242,7 +239,7 @@ def test_resource_rejects_invalid_status() -> None:
     # 非法状态必须被 Literal 挡下（用 model_validate 喂 Any，避免 pyright 提前拦下测试数据）
     with pytest.raises(ValidationError):
         LearningResource.model_validate(
-            {"resource_id": "r", "task_id": "t", "url": "u", "status": "bogus"}
+            {"resource_id": "r", "url": "u", "trusted": False, "status": "bogus"}
         )
 
 
@@ -261,10 +258,8 @@ def test_knowledge_item_round_trips_through_model_dump() -> None:
     assert KnowledgeItem(**item.model_dump()) == item
 
 
-def test_task_and_resource_round_trip_through_model_dump() -> None:
-    task = LearningTask.create("React", domain="前端")
-    assert LearningTask(**task.model_dump()) == task
-    resource = LearningResource.create(task_id=task.task_id, url="https://example.com/a")
+def test_resource_round_trips_through_model_dump() -> None:
+    resource = LearningResource.create(url="https://example.com/a")
     assert LearningResource(**resource.model_dump()) == resource
 
 
@@ -276,8 +271,7 @@ def test_evidence_locator_round_trips_when_present() -> None:
 
 def _sample_models() -> list[BaseModel]:
     return [
-        LearningTask.create("React", domain="前端"),
-        LearningResource.create(task_id="t", url="https://example.com/a"),
+        LearningResource.create(url="https://example.com/a"),
         Evidence(quote="片段", locator="§1.2"),
         KnowledgeItem.create(
             resource_id="r",
@@ -316,14 +310,13 @@ def test_model_field_sets_are_pinned() -> None:
     }
     assert set(LearningResource.model_fields) == {
         "resource_id",
-        "task_id",
         "url",
         "raw_content",
         "content_hash",
         "trusted",
         "status",
+        "topic",
     }
-    assert set(LearningTask.model_fields) == {"task_id", "title", "domain", "language"}
 
 
 # --- 分层 + 确定性守卫：模型模块不 import kernel / 无非确定性来源 -----------

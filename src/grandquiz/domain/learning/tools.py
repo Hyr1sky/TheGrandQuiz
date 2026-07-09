@@ -21,9 +21,10 @@
   编题 / 把 MC 答案加 "B. " 前缀毁逐字判卷 / 题目双重渲染 / confabulate）。
 
 组装点（CLI / react 装配）用 ``register_learning_tools`` 把三者一并注册（``start_quiz`` 仅当注入了
-``responder`` 时注册——无 responder 无从逐题作答）；工具的领域依赖（task / source / provider /
-store / approval / memory / responder / preferences …）在此闭包捕获，per-call 只多收工具入参与
-（context-aware 工具才用的）``ToolContext``。
+``responder`` 时注册——无 responder 无从逐题作答）；工具的领域依赖（source / provider / store /
+approval / memory / responder / preferences …）在此闭包捕获，per-call 只多收工具入参与
+（context-aware 工具才用的）``ToolContext``。``LearningTask`` 已消解（ADR-0005）——知识进全局 KB
+单池、无 task 线程，工具不再收 task。
 """
 
 from collections.abc import Callable, Collection, Mapping
@@ -37,7 +38,6 @@ from grandquiz.domain.learning.assessment import AssessmentResult, assess_once
 from grandquiz.domain.learning.grading import VerdictLabel
 from grandquiz.domain.learning.ingest import ingest_resource
 from grandquiz.domain.learning.memory import Memory
-from grandquiz.domain.learning.models import LearningTask
 from grandquiz.domain.learning.preference import PreferenceMemory
 from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.selection import Focus
@@ -132,12 +132,11 @@ class _IngestParams(BaseModel):
 
 
 class _QueryWeakParams(BaseModel):
-    # 无入参：只读当前任务的薄弱台账（task / store / memory 在工具闭包里捕获）。
+    # 无入参：只读全库薄弱台账（store / memory 在工具闭包里捕获）。
     pass
 
 
 def make_ingest_tool(
-    task: LearningTask,
     *,
     source: Callable[[str], str],
     provider: Provider,
@@ -149,7 +148,8 @@ def make_ingest_tool(
     """建 ``ingest(url)`` 工具：wrap ``ingest_resource``，把内部 span 重挂到本次 TOOL_CALL 之下。
 
     领域依赖在闭包捕获（同 CLI ``run_ingest`` 的组装形状）；per-call 只多收 ``url`` 与
-    ``ToolContext``（emitter + TOOL_CALL span id）。返回结构化 ``IngestToolResult`` 的 JSON 串。
+    ``ToolContext``（emitter + TOOL_CALL span id）。资源内容寻址（``resource_id = derive_id(url)``，
+    ADR-0005）、进全局 KB 单池。返回结构化 ``IngestToolResult`` 的 JSON 串。
     """
 
     async def handler(params: _IngestParams, ctx: ToolContext) -> str:
@@ -160,7 +160,6 @@ def make_ingest_tool(
             else ctx.emitter
         )
         result = await ingest_resource(
-            task,
             params.url,
             source=source,
             provider=provider,
@@ -186,11 +185,11 @@ def make_ingest_tool(
     )
 
 
-def make_query_weak_concepts_tool(task: LearningTask, *, store: Store, memory: Memory) -> Tool:
+def make_query_weak_concepts_tool(*, store: Store, memory: Memory) -> Tool:
     """建 ``query_weak_concepts()`` 工具：只读 Learning Memory + store，返回全库薄弱概念摘要。
 
     确定性、无 LLM（context-free，不需 ctx）：取记忆里被追踪的 item，用**全库**概念名映射解析
-    （全局 KB，GKB-S1 修 #2——换标题 ingest 的薄弱点也surface），按 item_id 升序输出概念名 + 状态。
+    （全局 KB——``LearningTask`` 已消解、知识进同一池，ADR-0005），按 item_id 升序输出概念名 + 状态。
     """
 
     async def handler(params: _QueryWeakParams) -> str:
@@ -269,7 +268,7 @@ class _StartQuizParams(BaseModel):
     focus: Focus = "mixed"  # 选题聚焦：mixed 覆盖优先（默认）/ new 只考没考过的 / weak 复习薄弱
 
 
-def _weak_concepts(task: LearningTask, store: Store, memory: Memory) -> list[WeakConcept]:
+def _weak_concepts(store: Store, memory: Memory) -> list[WeakConcept]:
     """全库被追踪的薄弱概念摘要（item_id 升序，全局 KB）——与 ``query_weak_concepts`` 同口径。"""
     concept_by_id = {item.item_id: item.concept for item in store.all_items()}
     return [
@@ -280,7 +279,6 @@ def _weak_concepts(task: LearningTask, store: Store, memory: Memory) -> list[Wea
 
 
 def make_start_quiz_tool(
-    task: LearningTask,
     *,
     provider: Provider,
     store: Store,
@@ -305,8 +303,8 @@ def make_start_quiz_tool(
     锁死）、``new`` 只考未考过、``weak`` 复习薄弱。``recently_asked`` 跨同一会话累积、其 keys 作
     已考集喂选题，故连续 mixed 考核自然覆盖不同 item（不再锁死）。
 
-    ``preferences``：透传给 ``assess_once`` 解析出题语言（**偏好 > task 默认 > 中文**）；``None`` 时
-    行为不变（走 task 默认）。``recently_asked`` / ``_QuizSeedCounter`` 在闭包捕获、跨同一会话的多次
+    ``preferences``：透传给 ``assess_once`` 解析出题语言（**偏好 > 中文**）；``None`` 时行为不变
+    （走"中文"兜底）。``recently_asked`` / ``_QuizSeedCounter`` 在闭包捕获、跨同一会话的多次
     ``start_quiz`` 累积（复考换角度去重 + 选题种子确定性推进）。空库 → 优雅返回 ``refused``（不调
     任何 LLM）；用户中途取消作答（Responder 抛 ``KeyboardInterrupt``）→ 结束考核、返回已完成部分。
     """
@@ -326,7 +324,6 @@ def make_start_quiz_tool(
         for _ in range(count):
             try:
                 result: AssessmentResult = await assess_once(
-                    task,
                     store=store,
                     provider=provider,
                     responder=responder,
@@ -360,13 +357,13 @@ def make_start_quiz_tool(
             status="completed",
             asked=len(rounds),
             rounds=rounds,
-            weak=_weak_concepts(task, store, memory),
+            weak=_weak_concepts(store, memory),
         ).model_dump_json()
 
     return Tool(
         name="start_quiz",
         description=(
-            "对当前任务发起一次考核：出 count 道题（默认 1）逐题问用户并判卷，"
+            "从全库发起一次考核：出 count 道题（默认 1）逐题问用户并判卷，"
             "返回考了几题 / 每题判决 / 暴露的薄弱点小结。不要复述题目或自行判卷。"
             "focus 选题聚焦：mixed=覆盖优先（默认，先考没考过的），"
             "new=只考没考过的（用户说'考其他的/换一批'时用），weak=复习薄弱（用户说'复习/考薄弱'时用）。"
@@ -380,7 +377,6 @@ def make_start_quiz_tool(
 def register_learning_tools(
     registry: ToolRegistry,
     *,
-    task: LearningTask,
     source: Callable[[str], str],
     provider: Provider,
     store: Store,
@@ -404,7 +400,6 @@ def register_learning_tools(
     """
     registry.register(
         make_ingest_tool(
-            task,
             source=source,
             provider=provider,
             store=store,
@@ -413,11 +408,10 @@ def register_learning_tools(
             allowed_domains=allowed_domains,
         )
     )
-    registry.register(make_query_weak_concepts_tool(task, store=store, memory=memory))
+    registry.register(make_query_weak_concepts_tool(store=store, memory=memory))
     if responder is not None:
         registry.register(
             make_start_quiz_tool(
-                task,
                 provider=provider,
                 store=store,
                 memory=memory,

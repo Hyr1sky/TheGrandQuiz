@@ -38,7 +38,11 @@ from grandquiz.domain.learning.models import (
     Evidence,
     KnowledgeItem,
     LearningResource,
-    LearningTask,
+)
+from grandquiz.domain.learning.preference import (
+    QUESTION_LANGUAGE_KEY,
+    DictPreferenceMemory,
+    PreferenceMemory,
 )
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.selection import Focus, select_target
@@ -288,16 +292,14 @@ class DedupAssessProvider:
         )
 
 
-def build_stocked_store(language: str = "中文") -> tuple[LearningStore, LearningTask, list[str]]:
-    """建一个塞了 ``ITEM_DATA`` 若干 KnowledgeItem 的 store，返回 ``(store, task, item_ids)``。
+def build_stocked_store() -> tuple[LearningStore, list[str]]:
+    """建一个塞了 ``ITEM_DATA`` 若干 KnowledgeItem 的 store，返回 ``(store, item_ids)``。
 
-    ``language`` 只落到 ``LearningTask.language``（不进 task_id 派生，故 resource / item id 不变）——
-    供语言一致性用例按 task 语言出题；默认"中文"使既有用例装配一字不变。
+    ``LearningTask`` 已消解（ADR-0005）：资源内容寻址（``resource_id = derive_id(ASSESS_URL)``）、
+    进全局 KB 单池；出题语言归 Preference Memory（``_solve_assess`` 按 ``case.language`` 设偏好）。
     """
     store = LearningStore()
-    task = LearningTask.create("React", language=language)
-    resource = LearningResource.create(task_id=task.task_id, url=ASSESS_URL)
-    store.add_task(task)
+    resource = LearningResource.create(url=ASSESS_URL)
     store.add_resource(resource)
     items = [
         KnowledgeItem.create(
@@ -311,7 +313,7 @@ def build_stocked_store(language: str = "中文") -> tuple[LearningStore, Learni
         for index, (concept, quote) in enumerate(ITEM_DATA)
     ]
     store.add_items(items)
-    return store, task, [item.item_id for item in items]
+    return store, [item.item_id for item in items]
 
 
 # --- Case 模型 + YAML 加载 --------------------------------------------------------------------
@@ -474,8 +476,12 @@ def _resolve_target(selector: str, item_ids: list[str], natural: str) -> str:
 async def _solve_assess(case: Case, provider_override: Provider | None) -> SolveResult:
     memory = LearningMemory()
     context: dict[str, Any] = {}
+    # 语言归 Preference Memory（ADR-0005）：case.language 设进 question_language 偏好、下传
+    # assess_once（偏好 > 中文）。默认"中文"解析同旧 task 默认，故既有用例 message / replay 不变。
+    preferences: PreferenceMemory = DictPreferenceMemory()
+    preferences.set_preference(QUESTION_LANGUAGE_KEY, case.language)
     if case.stocked:
-        store, task, item_ids = build_stocked_store(case.language)
+        store, item_ids = build_stocked_store()
         # 与生产 assess_once 同源：候选池 = 全库（全局 KB 读），否则对照基线与生产不一致。
         items = store.all_items()
         natural = select_target(items, rng=new_rng(SEED)).item_id
@@ -491,7 +497,6 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
             context["pre_in_weak"] = weak_target in memory.weak_item_ids()
     else:
         store = LearningStore()
-        task = LearningTask.create("React", language=case.language)
         context.update(item_ids=[], items=[])
 
     if provider_override is not None:
@@ -512,7 +517,6 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
     for round_index, answer_token in enumerate(answers):
         emitter, events, trace = build_event_harness()
         result = await assess_once(
-            task,
             store=store,
             provider=provider,
             responder=ScriptedResponder(answer=_resolve_answer(answer_token)),
@@ -521,6 +525,7 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
             rng=new_rng(SEED + round_index),
             recently_asked=recently_asked,
             focus=case.focus,
+            preferences=preferences,
         )
         all_spans.extend(trace.span_tree("run"))
         trace.close()
@@ -541,7 +546,6 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
 
 async def _solve_ingest(case: Case, provider_override: Provider | None) -> SolveResult:
     store = LearningStore()
-    task = LearningTask.create("React")
     keep_concepts = set(case.approval_keep)
     approval = ScriptedApprovalGate(keep=lambda item: item.concept in keep_concepts)
 
@@ -558,7 +562,6 @@ async def _solve_ingest(case: Case, provider_override: Provider | None) -> Solve
     fake = provider if isinstance(provider, IngestFakeProvider) else None
     emitter, events, trace = build_event_harness()
     result = await ingest_resource(
-        task,
         INGEST_URL,
         source=source,
         provider=provider,

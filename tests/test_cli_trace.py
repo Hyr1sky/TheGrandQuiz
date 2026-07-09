@@ -19,7 +19,6 @@ from grandquiz.domain.learning.models import (
     Evidence,
     KnowledgeItem,
     LearningResource,
-    LearningTask,
 )
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import SqliteLearningStore
@@ -97,12 +96,10 @@ def _sole_trace_id(trace_db_path: Path) -> str:
     return str(rows[0][0])
 
 
-def _stock_sqlite(db: Path, title: str) -> str:
-    """往 learning 库塞一个 task + resource + 一个知识点，返回 item_id。"""
+def _stock_sqlite(db: Path) -> str:
+    """往 learning 库塞一个 resource + 一个知识点（全局 KB），返回 item_id。"""
     store = SqliteLearningStore(db)
-    task = LearningTask.create(title)
-    resource = LearningResource.create(task_id=task.task_id, url="file://local/material.txt")
-    store.add_task(task)
+    resource = LearningResource.create(url="file://local/material.txt")
     store.add_resource(resource)
     item = KnowledgeItem.create(
         resource_id=resource.resource_id,
@@ -164,7 +161,7 @@ async def test_run_ingest_persists_trace_to_independent_db_and_prints_trace_id(
 async def test_run_quiz_persists_session_trace_forest_and_prints_trace_id(tmp_path: Path) -> None:
     db = tmp_path / "learning.db"
     trace_db = tmp_path / "trace.db"
-    _stock_sqlite(db, "React")
+    _stock_sqlite(db)
     console = Console(record=True, width=100)
 
     # 答对 → item 不入记忆（未追踪 + 对 → 不追踪），两轮都路由到选择题、确定性判卷。

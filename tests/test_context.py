@@ -20,7 +20,6 @@ from grandquiz.domain.learning.models import (
     Evidence,
     KnowledgeItem,
     LearningResource,
-    LearningTask,
 )
 from grandquiz.domain.learning.preference import (
     QUESTION_LANGUAGE_KEY,
@@ -134,8 +133,8 @@ def test_compression_policy_hook_invoked_when_provided() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _seed_item(store: LearningStore, task: LearningTask, concept: str, index: int) -> str:
-    resource = LearningResource.create(task_id=task.task_id, url=f"file://local/{concept}.md")
+def _seed_item(store: LearningStore, concept: str, index: int) -> str:
+    resource = LearningResource.create(url=f"file://local/{concept}.md")
     store.add_resource(resource)
     item = KnowledgeItem.create(
         resource_id=resource.resource_id,
@@ -151,37 +150,29 @@ def _seed_item(store: LearningStore, task: LearningTask, concept: str, index: in
 
 def test_render_weak_concepts_by_name_and_state() -> None:
     store = LearningStore()
-    task = LearningTask.create("Py")
-    store.add_task(task)
-    closure_id = _seed_item(store, task, "闭包", 0)
+    closure_id = _seed_item(store, "闭包", 0)
     memory = LearningMemory()
     memory.record_verdict(closure_id, "错")  # → 薄弱
 
-    text = render_learner_context(
-        store=store, memory=memory, preferences=DictPreferenceMemory(), task=task
-    )
+    text = render_learner_context(store=store, memory=memory, preferences=DictPreferenceMemory())
     assert "闭包" in text
     assert "薄弱" in text
 
 
 def test_render_includes_language_preference() -> None:
     store = LearningStore()
-    task = LearningTask.create("Py")
     prefs = DictPreferenceMemory()
     prefs.set_preference(QUESTION_LANGUAGE_KEY, "英文")
 
-    text = render_learner_context(
-        store=store, memory=LearningMemory(), preferences=prefs, task=task
-    )
+    text = render_learner_context(store=store, memory=LearningMemory(), preferences=prefs)
     assert "英文" in text
 
 
 def test_render_empty_when_no_weak_and_no_prefs() -> None:
     # 无薄弱点 + 无偏好 → 空串（ContextBuilder 据此跳过 memory 分区，不注入空块）。
     store = LearningStore()
-    task = LearningTask.create("Py")
     text = render_learner_context(
-        store=store, memory=LearningMemory(), preferences=DictPreferenceMemory(), task=task
+        store=store, memory=LearningMemory(), preferences=DictPreferenceMemory()
     )
     assert text == ""
 
@@ -189,16 +180,12 @@ def test_render_empty_when_no_weak_and_no_prefs() -> None:
 def test_render_weak_concepts_sorted_deterministically() -> None:
     # 多个薄弱概念按 item_id 升序渲染（确定性，不随 set 迭代序漂移 → replay 对得齐）。
     store = LearningStore()
-    task = LearningTask.create("Py")
-    store.add_task(task)
     memory = LearningMemory()
-    ids = [_seed_item(store, task, c, i) for i, c in enumerate(["装饰器", "生成器", "闭包"])]
+    ids = [_seed_item(store, c, i) for i, c in enumerate(["装饰器", "生成器", "闭包"])]
     for item_id in ids:
         memory.record_verdict(item_id, "错")
 
-    text = render_learner_context(
-        store=store, memory=memory, preferences=DictPreferenceMemory(), task=task
-    )
+    text = render_learner_context(store=store, memory=memory, preferences=DictPreferenceMemory())
     concept_by_id = dict(zip(ids, ["装饰器", "生成器", "闭包"], strict=True))
     ordered = [concept_by_id[i] for i in sorted(ids)]
     positions = [text.index(c) for c in ordered]
@@ -208,12 +195,10 @@ def test_render_weak_concepts_sorted_deterministically() -> None:
 def test_provider_closure_reflects_memory_mutation() -> None:
     # 闭包捕获 memory/preferences 引用而非快照：考核推进后再 build，学情反映最新薄弱账。
     store = LearningStore()
-    task = LearningTask.create("Py")
-    store.add_task(task)
-    item_id = _seed_item(store, task, "闭包", 0)
+    item_id = _seed_item(store, "闭包", 0)
     memory = LearningMemory()
     prefs = DictPreferenceMemory()
-    provider = learner_context_provider(store=store, memory=memory, preferences=prefs, task=task)
+    provider = learner_context_provider(store=store, memory=memory, preferences=prefs)
 
     assert provider() == ""  # 初始无薄弱、无偏好
     memory.record_verdict(item_id, "错")  # 考核判错 → 薄弱账落

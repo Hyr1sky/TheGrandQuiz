@@ -30,7 +30,6 @@ from grandquiz.domain.learning.context import learner_context_provider
 from grandquiz.domain.learning.fetch import FetchError
 from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
 from grandquiz.domain.learning.memory import SqliteLearningMemory
-from grandquiz.domain.learning.models import LearningTask
 from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY, SqlitePreferenceMemory
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.responder import Responder
@@ -112,7 +111,6 @@ async def run_ingest(
     _ensure_parent(resolved_trace_db)
     store = SqliteLearningStore(db_path)
     trace_store: TraceStore | None = None  # try 内构造 + None-guard 关闭，建失败不泄漏 store
-    task = LearningTask.create(title)
     url = f"file://{_LOCAL_HOST}/{material_path.name}"
     trace_id = uuid.uuid4().hex
     try:
@@ -121,7 +119,6 @@ async def run_ingest(
         sink.register(trace_store)  # 消费者即 processor：真机事件流落独立 trace 库
         emitter = EventEmitter(sink, SystemClock(), trace_id=trace_id)
         result = await ingest_resource(
-            task,
             url,
             source=lambda _url: content,
             provider=provider,
@@ -154,7 +151,7 @@ def _print_ingest_result(console: Console, title: str, result: IngestResult) -> 
 
 async def run_quiz(
     *,
-    title: str,
+    title: str | None = None,
     rounds: int,
     db_path: Path,
     provider: Provider,
@@ -164,7 +161,10 @@ async def run_quiz(
     trace_db_path: Path | None = None,
     prefer_lang: str | None = None,
 ) -> None:
-    """对 ``title`` 任务跑 ``rounds`` 轮逐题考核；空库 → 提示先 ingest。会话结束打印薄弱点小结。
+    """对**全局 KB** 跑 ``rounds`` 轮逐题考核；空库 → 提示先 ingest。会话结束打印薄弱点小结。
+
+    ``title`` 是**可选横幅**（只用于打印开场白 / 空库提示，不进任何派生 / 分区）——``LearningTask``
+    已消解（ADR-0005），会话不再绑标题，选题候选池恒为全库。
 
     ``QuizEventPrinter`` 订阅事件流做 Rich 呈现（CLI = 事件脊柱的投影）。``responder`` 取消作答
     （``InteractiveResponder`` 抛 ``KeyboardInterrupt``）→ 优雅退出本次会话、仍打印已积累的薄弱点。
@@ -174,8 +174,8 @@ async def run_quiz(
     ``rng`` 用可变种子（CLI 非 replay）：每轮 ``new_rng(seed + 轮次)``。
 
     ``prefer_lang``：非 None 时先显式把 ``question_language`` 偏好写进持久 SQLite（跨会话留存），
-    再下传 Preference Memory 给 ``assess_once``——出题语言按 **偏好 > task 默认 > 中文** 覆盖。
-    偏好台账**每次会话都构造并下传**（哪怕本次未设），故上次会话设过的语言偏好本次仍生效。
+    再下传 Preference Memory 给 ``assess_once``——出题语言按 **偏好 > 中文** 解析。偏好台账**每次
+    会话都构造并下传**（哪怕本次未设），故上次会话设过的语言偏好本次仍生效。
 
     **每次会话一个 ``trace_id``**（一个 ``EventEmitter`` 贯穿全部轮次，故 ``seq`` / span id 跨轮
     唯一、落库后是一条 trace、每轮一棵 assessment 根 span）；发射的 AgentEvent 流经
@@ -192,9 +192,8 @@ async def run_quiz(
         preferences.set_preference(QUESTION_LANGUAGE_KEY, prefer_lang)
     trace_store: TraceStore | None = None  # 空库分支不落 trace（无会话）；在 finally 里择机关闭
     try:
-        task = LearningTask.create(title)
-        # 全库预检（全局 KB，同 _run_quiz_cli 的预检口径）：库里有知识即放行——换标题开会话仍能
-        # 考到此前 ingest 的知识（修 #2）。这是 _run_quiz_cli 那道预检的内层同一逻辑，须同源切读。
+        # 全库预检（全局 KB，同 _run_quiz_cli 的预检口径）：库里有知识即放行。这是 _run_quiz_cli
+        # 那道预检的内层同一逻辑，须同源切读。
         if not store.all_items():
             _print_needs_ingest(console, title)
             return
@@ -213,13 +212,13 @@ async def run_quiz(
         # 下传出题函数做去重——复考同一薄弱概念时每轮换角度、不逐字重问。正式版是与 Learning Memory
         # 并列的跨会话 SQLite 去重表（跨会话持久），见 docs/skeleton-ledger.md #8。
         recently_asked: dict[str, list[str]] = {}
-        console.print(f"[bold]开始考核「{title}」——共 {rounds} 轮（Ctrl+C 随时退出）[/]")
+        banner = f"「{title}」" if title else ""
+        console.print(f"[bold]开始考核{banner}——共 {rounds} 轮（Ctrl+C 随时退出）[/]")
         try:
             for round_index in range(rounds):
                 console.rule(f"第 {round_index + 1} / {rounds} 轮")
                 try:
                     await assess_once(
-                        task,
                         store=store,
                         provider=provider,
                         responder=responder,
@@ -241,7 +240,7 @@ async def run_quiz(
         except KeyboardInterrupt:
             console.print("\n[dim]已退出本次考核会话。[/]")
 
-        _print_weak_summary(console, store, memory, task)
+        _print_weak_summary(console, store, memory)
         _print_trace_location(console, trace_id, resolved_trace_db)
     finally:
         store.close()
@@ -251,10 +250,9 @@ async def run_quiz(
             trace_store.close()
 
 
-def _print_needs_ingest(console: Console, title: str) -> None:
+def _print_needs_ingest(console: Console, title: str | None = None) -> None:
     console.print(
-        f"[yellow]任务「{title}」还没有知识库。先运行 "
-        f"[bold]grandquiz ingest <材料文件> --task {title}[/] 喂材料再来考核。[/]"
+        "[yellow]知识库还是空的。先运行 [bold]grandquiz ingest <材料文件>[/] 喂材料再来考核。[/]"
     )
 
 
@@ -262,7 +260,6 @@ def _print_weak_summary(
     console: Console,
     store: SqliteLearningStore,
     memory: SqliteLearningMemory,
-    task: LearningTask,
 ) -> None:
     weak_ids = memory.weak_item_ids()
     if not weak_ids:
@@ -313,7 +310,7 @@ def _file_source(materials_dir: Path) -> Callable[[str], str]:
 
 async def run_react(
     *,
-    title: str,
+    title: str | None = None,
     db_path: Path,
     materials_dir: Path,
     provider: Provider,
@@ -325,6 +322,9 @@ async def run_react(
     max_iterations: int = 8,
 ) -> str:
     """真机 ReAct 会话循环：逐条用户消息跑一次 ``run_agent_turn``，多回合共享同一 agent / 会话态。
+
+    ``title`` 是**可选横幅**（只用于打印开场白，不进任何派生 / 分区）——``LearningTask`` 已消解
+    （ADR-0005），会话操作的是持久全局 KB 单池、不绑标题。
 
     组装：``provider`` + ``ToolRegistry``（经 ``register_learning_tools`` 注入真依赖：SQLite
     store/memory/preferences + 文件式 fetch 源 + keep-all 审批门 + 注入的 ``responder`` +
@@ -351,7 +351,6 @@ async def run_react(
     trace_store: TraceStore | None = None
     trace_id = uuid.uuid4().hex
     try:
-        task = LearningTask.create(title)
         sink = EventSink()
         sink.subscribe(QuizEventPrinter(console))
         trace_store = TraceStore(resolved_trace_db)
@@ -361,7 +360,6 @@ async def run_react(
         registry = ToolRegistry()
         register_learning_tools(
             registry,
-            task=task,
             source=_file_source(materials_dir),
             provider=provider,
             store=store,
@@ -385,7 +383,7 @@ async def run_react(
                 Partition(
                     name="memory",
                     provider=learner_context_provider(
-                        store=store, memory=memory, preferences=preferences, task=task
+                        store=store, memory=memory, preferences=preferences
                     ),
                 ),
             ]
@@ -399,7 +397,8 @@ async def run_react(
             context_builder=context_builder,
         )
 
-        console.print(f"[bold]ReAct 学习助手「{title}」——输入消息与我对话（Ctrl+D 退出）[/]")
+        banner = f"「{title}」" if title else ""
+        console.print(f"[bold]ReAct 学习助手{banner}——输入消息与我对话（Ctrl+D 退出）[/]")
         for message in user_messages:
             # 单轮兜底（dogfood "神了" 的会话级鲁棒）：run_agent_turn 内部已把可恢复的坏 tool_call
             # 走 M6 DEGRADED 回灌自愈；但若仍冒出未预期异常（FATAL 工具错 / MaxIterations / provider
@@ -495,7 +494,7 @@ async def _run_ingest_cli(*, title: str, material_path: Path, db_path: Path) -> 
 
 
 async def _run_quiz_cli(
-    *, title: str, rounds: int, db_path: Path, prefer_lang: str | None = None
+    *, title: str | None, rounds: int, db_path: Path, prefer_lang: str | None = None
 ) -> None:
     # 先查库（不构造 provider）：空库 / 错任务直接给指引——无需 LLM key，也免去无谓 HTTP 客户端。
     console = Console()
@@ -548,7 +547,7 @@ def _stdin_messages(console: Console) -> Iterator[str]:
         yield message
 
 
-async def _run_react_cli(*, title: str, db_path: Path, materials_dir: Path) -> None:
+async def _run_react_cli(*, title: str | None, db_path: Path, materials_dir: Path) -> None:
     console = Console()
     provider = OpenAICompatProvider.from_env()
     try:
@@ -575,8 +574,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("--task", required=True, help="学习任务标题（考核范围）")
     p_ingest.add_argument("--db", type=Path, default=_DEFAULT_DB, help="SQLite 库路径")
 
-    p_quiz = sub.add_parser("quiz", help="对某任务逐题交互考核")
-    p_quiz.add_argument("title", help="学习任务标题")
+    p_quiz = sub.add_parser("quiz", help="对全局知识库逐题交互考核")
+    p_quiz.add_argument("title", nargs="?", default=None, help="可选横幅（仅打印，不进选题范围）")
     p_quiz.add_argument("--rounds", type=int, default=_DEFAULT_ROUNDS, help="考核轮数")
     p_quiz.add_argument("--db", type=Path, default=_DEFAULT_DB, help="SQLite 库路径")
     p_quiz.add_argument(
@@ -586,7 +585,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     p_react = sub.add_parser("react", help="真机 ReAct 对话——学材料 / 出题 / 判卷全经工具")
-    p_react.add_argument("title", help="学习任务标题（考核范围）")
+    p_react.add_argument("title", nargs="?", default=None, help="可选横幅（仅打印，不进考核范围）")
     p_react.add_argument("--db", type=Path, default=_DEFAULT_DB, help="SQLite 库路径")
     p_react.add_argument(
         "--materials-dir",

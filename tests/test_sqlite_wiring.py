@@ -14,7 +14,6 @@ from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.assessment import assess_once
 from grandquiz.domain.learning.ingest import ingest_resource
 from grandquiz.domain.learning.memory import SqliteLearningMemory
-from grandquiz.domain.learning.models import LearningTask
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.kernel.clock import ManualClock, new_rng
@@ -91,12 +90,10 @@ async def test_ingest_then_assess_run_unchanged_on_sqlite(tmp_path: Path) -> Non
     db = tmp_path / "learning.db"
     store = SqliteLearningStore(db)
     memory = SqliteLearningMemory(db)
-    task = LearningTask.create("React")
 
     # --- ingest：调用点与 dict 版逐字相同，store 换成 SqliteLearningStore ---
     emitter1, _events1, trace1 = _harness("ingest")
     ingest_result = await ingest_resource(
-        task,
         _URL,
         source=lambda _url: "React hooks 深读材料",
         provider=_ReaderProvider(),
@@ -109,14 +106,13 @@ async def test_ingest_then_assess_run_unchanged_on_sqlite(tmp_path: Path) -> Non
     trace1.close()
 
     assert ingest_result.status == "read"
-    stored = store.items_for_task(task.task_id)
+    stored = store.all_items()
     assert [i.concept for i in stored] == ["闭包"]
     target_id = stored[0].item_id
 
     # --- assess：调用点与 dict 版逐字相同，store / memory 换成 SQLite 版 ---
     emitter2, _events2, trace2 = _harness("assess")
     assess_result = await assess_once(
-        task,
         store=store,
         provider=_AssessProvider(),
         responder=ScriptedResponder(answer=_MC_WRONG),  # 选错 → 判错 → 入薄弱

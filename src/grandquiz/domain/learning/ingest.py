@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from grandquiz.domain.learning.approval import ApprovalGate
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.fetch import FetchError, fetch_resource
-from grandquiz.domain.learning.models import KnowledgeItem, LearningResource, LearningTask
+from grandquiz.domain.learning.models import KnowledgeItem, LearningResource
 from grandquiz.domain.learning.reader import (
     UNTRUSTED_READ_HOOK,
     Reader,
@@ -50,7 +50,6 @@ class IngestResult(BaseModel):
 
 
 async def ingest_resource(
-    task: LearningTask,
     url: str,
     *,
     source: Callable[[str], str],
@@ -61,15 +60,19 @@ async def ingest_resource(
     max_bytes: int,
     allowed_domains: Collection[str],
 ) -> IngestResult:
-    """把一个 URL 喂入某 LearningTask，深读 → 审批 → 入库，全程发事件。见模块 docstring。"""
+    """把一个 URL 喂入全局 KB，深读 → 审批 → 入库，全程发事件。见模块 docstring。
+
+    ``resource_id = derive_id(url)``（内容寻址，ADR-0005）：同 URL 重 ingest → 同 resource_id →
+    ``INSERT OR REPLACE`` 天然去重（不再挂 ``LearningTask``、不分标题进库）。
+    """
     # a. 开 ingest span（根）。此后任何未预期异常都必须闭合它（见末尾 except）。
     ingest_span = emitter.new_span_id()
     emitter.emit(
         _INGEST_STARTED,
         span_id=ingest_span,
-        payload={"task_id": task.task_id, "url": url},
+        payload={"url": url},
     )
-    resource = LearningResource.create(task_id=task.task_id, url=url)
+    resource = LearningResource.create(url=url)
 
     def fail(reason: str) -> IngestResult:
         # 领域失败分支（fetch / Reader 共用）：标 failed、闭合 span、优雅返回（不 raise，case 7）。
@@ -83,8 +86,7 @@ async def ingest_resource(
         return IngestResult(status="failed", resource_id=resource.resource_id, items=[])
 
     try:
-        # b. 建 task（幂等）+ resource，发 RESOURCE_CREATED。
-        store.add_task(task)
+        # b. 建 resource（内容寻址，同 URL 覆盖），发 RESOURCE_CREATED。
         store.add_resource(resource)
         emitter.emit(
             LearningEvent.RESOURCE_CREATED,

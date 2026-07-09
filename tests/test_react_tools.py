@@ -22,7 +22,6 @@ from grandquiz.domain.learning.models import (
     Evidence,
     KnowledgeItem,
     LearningResource,
-    LearningTask,
 )
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.domain.learning.tools import (
@@ -81,10 +80,15 @@ def _stored_item(resource_id: str, index: int, concept: str) -> KnowledgeItem:
     )
 
 
-def _seed_store(store: LearningStore, task: LearningTask, concepts: list[str]) -> list[str]:
-    """给某 task 建一个资源 + 一批 item，返回 item_id 列表（顺序同 concepts）。"""
-    store.add_task(task)
-    resource = LearningResource.create(task_id=task.task_id, url=f"file://local/{task.title}")
+def _seed_store(
+    store: LearningStore, concepts: list[str], *, url: str = "file://local/material"
+) -> list[str]:
+    """建一个资源（内容寻址）+ 一批 item，返回 item_id 列表（顺序同 concepts）。
+
+    ``url`` 决定 resource_id（``derive_id(url)``，ADR-0005）——同一测试内多次 seed 不同材料须传
+    不同 url，否则同 resource_id、item 相撞。
+    """
+    resource = LearningResource.create(url=url)
     store.add_resource(resource)
     items = [_stored_item(resource.resource_id, i, c) for i, c in enumerate(concepts)]
     store.add_items(items)
@@ -99,7 +103,7 @@ def _keep_all(_item: KnowledgeItem) -> bool:
     return True
 
 
-def _ingest_deps(task: LearningTask, provider: Any) -> dict[str, Any]:
+def _ingest_deps(provider: Any) -> dict[str, Any]:
     """ingest 工具的注入依赖（source 注入固定内容、审批 keep-all，同 CLI 组装点形状）。"""
     return {
         "source": _fixed_source,
@@ -123,9 +127,8 @@ def _emitter_with_events() -> tuple[EventEmitter, list[Any]]:
 
 
 async def test_query_weak_concepts_reports_tracked_concepts_sorted() -> None:
-    task = LearningTask.create("React")
     store = LearningStore()
-    ids = _seed_store(store, task, ["hooks", "fiber", "context"])
+    ids = _seed_store(store, ["hooks", "fiber", "context"])
     memory = LearningMemory()
     memory.record_verdict(ids[0], "错")  # hooks → 薄弱
     memory.record_verdict(ids[1], "错")  # fiber → 薄弱
@@ -133,9 +136,7 @@ async def test_query_weak_concepts_reports_tracked_concepts_sorted() -> None:
     # ids[2] context 从未考 → 不追踪，不应出现
 
     registry = ToolRegistry()
-    register_learning_tools(
-        registry, task=task, store=store, memory=memory, **_ingest_deps(task, provider=None)
-    )
+    register_learning_tools(registry, store=store, memory=memory, **_ingest_deps(provider=None))
     raw = await registry.dispatch("query_weak_concepts", {})
     result = WeakConceptsResult.model_validate_json(raw)
 
@@ -146,22 +147,18 @@ async def test_query_weak_concepts_reports_tracked_concepts_sorted() -> None:
     assert [w.item_id for w in result.weak] == sorted(w.item_id for w in result.weak)
 
 
-async def test_query_weak_concepts_surfaces_all_titles_global_kb() -> None:
-    # GKB-S1（修 #2）：全局 KB——薄弱概念不再按 task 分区，其他标题下 ingest 的薄弱点也应surface
-    # （知识是全库的，换标题开会话仍要能复习）。此前按 task 隔离，现改为全库读 concept_by_id。
-    task = LearningTask.create("React")
-    other = LearningTask.create("Rust")
+async def test_query_weak_concepts_surfaces_across_resources_global_kb() -> None:
+    # 全局 KB（修 #2 / ADR-0005）：薄弱概念不按材料分区，不同资源下 ingest 的薄弱点都应surface
+    # （知识是全库的，换会话仍要能复习）。两份不同 URL 的材料 → 两个 resource，薄弱点全库读。
     store = LearningStore()
-    react_ids = _seed_store(store, task, ["hooks"])
-    other_ids = _seed_store(store, other, ["ownership"])
+    react_ids = _seed_store(store, ["hooks"], url="file://local/react")
+    other_ids = _seed_store(store, ["ownership"], url="file://local/rust")
     memory = LearningMemory()
-    memory.record_verdict(react_ids[0], "错")  # React 标题下薄弱
-    memory.record_verdict(other_ids[0], "错")  # Rust 标题下薄弱——全局 KB 下同样surface
+    memory.record_verdict(react_ids[0], "错")  # 一份材料的薄弱
+    memory.record_verdict(other_ids[0], "错")  # 另一份材料的薄弱——全局 KB 下同样surface
 
     registry = ToolRegistry()
-    register_learning_tools(
-        registry, task=task, store=store, memory=memory, **_ingest_deps(task, provider=None)
-    )
+    register_learning_tools(registry, store=store, memory=memory, **_ingest_deps(provider=None))
     result = WeakConceptsResult.model_validate_json(
         await registry.dispatch("query_weak_concepts", {})
     )
@@ -169,13 +166,10 @@ async def test_query_weak_concepts_surfaces_all_titles_global_kb() -> None:
 
 
 async def test_query_weak_concepts_empty_when_no_weak() -> None:
-    task = LearningTask.create("React")
     store = LearningStore()
-    _seed_store(store, task, ["hooks"])
+    _seed_store(store, ["hooks"])
     registry = ToolRegistry()
-    register_learning_tools(
-        registry, task=task, store=store, memory=LearningMemory(), **_ingest_deps(task, None)
-    )
+    register_learning_tools(registry, store=store, memory=LearningMemory(), **_ingest_deps(None))
     result = WeakConceptsResult.model_validate_json(
         await registry.dispatch("query_weak_concepts", {})
     )
@@ -215,11 +209,11 @@ class _ScriptedReactIngestProvider:
         )
 
 
-def _build_ingest_registry(task: LearningTask, provider: Any) -> tuple[ToolRegistry, LearningStore]:
+def _build_ingest_registry(provider: Any) -> tuple[ToolRegistry, LearningStore]:
     store = LearningStore()
     registry = ToolRegistry()
     register_learning_tools(
-        registry, task=task, store=store, memory=LearningMemory(), **_ingest_deps(task, provider)
+        registry, store=store, memory=LearningMemory(), **_ingest_deps(provider)
     )
     return registry, store
 
@@ -230,22 +224,20 @@ def _build_ingest_registry(task: LearningTask, provider: Any) -> tuple[ToolRegis
 
 
 async def test_react_ingest_returns_structured_result() -> None:
-    task = LearningTask.create("React")
     provider = _ScriptedReactIngestProvider()
-    registry, store = _build_ingest_registry(task, provider)
+    registry, store = _build_ingest_registry(provider)
     emitter, _ = _emitter_with_events()
     runner = Runner(provider=provider, emitter=emitter, tools=registry)
 
     reply = await runner.run_agent_turn("请 ingest 这份材料")
     assert reply == "已完成 ingest"
     # 工具确实入库两个概念
-    assert [it.concept for it in store.items_for_task(task.task_id)] == _EXPECTED_CONCEPTS
+    assert [it.concept for it in store.all_items()] == _EXPECTED_CONCEPTS
 
 
 async def test_react_ingest_spans_nest_under_tool_call_and_messages_are_isolated() -> None:
-    task = LearningTask.create("React")
     provider = _ScriptedReactIngestProvider()
-    registry, _ = _build_ingest_registry(task, provider)
+    registry, _ = _build_ingest_registry(provider)
     store_trace = TraceStore(":memory:")
     sink = EventSink()
     sink.subscribe(store_trace.record)
@@ -290,9 +282,8 @@ async def test_react_ingest_spans_nest_under_tool_call_and_messages_are_isolated
 
 async def test_ingest_internal_model_spans_never_bubble_to_agent_turn() -> None:
     """加固：agent_turn 直属 model span 只有 ReAct 两次（选工具 + final），Reader 那次不在其列。"""
-    task = LearningTask.create("React")
     provider = _ScriptedReactIngestProvider()
-    registry, _ = _build_ingest_registry(task, provider)
+    registry, _ = _build_ingest_registry(provider)
     store_trace = TraceStore(":memory:")
     sink = EventSink()
     sink.subscribe(store_trace.record)
@@ -324,14 +315,13 @@ def _summ(spans: list[Span]) -> list[dict[str, Any]]:
 
 
 async def test_react_ingest_record_then_replay_is_byte_identical(tmp_path: Path) -> None:
-    task = LearningTask.create("React")
     cassette_path = tmp_path / "react_ingest.json"
 
     # Pass 1：录制——inner 脚本化 provider 真跑，ReAct 选工具 + Reader 深读都进 cassette。
     inner = _ScriptedReactIngestProvider()
     cassette = Cassette()
     recording = RecordingProvider(inner, cassette, _MODELS)
-    registry1, _ = _build_ingest_registry(task, recording)
+    registry1, _ = _build_ingest_registry(recording)
     store1 = TraceStore(":memory:")
     sink1 = EventSink()
     sink1.subscribe(store1.record)
@@ -348,7 +338,7 @@ async def test_react_ingest_record_then_replay_is_byte_identical(tmp_path: Path)
 
     # Pass 2：回放——全新 Runner / registry / store / memory + 重置 ManualClock + 相同输入。
     replay = ReplayProvider(Cassette.load(cassette_path), _MODELS)
-    registry2, _ = _build_ingest_registry(task, replay)
+    registry2, _ = _build_ingest_registry(replay)
     store2 = TraceStore(":memory:")
     sink2 = EventSink()
     sink2.subscribe(store2.record)
@@ -375,15 +365,12 @@ def test_tool_context_is_kernel_generic() -> None:
 
 async def test_query_tool_dispatch_ignores_context() -> None:
     """query 工具是 context-free：即便 dispatch 递入 ctx 也照常工作（wants_context=False）。"""
-    task = LearningTask.create("React")
     store = LearningStore()
-    ids = _seed_store(store, task, ["hooks"])
+    ids = _seed_store(store, ["hooks"])
     memory = LearningMemory()
     memory.record_verdict(ids[0], "错")
     registry = ToolRegistry()
-    register_learning_tools(
-        registry, task=task, store=store, memory=memory, **_ingest_deps(task, None)
-    )
+    register_learning_tools(registry, store=store, memory=memory, **_ingest_deps(None))
     emitter, _ = _emitter_with_events()
     raw = await registry.dispatch(
         "query_weak_concepts", {}, ctx=ToolContext(emitter=emitter, parent_span_id="t:s0")

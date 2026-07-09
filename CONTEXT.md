@@ -32,9 +32,9 @@ _Avoid_: 错题（薄弱的是概念，不是题目本身）、跨资源的抽�
 深读一个资源产出的最小知识单元（概念名 + 摘要 + 证据 + 置信度），资源内唯一。它就是概念同一性的边界：同一知识点出现在两个资源里是两个 item，MVP 不归并（二期以 concept_key 做跨资源别名归并）。证据带结构定位符（section_path 等），既强化 grounding 也为资源内概念树留地基。
 _Avoid_: 知识点卡片、笔记
 
-**LearningTask**:
-学习主题的容器与考核范围（"考我 React"里的"React"）：资源、KnowledgeItem、薄弱概念都挂在 task 下。MVP 中由用户手动创建；二期 discovery 回归后由它承接候选资源。
-_Avoid_: 任务、待办（不是 todo 语义）
+**LearningTask**（已消解，ADR-0005）:
+~~学习主题的容器与考核范围~~——**已废弃**。真机 dogfood 暴露"会话绑一个启动标题 = 换标题换库"把持久库切成孤岛（PRD #2）。现收敛到**全局 KB 单池**：不再有独立 `LearningTask` 实体、无 `tasks` 表；资源**内容寻址**（`resource_id = derive_id(url)`，同 URL 全局唯一、`INSERT OR REPLACE` 去重），进同一持久库。会话是无状态对话前端，`react`/`quiz` 的 `title` 降为可选横幅（只打印、不进派生 / 分区）。出题 / 判卷语言从 task 属性移入 [Preference Memory]（`question_language`，跨全库个人设置）。跨会话 / 跨材料的薄弱概念天然互见（[Learning Memory] 锚定 KnowledgeItem、本就不按 task 分区——ADR-0003 期望终态）。
+_Avoid_: 任务、待办；"标题锁库"；把 title 当知识范围（scope 走查询期软过滤，见全局 KB PRD）
 
 **ActivityEvent**:
 工具内发生的学习动作记录：审批资源、深读完成、答题对错、跳过、要求重考。答题记录是最高置信信号——"会不会"由考核结果说话，"学没学"不采集。

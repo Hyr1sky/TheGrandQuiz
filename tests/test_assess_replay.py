@@ -23,7 +23,6 @@ from grandquiz.domain.learning.models import (
     Evidence,
     KnowledgeItem,
     LearningResource,
-    LearningTask,
 )
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.selection import select_target
@@ -45,11 +44,9 @@ _ITEMS = [
 _VERDICTS = {"对", "勉强", "错"}
 
 
-def _stocked_store() -> tuple[LearningStore, LearningTask]:
+def _stocked_store() -> LearningStore:
     store = LearningStore()
-    task = LearningTask.create("样例主题")
-    resource = LearningResource.create(task_id=task.task_id, url=_URL)
-    store.add_task(task)
+    resource = LearningResource.create(url=_URL)
     store.add_resource(resource)
     store.add_items(
         [
@@ -64,7 +61,7 @@ def _stocked_store() -> tuple[LearningStore, LearningTask]:
             for index, (concept, summary, quote) in enumerate(_ITEMS)
         ]
     )
-    return store, task
+    return store
 
 
 async def test_recorded_assessment_replays_deterministically_without_live_calls() -> None:
@@ -72,19 +69,18 @@ async def test_recorded_assessment_replays_deterministically_without_live_calls(
     # 从 cassette 复原 role→model（录制时的真实模型），使 replay_key 对齐、无需 .env。
     model_for_role = cast("dict[Role, str]", {e["role"]: e["model"] for e in raw.values()})
     replay = ReplayProvider(Cassette.load(_CASSETTE), model_for_role)
-    store, task = _stocked_store()
+    store = _stocked_store()
     emitter = EventEmitter(EventSink(), ManualClock(), trace_id="assess-replay")
 
     # 把 seed 自然选中的 item 预置成"观察中"→ 路由到"开放"（= cassette 录制时用的 prompt 对），
     # 且被考 target 不变（薄弱优先集只此一项）。否则 fresh memory 会路由到选择题、ReplayMiss。
     memory = LearningMemory()
-    natural = select_target(store.items_for_task(task.task_id), rng=new_rng(_SEED)).item_id
+    natural = select_target(store.all_items(), rng=new_rng(_SEED)).item_id
     memory.record_verdict(natural, "错")  # → 薄弱
     memory.record_verdict(natural, "对")  # → 观察中
     assert memory.state_of(natural) == "观察中"
 
     result = await assess_once(
-        task,
         store=store,
         provider=replay,  # 纯回放：命中即返回、未命中 ReplayMiss；绝不触网、不烧 token
         responder=ScriptedResponder(answer=_DEFAULT_ANSWER),

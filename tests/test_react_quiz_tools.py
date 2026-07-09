@@ -24,7 +24,6 @@ from grandquiz.domain.learning.models import (
     Evidence,
     KnowledgeItem,
     LearningResource,
-    LearningTask,
 )
 from grandquiz.domain.learning.preference import (
     QUESTION_LANGUAGE_KEY,
@@ -65,9 +64,10 @@ def _stored_item(resource_id: str, index: int, concept: str) -> KnowledgeItem:
     )
 
 
-def _seed_store(store: LearningStore, task: LearningTask, concepts: list[str]) -> list[str]:
-    store.add_task(task)
-    resource = LearningResource.create(task_id=task.task_id, url=f"file://local/{task.title}")
+def _seed_store(
+    store: LearningStore, concepts: list[str], *, url: str = "file://local/material"
+) -> list[str]:
+    resource = LearningResource.create(url=url)
     store.add_resource(resource)
     items = [_stored_item(resource.resource_id, i, c) for i, c in enumerate(concepts)]
     store.add_items(items)
@@ -195,7 +195,6 @@ class _PrefixResponder:
 def _register(
     registry: ToolRegistry,
     *,
-    task: LearningTask,
     store: LearningStore,
     memory: LearningMemory,
     provider: Any,
@@ -205,7 +204,6 @@ def _register(
 ) -> None:
     register_learning_tools(
         registry,
-        task=task,
         source=lambda _u: "",
         provider=provider,
         store=store,
@@ -233,15 +231,13 @@ def _payload_of(events: list[AgentEvent], event_type: str) -> Mapping[str, Any]:
 
 
 async def test_start_quiz_mc_wrong_records_weak_and_gives_followup() -> None:
-    task = LearningTask.create("Py")
     store = LearningStore()
-    ids = _seed_store(store, task, ["闭包"])  # fresh memory → 路由到选择题
+    ids = _seed_store(store, ["闭包"])  # fresh memory → 路由到选择题
     memory = LearningMemory()
     provider = _McProvider()
     registry = ToolRegistry()
     _register(
         registry,
-        task=task,
         store=store,
         memory=memory,
         provider=provider,
@@ -275,14 +271,12 @@ async def test_start_quiz_mc_wrong_records_weak_and_gives_followup() -> None:
 
 
 async def test_start_quiz_mc_correct_no_weak_no_followup() -> None:
-    task = LearningTask.create("Py")
     store = LearningStore()
-    ids = _seed_store(store, task, ["闭包"])
+    ids = _seed_store(store, ["闭包"])
     memory = LearningMemory()
     registry = ToolRegistry()
     _register(
         registry,
-        task=task,
         store=store,
         memory=memory,
         provider=_McProvider(),
@@ -306,13 +300,11 @@ async def test_start_quiz_mc_correct_no_weak_no_followup() -> None:
 
 
 async def test_mc_verbatim_option_grades_correct() -> None:
-    task = LearningTask.create("Py")
     store = LearningStore()
-    _seed_store(store, task, ["闭包"])
+    _seed_store(store, ["闭包"])
     registry = ToolRegistry()
     _register(
         registry,
-        task=task,
         store=store,
         memory=LearningMemory(),
         provider=_McProvider(),
@@ -328,13 +320,11 @@ async def test_mc_verbatim_option_grades_correct() -> None:
 async def test_mc_prefixed_correct_option_grades_wrong() -> None:
     # 复现 #2：若把正确项加 "A. " 前缀（软工具时代 LLM 的坏行为）→ 逐字比对不命中 → 误判为错。
     # 硬化后 start_quiz 走选择器逐字提交，从根杜绝该前缀污染（见上一测试）。
-    task = LearningTask.create("Py")
     store = LearningStore()
-    _seed_store(store, task, ["闭包"])
+    _seed_store(store, ["闭包"])
     registry = ToolRegistry()
     _register(
         registry,
-        task=task,
         store=store,
         memory=LearningMemory(),
         provider=_McProvider(),
@@ -353,14 +343,12 @@ async def test_mc_prefixed_correct_option_grades_wrong() -> None:
 
 
 async def test_start_quiz_runs_count_rounds() -> None:
-    task = LearningTask.create("Py")
     store = LearningStore()
-    _seed_store(store, task, ["闭包", "装饰器"])
+    _seed_store(store, ["闭包", "装饰器"])
     registry = ToolRegistry()
     provider = _McProvider()
     _register(
         registry,
-        task=task,
         store=store,
         memory=LearningMemory(),
         provider=provider,
@@ -391,16 +379,14 @@ async def test_start_quiz_focus_weak_targets_weak_concept() -> None:
     # focus="weak"（"复习薄弱"）逐次透传每题 assess_once → select_target：锁定唯一薄弱概念，
     # 即使有未考过的新概念。构造保证 mutation 可杀——薄弱项刻意放在 index 0，而 mixed 默认（quiz_seed
     # 0）会选 index 1；若 focus 未透传（退回 mixed）则选中 装饰器 而非 闭包 → 断言变红。
-    task = LearningTask.create("Py")
     store = LearningStore()
-    ids = _seed_store(store, task, ["闭包", "装饰器", "生成器"])
+    ids = _seed_store(store, ["闭包", "装饰器", "生成器"])
     memory = LearningMemory()
     memory.record_verdict(ids[0], "错")  # 仅 闭包（index 0）薄弱；装饰器 / 生成器 未追踪且未考过
     assert memory.state_of(ids[0]) == "薄弱"
     registry = ToolRegistry()
     _register(
         registry,
-        task=task,
         store=store,
         memory=memory,
         provider=_OpenProvider(verdict="对"),  # 薄弱 → 追问（LLM 判卷路径）
@@ -422,13 +408,11 @@ async def test_start_quiz_focus_weak_targets_weak_concept() -> None:
 
 
 async def test_start_quiz_empty_kb_refused() -> None:
-    task = LearningTask.create("Py")
     store = LearningStore()  # 空库
     provider = _McProvider()
     registry = ToolRegistry()
     _register(
         registry,
-        task=task,
         store=store,
         memory=LearningMemory(),
         provider=provider,
@@ -448,24 +432,19 @@ async def test_start_quiz_empty_kb_refused() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 跨会话召回（修 #2）：全局 KB 读——换标题开会话仍能考到此前 ingest 的知识
+# 全局 KB 召回（修 #2 / ADR-0005）：start_quiz 选题候选池恒为全库，不绑任何标题
 # --------------------------------------------------------------------------- #
 
 
-async def test_start_quiz_recalls_items_from_other_title_global_kb() -> None:
-    # 修 #2：以标题 A ingest 的知识，用**不同标题 B** 开会话仍能考到（选题候选池 = 全库，
-    # 非 task 局部）。若仍按 task 读候选池，task B 下无 item → 空库拒答 → 断言变红。
+async def test_start_quiz_recalls_items_from_global_kb() -> None:
+    # 修 #2 / ADR-0005：会话不再绑标题，start_quiz 候选池 = 全库（store.all_items()）。任意 ingest
+    # 进来的 item 都能被考到——LearningTask 已消解，无 task 分区可把知识切成孤岛。
     store = LearningStore()
-    task_a = LearningTask.create("标题A")
-    ids = _seed_store(store, task_a, ["闭包"])  # 知识挂在 task A 的资源下
-    task_b = LearningTask.create("标题B")
-    assert task_b.task_id != task_a.task_id  # 不同标题 → 不同 task_id
-    store.add_task(task_b)
+    ids = _seed_store(store, ["闭包"])  # 知识进全局 KB 单池
     provider = _McProvider()
     registry = ToolRegistry()
     _register(
         registry,
-        task=task_b,  # 会话绑在 task B（不同标题）
         store=store,
         memory=LearningMemory(),
         provider=provider,
@@ -479,26 +458,24 @@ async def test_start_quiz_recalls_items_from_other_title_global_kb() -> None:
 
     assert result.status == "completed"  # 全局读 → 非空库
     assert result.asked == 1
-    assert result.rounds[0].item_id == ids[0]  # 考到了 A 标题下 ingest 的 item
+    assert result.rounds[0].item_id == ids[0]  # 考到了全库里的 item
     assert result.rounds[0].concept == "闭包"  # concept_by_id 也走全局读（非 fallback 到 item_id）
 
 
 # --------------------------------------------------------------------------- #
-# 语言偏好透传（补 S2b/S4 欠账）：偏好 > task 默认 > 中文
+# 语言偏好透传：偏好 > 硬兜底"中文"（ADR-0005：语言只来自偏好）
 # --------------------------------------------------------------------------- #
 
 
 async def test_start_quiz_passes_language_preference() -> None:
-    task = LearningTask.create("Py")  # task.language 默认中文
     store = LearningStore()
-    _seed_store(store, task, ["闭包"])
+    _seed_store(store, ["闭包"])
     preferences = DictPreferenceMemory()
-    preferences.set_preference(QUESTION_LANGUAGE_KEY, "英文")  # 偏好压过 task 默认
+    preferences.set_preference(QUESTION_LANGUAGE_KEY, "英文")  # 偏好压过中文兜底
     provider = _LanguageCapturingProvider()
     registry = ToolRegistry()
     _register(
         registry,
-        task=task,
         store=store,
         memory=LearningMemory(),
         provider=provider,
@@ -513,7 +490,7 @@ async def test_start_quiz_passes_language_preference() -> None:
     # 精确锚定替换点 "请用 <语言> 提问"——模板正文另含字面"英文原词"，故只查裸"英文"会假通过。
     assert provider.enrich_systems
     assert "请用 英文 提问" in provider.enrich_systems[0]
-    assert "请用 中文 提问" not in provider.enrich_systems[0]  # 未被 task 默认语言（中文）占位
+    assert "请用 中文 提问" not in provider.enrich_systems[0]  # 未被中文兜底占位
 
 
 # --------------------------------------------------------------------------- #
@@ -522,19 +499,17 @@ async def test_start_quiz_passes_language_preference() -> None:
 
 
 async def test_start_quiz_record_then_replay_is_identical(tmp_path: Path) -> None:
-    task = LearningTask.create("Py")
     cassette_path = tmp_path / "quiz.json"
 
     async def drive(provider: Any) -> tuple[StartQuizResult, list[AgentEvent]]:
         store = LearningStore()
-        ids = _seed_store(store, task, ["闭包"])
+        ids = _seed_store(store, ["闭包"])
         memory = LearningMemory()
         memory.record_verdict(ids[0], "错")  # → 薄弱
         memory.record_verdict(ids[0], "对")  # → 观察中 → 开放题（出题 + 判卷两 LLM 槽都被录）
         registry = ToolRegistry()
         _register(
             registry,
-            task=task,
             store=store,
             memory=memory,
             provider=provider,

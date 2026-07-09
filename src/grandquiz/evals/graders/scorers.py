@@ -53,10 +53,10 @@ _LANGUAGE_TO_BUCKET = {"中文": "zh", "英文": "en"}
 
 
 def expected_bucket_for_language(language: str) -> str:
-    """把 ``LearningTask.language``（"中文" / "英文"）映射到期望语言桶（"zh" / "en"）。
+    """把 case 的出题语言（"中文" / "英文"，经 question_language 偏好下传）映射到桶（"zh" / "en"）。
 
-    让 ``language_consistency`` 的期望桶由 case 的 task 语言**派生**、而非在 grader 里硬编码——
-    消除 yaml ↔ grader 语言约定漂移的隐患（未知语言退化为 "zh"，与默认 task 语言一致）。
+    让 ``language_consistency`` 的期望桶由 case 的语言**派生**、而非在 grader 里硬编码——消除
+    yaml ↔ grader 语言约定漂移的隐患（未知语言退化为 "zh"，与"中文"兜底一致，ADR-0005）。
     """
     return _LANGUAGE_TO_BUCKET.get(language, "zh")
 

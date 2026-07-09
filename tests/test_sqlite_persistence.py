@@ -9,7 +9,7 @@
 from pathlib import Path
 
 from grandquiz.domain.learning.memory import SqliteLearningMemory
-from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource, LearningTask
+from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.store import SqliteLearningStore
 
 
@@ -30,9 +30,7 @@ def test_items_and_weak_points_survive_close_and_reopen(tmp_path: Path) -> None:
     # --- 会话 1：写入 -------------------------------------------------------
     store1 = SqliteLearningStore(db)
     memory1 = SqliteLearningMemory(db)
-    task = LearningTask.create("React")
-    resource = LearningResource.create(task_id=task.task_id, url="https://example.com/react")
-    store1.add_task(task)
+    resource = LearningResource.create(url="https://example.com/react")
     store1.add_resource(resource)
     items = [_item(resource.resource_id, i, c) for i, c in enumerate(["闭包", "提升", "事件循环"])]
     store1.add_items(items)
@@ -57,10 +55,9 @@ def test_items_and_weak_points_survive_close_and_reopen(tmp_path: Path) -> None:
     store2 = SqliteLearningStore(db)
     memory2 = SqliteLearningMemory(db)
 
-    # item 仍在、逐字段一致、仍可经 task 两跳锚定出题。
-    reloaded = store2.items_for_task(task.task_id)
+    # item 仍在、逐字段一致、仍可经全库读锚定出题（全局 KB，ADR-0005）。
+    reloaded = store2.all_items()
     assert reloaded == items
-    assert store2.get_task(task.task_id) == task
     assert store2.get_resource(resource.resource_id) == resource
 
     # 薄弱点仍在、状态 / 连对 / 判决历史正确（"重启后仍薄弱优先出题"的地基）。
@@ -88,21 +85,22 @@ def test_items_and_weak_points_survive_close_and_reopen(tmp_path: Path) -> None:
     memory2.close()
 
 
-def test_task_language_survives_close_and_reopen(tmp_path: Path) -> None:
-    # language 是出题 / 判卷语言（默认中文），非中文 task 跨 SQLite 往返须原样保真——
-    # 否则重开后退回默认"中文"，被拷问语言错乱。mutation：tasks 表删 language 列 /
-    # add_task 不写该列 / get_task 不读该列 → 重开后 language 退回"中文" → 本测试红。
+def test_resource_topic_survives_close_and_reopen(tmp_path: Path) -> None:
+    # topic 软标签跨 SQLite 往返须原样保真——mutation：resources 表删 topic 列 / add / get 不读写
+    # 该列 → 重开后 topic 丢失 → 本测试红（ADR-0005 全局 KB 的目录清单来源）。
     db = tmp_path / "learning.db"
 
     store1 = SqliteLearningStore(db)
-    task = LearningTask.create("Algorithms", domain="CS", language="English")
-    store1.add_task(task)
+    resource = LearningResource.create(url="https://example.com/acp").model_copy(
+        update={"status": "read", "topic": "代理通信协议"}
+    )
+    store1.add_resource(resource)
     store1.close()
     del store1
 
     store2 = SqliteLearningStore(db)
-    reloaded = store2.get_task(task.task_id)
+    reloaded = store2.get_resource(resource.resource_id)
     assert reloaded is not None
-    assert reloaded.language == "English"
-    assert reloaded == task  # 逐字段一致（含 domain / language）
+    assert reloaded.topic == "代理通信协议"
+    assert reloaded == resource  # 逐字段一致（含 topic）
     store2.close()

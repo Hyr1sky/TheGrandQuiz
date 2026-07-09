@@ -15,7 +15,7 @@ import pytest
 from grandquiz.domain.learning.approval import APPROVAL_REQUESTED, ScriptedApprovalGate
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.ingest import ingest_resource
-from grandquiz.domain.learning.models import KnowledgeItem, LearningTask
+from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.evals.harness import build_event_harness as _harness
 from grandquiz.evals.harness import summarize_spans as _summ
@@ -73,10 +73,8 @@ def _keep_two(item: KnowledgeItem) -> bool:
 async def test_happy_path_only_approved_items_enter_store() -> None:
     emitter, events, trace = _harness()
     store = LearningStore()
-    task = LearningTask.create("React")
 
     result = await ingest_resource(
-        task,
         _URL,
         source=lambda _url: "React hooks 深读材料",
         provider=_FixedProvider(_READER_JSON),
@@ -140,14 +138,12 @@ async def test_happy_path_only_approved_items_enter_store() -> None:
 async def test_fetch_failure_marks_resource_failed_and_produces_no_ghost_items() -> None:
     emitter, events, trace = _harness()
     store = LearningStore()
-    task = LearningTask.create("React")
 
     def _boom(_url: str) -> str:
         raise RuntimeError("抓取超时")
 
     provider = _FixedProvider(_READER_JSON)
     result = await ingest_resource(
-        task,
         _URL,
         source=_boom,
         provider=provider,
@@ -181,9 +177,7 @@ async def test_fetch_failure_marks_resource_failed_and_produces_no_ghost_items()
 
 
 async def _run_once(provider: Provider, emitter: EventEmitter) -> None:
-    task = LearningTask.create("React")
     await ingest_resource(
-        task,
         _URL,
         source=lambda _url: "React hooks 深读材料",
         provider=provider,
@@ -260,7 +254,6 @@ async def test_provider_exception_propagates_and_closes_ingest_span() -> None:
 
     with pytest.raises(RuntimeError):
         await ingest_resource(
-            LearningTask.create("React"),
             _URL,
             source=lambda _url: "React hooks 深读材料",
             provider=_Raising(),

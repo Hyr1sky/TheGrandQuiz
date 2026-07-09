@@ -51,7 +51,7 @@ def _emitter() -> tuple[EventEmitter, list[str]]:
 
 
 def _resource() -> LearningResource:
-    return LearningResource.create(task_id="t", url="https://example.com/a")
+    return LearningResource.create(url="https://example.com/a")
 
 
 _VALID_JSON = json.dumps(

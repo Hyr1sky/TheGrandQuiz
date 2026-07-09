@@ -21,7 +21,6 @@ from grandquiz.domain.learning.models import (
     Evidence,
     KnowledgeItem,
     LearningResource,
-    LearningTask,
 )
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import SqliteLearningStore
@@ -227,10 +226,9 @@ async def test_run_ingest_reads_material_and_persists_items(tmp_path: Path) -> N
 
     assert result.status == "read"
     assert [item.concept for item in result.items] == ["闭包"]
-    # 落到 SQLite：重开 store 仍在（跨会话持久）。
+    # 落到 SQLite：重开 store 仍在（跨会话持久，全局 KB 读）。
     store = SqliteLearningStore(db)
-    task = LearningTask.create("React")
-    assert [item.concept for item in store.items_for_task(task.task_id)] == ["闭包"]
+    assert [item.concept for item in store.all_items()] == ["闭包"]
     store.close()
     assert "闭包" in console.export_text()  # Rich 打印了抽出的知识点
 
@@ -238,12 +236,10 @@ async def test_run_ingest_reads_material_and_persists_items(tmp_path: Path) -> N
 # --- run_quiz 粘合 ----------------------------------------------------------
 
 
-def _stock_sqlite(db: Path, title: str) -> tuple[LearningTask, str]:
-    """直接往 SQLite 塞一个 task + resource + 一个知识点，返回 (task, item_id)。"""
+def _stock_sqlite(db: Path) -> str:
+    """直接往 SQLite 塞一个 resource + 一个知识点（全局 KB），返回 item_id。"""
     store = SqliteLearningStore(db)
-    task = LearningTask.create(title)
-    resource = LearningResource.create(task_id=task.task_id, url="file://local/material.txt")
-    store.add_task(task)
+    resource = LearningResource.create(url="file://local/material.txt")
     store.add_resource(resource)
     item = KnowledgeItem.create(
         resource_id=resource.resource_id,
@@ -255,7 +251,7 @@ def _stock_sqlite(db: Path, title: str) -> tuple[LearningTask, str]:
     )
     store.add_items([item])
     store.close()
-    return task, item.item_id
+    return item.item_id
 
 
 async def test_run_quiz_empty_kb_prompts_ingest_without_calling_provider(tmp_path: Path) -> None:
@@ -280,7 +276,7 @@ async def test_run_quiz_empty_kb_prompts_ingest_without_calling_provider(tmp_pat
 
 async def test_run_quiz_round_records_weak_and_prints_summary(tmp_path: Path) -> None:
     db = tmp_path / "learning.db"
-    _task, item_id = _stock_sqlite(db, "React")
+    item_id = _stock_sqlite(db)
     console = Console(record=True, width=100)
 
     # fresh memory → 选择题；选"干扰项"→ 判错 → 入薄弱。scripted responder 忽略 options、恒返回它。
@@ -308,7 +304,7 @@ async def test_run_quiz_skips_round_on_question_error_without_crashing(tmp_path:
     # 出题恒失败 → QuestionError；run_quiz 应跳过本轮、不抛异常炸掉会话，仍走到薄弱小结。
     # （dogfood 坑：QuestionError 原样冒泡会让整场 quiz 崩溃——CLI 边界兜底为"跳过本轮"。）
     db = tmp_path / "learning.db"
-    _task, _item_id = _stock_sqlite(db, "React")
+    _item_id = _stock_sqlite(db)
     console = Console(record=True, width=100)
 
     await run_quiz(
@@ -334,7 +330,7 @@ async def test_run_quiz_propagates_fatal_error_never_swallowed(tmp_path: Path) -
     # （决策 6：eval / replay 契约不可破）。mutation：若 CLI 无条件 continue 或 ReplayMiss 被误标
     # DEGRADED，异常会被吞、本测试红。
     db = tmp_path / "learning.db"
-    _stock_sqlite(db, "React")
+    _stock_sqlite(db)
     console = Console(record=True, width=100)
 
     with pytest.raises(ReplayMiss):

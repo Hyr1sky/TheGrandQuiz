@@ -22,7 +22,7 @@ from rich.console import Console
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.fetch import FetchError
 from grandquiz.domain.learning.memory import SqliteLearningMemory
-from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource, LearningTask
+from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.domain.learning.tools import _ScopedEmitter  # pyright: ignore[reportPrivateUsage]
@@ -298,9 +298,8 @@ async def test_react_session_ingest_then_quiz_then_judge(tmp_path: Path) -> None
 
     # 入库真的落进 SQLite（ingest 工具经 ReAct 循环触发 → 深读 → 审批 → 入库）。
     store = SqliteLearningStore(db)
-    task = LearningTask.create("Py")
-    concepts = [it.concept for it in store.items_for_task(task.task_id)]
-    item_id = store.items_for_task(task.task_id)[0].item_id
+    concepts = [it.concept for it in store.all_items()]
+    item_id = store.all_items()[0].item_id
     store.close()
     assert concepts == ["闭包"]
 
@@ -445,8 +444,7 @@ class _CaptureReactProvider:
 
 def _seed_weak_concept(db_path: Path) -> None:
     """在 run_react 打开的同一 learning db 里预置一个判错的薄弱概念（跨会话留存的确定性替身）。"""
-    task = LearningTask.create("Py")
-    resource = LearningResource.create(task_id=task.task_id, url=_MATERIAL_URL)
+    resource = LearningResource.create(url=_MATERIAL_URL)
     item = KnowledgeItem.create(
         resource_id=resource.resource_id,
         index=0,
@@ -456,7 +454,6 @@ def _seed_weak_concept(db_path: Path) -> None:
         confidence=0.9,
     )
     store = SqliteLearningStore(db_path)
-    store.add_task(task)
     store.add_resource(resource)
     store.add_items([item])
     store.close()
