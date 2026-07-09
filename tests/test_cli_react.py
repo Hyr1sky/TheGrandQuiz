@@ -373,6 +373,135 @@ async def test_react_session_zero_token_replay(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# run_react 端到端：脚本化"选材料 + 定题型"轨迹——scope honor + 题型 honor（GKB-S6）
+# --------------------------------------------------------------------------- #
+
+
+class _ScopeTypeScriptProvider:
+    """脚本化 provider：模拟用户"考<某份材料>的简答题"——ReAct 决策槽发一次
+    ``start_quiz(resource_ids=[该材料 id], question_type='简答')``；enrich 出开放题、basic 判卷。
+
+    驱动端到端 scope + 题型 honor（不触真网 / 真 key）：``resource_id`` 由构造注入（模拟 LLM 从
+    注入的库存清单认出用户意图对应的 exact id）。有 tool 结果即收敛 final，故整会话恰一次考核。
+    """
+
+    def __init__(self, resource_id: str) -> None:
+        self.calls = 0
+        self._resource_id = resource_id
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        self.calls += 1
+        system = messages[0].content if messages and messages[0].role == "system" else ""
+        if role == "enrich":  # 出题槽：effective=开放 → 出开放题（非 MC）
+            return Completion(
+                text=json.dumps(
+                    {"question": "请解释闭包如何捕获变量？", "cited_evidence": [_QUOTE]},
+                    ensure_ascii=False,
+                ),
+                usage=Usage(prompt_tokens=7, completion_tokens=3),
+            )
+        if "判卷官" in system:  # 开放判卷槽（本剧本真的打这个槽）
+            return Completion(
+                text=json.dumps({"verdict": "对", "cited_evidence": [_QUOTE]}, ensure_ascii=False),
+                usage=Usage(prompt_tokens=5, completion_tokens=2),
+            )
+        # ReAct 决策槽：有 tool 结果 → final；否则发带 scope + 题型的 start_quiz。
+        if [m for m in messages if m.role == "tool"]:
+            return Completion(text="考完了。", usage=Usage(prompt_tokens=5, completion_tokens=2))
+        call = ToolCall(
+            id="q1",
+            name="start_quiz",
+            arguments={
+                "count": 1,
+                "resource_ids": [self._resource_id],
+                "question_type": "简答",
+            },
+        )
+        return Completion(
+            text="", tool_calls=[call], usage=Usage(prompt_tokens=4, completion_tokens=1)
+        )
+
+
+def _seed_two_resources(db_path: Path) -> tuple[str, list[str], list[str]]:
+    """在 run_react 打开的同一 learning db 预置两份材料；返回 (res_a_id, a_item_ids, b_item_ids)。
+
+    多资源 stocked 场景：a=闭包那份（用户要考的），b=事件循环那份（scope 外，绝不应被考到）。
+    """
+    res_a = LearningResource.create(url="file://local/a.md")
+    a_items = [
+        KnowledgeItem.create(
+            resource_id=res_a.resource_id,
+            index=i,
+            concept=concept,
+            summary=f"{concept} 摘要",
+            evidence=[Evidence(quote=_QUOTE)],
+            confidence=0.9,
+        )
+        for i, concept in enumerate(["闭包", "作用域"])
+    ]
+    res_b = LearningResource.create(url="file://local/b.md")
+    b_items = [
+        KnowledgeItem.create(
+            resource_id=res_b.resource_id,
+            index=0,
+            concept="事件循环",
+            summary="事件循环 摘要",
+            evidence=[Evidence(quote=_QUOTE)],
+            confidence=0.9,
+        )
+    ]
+    store = SqliteLearningStore(db_path)
+    store.add_resource(res_a)
+    store.add_items(a_items)
+    store.add_resource(res_b)
+    store.add_items(b_items)
+    store.close()
+    return res_a.resource_id, [it.item_id for it in a_items], [it.item_id for it in b_items]
+
+
+async def test_react_scope_and_question_type_honored_end_to_end(tmp_path: Path) -> None:
+    # 端到端"选材料 + 定题型"：脚本化 LLM 发
+    # start_quiz(resource_ids=[res_a], question_type="简答")，
+    # 逐题一问一答走 ScriptedResponder。断言 (1) scope honor——出题只落 res_a、绝不出 res_b；
+    # (2) 题型 honor——fresh memory 自适应本会给"选择题"(routed)，但用户点"简答" → effective=开放。
+    db = tmp_path / "learning.db"
+    trace_db = tmp_path / "trace.db"
+    res_a, a_ids, b_ids = _seed_two_resources(db)
+    console = Console(record=True, width=100)
+
+    provider = _ScopeTypeScriptProvider(resource_id=res_a)
+    trace_id = await run_react(
+        title="Py",
+        db_path=db,
+        materials_dir=tmp_path,
+        provider=provider,
+        responder=ScriptedResponder(answer="我的作答"),
+        console=console,
+        user_messages=["考闭包那份材料的简答题"],
+        seed=42,
+        trace_db_path=trace_db,
+    )
+
+    store = TraceStore(trace_db)
+    try:
+        asked = [
+            e.payload for e in store.events(trace_id) if e.type == LearningEvent.QUESTION_ASKED
+        ]
+    finally:
+        store.close()
+
+    assert asked, "应至少出一题"
+    # scope honor：所有出题都落在 res_a（跨材料选对——绝不出 scope 外的 res_b）。
+    assert all(p["item_id"] in a_ids for p in asked)
+    assert not any(p["item_id"] in b_ids for p in asked)
+    # 题型 honor：用户点"简答" → effective=开放，胜过 fresh memory 自适应会给的"选择题"(routed)。
+    assert all(p["routed"] == "选择题" for p in asked)
+    assert all(p["effective"] == "开放" for p in asked)
+
+
+# --------------------------------------------------------------------------- #
 # run_react 会话循环：单轮冒未预期异常被兜住，不杀整场会话（修 dogfood "神了" 崩溃）
 # --------------------------------------------------------------------------- #
 

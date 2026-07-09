@@ -526,6 +526,42 @@ async def test_start_quiz_empty_scope_refused() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# 用户显式题型透传（GKB-S5，修 #1 错题型；ADR-0006）：question_type 经工具透传 assess_once
+# --------------------------------------------------------------------------- #
+
+
+async def test_start_quiz_question_type_intent_overrides_routing() -> None:
+    # 参数级透传 + honor：fresh memory 自适应本会路由到"选择题"（routed），但用户点"简答" →
+    # resolve_question_type 冻结映射到"开放"（effective 胜过自适应）。QUESTION_ASKED 同记 routed
+    # / effective 供断言意图透传。mutation 可杀——若 question_type 未经工具透传 assess_once，
+    # effective 退回选择题 → 走 MC 确定性判卷（provider.calls==1），两处断言齐红。
+    store = LearningStore()
+    _seed_store(store, ["闭包"])
+    provider = _OpenProvider(verdict="对")  # 开放路径：enrich 出开放题 + basic 判卷
+    registry = ToolRegistry()
+    _register(
+        registry,
+        store=store,
+        memory=LearningMemory(),
+        provider=provider,
+        responder=ScriptedResponder(answer="我的作答"),
+    )
+    emitter, events = _emitter_with_events()
+
+    result = StartQuizResult.model_validate_json(
+        await registry.dispatch(
+            "start_quiz", {"count": 1, "question_type": "简答"}, ctx=_ctx(emitter)
+        )
+    )
+
+    assert result.status == "completed"
+    asked = _payload_of(events, "learning.question_asked")
+    assert asked["routed"] == "选择题"  # fresh memory 自适应本会给选择题
+    assert asked["effective"] == "开放"  # 但用户点"简答" → 冻结映射到开放，胜过自适应（透传 honor）
+    assert provider.calls == 2  # 开放判卷走 LLM（出题 + 判卷），非 MC 确定性判卷（那样只 1 次）
+
+
+# --------------------------------------------------------------------------- #
 # 语言偏好透传：偏好 > 硬兜底"中文"（ADR-0005：语言只来自偏好）
 # --------------------------------------------------------------------------- #
 
