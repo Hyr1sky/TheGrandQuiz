@@ -64,6 +64,30 @@ def test_migrate_is_idempotent_via_user_version() -> None:
     conn.close()
 
 
+def test_migrate_0004_clean_slate_clears_knowledge_and_weak() -> None:
+    # ADR-0005 清库重来：in-place 升级到 v4 时，0004 不仅 DROP resources/tasks，还须清空
+    # knowledge_items 与 learning_memory——否则旧派生 resource_id 的孤儿 item 会残留、被
+    # all_items()（读全表、不 join resources）读进全库选题池污染考核。preferences（语言设置）保留。
+    # fresh db 全量迁移时两表本空；此处回退 user_version 到 3 模拟 populated 旧库 in-place 升级。
+    conn = connect(":memory:")
+    migrate(conn, _LEARNING_MIGRATIONS)  # 全量 → 最新版本
+    conn.execute(
+        "INSERT INTO knowledge_items "
+        "(item_id, resource_id, concept, summary, evidence, confidence, concept_key) "
+        "VALUES ('r#000', 'r', 'c', 's', '[]', 0.9, NULL)"
+    )
+    conn.execute(
+        "INSERT INTO learning_memory (item_id, state, consecutive_correct, verdict_history) "
+        "VALUES ('r#000', '薄弱', 0, '[]')"
+    )
+    conn.commit()
+    conn.execute("PRAGMA user_version = 3")  # 回退：模拟 v3 populated 旧库
+    migrate(conn, _LEARNING_MIGRATIONS)  # 重跑 → 0004 再次应用（清库）
+    assert conn.execute("SELECT COUNT(*) FROM knowledge_items").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM learning_memory").fetchone()[0] == 0
+    conn.close()
+
+
 def test_migrate_stops_at_last_good_version_on_failure(tmp_path: Path) -> None:
     # 崩溃安全（M7 终审修复）：靠后的迁移文件失败 → user_version 停在上一个成功编号，
     # 前一个的 DDL + 版本号已原子提交，重跑从下一个未应用文件续上、不会重放旧文件报表已存在。

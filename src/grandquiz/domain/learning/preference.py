@@ -12,7 +12,8 @@
 ``confidence`` 字段本身是为二期"从行为隐式推断偏好 + 置信度"预留的形状缝，MVP 不填别的值。
 
 第一个被消费的偏好是 ``question_language``（键 ``QUESTION_LANGUAGE_KEY``）：``assess_once`` 出题前
-读它覆盖 ``LearningTask.language``，有效语言优先级 **偏好 > task 默认 > 中文**（见 assessment）。
+读它决定出题 / 判卷语言，有效语言优先级 **偏好 > 硬兜底"中文"**（见 assessment）。语言是跨全库的
+个人设置——ADR-0005 消解 ``LearningTask`` 后不再有 task 层语言，偏好即唯一显式来源。
 
 确定性纪律（否则 replay 对不齐）：本模块**不 import time / random / datetime / uuid**——偏好是显式
 键值、无时序含义，表 schema 亦无时间戳列（决策 2）。
@@ -27,7 +28,7 @@ from grandquiz.kernel.db import connect, migrate
 
 _LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
-# 第一个被消费的偏好键：出题语言（assess_once 读它覆盖 task.language）。
+# 第一个被消费的偏好键：出题语言（偏好 > 硬兜底中文；ADR-0005 后无 task 层语言）。
 QUESTION_LANGUAGE_KEY = "question_language"
 
 # 显式设置的偏好置信度恒此值（MVP 无隐式推断，故不留时间 / 行为漂移入口）。
