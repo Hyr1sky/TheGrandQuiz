@@ -1,6 +1,6 @@
 # GKB-S5 — 题型冻结映射 + `question_type` 用户覆盖（修 #1 错题型）
 
-Status: ready-for-agent
+Status: done（merge 至 main `28801dd`，五门全绿 496 passed；routing 冻结映射 + question_type 覆盖，5 mutation 全杀（含短答↛选择题 import 期 assert 护栏）、默认路径 cassette 逐字节保留。ADR-0006 落地。question_type-honor 独立 eval 用例留 S7。）
 Type: AFK（question_type-honor eval 用例属 GKB-S7；本 slice 走单元 + 事件断言）
 
 ## Parent
