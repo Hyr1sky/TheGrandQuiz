@@ -15,9 +15,10 @@ from grandquiz.providers.replay import Cassette, ReplayMiss, ReplayProvider
 _MODELS: dict[Role, str] = {"basic": "deepseek-x", "enrich": "qwen-x"}
 
 
-async def test_all_ten_cases_pass() -> None:
+async def test_all_cases_pass() -> None:
     reports = await run_all()
-    assert len(reports) == 10  # 8 既有 + 2 新（语言一致性 / 无重复）
+    # 10 既有（8 + 语言一致性 / 无重复）+ 3 新（GKB-S7：scope-honor / empty_scope / 题型 honor）。
+    assert len(reports) == 13
     failing = {r.case_id: r.failures for r in reports if not r.passed}
     assert failing == {}, f"有用例未通过：{failing}"
 
@@ -44,6 +45,47 @@ async def test_no_duplicate_case_has_no_verbatim_repeat() -> None:
     weak_target = sr.context["weak_target"]
     assert all(e.payload["item_id"] == weak_target for e in asked)  # 薄弱优先未破
     assert no_duplicate(sr) == []  # 会话内零逐字重复
+
+
+async def test_scope_honor_asks_only_within_scope() -> None:
+    # scope-honor（case11，GKB-S7）：多资源夹具、scope=[资源A] → 所有出题 item 属 A，绝不串到
+    # 资源 B（B 在库但被 exact-id 过滤排除）。跑在 run_all 里为绿，且直接复核事件轨迹。
+    reports = {r.case_id: r for r in await run_all()}
+    assert reports["case11"].passed, reports["case11"].failures
+    sr = await solve(next(c for c in load_cases() if c.id == "case11"))
+    resource_ids = set(sr.context["resource_ids"])
+    pool_resources = {it.resource_id for it in sr.context["items"]}
+    assert len(pool_resources) >= 2  # 多资源夹具（≥2 资源）
+    assert resource_ids < pool_resources  # 资源 B 在库但被 scope 排除
+    id_to_resource = {it.item_id: it.resource_id for it in sr.context["items"]}
+    asked = [e for e in sr.events if e.type == LearningEvent.QUESTION_ASKED]
+    assert asked
+    assert all(id_to_resource[e.payload["item_id"]] in resource_ids for e in asked)
+
+
+async def test_empty_scope_refuses_without_calling_provider() -> None:
+    # empty_scope（case12，GKB-S7）：scope 无匹配 → ASSESSMENT_REFUSED(empty_scope)、零出题、
+    # 零判卷（不调 provider）；与 case2 的 empty_kb 分野（库非空、仅 scope 命中为空）。
+    reports = {r.case_id: r for r in await run_all()}
+    assert reports["case12"].passed, reports["case12"].failures
+    sr = await solve(next(c for c in load_cases() if c.id == "case12"))
+    refused = next(e for e in sr.events if e.type == LearningEvent.ASSESSMENT_REFUSED)
+    assert refused.payload["reason"] == "empty_scope"
+    assert sr.calls == 0  # 不调任何 provider（零出题 / 零判卷）
+    assert not [e for e in sr.events if e.type == LearningEvent.QUESTION_ASKED]
+    assert len(sr.context["items"]) >= 1  # 库非空（否则应为 empty_kb）
+
+
+async def test_question_type_intent_overrides_adaptive_routing() -> None:
+    # question_type-honor（case13，GKB-S5/S7）：fresh item 自适应本会给选择题（routed），但用户
+    # 显式"简答" → effective=开放（不出选择题、无 options）。护栏可回归：短答意图 ↛ 选择题。
+    reports = {r.case_id: r for r in await run_all()}
+    assert reports["case13"].passed, reports["case13"].failures
+    sr = await solve(next(c for c in load_cases() if c.id == "case13"))
+    asked = next(e for e in sr.events if e.type == LearningEvent.QUESTION_ASKED)
+    assert asked.payload["routed"] == "选择题"  # 自适应本会出选择题
+    assert asked.payload["effective"] == "开放"  # "简答"意图盖过 → 开放
+    assert "options" not in asked.payload  # 不出选择题
 
 
 async def test_report_has_token_cost_and_prompt_version_columns() -> None:

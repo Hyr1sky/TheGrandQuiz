@@ -37,6 +37,7 @@ from grandquiz.kernel.events import AgentEvent, EventType
 
 Grader = Callable[[SolveResult], list[str]]
 
+_ASSESSMENT_STARTED = "assessment.started"
 _ASSESSMENT_ENDED = "assessment.ended"
 
 
@@ -479,6 +480,136 @@ def grade_case10(sr: SolveResult) -> list[str]:
     return failures
 
 
+# --- case 11：scope-honor（GKB-S7，修 #1 考错库）——scope=[资源A] → 所有出题 item 属 A，绝不串 B --
+
+
+def grade_case11(sr: SolveResult) -> list[str]:
+    failures: list[str] = []
+    result = _assess(sr)
+    if result is None:
+        return [f"result 不是 AssessmentResult：{sr.result!r}"]
+    _check(failures, result.status == "judged", f"status 应为 judged，实为 {result.status}")
+    resource_ids = list(sr.context.get("resource_ids") or [])
+    allowed = set(resource_ids)
+    _check(failures, bool(allowed), "scope-honor 用例应请求非空 scope")
+    # 夹具确有 ≥2 资源、且 scope 是其真子集（资源 B 在库但被排除）——否则"绝不串库"断言无意义。
+    pool_resources = {it.resource_id for it in _items(sr)}
+    _check(failures, len(pool_resources) >= 2, f"多资源夹具应含≥2资源，实为 {pool_resources}")
+    _check(
+        failures,
+        allowed < pool_resources,
+        f"scope {allowed} 应是库资源 {pool_resources} 的真子集（库内确有被排除的资源）",
+    )
+    # 核心断言：每道 QUESTION_ASKED 的 item 都属 scope 内的资源，绝不串到资源 B。
+    id_to_resource = {it.item_id: it.resource_id for it in _items(sr)}
+    asked = _find_all(sr.events, LearningEvent.QUESTION_ASKED)
+    _check(failures, len(asked) >= 1, "应至少出一题")
+    for event in asked:
+        item_id = str(event.payload.get("item_id"))
+        rid = id_to_resource.get(item_id)
+        _check(
+            failures,
+            rid in allowed,
+            f"出题 item {item_id}（资源 {rid}）应落在 scope {allowed} 内，绝不串到别的资源",
+        )
+    # 有效 scope 上脊柱（ASSESSMENT_STARTED payload）——供 trace / eval 断言选了哪库。
+    started = _find(sr.events, _ASSESSMENT_STARTED)
+    started_scope = started.payload.get("resource_ids") if started is not None else None
+    _check(
+        failures,
+        started_scope == resource_ids,
+        f"ASSESSMENT_STARTED 应记有效 scope {resource_ids}，实为 {started_scope}",
+    )
+    return failures
+
+
+# --- case 12：empty_scope（GKB-S7，修 #1）——scope 无匹配 → 拒答、零出题、零判卷（不调 provider）--
+
+
+def grade_case12(sr: SolveResult) -> list[str]:
+    failures: list[str] = []
+    result = _assess(sr)
+    if result is None:
+        return [f"result 不是 AssessmentResult：{sr.result!r}"]
+    _check(failures, result.status == "refused", f"status 应为 refused，实为 {result.status}")
+    _check(
+        failures,
+        result.item_id is None
+        and result.verdict is None
+        and result.weak_item_id is None
+        and result.concept_state is None
+        and result.question_type is None,
+        "refused 时各字段应全为 None",
+    )
+    refused = _find(sr.events, LearningEvent.ASSESSMENT_REFUSED)
+    reason = refused.payload.get("reason") if refused is not None else None
+    _check(failures, reason == "empty_scope", f"拒答理由应为 empty_scope，实为 {reason}")
+    # 与 case2 的 empty_kb 分野：库非空、仅 scope 命中为空 → empty_scope（不静默考别的库）。
+    _check(failures, len(_items(sr)) >= 1, "empty_scope 前提是库非空（否则应为 empty_kb）")
+    _check(failures, bool(sr.context.get("resource_ids")), "empty_scope 应请求非空 scope")
+    types = {e.type for e in sr.events}
+    _check(failures, EventType.MODEL_STARTED not in types, "空 scope 拒答不应出题（无 model span）")
+    _check(failures, LearningEvent.QUESTION_ASKED not in types, "空 scope 拒答不应出题")
+    _check(
+        failures,
+        LearningEvent.CONCEPT_STATE_CHANGED not in types,
+        "空 scope 拒答不应有状态转移",
+    )
+    _check(
+        failures,
+        sr.calls == 0,
+        f"空 scope 拒答不应调 provider（零出题 / 零判卷），实为 {sr.calls}",
+    )
+    _check(failures, sr.memory.weak_item_ids() == set(), "空 scope 拒答不应碰记忆")
+    _check(failures, len(sr.spans) == 1, f"应只有 1 个根 span，实为 {len(sr.spans)}")
+    if sr.spans:
+        root = sr.spans[0]
+        _check(failures, root.type == "assessment", f"根 span 应为 assessment，实为 {root.type}")
+        _check(failures, root.children == [], "拒答不应有子 span")
+        _check(failures, root.end_ts is not None, "assessment span 应已闭合")
+    return failures
+
+
+# --- case 13：question_type-honor（GKB-S5/S7，修 #1 错题型；ADR-0006）——"简答"意图盖过自适应→开放 -
+
+
+def grade_case13(sr: SolveResult) -> list[str]:
+    failures: list[str] = []
+    result = _assess(sr)
+    if result is None:
+        return [f"result 不是 AssessmentResult：{sr.result!r}"]
+    _check(failures, result.status == "judged", f"status 应为 judged，实为 {result.status}")
+    asked = _find(sr.events, LearningEvent.QUESTION_ASKED)
+    if asked is None:
+        return [*failures, "缺 QUESTION_ASKED"]
+    # fresh / 未追踪 item 自适应本会给"选择题"（routed），但用户显式"简答" → effective="开放"。
+    _check(
+        failures,
+        asked.payload.get("routed") == "选择题",
+        f"fresh item 自适应应路由选择题（routed），实为 {asked.payload.get('routed')}",
+    )
+    _check(
+        failures,
+        asked.payload.get("effective") == "开放",
+        f"显式'简答'应盖过自适应 → effective=开放，实为 {asked.payload.get('effective')}",
+    )
+    _check(
+        failures,
+        asked.payload.get("question_type") == "开放",
+        "QUESTION_ASKED.question_type（= effective）应为开放",
+    )
+    _check(
+        failures,
+        result.question_type == "开放",
+        f"result.question_type 应为开放，实为 {result.question_type}",
+    )
+    # 护栏：短答意图绝不出选择题——开放题无 options（用户视图不含选项），判卷走 LLM（basic 槽）
+    # 而非 MC 确定性判卷（若护栏破、误路由选择题，此两断言变红）。
+    _check(failures, "options" not in asked.payload, "开放题不应带 options（不出选择题）")
+    _check(failures, "basic" in sr.roles, f"开放应走 LLM 判卷（basic 槽），实为 {sr.roles}")
+    return failures
+
+
 GRADERS: dict[str, Grader] = {
     "case1": grade_case1,
     "case2": grade_case2,
@@ -490,4 +621,7 @@ GRADERS: dict[str, Grader] = {
     "case8": grade_case8,
     "case9": grade_case9,
     "case10": grade_case10,
+    "case11": grade_case11,
+    "case12": grade_case12,
+    "case13": grade_case13,
 }

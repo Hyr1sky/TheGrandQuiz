@@ -1,6 +1,7 @@
-"""M8 Eval Harness——把 10 条考核竖切 eval 用例跑在同一条事件脊柱上，规则 scorer 断言 + 报告。
+"""M8 Eval Harness——把 13 条考核竖切 eval 用例跑在同一条事件脊柱上，规则 scorer 断言 + 报告。
 
-（含 case9 语言一致性 / case10 去重回归探针；即 8 个既有用例 + 这 2 条新探针。）
+（8 个既有用例 + case9 语言一致性 / case10 去重回归探针 + GKB-S7 的 case11 scope-honor /
+case12 empty_scope / case13 题型 honor 三条全局 KB 探针。）
 
 **只兑现 Tier-1 规则断言**：``graders/`` 里按 case id 键控的确定性 Python scorer（读事件流 /
 result / 记忆 / 存储 / span 树五族）。**Tier-2 LLM judge 仍待建（scoped-out）**——本 harness 当前

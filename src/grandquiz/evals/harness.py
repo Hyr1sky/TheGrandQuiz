@@ -45,7 +45,7 @@ from grandquiz.domain.learning.preference import (
     PreferenceMemory,
 )
 from grandquiz.domain.learning.responder import ScriptedResponder
-from grandquiz.domain.learning.selection import Focus, select_target
+from grandquiz.domain.learning.selection import Focus, apply_scope, select_target
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
@@ -317,6 +317,50 @@ def build_stocked_store() -> tuple[LearningStore, list[str]]:
     return store, [item.item_id for item in items]
 
 
+# 资源 B 的固定 item（topic / 概念与资源 A 互不重叠）——供多资源夹具。**这些 item 在新用例里从不被
+# 选中出题**（scope-honor 只考 A、empty_scope 不出题），故其证据无需进 ``QUOTES`` / 假 provider：
+# B 的存在只为证明 scope 精确过滤（排除 B）与 empty_scope 的"非空库"前提。
+MULTI_RESOURCE_B_URL = "https://example.com/agent-protocol"
+MULTI_RESOURCE_B_TOPIC = "代理通信协议"
+ITEM_DATA_B: list[tuple[str, str]] = [
+    ("消息信封", "代理间消息以信封封装元数据与载荷"),
+    ("能力发现", "代理通过能力清单彼此发现可调用技能"),
+]
+
+
+def build_multi_resource_store() -> tuple[LearningStore, dict[str, str], list[str]]:
+    """建 ≥2 资源、≥2 topic 的全局 KB 夹具——**独立于 ``build_stocked_store``，绝不扰其单资源输出**。
+
+    资源 A = 与 ``build_stocked_store`` 逐字节同源（``ASSESS_URL`` + ``ITEM_DATA``）；资源 B = 另一
+    topic（代理通信协议）+ 自有 item。返回 ``(store, {"A": rid_a, "B": rid_b}, all_item_ids)``——
+    ``all_item_ids`` 按 ``all_items()`` 升序，与生产 parity。供 scope-honor（scope=[A]、断言绝不
+    串到 B）与 empty_scope（非空库前提）。natural 基线仍由调用方按生产 ``all_items()`` +
+    ``apply_scope`` 同源计算——故加第 2 资源不改既有单资源用例的选题 / 期望（那些走
+    ``build_stocked_store``）。
+    """
+    store, _ = build_stocked_store()  # 资源 A：与单资源夹具逐字节同源
+    rid_a = LearningResource.create(url=ASSESS_URL).resource_id
+    resource_b = LearningResource.create(url=MULTI_RESOURCE_B_URL).model_copy(
+        update={"topic": MULTI_RESOURCE_B_TOPIC}
+    )
+    store.add_resource(resource_b)
+    store.add_items(
+        [
+            KnowledgeItem.create(
+                resource_id=resource_b.resource_id,
+                index=index,
+                concept=concept,
+                summary=f"{concept} 的一句话摘要",
+                evidence=[Evidence(quote=quote)],
+                confidence=0.9,
+            )
+            for index, (concept, quote) in enumerate(ITEM_DATA_B)
+        ]
+    )
+    all_item_ids = [item.item_id for item in store.all_items()]
+    return store, {"A": rid_a, "B": resource_b.resource_id}, all_item_ids
+
+
 # --- Case 模型 + YAML 加载 --------------------------------------------------------------------
 
 CASES_DIR = Path(__file__).parent / "cases"
@@ -369,6 +413,16 @@ class Case:
     language: str = "中文"
     # 选题聚焦（R1-S7）：mixed 覆盖优先（默认）/ new 只考未考过 / weak 复习薄弱。下传 assess_once。
     focus: Focus = "mixed"
+    # 多资源夹具选择（GKB-S7）：single = build_stocked_store（默认，既有用例逐字节不变）；
+    # multi = build_multi_resource_store（≥2 资源，供 scope 用例）。
+    fixture: Literal["single", "multi"] = "single"
+    # 目录式 scope（GKB-S7）：符号 token 列表（"A"/"B" 走多资源夹具映射，未知 token 原样当"库中
+    # 不存在的 resource_id"，供 empty_scope 用例）；空列表 = 无 scope = 全库（resource_ids=None）。
+    # 既有用例不填 → resource_ids 恒 None、与改动前字节等价。
+    scope: list[str] = field(default_factory=_empty_strs)
+    # 用户显式题型意图短语（GKB-S5/S7）：透传 assess_once；None = 走记忆状态自适应路由
+    # （既有用例不变）。
+    question_type: str | None = None
     # ingest 专属
     source: Literal["ok", "boom"] = "ok"
     approval_keep: list[str] = field(default_factory=_empty_strs)
@@ -389,6 +443,12 @@ def _parse_case(raw: Any) -> Case:
         )
         raw_focus = str(setup.get("focus", "mixed"))
         focus: Focus = raw_focus if raw_focus in ("mixed", "new", "weak") else "mixed"
+        raw_fixture = str(setup.get("fixture", "single"))
+        fixture: Literal["single", "multi"] = (
+            raw_fixture if raw_fixture in ("single", "multi") else "single"
+        )
+        raw_qt = setup.get("question_type")
+        question_type = str(raw_qt) if raw_qt is not None else None
         return Case(
             id=case_id,
             kind="assess",
@@ -401,6 +461,9 @@ def _parse_case(raw: Any) -> Case:
             provider=provider,
             language=str(setup.get("language", "中文")),
             focus=focus,
+            fixture=fixture,
+            scope=[str(s) for s in setup.get("scope", [])],
+            question_type=question_type,
         )
     src: Literal["ok", "boom"] = "boom" if str(setup.get("source", "ok")) == "boom" else "ok"
     return Case(
@@ -481,15 +544,34 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
     # assess_once（偏好 > 中文）。默认"中文"解析同旧 task 默认，故既有用例 message / replay 不变。
     preferences: PreferenceMemory = DictPreferenceMemory()
     preferences.set_preference(QUESTION_LANGUAGE_KEY, case.language)
+    resource_ids: list[str] | None = None
     if case.stocked:
-        store, item_ids = build_stocked_store()
-        # 与生产 assess_once 同源：候选池 = 全库（全局 KB 读），否则对照基线与生产不一致。
-        items = store.all_items()
-        natural = select_target(items, rng=new_rng(SEED)).item_id
-        context.update(item_ids=item_ids, natural=natural, items=list(items))
+        if case.fixture == "multi":
+            store, fixture_resources, item_ids = build_multi_resource_store()
+        else:
+            store, item_ids = build_stocked_store()
+            fixture_resources = {}
+        # scope（GKB-S7）：符号 token 解析成 exact resource_id——已知 token 走夹具映射，未知 token
+        # 原样透传当"库中不存在的 id"（供 empty_scope）；空 scope → None = 全库（既有用例走此路径，
+        # resource_ids 恒 None，与改动前逐字节等价）。
+        resource_ids = (
+            [fixture_resources.get(tok, tok) for tok in case.scope] if case.scope else None
+        )
+        # 与生产 assess_once 同源：候选池 = 全库经 apply_scope 收窄（None → 恒等全库），natural
+        # 基线亦按 scope 后的池算（scope 用例的对照基线与生产一致；None scope 下 == 全库、既有
+        # 用例不变）。空命中（empty_scope）→ 不选题（选题在拒答分支后，此处置 None）。
+        all_items = store.all_items()
+        scoped = apply_scope(all_items, resource_ids)
+        natural = select_target(scoped, rng=new_rng(SEED)).item_id if scoped else None
+        context.update(
+            item_ids=item_ids,
+            natural=natural,
+            items=list(all_items),
+            resource_ids=resource_ids,
+        )
         weak_target: str | None = None
         for pv in case.preset:  # 经真实 record_verdict 建前置状态（状态机不重写）
-            weak_target = _resolve_target(pv.target, item_ids, natural)
+            weak_target = _resolve_target(pv.target, item_ids, cast("str", natural))
             memory.record_verdict(weak_target, cast("VerdictLabel", pv.verdict))
         context["weak_target"] = weak_target
         if weak_target is not None:
@@ -498,7 +580,7 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
             context["pre_in_weak"] = weak_target in memory.weak_item_ids()
     else:
         store = LearningStore()
-        context.update(item_ids=[], items=[])
+        context.update(item_ids=[], items=[], resource_ids=None)
 
     if provider_override is not None:
         provider: Provider = provider_override
@@ -527,6 +609,8 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
             recently_asked=recently_asked,
             focus=case.focus,
             preferences=preferences,
+            resource_ids=resource_ids,
+            question_type=case.question_type,
         )
         all_spans.extend(trace.span_tree("run"))
         trace.close()

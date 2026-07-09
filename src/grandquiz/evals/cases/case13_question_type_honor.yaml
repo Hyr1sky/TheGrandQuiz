@@ -1,0 +1,18 @@
+# eval case 13：question_type-honor（GKB-S5/S7，修 #1 错题型；ADR-0006）——fresh item 自适应本会
+# 路由选择题（routed=选择题），但用户显式"简答" → effective=开放（不出选择题）。护栏可回归：
+# 短答意图代码层禁止映射到选择题。开放走 LLM 判卷（basic 槽），事件序含判卷 model span、答对无追问。
+id: case13
+kind: assess
+setup:
+  stocked: true
+  question_type: 简答
+expected_events:
+  - assessment.started
+  - model.started
+  - model.ended
+  - learning.question_asked
+  - model.started
+  - model.ended
+  - learning.answer_judged
+  - learning.concept_state_changed
+  - assessment.ended

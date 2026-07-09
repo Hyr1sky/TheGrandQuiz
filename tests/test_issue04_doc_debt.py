@@ -17,7 +17,7 @@ _PKG_DIR = Path(evals_pkg.__file__).parent  # .../grandquiz/evals
 def test_evals_docstring_case_count_matches_disk() -> None:
     doc = evals_pkg.__doc__ or ""
     n = len(load_cases())
-    assert n == 10  # 8 既有 + case9 语言 / case10 去重
+    assert n == 13  # 8 既有 + case9 语言 / case10 去重 + GKB-S7 case11/12/13
     assert f"{n} 条" in doc, doc
     assert "8 条" not in doc  # 旧写死的条数残留必须清掉
 

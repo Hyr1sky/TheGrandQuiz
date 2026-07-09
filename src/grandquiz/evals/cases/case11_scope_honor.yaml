@@ -1,0 +1,19 @@
+# eval case 11：scope-honor（GKB-S7，修 #1 考错库）——多资源夹具，scope=[资源A] → 所有出题 item
+# 都属资源 A，绝不串到资源 B。目录式 scope 的可回归保障：语义匹配交 LLM、exact-id 过滤交代码。
+# fresh item（记忆空）→ 选择题、答对（确定性 MC 判卷、无判卷 model span），事件序同 case3。
+id: case11
+kind: assess
+setup:
+  stocked: true
+  fixture: multi
+  scope:
+    - A
+  answer: mc_correct
+expected_events:
+  - assessment.started
+  - model.started
+  - model.ended
+  - learning.question_asked
+  - learning.answer_judged
+  - learning.concept_state_changed
+  - assessment.ended

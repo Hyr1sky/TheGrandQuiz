@@ -1,0 +1,13 @@
+# eval case 12：empty_scope（GKB-S7，修 #1）——scope 指向库中不存在的 resource_id → 诚实拒答
+# （ASSESSMENT_REFUSED reason=empty_scope）、零出题、零判卷（不调任何 provider）、不碰记忆。
+# 与 case2 的 empty_kb 分野：库非空（stocked），仅 scope 命中为空 → empty_scope（不静默考别的库）。
+id: case12
+kind: assess
+setup:
+  stocked: true
+  scope:
+    - nonexistent-resource
+expected_events:
+  - assessment.started
+  - learning.assessment_refused
+  - assessment.ended
