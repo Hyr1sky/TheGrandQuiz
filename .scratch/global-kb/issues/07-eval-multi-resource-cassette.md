@@ -1,7 +1,7 @@
 # GKB-S7 — eval 多资源夹具 + scope/empty_scope/题型 三类新用例 + 真机重录
 
-Status: ready-for-agent
-Type: AFK（cassette 我用配置好的真 key 录；真机体验质量属你 dogfood）
+Status: done（merge 至 main `bb51d5a`，五门全绿 501 passed，eval 13/13；case11 scope-honor / case12 empty_scope / case13 question_type-honor + 独立多资源夹具 build_multi_resource_store，3 mutation 全杀、既有 10 用例 + golden cassette 逐字节不变。**修正**：eval harness 走确定性 fake provider（非 cassette），故无需真机重录——issue 原 cassette 前提不成立。）
+Type: AFK（eval 走 fake provider、无需重录 cassette；真机体验质量属你 dogfood）
 
 ## Parent
 [PRD: 全局 KB 重构](../PRD.md)
