@@ -38,6 +38,9 @@ def render_learner_context(*, store: Store, memory: Memory, preferences: Prefere
     读（``store.all_items()``，全局 KB——``LearningTask`` 已消解，无 task 分区，ADR-0005）。
     """
     sections: list[str] = []
+    catalog = _render_catalog(store)
+    if catalog:
+        sections.append(catalog)
     weak = _render_weak(store, memory)
     if weak:
         sections.append(weak)
@@ -62,6 +65,21 @@ def learner_context_provider(
         return render_learner_context(store=store, memory=memory, preferences=preferences)
 
     return provider
+
+
+def _render_catalog(store: Store) -> str:
+    """渲全库库存清单 ``resource_id → topic``：按 resource_id 升序、每行一条。空库 → 空串。
+
+    这是目录式 scope（GKB-S4）的前置：把"库里现有哪些材料"注入上下文，agent **不调工具**即知
+    库存，用户说"考 X"时据此把意图映射成 exact ``resource_id`` 填进 ``start_quiz``。渲染纯代码、
+    顺序由 ``store.resource_topics()`` 的 resource_id 升序契约保证（无 clock/random，replay 稳）。
+    """
+    topics = store.resource_topics()
+    if not topics:
+        return ""
+    header = "库存材料（用户说“考 X”时据此认出对应 resource_id 填入选题工具）："
+    lines = [f"- {resource_id}：{topic}" for resource_id, topic in topics]
+    return "\n".join([header, *lines])
 
 
 def _render_weak(store: Store, memory: Memory) -> str:

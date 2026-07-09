@@ -37,6 +37,7 @@ class Store(Protocol):
     def add_items(self, items: list[KnowledgeItem]) -> None: ...
     def items_for_resource(self, resource_id: str) -> list[KnowledgeItem]: ...
     def all_items(self) -> list[KnowledgeItem]: ...
+    def resource_topics(self) -> list[tuple[str, str]]: ...
 
 
 class LearningStore:
@@ -79,6 +80,15 @@ class LearningStore:
         两实现顺序不同则同种子选中不同 item（跨实现 / replay 不对齐）。故两版都按 item_id 排序。
         """
         return sorted(self._items.values(), key=lambda item: item.item_id)
+
+    def resource_topics(self) -> list[tuple[str, str]]:
+        """全库已抽出 topic 的资源目录：``[(resource_id, topic)]``，**按 resource_id 升序**。
+
+        只列 ``topic is not None`` 的资源（pending / failed 无 topic → 不进目录）。供 domain 目录
+        注入渲染全库库存清单（GKB-S3）；升序确定性契约须与 SqliteLearningStore 一致。
+        """
+        pairs = [(r.resource_id, r.topic) for r in self._resources.values() if r.topic is not None]
+        return sorted(pairs, key=lambda pair: pair[0])
 
 
 class SqliteLearningStore:
@@ -182,6 +192,17 @@ class SqliteLearningStore:
             "FROM knowledge_items ORDER BY item_id"
         )
         return [_row_to_item(row) for row in cursor.fetchall()]
+
+    def resource_topics(self) -> list[tuple[str, str]]:
+        """全库已抽出 topic 的资源目录：``[(resource_id, topic)]``，按 ``resource_id`` 升序。
+
+        与 dict 版同一目录契约：只列 ``topic IS NOT NULL`` 的资源、稳定按 resource_id 升序
+        （目录注入确定性渲染的地基，GKB-S3）。
+        """
+        cursor = self._conn.execute(
+            "SELECT resource_id, topic FROM resources WHERE topic IS NOT NULL ORDER BY resource_id"
+        )
+        return [(str(row[0]), str(row[1])) for row in cursor.fetchall()]
 
     def close(self) -> None:
         """关闭底层连接（跨会话验收：关闭后用同一 db_path 重开，数据仍在）。"""

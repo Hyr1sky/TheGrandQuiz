@@ -131,7 +131,7 @@ async def ingest_resource(
         hooks.register_interceptor(UNTRUSTED_READ_HOOK, neutralize_fence)
         reader = Reader(hooks=hooks)
         try:
-            candidates = await reader.read(
+            read_result = await reader.read(
                 resource,
                 content,
                 provider=provider,
@@ -140,6 +140,13 @@ async def ingest_resource(
             )
         except ReaderError as exc:
             return fail(f"reader: {exc}")
+        candidates = read_result.items
+
+        # 深读成功 → 把资源级 topic（RAG-metadata）写入 resources.topic（S2 已建列），资源覆盖存回。
+        # 深读失败（failed 分支）绝不到这里，故失败资源 topic 恒 None（保持契约）。topic 是目录式
+        # scope 清单的人类可读来源（GKB-S3）。此步不发新事件——RESOURCE_READ 已上脊柱、事件序不变。
+        resource = resource.model_copy(update={"topic": read_result.topic})
+        store.add_resource(resource)
 
         emitter.emit(
             LearningEvent.ITEMS_EXTRACTED,

@@ -21,7 +21,7 @@ from grandquiz.providers.replay import Cassette, ReplayProvider
 
 _MATERIAL = Path("tests/materials/eval_paper.txt")
 _CASSETTE = Path("tests/fixtures/reader_extract.cassette.json")
-_EXPECTED_ITEMS = 15  # golden：改 prompt / 材料并重录后同步更新此数
+_EXPECTED_ITEMS = 16  # golden：改 prompt / 材料并重录后同步更新此数（GKB-S3 加 topic 后重录 15→16）
 
 
 def _keep_all(_item: KnowledgeItem) -> bool:

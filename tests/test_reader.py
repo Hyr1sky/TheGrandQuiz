@@ -56,6 +56,7 @@ def _resource() -> LearningResource:
 
 _VALID_JSON = json.dumps(
     {
+        "topic": "JavaScript 作用域机制",
         "candidates": [
             {
                 "concept": "闭包",
@@ -69,7 +70,7 @@ _VALID_JSON = json.dumps(
                 "evidence": [{"quote": "var 声明会提升到作用域顶部"}],
                 "confidence": 0.8,
             },
-        ]
+        ],
     }
 )
 
@@ -79,7 +80,7 @@ async def test_valid_candidates_become_validated_knowledge_items() -> None:
     emitter, types = _emitter()
     resource = _resource()
 
-    items = await _reader().read(
+    result = await _reader().read(
         resource,
         "抓取内容",
         provider=provider,
@@ -87,6 +88,9 @@ async def test_valid_candidates_become_validated_knowledge_items() -> None:
         parent_span_id="ig",
     )
 
+    items = result.items
+    # 资源级 topic 与 items 一并 surface 给调用方（ingest 据此写 resources.topic，GKB-S3）。
+    assert result.topic == "JavaScript 作用域机制"
     assert [i.item_id for i in items] == [
         f"{resource.resource_id}#000",
         f"{resource.resource_id}#001",
@@ -123,7 +127,12 @@ async def test_malformed_json_retries_then_raises_reader_error() -> None:
 async def test_empty_evidence_candidate_is_rejected_by_knowledge_item_gate() -> None:
     # 候选 schema 合法但 evidence 为空——由 KnowledgeItem 的 min_length=1 挡下（决策 3）。
     bad_json = json.dumps(
-        {"candidates": [{"concept": "闭包", "summary": "摘要", "evidence": [], "confidence": 0.9}]}
+        {
+            "topic": "作用域",
+            "candidates": [
+                {"concept": "闭包", "summary": "摘要", "evidence": [], "confidence": 0.9}
+            ],
+        }
     )
     provider = _FixedProvider(bad_json)
     emitter, _ = _emitter()
@@ -144,6 +153,7 @@ async def test_blank_quote_candidate_is_rejected() -> None:
     # 决策 3 强化：引文为空串（evidence 列表非空）——被 Evidence NonEmptyStr 挡下 → ReaderError。
     bad_json = json.dumps(
         {
+            "topic": "作用域",
             "candidates": [
                 {
                     "concept": "闭包",
@@ -151,10 +161,68 @@ async def test_blank_quote_candidate_is_rejected() -> None:
                     "evidence": [{"quote": ""}],
                     "confidence": 0.9,
                 }
-            ]
+            ],
         }
     )
     provider = _FixedProvider(bad_json)
+    emitter, _ = _emitter()
+
+    with pytest.raises(ReaderError):
+        await _reader(max_attempts=2).read(
+            _resource(),
+            "抓取内容",
+            provider=provider,
+            emitter=emitter,
+            parent_span_id="ig",
+        )
+    assert provider.calls == 2
+
+
+async def test_missing_topic_retries_then_raises_reader_error() -> None:
+    # 缺资源级 topic：ReaderOutput 的 NonEmptyStr 门挡下（缺字段 → ValidationError → ModelRetry），
+    # 有界重试用尽 → ReaderError（GKB-S3 topic 校验门；复用缝 3 有界重试）。
+    no_topic = json.dumps(
+        {
+            "candidates": [
+                {
+                    "concept": "闭包",
+                    "summary": "摘要",
+                    "evidence": [{"quote": "q"}],
+                    "confidence": 0.9,
+                }
+            ]
+        }
+    )
+    provider = _FixedProvider(no_topic)
+    emitter, _ = _emitter()
+
+    with pytest.raises(ReaderError):
+        await _reader(max_attempts=2).read(
+            _resource(),
+            "抓取内容",
+            provider=provider,
+            emitter=emitter,
+            parent_span_id="ig",
+        )
+    assert provider.calls == 2  # 缺 topic 持续被拒 → 重试用尽
+
+
+async def test_blank_topic_rejected() -> None:
+    # 空串 topic（strip 后为空）：被 NonEmptyStr 挡下 → ModelRetry → 用尽 → ReaderError。
+    blank_topic = json.dumps(
+        {
+            "topic": "   ",
+            "candidates": [
+                {
+                    "concept": "闭包",
+                    "summary": "摘要",
+                    "evidence": [{"quote": "q"}],
+                    "confidence": 0.9,
+                }
+            ],
+        }
+    )
+    provider = _FixedProvider(blank_topic)
     emitter, _ = _emitter()
 
     with pytest.raises(ReaderError):

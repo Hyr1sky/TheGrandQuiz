@@ -44,6 +44,7 @@ _MODELS: dict[Role, str] = {"basic": "deepseek-x", "enrich": "qwen-x"}
 # 脚本化 Reader 输出（两个候选）——独立于抓取内容，只需非空证据即可铸出 KnowledgeItem。
 _READER_JSON = json.dumps(
     {
+        "topic": "事件驱动 Agent Runtime",
         "candidates": [
             {
                 "concept": "事件脊柱",
@@ -57,7 +58,7 @@ _READER_JSON = json.dumps(
                 "evidence": [{"quote": "零 token 回放是回放"}],
                 "confidence": 0.8,
             },
-        ]
+        ],
     },
     ensure_ascii=False,
 )

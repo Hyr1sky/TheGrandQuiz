@@ -106,6 +106,7 @@ QUOTES = {quote for _concept, quote in ITEM_DATA}
 # ingest 用 Reader 固定输出：三个候选，审批只放行其中两个（闭包 / 事件循环）。
 READER_JSON = json.dumps(
     {
+        "topic": "JavaScript 核心机制",
         "candidates": [
             {"concept": "闭包", "summary": "s1", "evidence": [{"quote": "q1"}], "confidence": 0.9},
             {
@@ -120,7 +121,7 @@ READER_JSON = json.dumps(
                 "evidence": [{"quote": "q3"}],
                 "confidence": 0.7,
             },
-        ]
+        ],
     },
     ensure_ascii=False,
 )

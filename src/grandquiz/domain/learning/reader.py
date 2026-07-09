@@ -19,7 +19,12 @@ import json
 
 from pydantic import BaseModel, Field, ValidationError
 
-from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
+from grandquiz.domain.learning.models import (
+    Evidence,
+    KnowledgeItem,
+    LearningResource,
+    NonEmptyStr,
+)
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.kernel.hooks import HookManager
@@ -84,9 +89,27 @@ class ReaderCandidate(BaseModel):
 
 
 class ReaderOutput(BaseModel):
-    """Reader 的结构化输出契约：一批候选。校验失败 → ModelRetry。"""
+    """Reader 的结构化输出契约：一句话资源级 topic + 一批候选。校验失败 → ModelRetry。
 
+    ``topic`` 是**资源级** RAG-metadata（"这份材料整体讲什么"，一份材料一个、非 per-item），
+    ``NonEmptyStr`` 硬约束——缺 / 空（strip 后为空）→ pydantic ValidationError → ``ModelRetry``
+    有界重试（复用缝 3）。它是目录式 scope 清单的人类可读来源（GKB-S3）。
+    """
+
+    topic: NonEmptyStr
     candidates: list[ReaderCandidate]
+
+
+class ReadResult(BaseModel):
+    """Reader 深读的返回形状：资源级 ``topic`` + 校验通过的 ``items``。
+
+    改自旧的裸 ``list[KnowledgeItem]`` 返回——把资源级 topic 与 item 一并 surface 给 ingest
+    编排（ingest 据此写 ``resources.topic``）。arbitrary KnowledgeItem 实例已在 ``_parse`` 里
+    构造并校验，此处只作聚合容器。
+    """
+
+    topic: str
+    items: list[KnowledgeItem]
 
 
 class Reader:
@@ -110,8 +133,8 @@ class Reader:
         provider: Provider,
         emitter: EventEmitter,
         parent_span_id: str | None,
-    ) -> list[KnowledgeItem]:
-        """深读 ``content``，返回校验通过的 KnowledgeItem 列表；持续失败 → ReaderError。"""
+    ) -> ReadResult:
+        """深读 ``content`` → ``ReadResult``（topic + items）；持续失败 → ReaderError。"""
         # 注入中和经 HookManager 的 interceptor 挂点应用（行为等价于旧的内联直调 neutralize）：
         # 不可信内容仍被中和后才喂 LLM，只是中和这一步现在走可插拔的 before_* 挂点。
         neutralized = self._hooks.run_before(
@@ -191,7 +214,7 @@ class Reader:
         )
         return completion
 
-    def _parse(self, text: str, resource_id: str) -> list[KnowledgeItem]:
+    def _parse(self, text: str, resource_id: str) -> ReadResult:
         try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
@@ -217,4 +240,4 @@ class Reader:
                     f"候选 {index} 无法构造 KnowledgeItem：{_stable_error_summary(exc)}"
                 ) from exc
             items.append(item)
-        return items
+        return ReadResult(topic=output.topic, items=items)

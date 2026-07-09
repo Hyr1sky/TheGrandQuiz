@@ -58,7 +58,10 @@ async def main() -> None:
 
     _FIXTURE.parent.mkdir(parents=True, exist_ok=True)
     cassette.save(_FIXTURE)
-    print(f"cassette 已存：{_FIXTURE}（status={result.status}，{len(result.items)} 个 item）\n")
+    resource = store.get_resource(result.resource_id)
+    topic = resource.topic if resource is not None else None
+    print(f"cassette 已存：{_FIXTURE}（status={result.status}，{len(result.items)} 个 item）")
+    print(f"资源级 topic（RAG-metadata，落 resources.topic）：{topic!r}\n")
     for item in result.items:
         print(f"● {item.concept}（confidence={item.confidence}）")
         print(f"  摘要：{item.summary}")

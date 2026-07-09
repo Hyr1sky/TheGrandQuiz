@@ -33,6 +33,7 @@ _MC_WRONG = "干扰项"
 
 _READER_JSON = json.dumps(
     {
+        "topic": "闭包与作用域",
         "candidates": [
             {
                 "concept": "闭包",
@@ -40,7 +41,7 @@ _READER_JSON = json.dumps(
                 "evidence": [{"quote": _QUOTE}],
                 "confidence": 0.9,
             }
-        ]
+        ],
     },
     ensure_ascii=False,
 )

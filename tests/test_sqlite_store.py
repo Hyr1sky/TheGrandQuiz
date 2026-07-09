@@ -260,3 +260,30 @@ def test_all_items_parity_dict_vs_sqlite_across_hash_prefixes() -> None:
     sqlite_items = sqlite_store.all_items()
     assert [i.item_id for i in dict_items] == [i.item_id for i in expected]  # 稳定升序
     assert dict_items == sqlite_items  # 两实现逐条相等 → 选题 rng.choice 跨实现不漂
+
+
+# --- resource_topics：目录列举两实现同序 parity ------------------------------------
+
+
+def test_resource_topics_parity_dict_vs_sqlite() -> None:
+    # 目录列举 parity（GKB-S3）：多资源、含无 topic 者、不同 hash 前缀 → dict 与 SQLite 的
+    # resource_topics() **逐条相等 + resource_id 升序**（目录注入确定性渲染的地基）。
+    dict_store = LearningStore()
+    sqlite_store = _sqlite()
+    tagged = [
+        LearningResource.create(url=u).model_copy(update={"topic": t})
+        for u, t in [
+            ("https://example.com/z", "代理通信协议"),
+            ("https://example.com/a", "React Hooks"),
+            ("https://example.com/m", "闭包"),
+        ]
+    ]
+    plain = LearningResource.create(url="https://example.com/plain")  # topic=None → 不进目录
+    for store in (dict_store, sqlite_store):
+        for r in [*tagged, plain]:
+            store.add_resource(r)
+    expected = sorted(((r.resource_id, r.topic) for r in tagged), key=lambda p: p[0])
+    dict_topics = dict_store.resource_topics()
+    sqlite_topics = sqlite_store.resource_topics()
+    assert dict_topics == expected  # 只列有 topic 者、resource_id 升序
+    assert dict_topics == sqlite_topics  # 两实现逐条相等（含 None 过滤 + 升序契约一致）

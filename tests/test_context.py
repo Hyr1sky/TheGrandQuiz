@@ -192,6 +192,51 @@ def test_render_weak_concepts_sorted_deterministically() -> None:
     assert positions == sorted(positions)
 
 
+def _seed_resource_with_topic(store: LearningStore, url: str, topic: str) -> str:
+    resource = LearningResource.create(url=url).model_copy(update={"topic": topic})
+    store.add_resource(resource)
+    return resource.resource_id
+
+
+def test_render_catalog_lists_resource_id_to_topic() -> None:
+    # 目录注入：全库有 topic 的资源被渲成 {resource_id → topic} 库存清单，agent 不调工具即知库存。
+    store = LearningStore()
+    rid = _seed_resource_with_topic(store, "https://example.com/acp", "代理通信协议")
+    text = render_learner_context(
+        store=store, memory=LearningMemory(), preferences=DictPreferenceMemory()
+    )
+    assert "代理通信协议" in text
+    assert rid in text  # 清单含 exact resource_id（供 LLM 填 start_quiz）
+
+
+def test_render_catalog_absent_when_no_topic() -> None:
+    # 空库 / 无 topic 资源 → 目录整段跳过（不注入空清单）；此处配无薄弱无偏好 → 整体空串。
+    store = LearningStore()
+    store.add_resource(LearningResource.create(url="https://example.com/plain"))  # topic=None
+    text = render_learner_context(
+        store=store, memory=LearningMemory(), preferences=DictPreferenceMemory()
+    )
+    assert text == ""
+
+
+def test_render_catalog_sorted_by_resource_id_deterministic() -> None:
+    # 多资源目录按 resource_id 升序（确定性，不随 dict 迭代序漂移 → replay 对齐）。
+    store = LearningStore()
+    rids = [
+        _seed_resource_with_topic(store, u, t)
+        for u, t in [
+            ("https://example.com/z", "主题Z"),
+            ("https://example.com/a", "主题A"),
+            ("https://example.com/m", "主题M"),
+        ]
+    ]
+    text = render_learner_context(
+        store=store, memory=LearningMemory(), preferences=DictPreferenceMemory()
+    )
+    positions = [text.index(rid) for rid in sorted(rids)]
+    assert positions == sorted(positions)  # 渲染顺序即 resource_id 升序
+
+
 def test_provider_closure_reflects_memory_mutation() -> None:
     # 闭包捕获 memory/preferences 引用而非快照：考核推进后再 build，学情反映最新薄弱账。
     store = LearningStore()

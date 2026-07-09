@@ -33,6 +33,7 @@ _INGEST_ENDED = "ingest.ended"
 # 三个候选；审批只保留其中两个（闭包 / 事件循环），丢弃"变量提升"。
 _READER_JSON = json.dumps(
     {
+        "topic": "React Hooks 与 JS 运行时",
         "candidates": [
             {"concept": "闭包", "summary": "s1", "evidence": [{"quote": "q1"}], "confidence": 0.9},
             {
@@ -47,7 +48,7 @@ _READER_JSON = json.dumps(
                 "evidence": [{"quote": "q3"}],
                 "confidence": 0.7,
             },
-        ]
+        ],
     }
 )
 
@@ -116,6 +117,8 @@ async def test_happy_path_only_approved_items_enter_store() -> None:
     assert resource.raw_content == "React hooks 深读材料"
     assert resource.content_hash is not None
     assert resource.trusted is False
+    # GKB-S3：Reader 抽出的资源级 topic 落库到 resources.topic（深读成功才产）。
+    assert resource.topic == "React Hooks 与 JS 运行时"
 
     # span 树：ingest 为根，Reader 的 model span 挂其下；领域事件是点事件（不进树）。
     roots = trace.span_tree("run")
@@ -172,6 +175,8 @@ async def test_fetch_failure_marks_resource_failed_and_produces_no_ghost_items()
     resource = store.get_resource(result.resource_id)
     assert resource is not None
     assert resource.status == "failed"
+    # GKB-S3：深读失败的资源不产 topic（保持 None，深读成功才写 resources.topic）。
+    assert resource.topic is None
     assert store.items_for_resource(result.resource_id) == []
     trace.close()
 

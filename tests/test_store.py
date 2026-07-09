@@ -69,3 +69,34 @@ def test_all_items_spans_all_resources_item_id_sorted() -> None:
     got = store.all_items()
     assert {i.concept for i in got} == {"x", "y"}  # 跨资源全收
     assert [i.item_id for i in got] == sorted(i.item_id for i in got)  # 稳定升序
+
+
+# --- resource_topics：全库目录列举（只列有 topic 者，按 resource_id 升序） ------------
+
+
+def test_resource_topics_empty_when_no_tagged_resource() -> None:
+    # 空库 / 全无 topic → 空目录（目录注入据此整段跳过）。
+    store = LearningStore()
+    assert store.resource_topics() == []
+    store.add_resource(LearningResource.create(url="https://example.com/a"))  # topic=None
+    assert store.resource_topics() == []
+
+
+def test_resource_topics_lists_only_tagged_sorted_by_resource_id() -> None:
+    # 只列 topic is not None 的资源，按 resource_id 升序（确定性目录，GKB-S3）。
+    store = LearningStore()
+    tagged = [
+        LearningResource.create(url=u).model_copy(update={"topic": t})
+        for u, t in [
+            ("https://example.com/z", "代理通信协议"),
+            ("https://example.com/a", "React Hooks"),
+            ("https://example.com/m", "闭包"),
+        ]
+    ]
+    plain = LearningResource.create(url="https://example.com/plain")  # 无 topic → 不进目录
+    for r in [*tagged, plain]:
+        store.add_resource(r)
+    got = store.resource_topics()
+    assert got == sorted(got, key=lambda p: p[0])  # resource_id 升序
+    assert {rid for rid, _ in got} == {r.resource_id for r in tagged}  # 只含有 topic 者
+    assert dict(got)[tagged[0].resource_id] == "代理通信协议"
