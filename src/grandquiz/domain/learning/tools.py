@@ -269,6 +269,10 @@ class _StartQuizParams(BaseModel):
     # 目录式 scope（GKB-S4）：按 exact resource_id 收窄考哪些材料；None（默认）= 全库。LLM 从目录
     # 清单认出用户意图对应的 resource_id 填入（命中不了 → 拿不到 id → 别填，assess_once 诚实拒答）。
     resource_ids: list[str] | None = None
+    # 用户显式题型意图短语（GKB-S5，修 #1 错题型；ADR-0006）：LLM 只抽用户原话里的题型意图
+    # （"简答"/"选择题"/"追问"…），代码用冻结同义表映射到既有三题型、显式意图胜过记忆状态自适应
+    # 路由；None（默认）= 不指定 → 按薄弱状态自适应路由。别自造题型、别把"简答"填成"选择题"。
+    question_type: str | None = None
 
 
 def _weak_concepts(store: Store, memory: Memory) -> list[WeakConcept]:
@@ -311,6 +315,11 @@ def make_start_quiz_tool(
     （默认）= 全库。LLM 从注入的目录清单认出用户意图对应的 resource_id 填入；命中为空 →
     ``assess_once`` 发 ``empty_scope`` 拒答（诚实说"还没这主题的材料"，不静默考别的库）。
 
+    ``question_type``（工具入参，用户显式题型意图短语，GKB-S5，修 #1 错题型；ADR-0006）：LLM 只抽
+    用户原话里的题型意图短语（"简答"/"选择题"/"追问"…）原样填入，透传每题 ``assess_once`` →
+    ``resolve_question_type`` 用冻结同义表映射到既有三题型——**显式意图胜过记忆状态自适应路由**，
+    未知 / ``None``（默认）回落自适应；短答意图代码层禁止映射到"选择题"（护栏，防复现 #1）。
+
     ``preferences``：透传给 ``assess_once`` 解析出题语言（**偏好 > 中文**）；``None`` 时行为不变
     （走"中文"兜底）。``recently_asked`` / ``_QuizSeedCounter`` 在闭包捕获、跨同一会话的多次
     ``start_quiz`` 累积（复考换角度去重 + 选题种子确定性推进）。空库 → 优雅返回 ``refused``（不调
@@ -342,6 +351,7 @@ def make_start_quiz_tool(
                     focus=params.focus,
                     preferences=preferences,
                     resource_ids=params.resource_ids,
+                    question_type=params.question_type,
                 )
             except KeyboardInterrupt:
                 # 用户取消作答：结束本次考核，返回已完成部分（不把取消当空作答污染判卷）。
@@ -378,6 +388,8 @@ def make_start_quiz_tool(
             "new=只考没考过的（用户说'考其他的/换一批'时用），weak=复习薄弱（用户说'复习/考薄弱'时用）。"
             "resource_ids 目录式 scope：用户点名某份材料时，从目录清单里认出对应的 resource_id 填入"
             "（可多选），只从这些材料出题；不指定=全库。认不出对应材料就别填，宁可诚实拒答也不考错库。"
+            "question_type：用户点名题型时，只抽他原话里的题型意图短语（如'简答'/'选择题'/'追问'）原样填入，"
+            "由代码映射；不指定=按掌握状态自适应。别自造题型、别把'简答'之类填成'选择题'。"
         ),
         params=_StartQuizParams,
         handler=handler,

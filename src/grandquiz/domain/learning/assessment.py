@@ -49,7 +49,11 @@ from grandquiz.domain.learning.question import (
     generate_question,
 )
 from grandquiz.domain.learning.responder import Responder
-from grandquiz.domain.learning.routing import QuestionType, route_question_type
+from grandquiz.domain.learning.routing import (
+    QuestionType,
+    resolve_question_type,
+    route_question_type,
+)
 from grandquiz.domain.learning.selection import Focus, apply_scope, select_target
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.clock import Rng
@@ -122,6 +126,7 @@ async def assess_once(
     focus: Focus = "mixed",
     preferences: PreferenceMemory | None = None,
     resource_ids: list[str] | None = None,
+    question_type: str | None = None,
 ) -> AssessmentResult:
     """对**全局 KB** 跑一轮单题考核，全程发事件。见模块 docstring。
 
@@ -152,6 +157,15 @@ async def assess_once(
     LLM 的活（目录注入让它把用户意图翻成 exact resource_id），代码只做确定性精确过滤。判空分两支：
     None scope 且全库空 → ``empty_kb``（旧语义）；非 None scope 且过滤后空 → 新 ``empty_scope``
     （在 ``select_target`` **之前**、**不调任何 LLM**——命中不了诚实拒答，不静默考别的库）。
+
+    ``question_type``：**用户显式题型意图短语**（GKB-S5，修 #1 错题型；ADR-0006）——用户点了题型
+    （"出简答题"）时透传的原文短语。路由处 ``effective = resolve_question_type(question_type,
+    state)``：显式意图**胜过**记忆状态自适应路由（``route_question_type``），未知 / 缺省回落自适应
+    （fail-soft），且短答类意图代码层禁止映射到"选择题"（护栏，防复现 #1）。复用既有三题型 →
+    **不新增 prompt / 不新增 grading 路径**。默认 ``None`` = 走自适应路由，**字节等价旧行为**
+    （既有测试 / eval / cassette 一字不变）。``QUESTION_ASKED`` payload 同记 ``routed``（自适应
+    会给的）与 ``effective``（实际用的），供 eval 断言意图透传；``AssessmentResult.question_type``
+    透出 effective。
     """
     # a. 开 assessment span（根）。此后任何未预期异常都必须闭合它（见末尾 except）。
     #    先读全库候选池（全局 KB，非 task 局部——修 #2 跨会话丢知识），再按 scope 收窄（apply_scope，
@@ -188,8 +202,12 @@ async def assess_once(
             items, rng=rng, memory=memory, asked_item_ids=asked_item_ids, focus=focus
         )
 
-        # d. 题型路由（确定性代码，按被考概念在 Learning Memory 的状态选题型；决策上脊柱供断言）。
-        question_type = route_question_type(memory.state_of(target.item_id))
+        # d. 题型决策（确定性代码；决策上脊柱供断言）。routed = 记忆状态自适应会给的题型；
+        #    effective = 实际用的——用户显式意图（question_type 短语）胜过自适应，未知 / 缺省回落
+        #    自适应（ADR-0006）。短答意图 ↛ 选择题的护栏在 resolve_question_type / 冻结映射表里。
+        state = memory.state_of(target.item_id)
+        routed = route_question_type(state)
+        effective = resolve_question_type(question_type, state)
 
         # 有效语言解析（确定性代码）：偏好 > 中文。下传出题 / 判卷的 {{LANGUAGE}} 槽。
         language = _resolve_language(preferences)
@@ -199,7 +217,7 @@ async def assess_once(
         #    从会话内"已问过"台账取被考 item 的已问列表下传做去重（None = 不去重、向后兼容）。
         asked_before = recently_asked.get(target.item_id, []) if recently_asked is not None else []
         mc: MultipleChoiceQuestion | None = None
-        if question_type == "选择题":
+        if effective == "选择题":
             mc = await generate_multiple_choice(
                 target,
                 provider=provider,
@@ -211,7 +229,7 @@ async def assess_once(
             question_text = mc.question
             asked_evidence = list(mc.cited_evidence)
         else:
-            prompt_name = "question_probe" if question_type == "追问" else "question_generate"
+            prompt_name = "question_probe" if effective == "追问" else "question_generate"
             generated = await generate_question(
                 target,
                 provider=provider,
@@ -227,7 +245,11 @@ async def assess_once(
             "item_id": target.item_id,
             "question": question_text,
             "cited_evidence": asked_evidence,
-            "question_type": question_type,
+            # question_type 保留为**有效题型**（= effective）向后兼容既有断言；additive 另记 routed
+            # （自适应会给的）与 effective（实际用的），供 eval 断言用户意图是否透传（ADR-0006）。
+            "question_type": effective,
+            "routed": routed,
+            "effective": effective,
         }
         if mc is not None:
             # MC 另带 options 供"用户视图"；answer_index 刻意不进事件（不泄露答案键——判卷走 in-code
@@ -322,7 +344,7 @@ async def assess_once(
             verdict=verdict_label,
             weak_item_id=weak_item_id,
             concept_state=memory.state_of(target.item_id),
-            question_type=question_type,
+            question_type=effective,
         )
     except Exception as exc:
         # 非领域异常（QuestionError / GradingError / ReplayMiss / provider 基础设施错误 / bug）：

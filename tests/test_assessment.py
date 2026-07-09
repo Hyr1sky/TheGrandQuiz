@@ -127,6 +127,7 @@ async def _assess(
     answer: str = "我的作答",
     focus: Focus = "mixed",
     resource_ids: list[str] | None = None,
+    question_type: str | None = None,
     rng_seed: int = _SEED,
 ) -> tuple[AssessmentResult, list[AgentEvent]]:
     """跑一轮考核（复用同一 ``memory`` 累积记账），返回 (result, events)。
@@ -134,7 +135,8 @@ async def _assess(
     ``verdict`` 供开放 / 追问的 LLM 判卷槽；``answer`` 供选择题的确定性判卷（选 ``_MC_CORRECT`` /
     ``_MC_WRONG`` 定对错）与作为作答文本。``focus`` 透传选题聚焦（R1-S7）：复考薄弱概念的用例传
     ``"weak"`` 显式锁定薄弱集（默认 ``mixed`` 覆盖优先会先考未考过的新概念，不锁薄弱）。
-    ``resource_ids`` 透传目录式 scope（GKB-S4）；``rng_seed`` 供 scope-honor 用例跨多 seed 取样。
+    ``resource_ids`` 透传目录式 scope（GKB-S4）；``question_type`` 透传用户显式题型意图短语
+    （GKB-S5，ADR-0006）；``rng_seed`` 供 scope-honor 用例跨多 seed 取样。
     """
     emitter, events, trace = _harness()
     result = await assess_once(
@@ -146,6 +148,7 @@ async def _assess(
         rng=new_rng(rng_seed),
         focus=focus,
         resource_ids=resource_ids,
+        question_type=question_type,
     )
     trace.close()
     return result, events
@@ -820,3 +823,79 @@ async def test_empty_scope_distinct_from_empty_kb_reason() -> None:
     assert result.status == "refused"
     refused = next(e for e in events if e.type == LearningEvent.ASSESSMENT_REFUSED)
     assert refused.payload["reason"] == "empty_scope"
+
+
+# --------------------------------------------------------------------------- #
+# 用户显式题型覆盖（GKB-S5，修 #1 错题型；ADR-0006）：question_type 意图短语透传 + 事件断言
+# --------------------------------------------------------------------------- #
+
+
+async def test_question_type_honor_short_answer_overrides_fresh_mc() -> None:
+    # question_type-honor（核心验收，修 #1）：fresh memory 本会自适应路由到"选择题"，但用户显式点
+    # "简答" → effective=开放，**绝不出选择题**。断在 QUESTION_ASKED 事件（routed 记自适应会给的、
+    # effective 记实际用的）+ result.question_type。去掉覆盖 / 护栏 → 出选择题 → 本用例被杀。
+    store, item_ids = _stocked_store()
+    memory = LearningMemory()  # fresh → 自适应会给"选择题"
+
+    result, events = await _assess(store, memory, verdict="对", question_type="简答")
+
+    assert result.question_type == "开放"  # 透出 effective
+    asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
+    assert asked.payload["question_type"] == "开放"  # 向后兼容键 = effective
+    assert asked.payload["routed"] == "选择题"  # 自适应会给的（fresh → MC）
+    assert asked.payload["effective"] == "开放"  # 用户意图胜出
+    assert asked.payload["effective"] != "选择题"  # 短答意图 ↛ 选择题护栏
+    assert "options" not in asked.payload  # 开放题无 MC options
+    assert asked.payload["item_id"] in item_ids
+    # 开放路径走 LLM 判卷（有判卷 model span）——与"选择题确定性判卷"区分，证明真的换了题型。
+    assert EventType.MODEL_STARTED in {e.type for e in events}
+    types = [e.type for e in events]
+    assert types.count(EventType.MODEL_STARTED) == 2  # 出题 + 判卷两对 model span（开放）
+
+
+async def test_question_type_none_records_routed_equals_effective() -> None:
+    # 缺省（question_type=None）：QUESTION_ASKED 同记 routed + effective，且二者相等 = 自适应结果
+    # （字节等价旧行为——additive 键不改路由决策）。fresh → 二者皆"选择题"。
+    store, _ids = _stocked_store()
+    _result, events = await _assess(store, LearningMemory(), answer=_MC_CORRECT)
+    asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
+    assert asked.payload["routed"] == "选择题"
+    assert asked.payload["effective"] == "选择题"
+    assert asked.payload["question_type"] == asked.payload["effective"]
+
+
+async def test_unknown_question_type_falls_back_to_adaptive() -> None:
+    # 未知题型短语（表里没有）→ fail-soft 回落自适应路由，不炸考核。fresh → 自适应"选择题"。
+    store, _ids = _stocked_store()
+    result, events = await _assess(
+        store, LearningMemory(), answer=_MC_CORRECT, question_type="填空题"
+    )
+    assert result.status == "judged"
+    assert result.question_type == "选择题"  # 回落到自适应（fresh → MC）
+    asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
+    assert asked.payload["routed"] == "选择题"
+    assert asked.payload["effective"] == "选择题"
+
+
+async def test_explicit_mc_overrides_observing_open() -> None:
+    # 反向覆盖：观察中概念本会自适应到"开放"，用户显式点"选择题" → effective=选择题（MC 确定性判卷、
+    # 无判卷 model span）。证明覆盖对三型对称、不是只让短答生效。
+    store, item_ids = _stocked_store()
+    target = item_ids[0]
+    memory = LearningMemory()
+    memory.record_verdict(target, "错")  # → 薄弱
+    memory.record_verdict(target, "对")  # → 观察中（自适应会给"开放"）
+    assert memory.state_of(target) == "观察中"
+
+    result, events = await _assess(
+        store, memory, answer=_MC_CORRECT, focus="weak", question_type="选择题"
+    )
+
+    assert result.item_id == target
+    assert result.question_type == "选择题"
+    asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
+    assert asked.payload["routed"] == "开放"  # 自适应会给的
+    assert asked.payload["effective"] == "选择题"  # 用户意图胜出
+    assert "options" in asked.payload  # MC 带 options
+    # MC 确定性判卷：只有出题一对 model span（无判卷 model span）。
+    assert [e.type for e in events].count(EventType.MODEL_STARTED) == 1
