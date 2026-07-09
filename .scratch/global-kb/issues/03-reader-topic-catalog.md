@@ -1,6 +1,6 @@
 # GKB-S3 — Reader 抽资源级 topic（RAG-metadata）+ 目录注入上下文
 
-Status: ready-for-agent
+Status: done（merge 至 main `b989cfc`，五门全绿 418 passed；Reader 抽 topic + 目录注入，4 mutation 全杀。主循环用真 key 重录 reader_extract.cassette.json（材料 eval_paper.txt，topic="Agent Evaluation Engineering Concepts and Architecture"，item 15→16 同步 _EXPECTED_ITEMS）。真机 topic 质量属用户 dogfood。）
 Type: AFK（Reader topic 真机质量属你 dogfood；建绿可用 fake provider / 我录 cassette）
 
 ## Parent
