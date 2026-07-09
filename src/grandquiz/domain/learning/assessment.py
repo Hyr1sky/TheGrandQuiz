@@ -147,8 +147,9 @@ async def assess_once(
     assessment_span = emitter.new_span_id()
     emitter.emit(_ASSESSMENT_STARTED, span_id=assessment_span, payload={"task_id": task.task_id})
     try:
-        # b. 空库拒答（eval case 2）：不调任何 LLM，优雅返回 refused。
-        items = store.items_for_task(task.task_id)
+        # b. 空库拒答（eval case 2）：不调任何 LLM，优雅返回 refused。选题候选池 = 全库（全局 KB，
+        #    非 task 局部）——换标题开会话仍能考到此前 ingest 的知识（修 #2 跨会话丢知识）。
+        items = store.all_items()
         if not items:
             emitter.emit(
                 LearningEvent.ASSESSMENT_REFUSED,

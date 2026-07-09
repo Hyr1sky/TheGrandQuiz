@@ -448,6 +448,42 @@ async def test_start_quiz_empty_kb_refused() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# 跨会话召回（修 #2）：全局 KB 读——换标题开会话仍能考到此前 ingest 的知识
+# --------------------------------------------------------------------------- #
+
+
+async def test_start_quiz_recalls_items_from_other_title_global_kb() -> None:
+    # 修 #2：以标题 A ingest 的知识，用**不同标题 B** 开会话仍能考到（选题候选池 = 全库，
+    # 非 task 局部）。若仍按 task 读候选池，task B 下无 item → 空库拒答 → 断言变红。
+    store = LearningStore()
+    task_a = LearningTask.create("标题A")
+    ids = _seed_store(store, task_a, ["闭包"])  # 知识挂在 task A 的资源下
+    task_b = LearningTask.create("标题B")
+    assert task_b.task_id != task_a.task_id  # 不同标题 → 不同 task_id
+    store.add_task(task_b)
+    provider = _McProvider()
+    registry = ToolRegistry()
+    _register(
+        registry,
+        task=task_b,  # 会话绑在 task B（不同标题）
+        store=store,
+        memory=LearningMemory(),
+        provider=provider,
+        responder=ScriptedResponder(answer=_MC_WRONG),
+    )
+    emitter, _ = _emitter_with_events()
+
+    result = StartQuizResult.model_validate_json(
+        await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+    )
+
+    assert result.status == "completed"  # 全局读 → 非空库
+    assert result.asked == 1
+    assert result.rounds[0].item_id == ids[0]  # 考到了 A 标题下 ingest 的 item
+    assert result.rounds[0].concept == "闭包"  # concept_by_id 也走全局读（非 fallback 到 item_id）
+
+
+# --------------------------------------------------------------------------- #
 # 语言偏好透传（补 S2b/S4 欠账）：偏好 > task 默认 > 中文
 # --------------------------------------------------------------------------- #
 

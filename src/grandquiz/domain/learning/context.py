@@ -73,7 +73,7 @@ def _render_weak(store: Store, memory: Memory, task: LearningTask) -> str:
     weak_ids = memory.weak_item_ids()
     if not weak_ids:
         return ""
-    concept_by_id = {item.item_id: item.concept for item in store.items_for_task(task.task_id)}
+    concept_by_id = {item.item_id: item.concept for item in store.all_items()}
     parts: list[str] = []
     for item_id in sorted(weak_ids):
         concept = concept_by_id.get(item_id, item_id)

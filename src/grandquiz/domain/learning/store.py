@@ -39,6 +39,7 @@ class Store(Protocol):
     def add_items(self, items: list[KnowledgeItem]) -> None: ...
     def items_for_resource(self, resource_id: str) -> list[KnowledgeItem]: ...
     def items_for_task(self, task_id: str) -> list[KnowledgeItem]: ...
+    def all_items(self) -> list[KnowledgeItem]: ...
 
 
 class LearningStore:
@@ -92,6 +93,14 @@ class LearningStore:
         resource_ids = {r.resource_id for r in self._resources.values() if r.task_id == task_id}
         matched = [item for item in self._items.values() if item.resource_id in resource_ids]
         return sorted(matched, key=lambda item: item.item_id)
+
+    def all_items(self) -> list[KnowledgeItem]:
+        """**全库**所有 item，**按 item_id 升序**——全局 KB 读（不按 task / resource 过滤）。
+
+        顺序契约须与 SqliteLearningStore 一致（同 items_for_task 的理由）：选题 ``select_target``
+        用 ``rng.choice`` 按下标选，两实现顺序不同则同种子选中不同 item（跨实现 / replay 不对齐）。
+        """
+        return sorted(self._items.values(), key=lambda item: item.item_id)
 
 
 class SqliteLearningStore:
@@ -212,6 +221,17 @@ class SqliteLearningStore:
             "FROM knowledge_items ki JOIN resources r ON ki.resource_id = r.resource_id "
             "WHERE r.task_id = ? ORDER BY ki.item_id",
             (task_id,),
+        )
+        return [_row_to_item(row) for row in cursor.fetchall()]
+
+    def all_items(self) -> list[KnowledgeItem]:
+        """**全库**所有 item，按 ``item_id`` 升序——全局 KB 读（不 join resources、不按 task 过滤）。
+
+        与 dict 版同一顺序契约（选题 replay 命门）：全表按 item_id 排序、复用 ``_row_to_item``。
+        """
+        cursor = self._conn.execute(
+            "SELECT item_id, resource_id, concept, summary, evidence, confidence, concept_key "
+            "FROM knowledge_items ORDER BY item_id"
         )
         return [_row_to_item(row) for row in cursor.fetchall()]
 

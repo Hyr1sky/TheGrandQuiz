@@ -10,8 +10,8 @@
   span（fetch / Reader model / item_created）经 ``_ScopedEmitter`` **重挂在本次 TOOL_CALL 之下**、
   进 trace；ReAct 消息上下文**只收结构化结果字符串**、看不到考官内部 model 调用 / 消息（隔离在
   工具边界）。
-- ``query_weak_concepts()``：**只读**——读 Learning Memory（薄弱 / 观察中 item）+ store（概念名）→
-  返回薄弱概念摘要。无 LLM、确定性（context-free 工具，不需要 ctx）。
+- ``query_weak_concepts()``：**只读**——读 Learning Memory（薄弱 / 观察中 item）+ store（概念名，
+  全库读）→ 返回薄弱概念摘要。无 LLM、确定性（context-free 工具，不需要 ctx）。
 - ``start_quiz(count?, focus?)``：**受控一问一答子流程**——内部跑 ``assess_once × count``
   （``assess_once`` 一行不改），用**注入的 Responder** 逐题作答（MC 走 ``questionary.select`` 逐字
   选项文本 → 确定性逐字判卷），共享 emitter（内部 assess_once span 嵌 TOOL_CALL 之下），返回结构化
@@ -122,7 +122,7 @@ class WeakConcept(BaseModel):
 
 
 class WeakConceptsResult(BaseModel):
-    """``query_weak_concepts`` 的结构化结果：当前任务下被追踪的薄弱概念（按 item_id 升序）。"""
+    """``query_weak_concepts`` 的结构化结果：全库被追踪的薄弱概念（按 item_id 升序，全局 KB）。"""
 
     weak: list[WeakConcept]
 
@@ -187,15 +187,15 @@ def make_ingest_tool(
 
 
 def make_query_weak_concepts_tool(task: LearningTask, *, store: Store, memory: Memory) -> Tool:
-    """建 ``query_weak_concepts()`` 工具：只读 Learning Memory + store，返回本任务薄弱概念摘要。
+    """建 ``query_weak_concepts()`` 工具：只读 Learning Memory + store，返回全库薄弱概念摘要。
 
-    确定性、无 LLM（context-free，不需 ctx）：取记忆里被追踪的 item，交集到本任务的 item（跨任务
-    隔离——他任务薄弱点不泄漏），按 item_id 升序输出概念名 + 状态。
+    确定性、无 LLM（context-free，不需 ctx）：取记忆里被追踪的 item，用**全库**概念名映射解析
+    （全局 KB，GKB-S1 修 #2——换标题 ingest 的薄弱点也surface），按 item_id 升序输出概念名 + 状态。
     """
 
     async def handler(params: _QueryWeakParams) -> str:
         _ = params  # 无入参：全部依赖在闭包捕获
-        concept_by_id = {item.item_id: item.concept for item in store.items_for_task(task.task_id)}
+        concept_by_id = {item.item_id: item.concept for item in store.all_items()}
         weak = [
             WeakConcept(item_id=item_id, concept=concept_by_id[item_id], state=state)
             for item_id in sorted(memory.weak_item_ids())
@@ -205,7 +205,7 @@ def make_query_weak_concepts_tool(task: LearningTask, *, store: Store, memory: M
 
     return Tool(
         name="query_weak_concepts",
-        description="只读查询当前任务的薄弱概念（薄弱 / 观察中）及其概念名。",
+        description="只读查询已积累的薄弱概念（薄弱 / 观察中）及其概念名。",
         params=_QueryWeakParams,
         handler=handler,
     )
@@ -255,7 +255,7 @@ class StartQuizResult(BaseModel):
 
     ``status="refused"``（空库）时 ``asked=0`` / ``rounds=[]`` / ``weak=[]``；``status="completed"``
     时 ``asked`` 为实际考过题数（用户中途取消则少于请求 count），``rounds`` 逐题判决，``weak`` 是
-    本次考核后当前任务仍被追踪的薄弱概念（按 item_id 升序，同 ``query_weak_concepts`` 口径）。
+    本次考核后全库仍被追踪的薄弱概念（按 item_id 升序，同 ``query_weak_concepts`` 全局 KB 口径）。
     """
 
     status: Literal["completed", "refused"]
@@ -270,8 +270,8 @@ class _StartQuizParams(BaseModel):
 
 
 def _weak_concepts(task: LearningTask, store: Store, memory: Memory) -> list[WeakConcept]:
-    """当前任务被追踪的薄弱概念摘要（按 item_id 升序）——与 ``query_weak_concepts`` 同一口径。"""
-    concept_by_id = {item.item_id: item.concept for item in store.items_for_task(task.task_id)}
+    """全库被追踪的薄弱概念摘要（item_id 升序，全局 KB）——与 ``query_weak_concepts`` 同口径。"""
+    concept_by_id = {item.item_id: item.concept for item in store.all_items()}
     return [
         WeakConcept(item_id=item_id, concept=concept_by_id[item_id], state=state)
         for item_id in sorted(memory.weak_item_ids())
@@ -320,7 +320,7 @@ def make_start_quiz_tool(
             if ctx.parent_span_id is not None
             else ctx.emitter
         )
-        concept_by_id = {it.item_id: it.concept for it in store.items_for_task(task.task_id)}
+        concept_by_id = {it.item_id: it.concept for it in store.all_items()}
         count = min(max(params.count, 1), _MAX_QUIZ_COUNT)  # 夹到 [1, 上限]，挡 0 / 负 / 超大
         rounds: list[QuizRoundResult] = []
         for _ in range(count):

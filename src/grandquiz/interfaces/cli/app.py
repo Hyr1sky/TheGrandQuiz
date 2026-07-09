@@ -193,7 +193,9 @@ async def run_quiz(
     trace_store: TraceStore | None = None  # 空库分支不落 trace（无会话）；在 finally 里择机关闭
     try:
         task = LearningTask.create(title)
-        if not store.items_for_task(task.task_id):
+        # 全库预检（全局 KB，同 _run_quiz_cli 的预检口径）：库里有知识即放行——换标题开会话仍能
+        # 考到此前 ingest 的知识（修 #2）。这是 _run_quiz_cli 那道预检的内层同一逻辑，须同源切读。
+        if not store.all_items():
             _print_needs_ingest(console, title)
             return
 
@@ -266,7 +268,9 @@ def _print_weak_summary(
     if not weak_ids:
         console.print("[green]本次考核后没有遗留薄弱点，全部掌握。[/]")
         return
-    concept_by_id = {item.item_id: item.concept for item in store.items_for_task(task.task_id)}
+    # 全库读（同 _weak_concepts / _render_weak 口径）：薄弱 item 可能源自其他标题下 ingest 的知识，
+    # 须全局解析概念名，否则退回裸 item_id 显示。
+    concept_by_id = {item.item_id: item.concept for item in store.all_items()}
     console.print("[bold]薄弱点小结（已跨会话留存，下次优先考）：[/]")
     for item_id in sorted(weak_ids):
         state = memory.state_of(item_id)
@@ -498,7 +502,8 @@ async def _run_quiz_cli(
     _ensure_parent(db_path)
     store = SqliteLearningStore(db_path)
     try:
-        has_items = bool(store.items_for_task(LearningTask.create(title).task_id))
+        # 全库预检（全局 KB）：只要库里有知识就放行——换标题也能考到此前 ingest 的知识（修 #2）。
+        has_items = bool(store.all_items())
     finally:
         store.close()
     if not has_items:

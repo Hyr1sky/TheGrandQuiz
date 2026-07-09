@@ -476,7 +476,8 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
     context: dict[str, Any] = {}
     if case.stocked:
         store, task, item_ids = build_stocked_store(case.language)
-        items = store.items_for_task(task.task_id)
+        # 与生产 assess_once 同源：候选池 = 全库（全局 KB 读），否则对照基线与生产不一致。
+        items = store.all_items()
         natural = select_target(items, rng=new_rng(SEED)).item_id
         context.update(item_ids=item_ids, natural=natural, items=list(items))
         weak_target: str | None = None

@@ -255,3 +255,49 @@ def test_multi_resource_order_matches_dict_and_is_item_id_sorted() -> None:
     assert ids[0] == expected  # dict 版
     assert ids[1] == expected  # SQLite 版
     assert ids[0] == ids[1]  # 两实现顺序一致 → 选题跨实现不漂移
+
+
+# --- all_items：全库全局读（不 join resources、不按 task 过滤，按 item_id 升序） --------
+
+
+def test_all_items_empty_returns_empty() -> None:
+    assert _sqlite().all_items() == []
+
+
+def test_all_items_returns_whole_kb_item_id_sorted() -> None:
+    # 跨 task 全库读：不按 task_id 过滤，全部 item 按 item_id 升序（修 #2 的读语义）。
+    store = _sqlite()
+    ra = LearningResource.create(task_id="A", url="https://example.com/a")
+    rb = LearningResource.create(task_id="B", url="https://example.com/b")
+    for r in (ra, rb):
+        store.add_resource(r)
+    store.add_items([_item(ra.resource_id, 0, "x"), _item(rb.resource_id, 0, "y")])
+    got = store.all_items()
+    assert {i.concept for i in got} == {"x", "y"}
+    assert [i.item_id for i in got] == sorted(i.item_id for i in got)
+
+
+def test_all_items_parity_dict_vs_sqlite_across_hash_prefixes() -> None:
+    # 全局读 parity（选题 replay 命门）：多个不同 hash 前缀 resource_id 下的 item，dict 与
+    # SQLite 的 all_items() 序列**逐条相等**（跨资源、稳定按 item_id 升序，不依赖插入序）。
+    dict_store = LearningStore()
+    sqlite_store = _sqlite()
+    # 三个 url 派生出不同哈希前缀的 resource_id（哈希序 != 插入序），分挂不同 task。
+    resources = [
+        LearningResource.create(task_id="A", url="https://example.com/z"),
+        LearningResource.create(task_id="B", url="https://example.com/a"),
+        LearningResource.create(task_id="A", url="https://example.com/m"),
+    ]
+    items = [
+        _item(r.resource_id, i, c)
+        for i, (r, c) in enumerate(zip(resources, ["闭包", "作用域", "提升"], strict=True))
+    ]
+    for store in (dict_store, sqlite_store):
+        for r in resources:
+            store.add_resource(r)
+        store.add_items(items)
+    expected = sorted(items, key=lambda it: it.item_id)
+    dict_items = dict_store.all_items()
+    sqlite_items = sqlite_store.all_items()
+    assert [i.item_id for i in dict_items] == [i.item_id for i in expected]  # 稳定升序
+    assert dict_items == sqlite_items  # 两实现逐条相等 → 选题 rng.choice 跨实现不漂

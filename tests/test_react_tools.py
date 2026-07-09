@@ -146,15 +146,17 @@ async def test_query_weak_concepts_reports_tracked_concepts_sorted() -> None:
     assert [w.item_id for w in result.weak] == sorted(w.item_id for w in result.weak)
 
 
-async def test_query_weak_concepts_excludes_other_task_items() -> None:
+async def test_query_weak_concepts_surfaces_all_titles_global_kb() -> None:
+    # GKB-S1（修 #2）：全局 KB——薄弱概念不再按 task 分区，其他标题下 ingest 的薄弱点也应surface
+    # （知识是全库的，换标题开会话仍要能复习）。此前按 task 隔离，现改为全库读 concept_by_id。
     task = LearningTask.create("React")
     other = LearningTask.create("Rust")
     store = LearningStore()
     react_ids = _seed_store(store, task, ["hooks"])
     other_ids = _seed_store(store, other, ["ownership"])
     memory = LearningMemory()
-    memory.record_verdict(react_ids[0], "错")  # 本任务薄弱
-    memory.record_verdict(other_ids[0], "错")  # 他任务薄弱——不应泄漏进本任务查询
+    memory.record_verdict(react_ids[0], "错")  # React 标题下薄弱
+    memory.record_verdict(other_ids[0], "错")  # Rust 标题下薄弱——全局 KB 下同样surface
 
     registry = ToolRegistry()
     register_learning_tools(
@@ -163,7 +165,7 @@ async def test_query_weak_concepts_excludes_other_task_items() -> None:
     result = WeakConceptsResult.model_validate_json(
         await registry.dispatch("query_weak_concepts", {})
     )
-    assert {w.concept for w in result.weak} == {"hooks"}
+    assert {w.concept for w in result.weak} == {"hooks", "ownership"}
 
 
 async def test_query_weak_concepts_empty_when_no_weak() -> None:

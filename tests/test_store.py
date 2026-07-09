@@ -74,3 +74,30 @@ def test_items_for_task_aggregates_across_that_task_resources() -> None:
     got = store.items_for_task("A")
     assert {i.concept for i in got} == {"x", "y"}
     assert [i.concept for i in store.items_for_task("B")] == ["z"]
+
+
+# --- all_items：全库全局读（不按 task/resource 过滤，按 item_id 升序） -----------------
+
+
+def test_all_items_empty_returns_empty() -> None:
+    assert LearningStore().all_items() == []
+
+
+def test_all_items_single_resource_item_id_sorted() -> None:
+    # 单资源：即便乱序入库，all_items 也按 item_id 升序（确定性顺序契约）。
+    store = LearningStore()
+    store.add_items([_item("r1", 1, "提升"), _item("r1", 0, "闭包")])
+    assert [i.item_id for i in store.all_items()] == ["r1#000", "r1#001"]
+
+
+def test_all_items_spans_all_tasks_and_resources_item_id_sorted() -> None:
+    # 全局 KB：跨 task / 跨资源全库读——不按 task 过滤（这正是修 #2 的读语义）。
+    store = LearningStore()
+    ra = LearningResource.create(task_id="A", url="https://example.com/a")
+    rb = LearningResource.create(task_id="B", url="https://example.com/b")
+    for r in (ra, rb):
+        store.add_resource(r)
+    store.add_items([_item(ra.resource_id, 0, "x"), _item(rb.resource_id, 0, "y")])
+    got = store.all_items()
+    assert {i.concept for i in got} == {"x", "y"}  # 跨 task 全收
+    assert [i.item_id for i in got] == sorted(i.item_id for i in got)  # 稳定升序
