@@ -1,6 +1,6 @@
 # GKB-S2 — 内容寻址资源 + 消解 LearningTask + `resources.topic` 列（清终态）
 
-Status: ready-for-agent
+Status: done（merge 至 main `00e6e4b` + 收尾 fix `f2bcde7`，五门全绿 410 passed；串行对抗验证 5 mutation 全杀、cassette 逐字节保留、ADR-0005 落地。收尾修：0004 清库补清 knowledge_items+learning_memory 孤儿行（避免 in-place 升级污染全库池）+ preference/question docstring 清理。）
 Type: AFK
 
 ## Parent
