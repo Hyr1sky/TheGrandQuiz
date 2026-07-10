@@ -13,7 +13,6 @@ CLI 是事件脊柱的消费者：``quiz`` 把 ``QuizEventPrinter`` 订阅到考
 import argparse
 import asyncio
 import contextlib
-import sys
 import time
 import uuid
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -525,21 +524,26 @@ async def _run_quiz_cli(
         await provider.aclose()
 
 
-def _stdin_messages(console: Console) -> Iterator[str]:
+def _stdin_messages() -> Iterator[str]:
     """从 stdin 逐行读用户消息（交互会话循环的输入源）：空行跳过，``exit`` / ``quit`` 或 EOF 退出。
 
     做成生成器（而非一次读全部）让会话真正逐回合交互：``run_react`` 每 ``next()`` 拿一条消息、跑一
     回合、打印回复，再回来取下一条。真机试跑（tty 逐回合对话）留给 human。
+
+    读入走内置 ``input()`` + ``import readline``：GNU readline 按 locale 宽度做行编辑，修掉裸
+    ``readline()`` cooked-mode 下 backspace 只删半个 CJK 字符宽、渲染与实际缓冲不符的问题（dogfood
+    反馈）。``input()`` 是阻塞同步读、**不起嵌套事件循环**（不与 ``run_react`` 的 asyncio loop 冲突
+    ——刻意不用 prompt_toolkit 同步 prompt，那会在运行中的 loop 里崩，正是 responder 走 ``ask_async``
+    的原因）。管道 / 测试（非 tty）``input()`` 照常逐行读、EOF 抛 ``EOFError`` 退出。
     """
+    # 仅 import 即让内置 input() 启用 GNU readline 行编辑（CJK 宽度正确）；无 readline 平台跳过。
+    with contextlib.suppress(ImportError):
+        import readline  # noqa: F401
     while True:
-        console.print("[bold]你[/]：", end="")
         try:
-            line = sys.stdin.readline()
-        except KeyboardInterrupt:
+            message = input("你：").strip()
+        except (EOFError, KeyboardInterrupt):  # Ctrl+D / Ctrl+C：优雅退出会话
             break
-        if not line:  # EOF（Ctrl+D）
-            break
-        message = line.strip()
         if not message:
             continue
         if message in {"exit", "quit", ":q"}:
@@ -558,7 +562,7 @@ async def _run_react_cli(*, title: str | None, db_path: Path, materials_dir: Pat
             provider=provider,
             responder=InteractiveResponder(),  # start_quiz 逐题作答：questionary 选择器 / 文本输入
             console=console,
-            user_messages=_stdin_messages(console),
+            user_messages=_stdin_messages(),
             seed=int(time.time()),  # CLI 非 replay：可变种子（每次会话不同选题次序）
         )
     finally:
