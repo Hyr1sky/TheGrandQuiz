@@ -9,6 +9,7 @@
 """
 
 import contextlib
+import importlib
 import time
 import uuid
 from collections.abc import Iterable, Iterator
@@ -131,9 +132,11 @@ def _stdin_messages() -> Iterator[str]:
     ——刻意不用 prompt_toolkit 同步 prompt，那会在运行中的 loop 里崩，正是 responder 走 ``ask_async``
     的原因）。管道 / 测试（非 tty）``input()`` 照常逐行读、EOF 抛 ``EOFError`` 退出。
     """
-    # 仅 import 即让内置 input() 启用 GNU readline 行编辑（CJK 宽度正确）；无 readline 平台跳过。
+    # 仅为副作用导入 readline：让内置 input() 走 GNU readline 行编辑（CJK 宽度正确）；无 readline
+    # 平台（如 Windows）跳过。用 import_module 而非 `import readline`——后者的裸名字绑定会被 ruff
+    # F401 / pyright reportUnusedImport 双双判为未使用（它确实只为副作用、从不被引用）。
     with contextlib.suppress(ImportError):
-        import readline  # noqa: F401
+        importlib.import_module("readline")
     while True:
         try:
             message = input("你：").strip()
