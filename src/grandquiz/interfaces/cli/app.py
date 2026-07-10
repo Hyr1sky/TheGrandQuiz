@@ -571,7 +571,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_ingest = sub.add_parser("ingest", help="读本地材料 → 深读 → 入库")
     p_ingest.add_argument("material_file", type=Path, help="本地材料文件路径")
-    p_ingest.add_argument("--task", required=True, help="学习任务标题（考核范围）")
+    p_ingest.add_argument(
+        "--task", required=True, help="本次入库横幅名（仅打印；全局 KB 单池、不分库）"
+    )
     p_ingest.add_argument("--db", type=Path, default=_DEFAULT_DB, help="SQLite 库路径")
 
     p_quiz = sub.add_parser("quiz", help="对全局知识库逐题交互考核")
