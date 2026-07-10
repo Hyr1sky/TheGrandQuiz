@@ -1,6 +1,6 @@
 # PRD：全局 KB 重构（Global Knowledge Base）——会话从"绑一个 task 标题"解耦成"操作持久全局知识库"
 
-Status: ready-to-build（设计已在对话锁定 2026-07-09；四分叉 + 形态定案见下。基线 main `8450499`，五门全绿 411 passed。未开工。）
+Status: done（S1-S7 全 merge，main `bb51d5a`，五门全绿 501 passed、eval 13/13；#1+#2 已修，2026-07-10 用户真机 dogfood 通过。ADR-0005/0006 落地。dogfood 抓到一个非阻断项：混合题型请求"一道选择一道简答"时 LLM 未拆成两次 typed 调用——属工具描述/编排债，见收尾讨论。）
 Triage: ready-for-agent
 
 ## Problem Statement

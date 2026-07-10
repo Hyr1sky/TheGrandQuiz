@@ -8,13 +8,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 作者本人是用户 #1，同时作为 AI/Agent 工程师方向的简历项目。核心循环是"考核"：学完材料 → 被拷问
 → 暴露薄弱概念 → 记入记忆 → 下次优先考薄弱点。
 
-当前处于 Pre-MVP 脚手架阶段——`src/grandquiz/` 还只有 `__init__.py`，全部设计都在 `docs/` 与 `CONTEXT.md` 里。
+**当前状态（2026-07-10）**：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel/`（events/runner/tools/
+hooks/context/clock/recovery/trace/db）+ `providers/`（OpenAI 兼容 + Record/Replay）+ `domain/learning/`
+（考核竖切 ingest→深读→出题→判卷→薄弱记账）+ `interfaces/cli/`（ingest/quiz/react/report/trace 子命令）
++ `evals/`（Tier-1 规则 harness）。**最小 ReAct 对话核（R1）与全局 KB 重构均已落地、五门全绿**（`grandquiz react`
+可真机跑：自然语言选材料 + 定题型的持久全局知识库考核）。设计权威仍在 `docs/` 与 `CONTEXT.md`。
 **动手写代码前按序读**：
 
 - [CONTEXT.md](CONTEXT.md) — 领域语言权威表（先读这个统一术语）
 - [docs/architecture.md](docs/architecture.md) — 目标架构、两条核心设计判断、搭建顺序
 - [docs/roadmap.md](docs/roadmap.md) — MVP 考核竖切、领域模型、eval 用例
-- [docs/adr/](docs/adr/) — 四个不可逆决策（提取式迁移 / 概念同一性 / 记忆四收二 / 循环是 workflow）
+- [docs/adr/](docs/adr/) — 六个不可逆决策（0001 提取式迁移 / 0002 概念同一性 / 0003 记忆四收二 /
+  0004 循环是 workflow / 0005 全局 KB·消解 LearningTask / 0006 用户显式题型覆盖）
 
 ## 常用命令
 
