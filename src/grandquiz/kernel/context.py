@@ -20,6 +20,8 @@ domain 侧把"渲学情文本"的闭包（捕获 memory + preferences）作为�
   （按 budget 摘要 / 截断 / 丢历史）留待下一程接入，接缝形状此刻钉死。
 """
 
+import math
+import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
@@ -28,6 +30,39 @@ from grandquiz.providers.base import Message
 
 # 分区内容来源：静态字符串，或每次 build 现取的无参 callable（学情随考核推进刷新）。
 ContentProvider = str | Callable[[], str]
+
+# East-Asian Wide / Fullwidth ≈ CJK / 全角字符，在 BPE 分词里 token 密（约 1 token/字）。
+_WIDE_EAW = frozenset({"W", "F"})
+
+
+class TokenCounter(Protocol):
+    """token 估算契约——**注入式**（同 ``Clock`` / ``Rng`` 的确定性注入思路）。
+
+    预算裁剪要在**发请求前**估上下文占多少 token，而 ``Completion.usage`` 是**事后**才知道的真实值、
+    用不上；故装配侧需要一个可注入、**确定性**的事前估算器：同串恒同值 → 预算/压缩决策可 replay。
+    """
+
+    def count(self, text: str) -> int: ...
+
+
+@dataclass(frozen=True)
+class HeuristicTokenCounter:
+    """CJK 感知的**确定性**启发式 token 估算（预算用途，非计费）。
+
+    刻意不用 tiktoken：deepseek / qwen 非 OpenAI 模型、编码对不齐、硬套反失真；预算只需量级正确。
+    启发式 provider 无关、零依赖、纯函数（无 clock / random）→ replay 逐字节对得齐。规则：East-Asian
+    Wide / Fullwidth 字符（CJK / 全角）按 ``cjk_chars_per_token`` 计（默认 ~1 token/字，token 密）、
+    其余（拉丁 / 空白 / 标点）按 ``other_chars_per_token`` 计（默认 ~4 字符/token，GPT 系经验值）。
+    两比率是构造参数、可调；默认偏保守（宁高估不低估，免真超模型上限）。空串 → 0。
+    """
+
+    cjk_chars_per_token: float = 1.0
+    other_chars_per_token: float = 4.0
+
+    def count(self, text: str) -> int:
+        wide = sum(1 for ch in text if unicodedata.east_asian_width(ch) in _WIDE_EAW)
+        other = len(text) - wide
+        return math.ceil(wide / self.cjk_chars_per_token + other / self.other_chars_per_token)
 
 
 @dataclass(frozen=True)

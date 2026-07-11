@@ -27,7 +27,12 @@ from grandquiz.domain.learning.preference import (
 )
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock
-from grandquiz.kernel.context import ContextBuilder, Partition
+from grandquiz.kernel.context import (
+    ContextBuilder,
+    HeuristicTokenCounter,
+    Partition,
+    TokenCounter,
+)
 from grandquiz.kernel.events import EventEmitter, EventSink
 from grandquiz.kernel.runner import Runner
 from grandquiz.providers.base import Completion, Message, Role, ToolSpec, Usage
@@ -314,3 +319,47 @@ async def test_context_builder_sees_accumulated_history() -> None:
         ("assistant", "回复"),
         ("user", "第二问"),
     ]
+
+
+# --------------------------------------------------------------------------- #
+# C1：HeuristicTokenCounter——CJK 感知的确定性 token 估算（预算用途，非计费）
+# --------------------------------------------------------------------------- #
+
+
+def test_token_counter_empty_is_zero() -> None:
+    assert HeuristicTokenCounter().count("") == 0
+
+
+def test_token_counter_ascii_by_four_chars_per_token() -> None:
+    # 拉丁/空白按 ~4 字符/token（GPT 系经验值）：ceil(len/4)。
+    assert HeuristicTokenCounter().count("abcd") == 1  # ceil(4/4)
+    assert HeuristicTokenCounter().count("hello world") == 3  # ceil(11/4)=3
+
+
+def test_token_counter_cjk_by_one_token_per_char() -> None:
+    # East-Asian Wide/Fullwidth（CJK/全角）按 ~1 token/字（密）。
+    assert HeuristicTokenCounter().count("你好世界") == 4  # 4 wide → 4
+
+
+def test_token_counter_mixed_sums_wide_and_narrow() -> None:
+    # "你好 world"：wide=2（你好），narrow=6（空格+world）→ ceil(2/1 + 6/4)=ceil(3.5)=4。
+    assert HeuristicTokenCounter().count("你好 world") == 4
+
+
+def test_token_counter_is_deterministic_pure_function() -> None:
+    # replay 命门：同串恒同值、无 clock/random。
+    counter = HeuristicTokenCounter()
+    text = "闭包 closure 是 what？"
+    assert counter.count(text) == counter.count(text)
+
+
+def test_token_counter_ratios_are_tunable() -> None:
+    # 两个比率是构造参数：调 other_chars_per_token 影响估算（保确定性）。
+    loose = HeuristicTokenCounter(other_chars_per_token=8.0)
+    assert loose.count("abcdefgh") == 1  # ceil(8/8)=1（默认 4 会得 2）
+
+
+def test_heuristic_counter_satisfies_token_counter_protocol() -> None:
+    # 结构化契约：HeuristicTokenCounter 可当 TokenCounter 注入（pyright 静态校验此赋值）。
+    counter: TokenCounter = HeuristicTokenCounter()
+    assert counter.count("x") == 1
