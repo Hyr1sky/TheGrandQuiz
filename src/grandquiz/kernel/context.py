@@ -71,8 +71,8 @@ class Partition:
 
     ``provider`` 为 ``str`` → 静态内容；为 ``Callable[[], str]`` → 每次 build 现取（如学情块）。
     分区当前恒渲染成一条 ``system`` 角色消息，置于 history 之前（system 前言区）。
-    ``budget``：该分区的可选 token 预算——**压缩 / 预算接缝**，本 issue 不消费（恒不裁剪），
-    下一程 context compression 按它做摘要 / 截断。
+    ``budget``：该分区的可选 token 预算——``BudgetCompressionPolicy`` 按它做**确定性头截断**
+    （软预算：超预算截断不抛；无 budget 恒不裁剪）。
     """
 
     name: str
@@ -81,35 +81,100 @@ class Partition:
 
 
 class CompressionPolicy(Protocol):
-    """按分区裁剪内容的策略接缝（本 issue 不实现具体压缩，只钉死形状）。
+    """按分区裁剪内容的策略接缝——``BudgetCompressionPolicy`` 是首个实现（按 budget 头截断）。
 
-    ``compress`` 收到分区（含其 ``budget``）与已取到的内容，返回（可能被压缩 / 截断的）内容。
-    下一程接入真压缩器（按 budget 摘要 / 截断 / 丢历史）时实现本协议、经 ``ContextBuilder`` 的
-    ``policy`` 参传入即可，``build`` 的装配逻辑一行不改。
+    ``compress`` 收到分区（含其 ``budget``）与已取内容，返回（可能被截断的）内容。经
+    ``ContextBuilder`` 的 ``policy`` 传入、``build`` 逻辑一行不改；``policy=None`` 恒等透传。
     """
 
     def compress(self, partition: Partition, content: str) -> str: ...
+
+
+class ContextBudgetExceeded(RuntimeError):
+    """装配后上下文总 token 数超过硬上限——**大声失败**（同 ``MaxIterationsExceeded`` 哲学）。
+
+    刻意不静默截断到残缺上下文：那会把"上下文爆了"伪装成正常回答，毁可观测 + 出题/判卷质量。分区
+    软预算（``BudgetCompressionPolicy``）尽力压过后总量仍越硬上限，才抛——交调用方（装配点）处置。
+    未打 ``error_class`` → 经 ``RecoveryPolicy`` 默认归 FATAL、冒泡。
+    """
+
+    def __init__(self, used: int, ceiling: int) -> None:
+        super().__init__(f"上下文装配后 {used} tokens 超过硬上限 {ceiling} tokens")
+        self.used = used
+        self.ceiling = ceiling
+
+
+@dataclass(frozen=True)
+class BudgetCompressionPolicy:
+    """按 ``Partition.budget`` 头截断的软预算策略（超预算截断不抛；实现 ``CompressionPolicy``）。
+
+    无 ``budget`` 或已合身 → 原样；超预算 → 保**开头**能放下的最长字符前缀 + 截断标记 ``marker``。
+    截断有损但有界、确定（二分求前缀、无 clock/random → replay 对得齐）。"保头丢尾"——分区内容
+    （system / 库存清单 / 学情）通常越靠前越纲领。总硬上限的大声失败由 ``ContextBuilder`` 负责
+    （``ContextBudgetExceeded``），本策略**永不抛**——软/硬分层。``marker`` 取轻（默认省略号 ≈1
+    token）：标记本身吃预算，重标记会挤掉正文。
+    """
+
+    counter: TokenCounter
+    marker: str = "…"
+
+    def compress(self, partition: Partition, content: str) -> str:
+        budget = partition.budget
+        if budget is None or self.counter.count(content) <= budget:
+            return content  # 无预算 / 已合身 → 原样（向后兼容）
+        room = budget - self.counter.count(self.marker)
+        if room <= 0:
+            # 预算连标记都放不下：best-effort 硬截到 budget（不缀标记、仍不抛）。
+            return self._fit(content, budget)
+        return self._fit(content, room) + self.marker
+
+    def _fit(self, content: str, token_budget: int) -> str:
+        """二分求 ``count(前缀) <= token_budget`` 的**最长字符前缀**（确定性）。
+
+        token 数随字符前缀单调不减，故可二分：O(log n) 次 ``count`` 而非逐字符线性试。
+        """
+        if token_budget <= 0:
+            return ""
+        lo, hi = 0, len(content)
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if self.counter.count(content[:mid]) <= token_budget:
+                lo = mid
+            else:
+                hi = mid - 1
+        return content[:lo]
 
 
 class ContextBuilder:
     """把有序分区 + history + 当前 user 消息装配成 ``list[Message]``（领域无关机制）。
 
     ``build`` 顺序：各分区（按声明序，空内容跳过）→ history（原样展开）→ 当前 user 消息。
-    分区内容经可选 ``policy`` 钩子（默认恒等透传）——预算 / 压缩接缝留给下一程。
+    分区内容经可选 ``policy``（默认恒等透传；传 ``BudgetCompressionPolicy`` 按各分区 budget 截断）。
+    ``counter`` + ``total_budget`` 都给时，装配后总 token 超硬上限 → 抛 ``ContextBudgetExceeded``；
+    默认全 None → 从不检查（向后兼容）。
     """
 
     def __init__(
-        self, partitions: Sequence[Partition], *, policy: CompressionPolicy | None = None
+        self,
+        partitions: Sequence[Partition],
+        *,
+        policy: CompressionPolicy | None = None,
+        counter: TokenCounter | None = None,
+        total_budget: int | None = None,
     ) -> None:
         self._partitions = list(partitions)
-        # 压缩策略接缝：None → 恒等透传（本 issue 不压缩）；下一程传入真压缩器按 budget 裁剪。
+        # 分区软预算：None → 恒等透传；BudgetCompressionPolicy 按各 Partition.budget 头截断。
         self._policy = policy
+        # 总硬上限（大声失败）：counter + total_budget 都给才检查——装配后总 token 超上限抛
+        # ContextBudgetExceeded。默认全 None → 从不检查（向后兼容，不破现有测试 / cassette）。
+        self._counter = counter
+        self._total_budget = total_budget
 
     def build(self, history: Sequence[Message], user_message: str) -> list[Message]:
         """按序装配：各分区（system 前言区）→ history → 当前 user 消息。
 
         callable provider 在此现取（每次 build 一次），故学情随考核推进刷新。空内容分区（provider
-        返回空串 / 经 policy 压成空）被跳过，不塞空 system 噪声。
+        返回空串 / 经 policy 压成空）被跳过，不塞空 system 噪声。末尾校验总预算（超上限则抛）。
         """
         messages: list[Message] = []
         for partition in self._partitions:
@@ -118,7 +183,16 @@ class ContextBuilder:
                 messages.append(Message(role="system", content=content))
         messages.extend(history)
         messages.append(Message(role="user", content=user_message))
+        self._enforce_total_budget(messages)
         return messages
+
+    def _enforce_total_budget(self, messages: Sequence[Message]) -> None:
+        """装配后总 token 超硬上限 → 抛 ``ContextBudgetExceeded``（大声失败）。未设上限则跳过。"""
+        if self._total_budget is None or self._counter is None:
+            return
+        used = sum(self._counter.count(message.content) for message in messages)
+        if used > self._total_budget:
+            raise ContextBudgetExceeded(used, self._total_budget)
 
     def _resolve(self, partition: Partition) -> str:
         """取分区内容（str 直用 / callable 现取），再过压缩策略接缝（默认恒等透传）。"""

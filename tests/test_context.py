@@ -11,6 +11,8 @@
 
 from collections.abc import Sequence
 
+import pytest
+
 from grandquiz.domain.learning.context import (
     learner_context_provider,
     render_learner_context,
@@ -28,6 +30,8 @@ from grandquiz.domain.learning.preference import (
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.context import (
+    BudgetCompressionPolicy,
+    ContextBudgetExceeded,
     ContextBuilder,
     HeuristicTokenCounter,
     Partition,
@@ -363,3 +367,91 @@ def test_heuristic_counter_satisfies_token_counter_protocol() -> None:
     # 结构化契约：HeuristicTokenCounter 可当 TokenCounter 注入（pyright 静态校验此赋值）。
     counter: TokenCounter = HeuristicTokenCounter()
     assert counter.count("x") == 1
+
+
+# --------------------------------------------------------------------------- #
+# C2：BudgetCompressionPolicy（分区软预算·截断不抛）+ ContextBudgetExceeded（总硬上限·大声失败）
+# --------------------------------------------------------------------------- #
+
+
+def test_budget_policy_passthrough_when_no_budget() -> None:
+    # 无 budget（默认 None）→ 原样透传（向后兼容：现有分区不受影响）。
+    policy = BudgetCompressionPolicy(HeuristicTokenCounter())
+    partition = Partition(name="m", provider="x")  # budget=None
+    assert policy.compress(partition, "任意内容原样不动") == "任意内容原样不动"
+
+
+def test_budget_policy_passthrough_when_within_budget() -> None:
+    policy = BudgetCompressionPolicy(HeuristicTokenCounter())
+    partition = Partition(name="m", provider="x", budget=100)
+    assert policy.compress(partition, "短内容") == "短内容"
+
+
+def test_budget_policy_truncates_over_budget_within_limit() -> None:
+    # 超预算 → 确定性头截断 + 标记；不变量：截断后 token 数 <= budget。
+    counter = HeuristicTokenCounter()
+    policy = BudgetCompressionPolicy(counter)
+    partition = Partition(name="m", provider="x", budget=5)
+    content = "abcdefghijklmnopqrstuvwxyz0123456789"  # 36 ASCII → 9 tokens
+    result = policy.compress(partition, content)
+    assert result != content
+    assert counter.count(result) <= 5
+    assert result.endswith("…")  # 缀截断标记（budget 够放标记时）
+    assert content.startswith(result[:-1])  # 保的是开头前缀
+
+
+def test_budget_policy_tiny_budget_below_marker_no_crash() -> None:
+    # 预算连标记都放不下 → best-effort 硬截，仍 <= budget、仍不抛（软预算永不抛）。
+    counter = HeuristicTokenCounter()
+    policy = BudgetCompressionPolicy(counter)
+    partition = Partition(name="m", provider="x", budget=1)
+    result = policy.compress(partition, "abcdefghijklmnop")  # 4 tokens
+    assert counter.count(result) <= 1
+
+
+def test_budget_policy_deterministic() -> None:
+    counter = HeuristicTokenCounter()
+    policy = BudgetCompressionPolicy(counter)
+    partition = Partition(name="m", provider="x", budget=3)
+    content = "重复内容很多很多很多很多很多很多很多很多"
+    assert policy.compress(partition, content) == policy.compress(partition, content)
+
+
+def test_context_builder_applies_budget_policy_to_partition() -> None:
+    # policy 经 build 的 _resolve 钩子作用到分区内容：超预算分区被裁进预算。
+    counter = HeuristicTokenCounter()
+    builder = ContextBuilder(
+        [Partition(name="m", provider="很长很长的学情内容" * 10, budget=5)],
+        policy=BudgetCompressionPolicy(counter),
+    )
+    messages = builder.build([], "q")
+    assert counter.count(messages[0].content) <= 5
+
+
+def test_context_builder_no_ceiling_never_raises() -> None:
+    # 向后兼容：total_budget None（默认）→ 从不查、从不抛（现有 run_react / 测试 / cassette 不破）。
+    builder = ContextBuilder([Partition(name="system", provider="x" * 10000)])
+    messages = builder.build([], "q")
+    assert messages[-1].content == "q"
+
+
+def test_context_builder_within_ceiling_ok() -> None:
+    counter = HeuristicTokenCounter()
+    builder = ContextBuilder(
+        [Partition(name="system", provider="短提示")], counter=counter, total_budget=1000
+    )
+    assert builder.build([], "q")[-1].content == "q"
+
+
+def test_context_builder_raises_when_total_over_ceiling() -> None:
+    # 总硬上限：装配后总 token 超上限 → 大声失败（ContextBudgetExceeded），不静默截断成残缺上下文。
+    counter = HeuristicTokenCounter()
+    builder = ContextBuilder(
+        [Partition(name="system", provider="这是一段很长的系统提示内容" * 20)],
+        counter=counter,
+        total_budget=5,
+    )
+    with pytest.raises(ContextBudgetExceeded) as exc_info:
+        builder.build([], "问题")
+    assert exc_info.value.ceiling == 5
+    assert exc_info.value.used > 5
