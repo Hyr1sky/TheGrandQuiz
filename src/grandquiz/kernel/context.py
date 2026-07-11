@@ -173,6 +173,54 @@ class SlidingWindowHistoryCompressor:
         return list(history[-keep:]) if len(history) > keep else list(history)
 
 
+class Summarizer(Protocol):
+    """把若干条消息折进已有摘要、产出新摘要的**异步**策略（注入式）——C3b 的 LLM 槽契约。
+
+    kernel 只认此协议（收 prior_summary + 消息 → 新摘要串），不认识 domain 的 provider /
+    prompt：domain 用真 LLM（summarize prompt + Record/Replay）实现并注入，测试注入 fake。
+    """
+
+    async def summarize(self, prior_summary: str, messages: Sequence[Message]) -> str: ...
+
+
+class SummarizingHistoryCompressor:
+    """滚动摘要 + 最近窗口（``HistoryCompressor``；LangChain summary-buffer memory 形状）。
+
+    读 / 写分离，避开"sync 里 await 不了 LLM"：
+    - ``compress``（**sync**，build 用）：返回 ``[system(滚动摘要)] + 尚未摘要的最近若干轮``——
+      只读缓存 ``_summary``、**无 LLM 调用**。
+    - ``prune``（**async**，``run_agent_turn`` 每轮后调）：把新被挤出窗口（超 ``max_turns`` 轮）的
+      老轮经注入的 ``Summarizer`` 折进 ``_summary``、推进 ``_summarized_turns``。摘哪几轮确定性代码
+      定、LLM 只产摘要文本（同"LLM 判卷、代码记账"）。
+
+    有状态（摘要 + 已摘轮数跨回合累积）故非 frozen。一轮 = user+assistant 两条。
+    """
+
+    _SUMMARY_PREFIX = "此前对话摘要："
+
+    def __init__(self, summarizer: Summarizer, *, max_turns: int = 5) -> None:
+        self._summarizer = summarizer
+        self._max_turns = max_turns
+        self._summary = ""
+        self._summarized_turns = 0
+
+    def compress(self, history: Sequence[Message]) -> list[Message]:
+        kept = list(history[self._summarized_turns * 2 :])  # 尚未摘要的（= prune 后的最近窗口）
+        if self._summary:
+            summary_msg = Message(role="system", content=self._SUMMARY_PREFIX + self._summary)
+            return [summary_msg, *kept]
+        return kept
+
+    async def prune(self, history: Sequence[Message]) -> None:
+        total_turns = len(history) // 2
+        evict_boundary = max(0, total_turns - self._max_turns)  # 应被摘要（超窗口）的轮数
+        if evict_boundary <= self._summarized_turns:
+            return  # 无新老轮被挤出 → 幂等，不重复摘
+        newly_evicted = list(history[self._summarized_turns * 2 : evict_boundary * 2])
+        self._summary = await self._summarizer.summarize(self._summary, newly_evicted)
+        self._summarized_turns = evict_boundary
+
+
 class ContextBuilder:
     """把有序分区 + history + 当前 user 消息装配成 ``list[Message]``（领域无关机制）。
 

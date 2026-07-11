@@ -37,6 +37,8 @@ from grandquiz.kernel.context import (
     HistoryCompressor,
     Partition,
     SlidingWindowHistoryCompressor,
+    Summarizer,
+    SummarizingHistoryCompressor,
     TokenCounter,
 )
 from grandquiz.kernel.events import EventEmitter, EventSink
@@ -522,3 +524,71 @@ def test_context_builder_no_history_compressor_keeps_all() -> None:
     builder = ContextBuilder([Partition(name="system", provider="S")])
     messages = builder.build(_turns(2), "现在")
     assert [m.content for m in messages] == ["S", "问0", "答0", "问1", "答1", "现在"]
+
+
+# --------------------------------------------------------------------------- #
+# C3b：SummarizingHistoryCompressor（滚动摘要 + 最近窗口；sync compress 读 / async prune 写）
+# --------------------------------------------------------------------------- #
+
+
+class _FakeSummarizer:
+    """确定性 fake：把折入的消息条数追加进 prior_summary（无 LLM，供 TDD 钉逻辑）。"""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, list[str]]] = []
+
+    async def summarize(self, prior_summary: str, messages: Sequence[Message]) -> str:
+        self.calls.append((prior_summary, [m.content for m in messages]))
+        folded = "+".join(m.content for m in messages)  # 确定性：折入内容拼接，便于断言
+        return f"{prior_summary}>{folded}" if prior_summary else folded
+
+
+def test_summarizing_satisfies_protocols() -> None:
+    _c: HistoryCompressor = SummarizingHistoryCompressor(_FakeSummarizer())
+    _s: Summarizer = _FakeSummarizer()
+    assert _c.compress([]) == []
+
+
+async def test_summarizing_within_window_no_prune_no_summary() -> None:
+    # 未超窗口 → prune 不摘要、compress 原样返回、无摘要消息、summarizer 零调用。
+    fake = _FakeSummarizer()
+    compressor = SummarizingHistoryCompressor(fake, max_turns=3)
+    history = _turns(2)
+    await compressor.prune(history)
+    assert fake.calls == []
+    assert compressor.compress(history) == history
+
+
+async def test_summarizing_prune_folds_evicted_and_compress_prepends_summary() -> None:
+    # 超窗口 → prune 把被挤出的老轮折进滚动摘要；compress 返回 [system(摘要)] + 最近窗口。
+    fake = _FakeSummarizer()
+    compressor = SummarizingHistoryCompressor(fake, max_turns=2)
+    history = _turns(4)  # 4 轮，窗口 2 → 轮0、轮1 被挤出（2 轮 = 4 条）
+    await compressor.prune(history)
+    assert len(fake.calls) == 1
+    assert fake.calls[0] == ("", ["问0", "答0", "问1", "答1"])  # 折入前 2 轮
+    result = compressor.compress(history)
+    assert result[0].role == "system"
+    assert "问0+答0+问1+答1" in result[0].content  # 被挤出的前 2 轮进了摘要
+    assert [m.content for m in result[1:]] == ["问2", "答2", "问3", "答3"]  # 最近 2 轮原样
+
+
+async def test_summarizing_prune_is_incremental_across_turns() -> None:
+    # 增量：第二次 prune 只折"新被挤出"的那轮，且带上上次的滚动摘要（LangChain summary-buffer）。
+    fake = _FakeSummarizer()
+    compressor = SummarizingHistoryCompressor(fake, max_turns=2)
+    await compressor.prune(_turns(3))  # 轮0 被挤出
+    await compressor.prune(_turns(4))  # 新增轮1 被挤出
+    assert len(fake.calls) == 2
+    assert fake.calls[0] == ("", ["问0", "答0"])
+    assert fake.calls[1][0] == "问0+答0"  # 第二次带上一次的滚动摘要作 prior
+    assert fake.calls[1][1] == ["问1", "答1"]
+
+
+async def test_summarizing_prune_idempotent_when_no_new_eviction() -> None:
+    # 无新老轮被挤出 → prune 不再调 summarizer（幂等，别重复摘同一轮）。
+    fake = _FakeSummarizer()
+    compressor = SummarizingHistoryCompressor(fake, max_turns=2)
+    await compressor.prune(_turns(3))
+    await compressor.prune(_turns(3))
+    assert len(fake.calls) == 1
