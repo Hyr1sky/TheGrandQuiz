@@ -34,7 +34,9 @@ from grandquiz.kernel.context import (
     ContextBudgetExceeded,
     ContextBuilder,
     HeuristicTokenCounter,
+    HistoryCompressor,
     Partition,
+    SlidingWindowHistoryCompressor,
     TokenCounter,
 )
 from grandquiz.kernel.events import EventEmitter, EventSink
@@ -455,3 +457,68 @@ def test_context_builder_raises_when_total_over_ceiling() -> None:
         builder.build([], "问题")
     assert exc_info.value.ceiling == 5
     assert exc_info.value.used > 5
+
+
+# --------------------------------------------------------------------------- #
+# C3a：SlidingWindowHistoryCompressor（保最近 N 轮原样、老轮丢弃；确定性，无 LLM）
+# --------------------------------------------------------------------------- #
+
+
+def _turns(n: int) -> list[Message]:
+    # 造 n 轮 [user_i, assistant_i]——run_agent_turn 裁剪后 history 的形状（u/a 交替）。
+    messages: list[Message] = []
+    for i in range(n):
+        messages.append(Message(role="user", content=f"问{i}"))
+        messages.append(Message(role="assistant", content=f"答{i}"))
+    return messages
+
+
+def test_sliding_window_keeps_all_when_within_window() -> None:
+    compressor = SlidingWindowHistoryCompressor(max_turns=3)
+    history = _turns(2)  # 4 条 <= 窗口 6 条
+    assert compressor.compress(history) == history
+
+
+def test_sliding_window_keeps_last_n_turns() -> None:
+    # 超窗口 → 只保最近 max_turns 轮（= max_turns*2 条），更早的丢。
+    compressor = SlidingWindowHistoryCompressor(max_turns=2)
+    result = compressor.compress(_turns(4))  # 8 条 → 保最后 4 条
+    assert [m.content for m in result] == ["问2", "答2", "问3", "答3"]
+
+
+def test_sliding_window_zero_turns_drops_all() -> None:
+    # max_turns=0 → 全丢（不能被 history[-0:] 的"取全部"陷阱坑到）。
+    assert SlidingWindowHistoryCompressor(max_turns=0).compress(_turns(3)) == []
+
+
+def test_sliding_window_deterministic() -> None:
+    compressor = SlidingWindowHistoryCompressor(max_turns=2)
+    history = _turns(5)
+    assert compressor.compress(history) == compressor.compress(history)
+
+
+def test_sliding_window_satisfies_history_compressor_protocol() -> None:
+    compressor: HistoryCompressor = SlidingWindowHistoryCompressor()
+    assert compressor.compress([]) == []
+
+
+def test_context_builder_applies_history_compressor_before_assembly() -> None:
+    # build 在 extend history 前调 compressor：只有最近 1 轮 + system + 当前 user 进 messages。
+    builder = ContextBuilder(
+        [Partition(name="system", provider="S")],
+        history_compressor=SlidingWindowHistoryCompressor(max_turns=1),
+    )
+    messages = builder.build(_turns(3), "现在")
+    assert [(m.role, m.content) for m in messages] == [
+        ("system", "S"),
+        ("user", "问2"),
+        ("assistant", "答2"),
+        ("user", "现在"),
+    ]
+
+
+def test_context_builder_no_history_compressor_keeps_all() -> None:
+    # 向后兼容：无 compressor（默认 None）→ history 原样全展（现有 run_react / 测试不破）。
+    builder = ContextBuilder([Partition(name="system", provider="S")])
+    messages = builder.build(_turns(2), "现在")
+    assert [m.content for m in messages] == ["S", "问0", "答0", "问1", "答1", "现在"]

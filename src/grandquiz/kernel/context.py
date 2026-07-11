@@ -145,6 +145,34 @@ class BudgetCompressionPolicy:
         return content[:lo]
 
 
+class HistoryCompressor(Protocol):
+    """把（可能很长的）对话 history 压成更短一段的策略——C3 历史压缩接缝（选项 B：独立抽象）。
+
+    与 ``CompressionPolicy``（按分区裁 ``str``）分开：history 是 ``list[Message]``、压缩语义不同（保
+    最近若干轮 / 摘要老轮），故独立抽象。``ContextBuilder.build`` 在 extend history 前调它。
+    """
+
+    def compress(self, history: Sequence[Message]) -> list[Message]: ...
+
+
+@dataclass(frozen=True)
+class SlidingWindowHistoryCompressor:
+    """只保最近 ``max_turns`` 轮对话原样、更早的丢弃（C3a：确定性、无 LLM）。
+
+    一轮 = (user, assistant) 一对——``run_agent_turn`` 跨轮裁剪后 history 恒 user/assistant 交替，
+    保最近 ``max_turns`` 轮 = 保最后 ``max_turns*2`` 条。老轮**摘要**（而非丢弃）留 C3b。纯代码、无
+    clock/random → replay 稳。``max_turns=0`` → 全丢（显式挡 ``[-0:]`` 取全部的坑）。
+    """
+
+    max_turns: int = 5
+
+    def compress(self, history: Sequence[Message]) -> list[Message]:
+        keep = self.max_turns * 2
+        if keep <= 0:
+            return []
+        return list(history[-keep:]) if len(history) > keep else list(history)
+
+
 class ContextBuilder:
     """把有序分区 + history + 当前 user 消息装配成 ``list[Message]``（领域无关机制）。
 
@@ -161,6 +189,7 @@ class ContextBuilder:
         policy: CompressionPolicy | None = None,
         counter: TokenCounter | None = None,
         total_budget: int | None = None,
+        history_compressor: HistoryCompressor | None = None,
     ) -> None:
         self._partitions = list(partitions)
         # 分区软预算：None → 恒等透传；BudgetCompressionPolicy 按各 Partition.budget 头截断。
@@ -169,6 +198,8 @@ class ContextBuilder:
         # ContextBudgetExceeded。默认全 None → 从不检查（向后兼容，不破现有测试 / cassette）。
         self._counter = counter
         self._total_budget = total_budget
+        # 历史压缩：None → history 原样全展；SlidingWindow / Summarizing 则先压后 extend。
+        self._history_compressor = history_compressor
 
     def build(self, history: Sequence[Message], user_message: str) -> list[Message]:
         """按序装配：各分区（system 前言区）→ history → 当前 user 消息。
@@ -181,6 +212,8 @@ class ContextBuilder:
             content = self._resolve(partition)
             if content:
                 messages.append(Message(role="system", content=content))
+        if self._history_compressor is not None:
+            history = self._history_compressor.compress(history)  # 保最近若干轮 / 摘要老轮
         messages.extend(history)
         messages.append(Message(role="user", content=user_message))
         self._enforce_total_budget(messages)
