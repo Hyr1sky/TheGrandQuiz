@@ -4,9 +4,11 @@
 token + prompt 版本，行链到详情）+ 每用例一份 ``render_trace_html`` 详情（span 树 + 事件流）；
 ``grandquiz trace <id>`` 从独立 trace 库按 trace_id 读出会话 → 导出同款自包含 HTML，读不到 id
 则大声报错。两命令共用 issue 03 的 ``render_trace_html``（不另写渲染逻辑），产出一律自包含
-（无 ``<script`` / ``<link`` / ``src=`` / ``@import`` / ``url(http`` 等加载外部资源构造）。
+（无 ``<link`` / 外链 ``<script src=`` / ``@import`` / ``url(http`` 等加载外部资源构造；索引页
+v1 静态增强允许**内联** ``<script>`` 承载排序/筛选交互，见 ``harness._REPORT_INDEX_JS``）。
 """
 
+import html
 import re
 from pathlib import Path
 
@@ -19,11 +21,18 @@ from grandquiz.kernel.trace import TraceStore
 
 
 def _assert_self_contained(document: str) -> None:
-    """自包含 = 零"加载外部资源"构造（内联 CSS 在场、无 JS / 外链 / 外部 url()）。"""
-    assert "<script" not in document  # 折叠交互用原生 <details>，零 JS
+    """自包含 = 零"加载外部资源"构造（内联 CSS 在场、无外链样式表 / 无外部脚本 / 无外部 url()）。
+
+    详情页折叠交互用原生 ``<details>``、零 JS；索引页允许内联 ``<script>``（v1 排序/筛选增强，见
+    ``harness._REPORT_INDEX_JS``）——但**任何** ``<script>`` 都不得带 ``src=``（外链脚本）。两页共用
+    本断言，故这里放行内联 script、只堵外部加载。
+    """
     assert "<link" not in document  # 无外部样式表
     assert "@import" not in document  # CSS 无外部 import
     assert "<style" in document  # 内联样式在场
+    assert not re.search(r"<script[^>]*\bsrc\s*=", document, re.IGNORECASE), (
+        "<script> 带 src= 指向了外部脚本（只允许内联 JS）"
+    )
     # 无"加载外部资源"：url(...) 与 src/href 不得指向 http(s):// 或协议相对 //（含引号形式）；
     # 相对链接（如 href="case1.html"）不含 // 故放行。用正则、而非脆弱的裸子串匹配。
     assert not re.search(r'url\(\s*["\']?\s*(?:https?:)?//', document), "CSS url() 指向了外部资源"
@@ -72,6 +81,44 @@ async def test_report_export_index_and_per_case_details(tmp_path: Path) -> None:
     top = max(reports, key=lambda r: r.total_tokens)
     assert top.total_tokens > 0
     assert f"<td>{top.total_tokens}</td>" in index
+
+
+async def test_report_index_has_sort_filter_and_summary(tmp_path: Path) -> None:
+    """索引页 v1 静态增强：可排序表头 + 客户端文本筛选 + 顶部通过/失败/token 汇总条。
+
+    覆盖新加的交互式结构本身（DOM 钩子存在），不复测 pass/fail 语义（那是 run_case 的权威、本 PR
+    不改）。索引页仍须自包含：允许内联 <script>，但不得有 <script src=> 之类外链。
+    """
+    out_dir = tmp_path / "eval-report-v1"
+
+    index_path = await export_html_report(out_dir)
+    index = index_path.read_text(encoding="utf-8")
+
+    _assert_self_contained(index)  # 内联 JS 放行，但零外部脚本/样式表/url() 请求
+    assert "<script src=" not in index  # 排序/筛选脚本必须内联，不外链
+
+    reports = await run_all()
+    passed = sum(r.passed for r in reports)
+    failed = len(reports) - passed
+    total_tokens = sum(r.total_tokens for r in reports)
+
+    # 顶部汇总条：passed / failed / total tokens 三个数字都按值出现（非仅存在某个 class）
+    assert f'<span class="n">{passed}</span><span class="l">passed</span>' in index
+    assert f'<span class="n">{failed}</span><span class="l">failed</span>' in index
+    assert f'<span class="n">{total_tokens}</span><span class="l">total tokens</span>' in index
+
+    # 可排序表头：case id / kind / pass / tokens 四列都带 data-sort-key（prompts 列不参与排序）
+    for key in ("id", "kind", "pass", "tokens"):
+        assert f'data-sort-key="{key}"' in index
+    assert 'data-sort-key="prompts"' not in index
+
+    # 客户端筛选输入框存在
+    assert 'id="case-filter"' in index
+
+    # 每个用例行都带排序用的 data 属性（分组 + 排序键都来自这些属性）
+    for r in reports:
+        assert f'data-id="{html.escape(r.case_id, quote=True)}"' in index
+        assert f'data-tokens="{r.total_tokens}"' in index
 
 
 def _write_synthetic_trace(trace_db_path: Path, trace_id: str) -> None:
