@@ -18,6 +18,11 @@ from pathlib import Path
 from rich.console import Console
 from rich.markup import escape
 
+from grandquiz.domain.learning.preference import (
+    QUESTION_LANGUAGE_KEY,
+    detect_language,
+    record_inferred_preference,
+)
 from grandquiz.domain.learning.responder import Responder
 from grandquiz.interfaces.cli.commands import _print_trace_location
 from grandquiz.interfaces.cli.composition import (
@@ -97,6 +102,14 @@ async def run_react(
         banner = f"「{title}」" if title else ""
         console.print(f"[bold]ReAct 学习助手{banner}——输入消息与我对话（Ctrl+D 退出）[/]")
         for message in user_messages:
+            # 自进化第一个具体能力：从这一轮用户原文推断出题语言偏好（纯确定性字符分类，不调
+            # LLM）。与 run_agent_turn 是否成功无关——语言信号来自用户自己怎么打字，不来自这一轮
+            # 有没有正常回复；显式设置（--prefer-lang / 用户明说"用英文出题"）永不被推断覆盖
+            # （record_inferred_preference 自己的规则），故先做这步不影响既有显式偏好行为。
+            detected_language = detect_language(message)
+            if detected_language is not None:
+                record_inferred_preference(preferences, QUESTION_LANGUAGE_KEY, detected_language)
+
             # 单轮兜底（dogfood "神了" 的会话级鲁棒）：run_agent_turn 内部已把可恢复的坏 tool_call
             # 走 M6 DEGRADED 回灌自愈；但若仍冒出未预期异常（FATAL 工具错 / MaxIterations / provider
             # 炸），只兜**这一轮**——打印友好提示后继续下一条消息，不让一轮坏 turn 杀整场会话。历史只

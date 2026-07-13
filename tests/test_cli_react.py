@@ -23,6 +23,7 @@ from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.fetch import FetchError
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
+from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY, SqlitePreferenceMemory
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import SqliteLearningStore
@@ -620,6 +621,54 @@ async def test_react_injects_learner_context_into_system(tmp_path: Path) -> None
     assert "薄弱" in joined  # 状态注入
     # 学情块与 react 系统提示是分开的两条 system 消息（分区装配，非拼进一条）。
     assert len(system_blocks) == 2
+
+
+async def test_react_infers_question_language_preference_from_user_message(tmp_path: Path) -> None:
+    # 自进化第一个具体能力：react 每轮观察用户原文语言，推断写入 question_language 偏好——
+    # 不需要用户显式 --prefer-lang，纯从这轮英文消息本身就能学出来。
+    db = tmp_path / "learning.db"
+    provider = _CaptureReactProvider()
+    await run_react(
+        title="Py",
+        db_path=db,
+        materials_dir=tmp_path,
+        provider=provider,
+        responder=ScriptedResponder(answer=_MC_WRONG),
+        console=Console(record=True, width=100),
+        user_messages=["Please tell me which concepts I am weak at"],
+        seed=42,
+        trace_db_path=tmp_path / "trace.db",
+    )
+    preferences = SqlitePreferenceMemory(db)
+    try:
+        pref = preferences.get_preference(QUESTION_LANGUAGE_KEY)
+        assert pref is not None
+        assert pref.value == "英文"
+        assert 0.0 < pref.confidence < 1.0  # 推断值，与显式设置（1.0）可区分
+    finally:
+        preferences.close()
+
+
+async def test_react_short_message_does_not_touch_language_preference(tmp_path: Path) -> None:
+    # 信号太弱的消息（如"好的"）不该被记成一次语言观察——detect_language 对短文本返回 None。
+    db = tmp_path / "learning.db"
+    provider = _CaptureReactProvider()
+    await run_react(
+        title="Py",
+        db_path=db,
+        materials_dir=tmp_path,
+        provider=provider,
+        responder=ScriptedResponder(answer=_MC_WRONG),
+        console=Console(record=True, width=100),
+        user_messages=["好的"],
+        seed=42,
+        trace_db_path=tmp_path / "trace.db",
+    )
+    preferences = SqlitePreferenceMemory(db)
+    try:
+        assert preferences.get_preference(QUESTION_LANGUAGE_KEY) is None
+    finally:
+        preferences.close()
 
 
 # --------------------------------------------------------------------------- #

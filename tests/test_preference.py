@@ -29,6 +29,8 @@ from grandquiz.domain.learning.preference import (
     DictPreferenceMemory,
     PreferenceMemory,
     SqlitePreferenceMemory,
+    detect_language,
+    record_inferred_preference,
 )
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import LearningStore
@@ -230,3 +232,82 @@ async def test_preference_set_to_chinese_asks_in_chinese() -> None:
     prefs.set_preference(QUESTION_LANGUAGE_KEY, "中文")
     question = await _question_asked(preferences=prefs)
     assert _cjk_ratio(question) > 0.6  # 中文题
+
+
+# --- detect_language：纯确定性字符分类，不调 LLM --------------------------------------
+
+
+def test_detect_language_chinese_text() -> None:
+    assert detect_language("请解释闭包捕获的是变量本身还是值") == "中文"
+
+
+def test_detect_language_english_text() -> None:
+    assert detect_language("How does a closure capture variables") == "英文"
+
+
+def test_detect_language_too_short_returns_none() -> None:
+    # 信号太弱（"ok"/"是"这类短应答）→ None，不该被记成一次观察。
+    assert detect_language("ok") is None
+    assert detect_language("是") is None
+    assert detect_language("") is None
+
+
+def test_detect_language_picks_majority_in_mixed_text() -> None:
+    # 中文里夹了英文术语（"closure"）：中文字符仍占多数 → 判中文。
+    assert detect_language("闭包 closure 捕获的是变量而非值的快照") == "中文"
+
+
+# --- record_inferred_preference：推断侧的写入策略（显式永不覆盖 / 一致递增 / 不一致重起步）------
+
+
+def test_record_inferred_preference_writes_initial_confidence_when_unset() -> None:
+    mem = DictPreferenceMemory()
+    record_inferred_preference(mem, QUESTION_LANGUAGE_KEY, "英文")
+    pref = mem.get_preference(QUESTION_LANGUAGE_KEY)
+    assert pref is not None
+    assert pref.value == "英文"
+    assert 0.0 < pref.confidence < 1.0  # 推断值恒 < 1.0（与显式区分）
+
+
+def test_record_inferred_preference_never_overrides_explicit() -> None:
+    mem = DictPreferenceMemory()
+    mem.set_preference(QUESTION_LANGUAGE_KEY, "中文")  # 显式设置，confidence=1.0
+    record_inferred_preference(mem, QUESTION_LANGUAGE_KEY, "英文")  # 推断出不同值
+    pref = mem.get_preference(QUESTION_LANGUAGE_KEY)
+    assert pref is not None
+    assert pref.value == "中文"  # 显式设置未被推断覆盖
+    assert pref.confidence == 1.0
+
+
+def test_record_inferred_preference_increments_confidence_on_repeated_agreement() -> None:
+    mem = DictPreferenceMemory()
+    record_inferred_preference(mem, QUESTION_LANGUAGE_KEY, "英文")
+    first = mem.get_preference(QUESTION_LANGUAGE_KEY)
+    assert first is not None
+    record_inferred_preference(mem, QUESTION_LANGUAGE_KEY, "英文")  # 再次观察到同一值
+    second = mem.get_preference(QUESTION_LANGUAGE_KEY)
+    assert second is not None
+    assert second.confidence > first.confidence  # 一致观察 → 置信度递增
+    assert second.confidence < 1.0  # 但恒不到显式的 1.0
+
+
+def test_record_inferred_preference_caps_confidence_below_explicit() -> None:
+    mem = DictPreferenceMemory()
+    for _ in range(50):  # 反复一致观察也不能逼近甚至撞上显式的 1.0
+        record_inferred_preference(mem, QUESTION_LANGUAGE_KEY, "英文")
+    pref = mem.get_preference(QUESTION_LANGUAGE_KEY)
+    assert pref is not None
+    assert pref.confidence < 1.0
+
+
+def test_record_inferred_preference_restarts_on_disagreement() -> None:
+    mem = DictPreferenceMemory()
+    record_inferred_preference(mem, QUESTION_LANGUAGE_KEY, "英文")
+    record_inferred_preference(mem, QUESTION_LANGUAGE_KEY, "英文")  # 置信度已递增过一次
+    boosted = mem.get_preference(QUESTION_LANGUAGE_KEY)
+    assert boosted is not None
+    record_inferred_preference(mem, QUESTION_LANGUAGE_KEY, "中文")  # 观察到不同值 → 重新起步
+    restarted = mem.get_preference(QUESTION_LANGUAGE_KEY)
+    assert restarted is not None
+    assert restarted.value == "中文"
+    assert restarted.confidence < boosted.confidence  # 不是继续累加旧信号的置信度
