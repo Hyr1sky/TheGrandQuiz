@@ -33,3 +33,6 @@ jobs:
 
       - name: Tests
         run: uv run pytest
+
+      - name: Eval harness (Tier-1, R2 迭代 gate)
+        run: uv run python -m grandquiz.evals

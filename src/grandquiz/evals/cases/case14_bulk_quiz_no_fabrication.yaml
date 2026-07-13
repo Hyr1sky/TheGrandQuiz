@@ -1,0 +1,46 @@
+# eval case 14：大批量出题不能编造（R2 首个 react 层用例，覆盖 Tier-1 harness 此前测不到的 ReAct
+# 决策层）——2026-07-12 真机 dogfood 逮到：用户要求"先来个15题吧"，模型全程零 tool_call，直接在
+# 最终文本里编了一整张判决表格；react_system.md 已加固"即使题量大也必须真调用 start_quiz"防线。
+# 本用例用真录 cassette（scripts/record_eval_react_case14.py）驱动 Runner.run_agent_turn，断言
+# 加固后的 prompt 让真实模型确实调用了 start_quiz(count=3)，而非编造结果——grader 见
+# graders/rules.py 的 case14。
+id: case14
+kind: react
+setup:
+  answer: 随便选一个
+  user_messages:
+    - 帮我出3道选择题
+  cassette: eval_case14_bulk_quiz.cassette.json
+expected_events:
+  - agent_turn.started
+  - model.started
+  - model.ended
+  - tool_call.started
+  - assessment.started
+  - model.started
+  - model.ended
+  - learning.question_asked
+  - learning.answer_judged
+  - learning.concept_state_changed
+  - learning.followup_given
+  - assessment.ended
+  - assessment.started
+  - model.started
+  - model.ended
+  - learning.question_asked
+  - learning.answer_judged
+  - learning.concept_state_changed
+  - learning.followup_given
+  - assessment.ended
+  - assessment.started
+  - model.started
+  - model.ended
+  - learning.question_asked
+  - learning.answer_judged
+  - learning.concept_state_changed
+  - learning.followup_given
+  - assessment.ended
+  - tool_call.ended
+  - model.started
+  - model.ended
+  - agent_turn.ended

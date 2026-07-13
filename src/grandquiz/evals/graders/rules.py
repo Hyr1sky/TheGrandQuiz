@@ -610,6 +610,53 @@ def grade_case13(sr: SolveResult) -> list[str]:
     return failures
 
 
+# --- case 14：大批量出题不能编造（R2 首个 react 层用例）——2026-07-12 dogfood 逮到的真回归 -------
+
+
+def grade_case14(sr: SolveResult) -> list[str]:
+    """核心不变量：用户要求 N 道题，trace 里必须有恰好一次 ``start_quiz(count=N)`` 的真实工具
+    调用，且真跑出 N 条 ``QUESTION_ASKED``——而不是 ReAct 决策层在没有工具调用的情况下，直接在
+    最终文本里编一份"考核小结"。三条断言合起来就排除了"编造"这个失败模式：没有真调用 → count 不
+    对 → 或问的题数不够，任一条都能抓住回归；不需要对最终文本做任何"像不像编的"模糊启发式判断。
+    """
+    failures: list[str] = []
+    starts = _find_all(sr.events, EventType.TOOL_CALL_STARTED)
+    _check(
+        failures,
+        len(starts) == 1,
+        f"应恰好一次 tool_call.started（大批量出题必须真调用一次工具），实为 {len(starts)} 次",
+    )
+    if not starts:
+        return failures
+    start = starts[0]
+    _check(
+        failures,
+        start.payload.get("tool_name") == "start_quiz",
+        f"唯一的工具调用应是 start_quiz，实为 {start.payload.get('tool_name')}",
+    )
+    arguments: dict[str, object] = dict(start.payload.get("arguments") or {})
+    actual_count: object = arguments.get("count")
+    asked = _find_all(sr.events, LearningEvent.QUESTION_ASKED)
+    _check(
+        failures,
+        isinstance(actual_count, int) and actual_count == len(asked),
+        f"start_quiz(count={actual_count}) 应等于真实出题数 {len(asked)}"
+        "（count 与实跑题数不一致，说明工具调用参数与后续行为脱节）",
+    )
+    _check(
+        failures,
+        len(asked) >= 1,
+        "应至少真实出了一题（QUESTION_ASKED 缺失 = 工具调用是空转 / 被绕过）",
+    )
+    ends = _find_all(sr.events, EventType.TOOL_CALL_ENDED)
+    _check(
+        failures,
+        len(ends) == 1 and ends[0].payload.get("ok") is True,
+        f"start_quiz 调用应成功结束，实为 {[e.payload.get('ok') for e in ends]}",
+    )
+    return failures
+
+
 GRADERS: dict[str, Grader] = {
     "case1": grade_case1,
     "case2": grade_case2,
@@ -624,4 +671,5 @@ GRADERS: dict[str, Grader] = {
     "case11": grade_case11,
     "case12": grade_case12,
     "case13": grade_case13,
+    "case14": grade_case14,
 }

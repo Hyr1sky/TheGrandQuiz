@@ -31,6 +31,7 @@ import yaml
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.assessment import AssessmentResult, assess_once
+from grandquiz.domain.learning.context import learner_context_provider
 from grandquiz.domain.learning.grading import VerdictLabel
 from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
 from grandquiz.domain.learning.memory import LearningMemory
@@ -44,14 +45,20 @@ from grandquiz.domain.learning.preference import (
     DictPreferenceMemory,
     PreferenceMemory,
 )
+from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.selection import Focus, apply_scope, select_target
 from grandquiz.domain.learning.store import LearningStore
+from grandquiz.domain.learning.tools import register_learning_tools
 from grandquiz.kernel.clock import ManualClock, new_rng
+from grandquiz.kernel.context import ContextBuilder, Partition
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.report import render_trace_html
+from grandquiz.kernel.runner import Runner
+from grandquiz.kernel.tools import ToolRegistry
 from grandquiz.kernel.trace import Span, TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
+from grandquiz.providers.replay import Cassette, ReplayProvider
 
 # --- 规范确定性装配（test_assessment / test_ingest 的 _harness / _summ 权威版本）-------------
 
@@ -396,7 +403,7 @@ class Case:
     """
 
     id: str
-    kind: Literal["ingest", "assess"]
+    kind: Literal["ingest", "assess", "react"]
     expected_events: list[str]
     # assess 专属
     stocked: bool = True
@@ -426,6 +433,12 @@ class Case:
     # ingest 专属
     source: Literal["ok", "boom"] = "ok"
     approval_keep: list[str] = field(default_factory=_empty_strs)
+    # react 专属（驱动 Runner.run_agent_turn 而非 domain 函数直调——覆盖 ReAct 决策层，Tier-1 harness
+    # 此前的盲区）：user_messages 逐条喂给 run_agent_turn；cassette 是真机录制的响应库文件名（相对
+    # tests/fixtures/），react 用例**必须**提供真录 cassette——ReAct 决策本身就是被测行为，用假
+    # provider 演会失去测试意义。answer 复用给 start_quiz 内部逐题作答的 ScriptedResponder。
+    user_messages: list[str] = field(default_factory=_empty_strs)
+    cassette: str | None = None
 
 
 def _parse_case(raw: Any) -> Case:
@@ -464,6 +477,15 @@ def _parse_case(raw: Any) -> Case:
             fixture=fixture,
             scope=[str(s) for s in setup.get("scope", [])],
             question_type=question_type,
+        )
+    if str(raw["kind"]) == "react":
+        return Case(
+            id=case_id,
+            kind="react",
+            expected_events=expected,
+            answer=str(setup.get("answer", "我的作答")),
+            user_messages=[str(m) for m in setup.get("user_messages", [])],
+            cassette=str(setup["cassette"]),
         )
     src: Literal["ok", "boom"] = "boom" if str(setup.get("source", "ok")) == "boom" else "ok"
     return Case(
@@ -671,6 +693,87 @@ async def _solve_ingest(case: Case, provider_override: Provider | None) -> Solve
     )
 
 
+def _load_react_cassette(name: str) -> ReplayProvider:
+    """从 ``tests/fixtures/<name>`` 建 ``ReplayProvider``（同 test_assess_replay 的复原套路）：从
+    cassette 自带的 role→model 反推 ``model_for_role``，回放无需 ``.env``、不触网、不烧 token。
+    """
+    path = Path("tests/fixtures") / name
+    raw: dict[str, dict[str, str]] = json.loads(path.read_text(encoding="utf-8"))
+    model_for_role = cast("dict[Role, str]", {e["role"]: e["model"] for e in raw.values()})
+    return ReplayProvider(Cassette.load(path), model_for_role)
+
+
+async def _solve_react(case: Case, provider_override: Provider | None) -> SolveResult:
+    """驱动 ``Runner.run_agent_turn``（而非 domain 函数直调）——覆盖 ReAct 决策层：LLM 会不会真的
+    触发工具，而非在最终文本里编结果。装配逐字照 ``composition.build_react_runner`` 的形状（工具
+    注册 + system/memory 分区），但用内存态 ``LearningStore``/``LearningMemory``（同其余用例，零
+    I/O）而非生产的 SQLite 实现——两者都满足 ``register_learning_tools`` 认的 ``Store``/``Memory``
+    协议，装配等价。
+
+    ``provider_override`` 为 None 时按 ``case.cassette`` 从 ``tests/fixtures/`` 载入真录
+    ``ReplayProvider``——react 用例**没有**"canned JSON 假件"这个选项：ReAct 决策本身就是被测行为，
+    假 provider 会把它演成恒定正确、测不出真实模型是否偷懒编造。
+    """
+    store, _ = build_stocked_store()
+    memory = LearningMemory()
+    preferences: PreferenceMemory = DictPreferenceMemory()
+    registry = ToolRegistry()
+
+    def source(_url: str) -> str:
+        raise AssertionError("react 用例的知识库已预先入库，不应触发 ingest")
+
+    provider = provider_override or _load_react_cassette(cast("str", case.cassette))
+    register_learning_tools(
+        registry,
+        source=source,
+        provider=provider,
+        store=store,
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
+        memory=memory,
+        max_bytes=4096,
+        allowed_domains=ALLOWED_DOMAINS,
+        responder=ScriptedResponder(answer=case.answer),
+        preferences=preferences,
+        quiz_seed=SEED,
+    )
+    prompt = load_prompt("react_system")
+    context_builder = ContextBuilder(
+        [
+            Partition(name="system", provider=prompt.text),
+            Partition(
+                name="memory",
+                provider=learner_context_provider(
+                    store=store, memory=memory, preferences=preferences
+                ),
+            ),
+        ]
+    )
+    emitter, events, trace = build_event_harness()
+    runner = Runner(
+        provider=provider,
+        emitter=emitter,
+        prompt_version=prompt.version,
+        tools=registry,
+        max_iterations=8,
+        context_builder=context_builder,
+    )
+    for message in case.user_messages:
+        await runner.run_agent_turn(message)
+    spans = trace.span_tree("run")
+    trace.close()
+    return SolveResult(
+        case=case,
+        events=events,
+        spans=spans,
+        result=None,
+        store=store,
+        memory=memory,
+        calls=0,
+        roles=[],
+        context={},
+    )
+
+
 async def solve(case: Case, *, provider_override: Provider | None = None) -> SolveResult:
     """从 ``case`` 重建确定性前置，调既有入口一次，捕获事件 + span 树 + result + 记忆 / 存储末态。
 
@@ -679,6 +782,8 @@ async def solve(case: Case, *, provider_override: Provider | None = None) -> Sol
     """
     if case.kind == "ingest":
         return await _solve_ingest(case, provider_override)
+    if case.kind == "react":
+        return await _solve_react(case, provider_override)
     return await _solve_assess(case, provider_override)
 
 

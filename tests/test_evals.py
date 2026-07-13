@@ -7,8 +7,12 @@ harness 用与 test_assessment / test_ingest 相同的假 provider（canned JSON
 import pytest
 
 from grandquiz.domain.learning.events import LearningEvent
+from grandquiz.domain.learning.memory import LearningMemory
+from grandquiz.domain.learning.store import LearningStore
+from grandquiz.evals.graders.rules import grade_case14
 from grandquiz.evals.graders.scorers import language_consistency, no_duplicate
-from grandquiz.evals.harness import load_cases, run_all, run_case, solve
+from grandquiz.evals.harness import Case, SolveResult, load_cases, run_all, run_case, solve
+from grandquiz.kernel.events import AgentEvent, EventType
 from grandquiz.providers.base import Role
 from grandquiz.providers.replay import Cassette, ReplayMiss, ReplayProvider
 
@@ -17,8 +21,9 @@ _MODELS: dict[Role, str] = {"basic": "deepseek-x", "enrich": "qwen-x"}
 
 async def test_all_cases_pass() -> None:
     reports = await run_all()
-    # 10 既有（8 + 语言一致性 / 无重复）+ 3 新（GKB-S7：scope-honor / empty_scope / 题型 honor）。
-    assert len(reports) == 13
+    # 10（8 + 语言一致性 / 无重复）+ 3 GKB-S7（scope-honor / empty_scope / 题型 honor）+ 1 react
+    # 层（case14，R2 首个：大批量出题不能编造）。
+    assert len(reports) == 14
     failing = {r.case_id: r.failures for r in reports if not r.passed}
     assert failing == {}, f"有用例未通过：{failing}"
 
@@ -86,6 +91,88 @@ async def test_question_type_intent_overrides_adaptive_routing() -> None:
     assert asked.payload["routed"] == "选择题"  # 自适应本会出选择题
     assert asked.payload["effective"] == "开放"  # "简答"意图盖过 → 开放
     assert "options" not in asked.payload  # 不出选择题
+
+
+async def test_case14_react_layer_calls_start_quiz_with_matching_count() -> None:
+    # react 层用例（R2 首个）：真录 cassette 驱动 Runner.run_agent_turn，断言加固后的
+    # react_system.md 真的让模型调用了 start_quiz(count=3)，而非在最终文本里编结果。
+    reports = {r.case_id: r for r in await run_all()}
+    assert reports["case14"].passed, reports["case14"].failures
+    sr = await solve(next(c for c in load_cases() if c.id == "case14"))
+    starts = [e for e in sr.events if e.type == EventType.TOOL_CALL_STARTED]
+    assert len(starts) == 1
+    assert starts[0].payload["tool_name"] == "start_quiz"
+    assert starts[0].payload["arguments"]["count"] == 3
+    asked = [e for e in sr.events if e.type == LearningEvent.QUESTION_ASKED]
+    assert len(asked) == 3  # 真跑了 3 轮，不是编的
+
+
+def _fake_case14() -> Case:
+    return Case(
+        id="case14",
+        kind="react",
+        expected_events=[],
+        user_messages=["帮我出3道选择题"],
+        cassette="x",
+    )
+
+
+def _fake_solve_result(events: list[AgentEvent]) -> SolveResult:
+    return SolveResult(
+        case=_fake_case14(),
+        events=events,
+        spans=[],
+        result=None,
+        store=LearningStore(),
+        memory=LearningMemory(),
+        calls=0,
+        roles=[],
+        context={},
+    )
+
+
+def _event(seq: int, etype: str, payload: dict[str, object]) -> AgentEvent:
+    return AgentEvent(type=etype, seq=seq, ts=0.0, trace_id="fake", payload=payload)
+
+
+def test_grade_case14_catches_zero_tool_call_fabrication() -> None:
+    # 钉死 2026-07-12 dogfood 抓到的真实回归形状：模型全程零 tool_call，直接在最终文本里编结果。
+    # 这个 SolveResult 是手造的假态（不依赖 cassette）——证明 grader 本身真能抓住这个失败模式，
+    # 不只是"恰好这份录制的 cassette 是好的"。
+    events = [
+        _event(0, "agent_turn.started", {}),
+        _event(1, EventType.MODEL_STARTED, {}),
+        _event(2, EventType.MODEL_ENDED, {"output": "本次考核小结——15 道选择题，全部完成。"}),
+        _event(3, "agent_turn.ended", {}),
+    ]
+    failures = grade_case14(_fake_solve_result(events))
+    assert failures
+
+
+def test_grade_case14_catches_count_mismatch() -> None:
+    # 工具确实被调了，但参数 count 与真实出题数对不上——同样是异常，须被抓住。
+    events = [
+        _event(
+            0, EventType.TOOL_CALL_STARTED, {"tool_name": "start_quiz", "arguments": {"count": 15}}
+        ),
+        _event(1, LearningEvent.QUESTION_ASKED, {}),
+        _event(2, LearningEvent.QUESTION_ASKED, {}),
+        _event(3, EventType.TOOL_CALL_ENDED, {"ok": True}),
+    ]
+    failures = grade_case14(_fake_solve_result(events))
+    assert failures
+
+
+def test_grade_case14_passes_when_tool_call_matches_real_rounds() -> None:
+    events = [
+        _event(
+            0, EventType.TOOL_CALL_STARTED, {"tool_name": "start_quiz", "arguments": {"count": 2}}
+        ),
+        _event(1, LearningEvent.QUESTION_ASKED, {}),
+        _event(2, LearningEvent.QUESTION_ASKED, {}),
+        _event(3, EventType.TOOL_CALL_ENDED, {"ok": True}),
+    ]
+    assert grade_case14(_fake_solve_result(events)) == []
 
 
 async def test_report_has_token_cost_and_prompt_version_columns() -> None:

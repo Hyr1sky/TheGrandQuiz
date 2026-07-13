@@ -1,7 +1,8 @@
-"""M8 Eval Harness——把 13 条考核竖切 eval 用例跑在同一条事件脊柱上，规则 scorer 断言 + 报告。
+"""M8 Eval Harness——把 14 条考核竖切 eval 用例跑在同一条事件脊柱上，规则 scorer 断言 + 报告。
 
 （8 个既有用例 + case9 语言一致性 / case10 去重回归探针 + GKB-S7 的 case11 scope-honor /
-case12 empty_scope / case13 题型 honor 三条全局 KB 探针。）
+case12 empty_scope / case13 题型 honor 三条全局 KB 探针 + R2 首个 react 层用例 case14
+大批量出题不能编造。）
 
 **只兑现 Tier-1 规则断言**：``graders/`` 里按 case id 键控的确定性 Python scorer（读事件流 /
 result / 记忆 / 存储 / span 树五族）。**Tier-2 LLM judge 仍待建（scoped-out）**——本 harness 当前
@@ -12,9 +13,11 @@ runtime、不引入 inspect_ai 依赖：
 
 - ``cases/*.yaml``：每个用例的输入 / 前置 + case id + 期望的**有序事件类型序列**（字符串列表）。
 - ``graders/``：按 case id 键控的规则 scorer（读事件流 / result / 记忆 / 存储 / span 树五族）。
-- ``harness.py``：``Solver`` 通用适配器（从 case 重建确定性前置、调既有入口一次、捕获事件 +
-  trace）+ runner + 报告（per-case pass/fail、token 成本列、prompt 版本 name@digest）。
+- ``harness.py``：``Solver`` 通用适配器——``kind: ingest/assess`` 直调 domain 函数（假 provider，
+  canned JSON，独立于 cassette、不触网）；``kind: react``（R2 新增）驱动 ``Runner.run_agent_turn``
+  ——覆盖 ReAct 决策层这个 ingest/assess 直调天然测不到的盲区，**必须**用真录 cassette（回放，不
+  烧 token，但录制时是真机行为，非假 provider 能替代）。+ runner + 报告（per-case pass/fail、
+  token 成本列、prompt 版本 name@digest）。
 
-用与现有单题 / ingest 测试相同的**假 provider（canned JSON）**驱动，独立于 cassette、不录制、
-不触网。``ReplayMiss`` 等 provider 基础设施异常在 runner 里**硬失败**，绝不静默通过。
+``ReplayMiss`` 等 provider 基础设施异常在 runner 里**硬失败**，绝不静默通过。
 """
