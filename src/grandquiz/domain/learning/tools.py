@@ -143,7 +143,7 @@ def make_ingest_tool(
     store: Store,
     approval: ApprovalGate,
     max_bytes: int,
-    allowed_domains: Collection[str],
+    allowed_domains: Collection[str] | Literal["*"],
 ) -> Tool:
     """建 ``ingest(url)`` 工具：wrap ``ingest_resource``，把内部 span 重挂到本次 TOOL_CALL 之下。
 
@@ -420,7 +420,7 @@ def register_learning_tools(
     approval: ApprovalGate,
     memory: Memory,
     max_bytes: int,
-    allowed_domains: Collection[str],
+    allowed_domains: Collection[str] | Literal["*"],
     responder: Responder | None = None,
     preferences: PreferenceMemory | None = None,
     quiz_seed: int = 0,

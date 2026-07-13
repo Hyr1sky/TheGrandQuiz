@@ -2,61 +2,62 @@
   "1d2c00bfdc89cbe84c72c8e5be1ce1dbfbb95a96ed96106d7dce4906efef309b": {
     "model": "qwen-plus",
     "role": "enrich",
-    "text": "{\"question\": \"闭包捕获的是什么？\", \"options\": [\"变量\", \"值\", \"内存地址\", \"函数名\"], \"answer_index\": 0, \"cited_evidence\": [\"闭包捕获变量而非值\"]}",
+    "text": "{\"question\": \"闭包在定义时捕获的是什么？\", \"options\": [\"变量本身\", \"变量的当前值\", \"变量的内存地址\", \"变量的作用域\"], \"answer_index\": 0, \"cited_evidence\": [\"闭包捕获变量而非值\"]}",
     "usage": {
-      "completion_tokens": 51,
+      "completion_tokens": 61,
       "prompt_tokens": 639,
-      "total_tokens": 690
+      "total_tokens": 700
     }
   },
   "3b9497871aaa68cfb0dbad726b04682eb2e5ffeda7375fa6ac871588c19db96e": {
     "model": "qwen-plus",
     "role": "enrich",
-    "text": "{\"question\": \"事件循环的核心调度对象是什么？\", \"options\": [\"宏任务与微任务\", \"同步代码与异步代码\", \"主线程与工作线程\", \"回调函数与Promise对象\"], \"answer_index\": 0, \"cited_evidence\": [\"事件循环调度宏任务与微任务\"]}",
+    "text": "{\"question\": \"事件循环的核心调度对象是什么？\", \"options\": [\"宏任务与微任务\", \"同步代码与异步代码\", \"回调函数与Promise\", \"主线程与工作线程\"], \"answer_index\": 0, \"cited_evidence\": [\"事件循环调度宏任务与微任务\"]}",
     "usage": {
-      "completion_tokens": 68,
+      "completion_tokens": 67,
       "prompt_tokens": 640,
-      "total_tokens": 708
+      "total_tokens": 707
+    }
+  },
+  "40ce7f66bf9c12cea6ca1e74103dac9e2b6a8cd25da70a0a6914c9471b015000": {
+    "model": "deepseek-chat",
+    "role": "basic",
+    "text": "好的，我来发起一次考核，3道选择题，覆盖优先。",
+    "tool_calls": [
+      {
+        "arguments": {
+          "count": 3,
+          "focus": "mixed",
+          "question_type": "选择题"
+        },
+        "id": "call_00_n5vD0sYTg1dpBrxpSKjm6727",
+        "name": "start_quiz"
+      }
+    ],
+    "usage": {
+      "completion_tokens": 91,
+      "prompt_tokens": 1861,
+      "total_tokens": 1952
     }
   },
   "867174f9636b41ae724ceb4ca0c8a28470535251c4360ea762fca8895e8377e3": {
     "model": "qwen-plus",
     "role": "enrich",
-    "text": "{\"question\": \"关于 JavaScript 中 var 声明的变量提升，以下哪项描述准确？\", \"options\": [\"var 声明会被提升到其所在作用域的顶部\", \"var 声明和初始化都会被提升到作用域顶部\", \"var 声明仅在函数作用域内被提升\", \"var 声明会被提升到全局作用域顶部\"], \"answer_index\": 0, \"cited_evidence\": [\"var 声明提升到作用域顶部\"]}",
+    "text": "{\"question\": \"关于 JavaScript 中 var 声明的变量提升，以下哪项描述准确？\", \"options\": [\"var 声明会被提升到其所在作用域的顶部\", \"var 声明会被提升到全局作用域顶部\", \"var 声明和初始化都会被提升到作用域顶部\", \"var 声明会被提升到函数作用域顶部\"], \"answer_index\": 0, \"cited_evidence\": [\"var 声明提升到作用域顶部\"]}",
     "usage": {
-      "completion_tokens": 112,
+      "completion_tokens": 111,
       "prompt_tokens": 641,
-      "total_tokens": 753
+      "total_tokens": 752
     }
   },
-  "a1ae108f389ccc532bc01d15ea2fb161b78c08c12f39a56fa99881d17bc7c423": {
+  "8c41b5fef77274d2fea3be7700a8131c1489a916580139324feb49bdece3c501": {
     "model": "deepseek-chat",
     "role": "basic",
-    "text": "本次考核完成，结果如下：\n\n**考核小结：** 共 3 道选择题，全部答错。\n\n**暴露的薄弱知识点（3 个）：**\n1. **闭包** — 薄弱\n2. **变量提升** — 薄弱\n3. **事件循环** — 薄弱\n\n这三个概念目前都被标记为薄弱状态，建议后续重点复习。",
+    "text": "本次考核已完成，以下是结果小结：\n\n**考核概况**：共 3 道选择题，全部作答完毕。\n\n**每题判决**：\n1. **事件循环** — ❌ 答错，标记为薄弱\n2. **闭包** — ❌ 答错，标记为薄弱\n3. **变量提升** — ❌ 答错，标记为薄弱\n\n**暴露的薄弱点**（3 个）：\n- 闭包\n- 变量提升\n- 事件循环\n\n三道题均未答对，这三个概念目前都被标记为薄弱状态，建议后续重点复习。",
     "usage": {
-      "completion_tokens": 79,
-      "prompt_tokens": 2090,
-      "total_tokens": 2169
-    }
-  },
-  "a902db8fc9cb714223823aa703fd4eae4297b0f519f2a15ba9a9a0345dde2dcc": {
-    "model": "deepseek-chat",
-    "role": "basic",
-    "text": "好的，我来发起一次考核，出3道选择题。",
-    "tool_calls": [
-      {
-        "arguments": {
-          "count": 3,
-          "question_type": "选择题"
-        },
-        "id": "call_00_V6sEQgb31rooECHhu0bo8123",
-        "name": "start_quiz"
-      }
-    ],
-    "usage": {
-      "completion_tokens": 73,
-      "prompt_tokens": 1813,
-      "total_tokens": 1886
+      "completion_tokens": 128,
+      "prompt_tokens": 2156,
+      "total_tokens": 2284
     }
   }
 }

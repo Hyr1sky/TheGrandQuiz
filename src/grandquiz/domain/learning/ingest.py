@@ -58,7 +58,7 @@ async def ingest_resource(
     approval: ApprovalGate,
     emitter: EventEmitter,
     max_bytes: int,
-    allowed_domains: Collection[str],
+    allowed_domains: Collection[str] | Literal["*"],
 ) -> IngestResult:
     """把一个 URL 喂入全局 KB，深读 → 审批 → 入库，全程发事件。见模块 docstring。
 

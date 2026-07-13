@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.context import learner_context_provider
-from grandquiz.domain.learning.fetch import FetchError
+from grandquiz.domain.learning.fetch import ALLOW_ANY_DOMAIN, FetchError
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.preference import SqlitePreferenceMemory
 from grandquiz.domain.learning.prompts import load_prompt
@@ -25,6 +25,7 @@ from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.domain.learning.summarizer import LLMSummarizer
 from grandquiz.domain.learning.tools import register_learning_tools
+from grandquiz.domain.learning.web_fetch import create_http_source
 from grandquiz.kernel.clock import SystemClock
 from grandquiz.kernel.context import (
     BudgetCompressionPolicy,
@@ -64,7 +65,9 @@ _REACT_PROMPT_NAME = "react_system"
 _DEFAULT_DB = Path.home() / ".grandquiz" / "learning.db"
 # 独立 trace 库文件名：与 learning.db 分开、同目录（各自 user_version / 迁移序列，互不串号）。
 _TRACE_DB_NAME = "trace.db"
-# 本地材料的占位 URL host（fetch 域名白名单放行它；真机远程抓取才走真实域名 + 注入防护）。
+# 本地材料的占位 URL host——`grandquiz ingest` 子命令（commands/ingest.py，只吃本地文件）仍用它
+# 当唯一放行的域名；`grandquiz react`（build_react_runner）已放开为 ALLOW_ANY_DOMAIN + 真实网络
+# 抓取（web_fetch 的 SSRF 检查是那条路径真正的安全边界，不是域名预批）。
 _LOCAL_HOST = "local"
 _DEFAULT_MAX_BYTES = 8 * 1024 * 1024
 _DEFAULT_ROUNDS = 5
@@ -124,6 +127,24 @@ def _file_source(materials_dir: Path) -> Callable[[str], str]:
     return source
 
 
+def _web_and_file_source(materials_dir: Path) -> Callable[[str], str]:
+    """派发式抓取源：``file://local/<相对路径>`` 走本地材料读取；``http(s)://`` 走真实网络
+    抓取（``web_fetch.create_http_source``，含 SSRF 防护 + 逐跳重定向重验证）。两条路径合成
+    一个 ``source`` 可调用体统一注入 ``fetch_resource``——它不关心 url 是本地文件还是真实
+    网页，只认这一个 callable；域名白名单相应放开为 ``ALLOW_ANY_DOMAIN``（见 ``fetch.py`` 的
+    职责划分：白名单管"允不允许抓"，``web_fetch`` 的 SSRF 检查管"抓的时候会不会被骗去打内网"）。
+    """
+    file_source = _file_source(materials_dir)
+    http_source = create_http_source()
+
+    def source(url: str) -> str:
+        if urlparse(url).scheme in ("http", "https"):
+            return http_source(url)
+        return file_source(url)
+
+    return source
+
+
 def build_learning_stores(
     db_path: Path,
 ) -> tuple[SqliteLearningStore, SqliteLearningMemory, SqlitePreferenceMemory]:
@@ -176,11 +197,14 @@ def build_react_runner(
     """装配真机 ReAct 的 ``Runner``：工具注册 + 版本化系统提示 + ContextBuilder 分区 + Runner 接线。
 
     逐字复刻 ``run_react`` 内的装配：``ToolRegistry`` 经 ``register_learning_tools`` 注入真依赖
-    （SQLite store/memory/preferences + 文件式 fetch 源 + keep-all 审批门 + 注入的 ``responder``
-    + ``quiz_seed=seed``）；``load_prompt`` 读版本化 react 系统提示；``ContextBuilder`` 装 system
-    前言区 + 学情注入分区（``learner_context_provider`` 闭包，每回合 build 现取最新薄弱点 + 偏好）；
-    ``Runner`` 以 ``prompt.version`` 记 prompt 版本进 trace、绑上述 tools / context_builder。参数、
-    顺序、默认逐字与原编排一致。
+    （SQLite store/memory/preferences + 派发式 fetch 源——``file://local/<名>`` 走本地材料、
+    ``http(s)://`` 走真实网络抓取（``web_fetch.create_http_source``，含 SSRF 防护）+ keep-all
+    审批门 + 注入的 ``responder`` + ``quiz_seed=seed``）；域名白名单相应放开为
+    ``ALLOW_ANY_DOMAIN``（个人工具"粘贴任意文章 URL"场景下预先登记域名不现实，真正的安全边界
+    在 ``web_fetch`` 的 SSRF 检查，不在域名预批）；``load_prompt`` 读版本化 react 系统提示；
+    ``ContextBuilder`` 装 system 前言区 + 学情注入分区（``learner_context_provider`` 闭包，每
+    回合 build 现取最新薄弱点 + 偏好）；``Runner`` 以 ``prompt.version`` 记 prompt 版本进
+    trace、绑上述 tools / context_builder。
 
     Context compression：分区各带 ``budget``，经 ``BudgetCompressionPolicy`` 头截断（C-wire 增量
     1）；``counter`` + ``total_budget`` 给总硬上限（超限抛 ``ContextBudgetExceeded``，大声失败）；
@@ -193,13 +217,13 @@ def build_react_runner(
     registry = ToolRegistry()
     register_learning_tools(
         registry,
-        source=_file_source(materials_dir),
+        source=_web_and_file_source(materials_dir),
         provider=provider,
         store=store,
         approval=ScriptedApprovalGate(keep=lambda _item: True),  # MVP keep-all（同 run_ingest）
         memory=memory,
         max_bytes=_DEFAULT_MAX_BYTES,
-        allowed_domains={_LOCAL_HOST},
+        allowed_domains=ALLOW_ANY_DOMAIN,
         responder=responder,  # start_quiz 逐题作答（真机 InteractiveResponder）
         preferences=preferences,  # 出题语言偏好透传给 assess_once
         quiz_seed=seed,
