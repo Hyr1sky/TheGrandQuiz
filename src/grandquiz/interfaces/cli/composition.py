@@ -23,6 +23,7 @@ from grandquiz.domain.learning.preference import SqlitePreferenceMemory
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import SqliteLearningStore
+from grandquiz.domain.learning.summarizer import LLMSummarizer
 from grandquiz.domain.learning.tools import register_learning_tools
 from grandquiz.kernel.clock import SystemClock
 from grandquiz.kernel.context import (
@@ -30,7 +31,7 @@ from grandquiz.kernel.context import (
     ContextBuilder,
     HeuristicTokenCounter,
     Partition,
-    SlidingWindowHistoryCompressor,
+    SummarizingHistoryCompressor,
 )
 from grandquiz.kernel.events import EventEmitter, EventSink
 from grandquiz.kernel.runner import Runner
@@ -181,12 +182,13 @@ def build_react_runner(
     ``Runner`` 以 ``prompt.version`` 记 prompt 版本进 trace、绑上述 tools / context_builder。参数、
     顺序、默认逐字与原编排一致。
 
-    Context compression（C-wire 增量 1）：分区各带 ``budget``，经 ``BudgetCompressionPolicy`` 头
-    截断；``counter`` + ``total_budget`` 给总硬上限（超限抛 ``ContextBudgetExceeded``，大声失败）；
-    ``history_compressor`` 用 ``SlidingWindowHistoryCompressor``（保最近 ``_HISTORY_MAX_TURNS`` 轮
-    原样，PRD 排序"先滑窗后摘要"的第一步——老轮摘要待真 ``Summarizer`` 接入时换
-    ``SummarizingHistoryCompressor``，接口形状不变）。现有短会话（远低于 5 轮）三者皆不生效，
-    ``build()`` 逐字节等价此前（cassette / 既有测试不受影响）。
+    Context compression：分区各带 ``budget``，经 ``BudgetCompressionPolicy`` 头截断（C-wire 增量
+    1）；``counter`` + ``total_budget`` 给总硬上限（超限抛 ``ContextBudgetExceeded``，大声失败）；
+    ``history_compressor`` 用 ``SummarizingHistoryCompressor``（保最近 ``_HISTORY_MAX_TURNS`` 轮
+    原样，被挤出的老轮经 ``LLMSummarizer``（真 LLM，role=basic）折进滚动摘要，C-wire 增量 3——
+    ``Runner`` 每轮成功后台排折叠任务、下一轮开头收口、失败隔离，见 ``kernel/runner.py``）。现有
+    短会话（远低于 ``_HISTORY_MAX_TURNS`` 轮）不触发折叠，``build()`` 逐字节等价此前（cassette /
+    既有测试不受影响）。
     """
     registry = ToolRegistry()
     register_learning_tools(
@@ -206,8 +208,8 @@ def build_react_runner(
     # ContextBuilder（M5）分区装配：system 前言区（版本化 react 系统提示）+ 学情注入分区
     # （domain provider，闭包捕获 store/memory/preferences → 每回合 build 现取最新薄弱点 + 偏好）。
     # domain→kernel 合法：ContextBuilder 只认名字 + 字符串 provider。学情分区内容为空（无薄弱、
-    # 无偏好）时 build 自动跳过、不注入空块。预算 / 压缩接缝已在 ContextBuilder 留好（下一程接
-    # context compression），本处不设 budget。
+    # 无偏好）时 build 自动跳过、不注入空块。预算见下方 budget 常量（C-wire 增量 1）；
+    # history_compressor 见下方 SummarizingHistoryCompressor（真 LLMSummarizer，C-wire 增量 3）。
     counter = HeuristicTokenCounter()
     context_builder = ContextBuilder(
         [
@@ -223,7 +225,9 @@ def build_react_runner(
         policy=BudgetCompressionPolicy(counter),
         counter=counter,
         total_budget=_TOTAL_BUDGET,
-        history_compressor=SlidingWindowHistoryCompressor(max_turns=_HISTORY_MAX_TURNS),
+        history_compressor=SummarizingHistoryCompressor(
+            LLMSummarizer(provider, emitter), max_turns=_HISTORY_MAX_TURNS
+        ),
     )
     return Runner(
         provider=provider,
