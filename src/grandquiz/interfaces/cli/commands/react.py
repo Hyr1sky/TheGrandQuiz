@@ -29,6 +29,7 @@ from grandquiz.interfaces.cli.composition import (
 )
 from grandquiz.interfaces.cli.interactive import InteractiveResponder
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
+from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Provider
 from grandquiz.providers.llm import OpenAICompatProvider
@@ -75,6 +76,7 @@ async def run_react(
     _ensure_parent(resolved_trace_db)
     store, memory, preferences = build_learning_stores(db_path)
     trace_store: TraceStore | None = None
+    runner: Runner | None = None
     trace_id = uuid.uuid4().hex
     try:
         emitter, trace_store = build_event_backbone(
@@ -113,6 +115,11 @@ async def run_react(
         _print_trace_location(console, trace_id, resolved_trace_db)
         return trace_id
     finally:
+        # C-wire 增量 2：会话最后一轮排的历史折叠后台任务没有"下一轮"帮它收口——显式在此收尾，
+        # 否则 asyncio.run 退出时会直接取消掉它，最后几轮的老轮摘要就永久丢了。须在 store/memory
+        # 关闭前跑（真 Summarizer 若将来要读 KB，避免用到已关闭的连接）。
+        if runner is not None:
+            await runner.aclose()
         store.close()
         memory.close()
         preferences.close()

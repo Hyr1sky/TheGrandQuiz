@@ -23,6 +23,7 @@ from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.fetch import FetchError
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
+from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.domain.learning.tools import _ScopedEmitter  # pyright: ignore[reportPrivateUsage]
@@ -30,8 +31,12 @@ from grandquiz.interfaces.cli.app import (
     _file_source,  # pyright: ignore[reportPrivateUsage]
     run_react,
 )
+from grandquiz.interfaces.cli.composition import (
+    _SYSTEM_PARTITION_BUDGET,  # pyright: ignore[reportPrivateUsage]
+)
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
 from grandquiz.kernel.clock import ManualClock
+from grandquiz.kernel.context import HeuristicTokenCounter
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Role, ToolCall, Usage
@@ -615,6 +620,18 @@ async def test_react_injects_learner_context_into_system(tmp_path: Path) -> None
     assert "薄弱" in joined  # 状态注入
     # 学情块与 react 系统提示是分开的两条 system 消息（分区装配，非拼进一条）。
     assert len(system_blocks) == 2
+
+
+# --------------------------------------------------------------------------- #
+# Context compression（C-wire 增量 1）：生产装配的 budget 数字须留够真实内容的余量
+# --------------------------------------------------------------------------- #
+
+
+def test_react_system_prompt_fits_under_system_partition_budget() -> None:
+    # 生产装配用真实 react 系统提示（非假件）：token 数须显著低于 _SYSTEM_PARTITION_BUDGET，
+    # 防未来提示膨胀被 BudgetCompressionPolicy 静默头截断（钉死 gap-review 的具体数字选择）。
+    tokens = HeuristicTokenCounter().count(load_prompt("react_system").text)
+    assert tokens < _SYSTEM_PARTITION_BUDGET
 
 
 # --------------------------------------------------------------------------- #

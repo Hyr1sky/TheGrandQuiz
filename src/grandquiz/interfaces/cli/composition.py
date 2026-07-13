@@ -25,7 +25,13 @@ from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.domain.learning.tools import register_learning_tools
 from grandquiz.kernel.clock import SystemClock
-from grandquiz.kernel.context import ContextBuilder, Partition
+from grandquiz.kernel.context import (
+    BudgetCompressionPolicy,
+    ContextBuilder,
+    HeuristicTokenCounter,
+    Partition,
+    SlidingWindowHistoryCompressor,
+)
 from grandquiz.kernel.events import EventEmitter, EventSink
 from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import ToolRegistry
@@ -37,7 +43,11 @@ __all__ = [
     "_DEFAULT_DB",
     "_DEFAULT_MAX_BYTES",
     "_DEFAULT_ROUNDS",
+    "_HISTORY_MAX_TURNS",
     "_LOCAL_HOST",
+    "_MEMORY_PARTITION_BUDGET",
+    "_SYSTEM_PARTITION_BUDGET",
+    "_TOTAL_BUDGET",
     "_ensure_parent",
     "_file_source",
     "_resolve_trace_db",
@@ -57,6 +67,18 @@ _TRACE_DB_NAME = "trace.db"
 _LOCAL_HOST = "local"
 _DEFAULT_MAX_BYTES = 8 * 1024 * 1024
 _DEFAULT_ROUNDS = 5
+
+# Context compression（C-wire 增量 1，见 .scratch/context-compression/PRD.md + gap-review）：
+# system 分区实测 ~925 token（react_system.md），memory 分区随薄弱点/资源目录增长；两个 budget
+# 都留数倍实测值的余量（防未来提示/目录膨胀被静默头截断，同时远低于 deepseek-chat 真实上下文窗口）。
+# total_budget 刻意设得比 system+memory+history 之和更保守：_enforce_total_budget 只在 build()
+# 时查一次（run_agent_turn 的 tool-calling 循环内追加的消息不再复查，见 gap-review 已知缺口），
+# 故硬上限须留够 tool 往返 + tool_specs 的隐性余量，不能设成贴近真实窗口的数字。
+_SYSTEM_PARTITION_BUDGET = 4_000
+_MEMORY_PARTITION_BUDGET = 6_000
+_TOTAL_BUDGET = 20_000
+# 历史滑动窗口：保最近 5 轮原样（先滑窗，PRD 排序里的老轮摘要留下一程真 Summarizer 接入时换）。
+_HISTORY_MAX_TURNS = 5
 
 
 def _ensure_parent(db_path: Path) -> None:
@@ -158,6 +180,13 @@ def build_react_runner(
     前言区 + 学情注入分区（``learner_context_provider`` 闭包，每回合 build 现取最新薄弱点 + 偏好）；
     ``Runner`` 以 ``prompt.version`` 记 prompt 版本进 trace、绑上述 tools / context_builder。参数、
     顺序、默认逐字与原编排一致。
+
+    Context compression（C-wire 增量 1）：分区各带 ``budget``，经 ``BudgetCompressionPolicy`` 头
+    截断；``counter`` + ``total_budget`` 给总硬上限（超限抛 ``ContextBudgetExceeded``，大声失败）；
+    ``history_compressor`` 用 ``SlidingWindowHistoryCompressor``（保最近 ``_HISTORY_MAX_TURNS`` 轮
+    原样，PRD 排序"先滑窗后摘要"的第一步——老轮摘要待真 ``Summarizer`` 接入时换
+    ``SummarizingHistoryCompressor``，接口形状不变）。现有短会话（远低于 5 轮）三者皆不生效，
+    ``build()`` 逐字节等价此前（cassette / 既有测试不受影响）。
     """
     registry = ToolRegistry()
     register_learning_tools(
@@ -179,16 +208,22 @@ def build_react_runner(
     # domain→kernel 合法：ContextBuilder 只认名字 + 字符串 provider。学情分区内容为空（无薄弱、
     # 无偏好）时 build 自动跳过、不注入空块。预算 / 压缩接缝已在 ContextBuilder 留好（下一程接
     # context compression），本处不设 budget。
+    counter = HeuristicTokenCounter()
     context_builder = ContextBuilder(
         [
-            Partition(name="system", provider=prompt.text),
+            Partition(name="system", provider=prompt.text, budget=_SYSTEM_PARTITION_BUDGET),
             Partition(
                 name="memory",
                 provider=learner_context_provider(
                     store=store, memory=memory, preferences=preferences
                 ),
+                budget=_MEMORY_PARTITION_BUDGET,
             ),
-        ]
+        ],
+        policy=BudgetCompressionPolicy(counter),
+        counter=counter,
+        total_budget=_TOTAL_BUDGET,
+        history_compressor=SlidingWindowHistoryCompressor(max_turns=_HISTORY_MAX_TURNS),
     )
     return Runner(
         provider=provider,

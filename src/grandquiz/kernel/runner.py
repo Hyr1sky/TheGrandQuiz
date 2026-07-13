@@ -9,6 +9,8 @@
 工具执行是确定性代码，每趟重跑（不进 cassette）。
 """
 
+import asyncio
+
 from grandquiz.kernel.context import ContextBuilder
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.kernel.hooks import HookManager, HookVeto
@@ -62,6 +64,9 @@ class Runner:
         self._recovery = recovery
         self._max_iterations = max_iterations
         self._history: list[Message] = []
+        # C-wire 增量 2：上一轮排的历史折叠后台任务（None = 无待收口任务）。ReAct-only（run_turn
+        # 不建 ContextBuilder，故此字段对它恒为 None，天然不涉及）。
+        self._pending_prune: asyncio.Task[None] | None = None
 
     def _messages(self) -> list[Message]:
         messages: list[Message] = []
@@ -144,7 +149,13 @@ class Runner:
         ``AGENT_TURN`` 是根 span；每轮 ``provider.complete`` 是其下 MODEL span；每次工具执行是其下
         TOOL_CALL span（嵌套 AGENT_TURN → [MODEL, TOOL_CALL, …, MODEL]）。跨轮裁剪（架构约束）：成功
         后历史只提交 user + final assistant，丢弃全部 tool 调用中间过程。
+
+        C-wire 增量 2：开头先收口上一轮排的历史折叠后台任务（``_drain_pending_prune``）——必须在
+        本轮装配 messages 前，让 ``SummarizingHistoryCompressor.compress()`` 读到完全落定的滚动摘要
+        状态；成功收敛后本轮自己的折叠不阻塞返回，改排一个新后台任务，留给下一轮开头收口（或会话
+        结束时 ``aclose()`` 收口）。
         """
+        await self._drain_pending_prune()
         recovery = self._recovery if self._recovery is not None else RecoveryPolicy(self._emitter)
         turn_span = self._emitter.new_span_id()
         self._emitter.emit(
@@ -162,6 +173,7 @@ class Runner:
                     # final 文本 → 终止。裁剪：只留 user + final assistant。
                     self._history.append(Message(role="user", content=user_message))
                     self._history.append(Message(role="assistant", content=completion.text))
+                    self._schedule_prune()
                     self._emitter.emit(
                         EventType.AGENT_TURN_ENDED,
                         span_id=turn_span,
@@ -194,6 +206,47 @@ class Runner:
             payload={"ok": False, "reason": "max_iterations"},
         )
         raise MaxIterationsExceeded(self._max_iterations)
+
+    def _schedule_prune(self) -> None:
+        """把本轮的历史折叠排成后台任务，不阻塞 ``run_agent_turn`` 的返回（C-wire 增量 2）。
+
+        无 ``context_builder`` → 无历史压缩机制可言，直接跳过。``ContextBuilder.prune`` 自己会对
+        ``history_compressor`` 做能力探测（无 / 不支持 prune 的压缩器都安全空操作），故这里不重复
+        判断——排任务的开销可忽略，单一判断权威留在 ``ContextBuilder``。传的是 ``self._history``
+        的引用而非快照：安全前提是"任意时刻至多一个待收口任务"，由 ``run_agent_turn`` 开头的
+        ``_drain_pending_prune`` 保证下一次排新任务前，上一个已经落地（成功或被隔离的失败）。
+        """
+        if self._context_builder is None:
+            return
+        self._pending_prune = asyncio.create_task(self._context_builder.prune(self._history))
+
+    async def _drain_pending_prune(self) -> None:
+        """收口上一轮排的历史折叠任务：``await`` 之，异常被隔离（同 hook observer 语义，绝不炸
+        本轮）——一次失败的后台摘要不该把一个已经成功产出回复的 turn 拖成失败。
+
+        隔离边界只吞 ``Exception``（``KeyboardInterrupt`` / ``SystemExit`` 等 ``BaseException``
+        照常传播，同 ``EventSink.publish`` 的隔离哲学）。失败仍需可观测：发一条无 span 归属的
+        ``ERROR`` 事件（不进任何 span 树，但仍落 trace 原始事件流，可查）。
+        """
+        task = self._pending_prune
+        self._pending_prune = None
+        if task is None:
+            return
+        try:
+            await task
+        except Exception as exc:
+            self._emitter.emit(
+                EventType.ERROR, payload={"error": repr(exc), "phase": "history_prune"}
+            )
+
+    async def aclose(self) -> None:
+        """会话结束前的收尾：把仍未落地的历史折叠任务收口，同 ``_drain_pending_prune`` 的隔离语义。
+
+        必须由调用方（如 ``run_react`` 的 ``finally``）显式调用——否则会话最后一轮排的任务会在
+        ``asyncio.run`` 收尾取消所有挂起任务时被直接丢弃，其折叠的老轮内容永久丢失（无下一轮开头
+        帮它收口）。幂等：无待收口任务时空操作。
+        """
+        await self._drain_pending_prune()
 
     async def _generate(self, call_messages: list[Message], *, parent_span_id: str) -> Completion:
         """发一次 MODEL span 并调 provider；错误闭合 span（ok=False）后原样冒泡。

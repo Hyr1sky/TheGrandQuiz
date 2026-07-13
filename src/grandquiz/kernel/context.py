@@ -20,11 +20,12 @@ domain 侧把"渲学情文本"的闭包（捕获 memory + preferences）作为�
   （按 budget 摘要 / 截断 / 丢历史）留待下一程接入，接缝形状此刻钉死。
 """
 
+import inspect
 import math
 import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from grandquiz.providers.base import Message
 
@@ -155,6 +156,24 @@ class HistoryCompressor(Protocol):
     def compress(self, history: Sequence[Message]) -> list[Message]: ...
 
 
+@runtime_checkable
+class PrunableHistoryCompressor(Protocol):
+    """``HistoryCompressor`` 的可选加能力：异步折叠老轮（C-wire 增量 2）。
+
+    独立声明而非 ``HistoryCompressor`` 的必选方法——``SlidingWindowHistoryCompressor`` 无状态、没有
+    可折叠的东西，不该被强迫实现它；只有 ``SummarizingHistoryCompressor`` 这类有状态压缩器满足。
+    ``ContextBuilder.prune`` 对任意 ``history_compressor`` 做 ``isinstance`` 能力探测（kernel 泛型
+    分发原则：认协议、不认 ``SummarizingHistoryCompressor`` 这个具体类）。
+
+    ``@runtime_checkable`` 只验证方法**存在**、不验证签名或是否真是 ``async def``——一个恰好同名
+    但同步的 ``prune`` 方法会静默通过这个 isinstance 检查，`await` 其返回值（``None``）才在别处炸出
+    一个不知所云的 ``TypeError``。``ContextBuilder.prune`` 额外用 ``inspect.iscoroutinefunction``
+    兜底，把这类实现错误炸成一条指名道姓的错误信息。
+    """
+
+    async def prune(self, history: Sequence[Message]) -> None: ...
+
+
 @dataclass(frozen=True)
 class SlidingWindowHistoryCompressor:
     """只保最近 ``max_turns`` 轮对话原样、更早的丢弃（C3a：确定性、无 LLM）。
@@ -266,6 +285,23 @@ class ContextBuilder:
         messages.append(Message(role="user", content=user_message))
         self._enforce_total_budget(messages)
         return messages
+
+    async def prune(self, history: Sequence[Message]) -> None:
+        """把已被挤出滑窗的老轮折进滚动摘要（若 ``history_compressor`` 支持——见
+        ``PrunableHistoryCompressor``）；不支持则静默跳过（``SlidingWindowHistoryCompressor`` 等
+        无状态压缩器、或压根没配 ``history_compressor`` 时都是合法的空操作，向后兼容）。
+
+        由 ``Runner.run_agent_turn`` 在每轮成功提交历史后调用（本方法不做异常隔离——那是调用方
+        的职责，因为只有调用方知道"这次失败该拿它怎么办"；``Runner`` 把它当后台任务隔离失败、
+        本方法直接透传 ``Summarizer`` 抛出的异常）。
+        """
+        compressor = self._history_compressor
+        if compressor is None or not isinstance(compressor, PrunableHistoryCompressor):
+            return
+        assert inspect.iscoroutinefunction(compressor.prune), (
+            f"{type(compressor).__name__}.prune 必须是 async def"
+        )
+        await compressor.prune(history)
 
     def _enforce_total_budget(self, messages: Sequence[Message]) -> None:
         """装配后总 token 超硬上限 → 抛 ``ContextBudgetExceeded``（大声失败）。未设上限则跳过。"""

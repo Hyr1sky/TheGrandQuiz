@@ -52,3 +52,14 @@ token 估算 → 分区预算裁剪（大声失败）→ 历史压缩（滑动�
 
 OSS 对照（learns-by-imitation）：滑窗+老轮摘要 = LangChain `ConversationSummaryBufferMemory`；
 分层记忆+递归摘要 = MemGPT/Letta。基线 main `a505a8b`。协作模式：我搭骨架+讲原理+对抗守门，逐增量。
+
+**已知局限（gap-review 2026-07-12 发现，暂不修）**：
+- `BudgetCompressionPolicy` 头截断假设分区内容"越靠前越纲领"（prose 语义），但 memory 分区的
+  目录/薄弱概念列表按 resource_id / item_id（hash）排序，跟"重要性"无关——若真触发截断，会悄悄丢掉
+  排在后面的薄弱概念（本该优先考的那些），而非有意保留。当前 6,000 token 预算下距真触发还远（见
+  实测数字），不紧急；真到触发那天需要专门逻辑（如保最近判错的概念），不能沿用通用头截断。
+- `total_budget` 硬上限只在 `ContextBuilder.build()` 时查一次，`run_agent_turn` 的 tool-calling
+  循环内继续往 `call_messages` 追加的内容不再复查（见 `kernel/runner.py` 的 `run_agent_turn`）。
+  现有三个工具都返回小型结构化结果、不把长文本回灌进消息流，故实践风险低；但这不是"证明安全"，
+  只是"目前没有会触发的工具"。日后新增会回灌长内容的工具（如摘录/检索类），需要在循环内加一次
+  轻量复查，或在工具边界处用 `BudgetCompressionPolicy._fit` 头截断，不能假设这条路径天然安全。

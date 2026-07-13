@@ -36,12 +36,13 @@ from grandquiz.kernel.context import (
     HeuristicTokenCounter,
     HistoryCompressor,
     Partition,
+    PrunableHistoryCompressor,
     SlidingWindowHistoryCompressor,
     Summarizer,
     SummarizingHistoryCompressor,
     TokenCounter,
 )
-from grandquiz.kernel.events import EventEmitter, EventSink
+from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.runner import Runner
 from grandquiz.providers.base import Completion, Message, Role, ToolSpec, Usage
 
@@ -330,6 +331,85 @@ async def test_context_builder_sees_accumulated_history() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# C-wire 增量 2：Runner 接 prune()——排后台任务、下一轮开头收口、失败隔离、会话收尾兜底
+# --------------------------------------------------------------------------- #
+
+
+class _RaisingSummarizer:
+    """确定性 fake：summarize 恒抛异常，验证 Runner 对 prune 失败的隔离（不炸turn）。"""
+
+    async def summarize(self, prior_summary: str, messages: Sequence[Message]) -> str:
+        raise RuntimeError("summarizer 炸了")
+
+
+def _emitter_with_sink() -> tuple[EventEmitter, list[AgentEvent]]:
+    sink = EventSink()
+    collected: list[AgentEvent] = []
+    sink.subscribe(collected.append)
+    return EventEmitter(sink, ManualClock(), trace_id="t"), collected
+
+
+async def test_run_agent_turn_prunes_with_post_commit_history_drained_next_turn() -> None:
+    # prune() 用"本轮提交后"的 history 调用（含本轮 user+assistant）；且排的是后台任务——下一轮
+    # 开头才落地（drain），这一轮的返回不等它。max_turns=1：第 2 轮结束即挤出第 1 轮。
+    fake = _FakeSummarizer()
+    compressor = SummarizingHistoryCompressor(fake, max_turns=1)
+    builder = ContextBuilder(
+        [Partition(name="system", provider="SYS")], history_compressor=compressor
+    )
+    provider = _CaptureProvider()
+    runner = Runner(provider=provider, emitter=_runner_emitter(), context_builder=builder)
+
+    await runner.run_agent_turn("第一问")  # 1 轮，未过窗口 → 排的任务是空操作
+    assert fake.calls == []
+    await runner.run_agent_turn("第二问")  # 2 轮 > 窗口 → 排它的折叠任务，但尚未落地
+    assert fake.calls == []  # 还没到下一轮开头，任务没被 drain
+    reply3 = await runner.run_agent_turn("第三问")  # 本轮开头 drain 上一轮的任务 → summarizer 收货
+    assert reply3 == "回复"
+    assert len(fake.calls) == 1
+    assert fake.calls[0] == ("", ["第一问", "回复"])  # 折入的是被挤出的第 1 轮
+    # 摘要落地后，第 3 轮送模型的 history 只剩第 2 轮原样 + 摘要 system 块（分区之后紧跟）。
+    third_call_history = provider.captured[2][1:]  # [0]=SYS 分区，之后是摘要块 + history + user
+    assert third_call_history[0].role == "system"
+    assert "第一问+回复" in third_call_history[0].content
+
+
+async def test_run_agent_turn_isolates_prune_failure_without_killing_later_turns() -> None:
+    # 核心不变量（钉死 gap-review 的 blocking 发现）：上一轮排的 prune 任务在下一轮开头被 drain
+    # 时若抛异常，必须被隔离（发 ERROR 事件、不冒泡）——不能把一个已经成功的 turn 拖成失败。
+    compressor = SummarizingHistoryCompressor(_RaisingSummarizer(), max_turns=1)
+    builder = ContextBuilder(
+        [Partition(name="system", provider="SYS")], history_compressor=compressor
+    )
+    emitter, collected = _emitter_with_sink()
+    runner = Runner(provider=_CaptureProvider(), emitter=emitter, context_builder=builder)
+
+    await runner.run_agent_turn("第一问")  # 1 轮，未过窗口 → 排的任务是空操作，不会炸
+    reply2 = await runner.run_agent_turn("第二问")  # 2 轮 > 窗口 → 排它的折叠任务（会炸，但还没跑）
+    assert reply2 == "回复"  # 本轮自身正常返回——排的任务还没被 drain，不影响这一轮
+    reply3 = await runner.run_agent_turn("第三问")  # 本轮开头 drain 上一轮的任务 → 它炸了，但被隔离
+    assert reply3 == "回复"  # 隔离生效：第 3 轮照常拿到回复，没被上一轮的摘要失败拖累
+    assert any(e.type == EventType.ERROR for e in collected)  # 失败仍可观测（进事件脊柱）
+
+
+async def test_runner_aclose_drains_pending_prune_before_session_ends() -> None:
+    # 会话收尾兜底：最后一轮排的任务若无"下一轮"来 drain，会被 asyncio.run 收尾时直接取消丢弃；
+    # aclose() 是显式收口点，必须调用方（run_react 的 finally）负责调用。
+    fake = _FakeSummarizer()
+    compressor = SummarizingHistoryCompressor(fake, max_turns=1)
+    builder = ContextBuilder(
+        [Partition(name="system", provider="SYS")], history_compressor=compressor
+    )
+    runner = Runner(provider=_CaptureProvider(), emitter=_runner_emitter(), context_builder=builder)
+
+    await runner.run_agent_turn("第一问")
+    await runner.run_agent_turn("第二问")  # 排它的折叠任务——会话到此结束，没有"下一轮"
+    assert fake.calls == []
+    await runner.aclose()
+    assert len(fake.calls) == 1  # 显式收口把它落地，没有被静默扔掉
+
+
+# --------------------------------------------------------------------------- #
 # C1：HeuristicTokenCounter——CJK 感知的确定性 token 估算（预算用途，非计费）
 # --------------------------------------------------------------------------- #
 
@@ -445,6 +525,34 @@ def test_context_builder_within_ceiling_ok() -> None:
         [Partition(name="system", provider="短提示")], counter=counter, total_budget=1000
     )
     assert builder.build([], "q")[-1].content == "q"
+
+
+def test_context_builder_budget_policy_truncation_is_what_avoids_ceiling_breach() -> None:
+    # 因果性（非各测各的）：同样的分区内容 + 同样的 total_budget，无 policy 时越硬上限抛异常；
+    # 加上 BudgetCompressionPolicy 后分区被头截断、总量落回上限内，不再抛——证明是 policy 起效，
+    # 不是巧合/取整误差。
+    counter = HeuristicTokenCounter()
+    partitions = [Partition(name="m", provider="内容" * 200, budget=5)]
+    with pytest.raises(ContextBudgetExceeded):
+        ContextBuilder(partitions, counter=counter, total_budget=20).build([], "q")
+    messages = ContextBuilder(
+        partitions, policy=BudgetCompressionPolicy(counter), counter=counter, total_budget=20
+    ).build([], "q")
+    assert messages[-1].content == "q"
+
+
+def test_context_builder_budget_policy_only_bounds_partitions_not_history_or_user() -> None:
+    # policy 只裁分区内容：history / user_message 撑爆总预算时，即便分区被截得再小也救不回来——
+    # 硬上限的"大声失败"不能被 policy 悄悄绕过。
+    counter = HeuristicTokenCounter()
+    huge_history = [Message(role="user", content="超长历史" * 200)]
+    with pytest.raises(ContextBudgetExceeded):
+        ContextBuilder(
+            [Partition(name="m", provider="短", budget=5)],
+            policy=BudgetCompressionPolicy(counter),
+            counter=counter,
+            total_budget=20,
+        ).build(huge_history, "q")
 
 
 def test_context_builder_raises_when_total_over_ceiling() -> None:
@@ -592,3 +700,65 @@ async def test_summarizing_prune_idempotent_when_no_new_eviction() -> None:
     await compressor.prune(_turns(3))
     await compressor.prune(_turns(3))
     assert len(fake.calls) == 1
+
+
+# --------------------------------------------------------------------------- #
+# C-wire 增量 2：PrunableHistoryCompressor 协议 + ContextBuilder.prune()（能力探测委托）
+# --------------------------------------------------------------------------- #
+
+
+class _SyncPruneCompressor:
+    """满足 HistoryCompressor，但带一个同名同步（非 async）``prune``——钉死"runtime_checkable
+    不验证 async 性"这个已知陷阱：isinstance 会放行，await 其返回值才在别处炸出费解的 TypeError。
+    """
+
+    def compress(self, history: Sequence[Message]) -> list[Message]:
+        return list(history)
+
+    def prune(self, history: Sequence[Message]) -> None:  # 故意不是 async def
+        return None
+
+
+def test_prunable_history_compressor_protocol_matches_only_summarizing() -> None:
+    # 能力探测边界：SummarizingHistoryCompressor 满足（真有 prune）；SlidingWindow 不满足（无状态、
+    # 没有可折叠的东西，不该被强迫实现这个协议）。
+    assert isinstance(SummarizingHistoryCompressor(_FakeSummarizer()), PrunableHistoryCompressor)
+    assert not isinstance(SlidingWindowHistoryCompressor(), PrunableHistoryCompressor)
+
+
+async def test_context_builder_prune_noop_without_history_compressor() -> None:
+    # 向后兼容：无 history_compressor（默认 None）→ 静默跳过，不炸（现有装配不受影响）。
+    builder = ContextBuilder([Partition(name="system", provider="S")])
+    await builder.prune(_turns(3))
+
+
+async def test_context_builder_prune_noop_with_non_prunable_compressor() -> None:
+    # SlidingWindowHistoryCompressor 满足 HistoryCompressor 但不满足 PrunableHistoryCompressor
+    # （没有 prune 方法）→ ContextBuilder.prune 能力探测后静默跳过，不因"没有 prune"报错。
+    builder = ContextBuilder(
+        [Partition(name="system", provider="S")],
+        history_compressor=SlidingWindowHistoryCompressor(max_turns=2),
+    )
+    await builder.prune(_turns(3))
+
+
+async def test_context_builder_prune_delegates_to_summarizing_compressor() -> None:
+    # 委托：真有 prune 能力的压缩器被调用，等价于直接调 compressor.prune(history)。
+    fake = _FakeSummarizer()
+    compressor = SummarizingHistoryCompressor(fake, max_turns=1)
+    builder = ContextBuilder(
+        [Partition(name="system", provider="S")], history_compressor=compressor
+    )
+    await builder.prune(_turns(2))
+    assert len(fake.calls) == 1
+
+
+async def test_context_builder_prune_rejects_sync_prune_implementation() -> None:
+    # 防护网：结构上满足 PrunableHistoryCompressor（isinstance 通过）但 prune 非 async 的实现，
+    # 须在这里就报出指名道姓的 AssertionError，而不是让调用方在 await 处收到费解的 TypeError。
+    builder = ContextBuilder(
+        [Partition(name="system", provider="S")],
+        history_compressor=_SyncPruneCompressor(),
+    )
+    with pytest.raises(AssertionError, match="async def"):
+        await builder.prune([])
