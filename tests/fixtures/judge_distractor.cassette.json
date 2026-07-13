@@ -1,0 +1,52 @@
+{
+  "0d5909029ce7165d513116753bcf6f1d2767148c72d546babef20ebc409540df": {
+    "model": "deepseek-chat",
+    "role": "basic",
+    "text": "{\"label\": \"无效干扰\", \"rationale\": \"函数名与闭包捕获机制无关，学习者不会将其与变量捕获混淆，一眼就能排除。\"}",
+    "usage": {
+      "completion_tokens": 34,
+      "prompt_tokens": 341,
+      "total_tokens": 375
+    }
+  },
+  "1007da59b430bceb62ddebaec28d537e13696823c649365029d30b923d518642": {
+    "model": "deepseek-chat",
+    "role": "basic",
+    "text": "{\"label\": \"无效干扰\", \"rationale\": \"内存地址与闭包捕获变量的机制无关，学习者不会将其视为合理选项。\"}",
+    "usage": {
+      "completion_tokens": 30,
+      "prompt_tokens": 341,
+      "total_tokens": 371
+    }
+  },
+  "322c05a064b87d44fe9fcc118e15d645624cef9b0d92ffad646d22ec0684e3c6": {
+    "model": "deepseek-chat",
+    "role": "basic",
+    "text": "{\"label\": \"合理干扰\", \"rationale\": \"这个干扰项直接对应原文证据中明确指出的常见误解——学习者可能误以为闭包捕获的是变量的当前值，而非变量本身。\"}",
+    "usage": {
+      "completion_tokens": 43,
+      "prompt_tokens": 310,
+      "total_tokens": 353
+    }
+  },
+  "4c80ec3fd75e80e0f92f1c3c0560fee92d3843dbc384a22715b667441a1d98a7": {
+    "model": "deepseek-chat",
+    "role": "basic",
+    "text": "```json\n{\"label\": \"无效干扰\", \"rationale\": \"内存地址与闭包捕获机制无关，学习者即使没真懂也不会选这个选项。\"}\n```",
+    "usage": {
+      "completion_tokens": 36,
+      "prompt_tokens": 311,
+      "total_tokens": 347
+    }
+  },
+  "79b6e6e191a5e57a5290a6e5b352afe17c6873a3c5d5ad9aa180f4e779708c7f": {
+    "model": "deepseek-chat",
+    "role": "basic",
+    "text": "```json\n{\"label\": \"无效干扰\", \"rationale\": \"函数名与闭包捕获机制无关，学习者不会将其与闭包捕获的内容混淆。\"}\n```",
+    "usage": {
+      "completion_tokens": 36,
+      "prompt_tokens": 311,
+      "total_tokens": 347
+    }
+  }
+}
