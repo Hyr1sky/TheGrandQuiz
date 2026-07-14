@@ -34,6 +34,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from grandquiz.domain.learning.approval import ApprovalGate
+from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
 from grandquiz.domain.learning.assessment import AssessmentResult, assess_once
 from grandquiz.domain.learning.grading import VerdictLabel
 from grandquiz.domain.learning.ingest import ingest_resource
@@ -293,6 +294,7 @@ def make_start_quiz_tool(
     responder: Responder,
     preferences: PreferenceMemory | None = None,
     quiz_seed: int = 0,
+    asked_questions: AskedQuestionsLedger | None = None,
 ) -> Tool:
     """建 ``start_quiz(count)`` 工具：受控一问一答子流程，内部跑 ``assess_once × count``。
 
@@ -324,6 +326,10 @@ def make_start_quiz_tool(
     （走"中文"兜底）。``recently_asked`` / ``_QuizSeedCounter`` 在闭包捕获、跨同一会话的多次
     ``start_quiz`` 累积（复考换角度去重 + 选题种子确定性推进）。空库 → 优雅返回 ``refused``（不调
     任何 LLM）；用户中途取消作答（Responder 抛 ``KeyboardInterrupt``）→ 结束考核、返回已完成部分。
+
+    ``asked_questions``：跨会话持久的已问过台账（``AskedQuestionsLedger``，skeleton-ledger.md
+    #8 修复）——透传每题 ``assess_once``，与 ``recently_asked``（会话内）互补，让"换角度去重"这条
+    防线在关掉 CLI 重开后依然生效。``None``（默认）= 不接持久层、向后兼容。
     """
     seed_counter = _QuizSeedCounter(seed=quiz_seed)
     recently_asked: dict[str, list[str]] = {}
@@ -348,6 +354,7 @@ def make_start_quiz_tool(
                     emitter=scoped,
                     rng=new_rng(seed_counter.next_seed()),
                     recently_asked=recently_asked,
+                    asked_questions=asked_questions,
                     focus=params.focus,
                     preferences=preferences,
                     resource_ids=params.resource_ids,
@@ -424,6 +431,7 @@ def register_learning_tools(
     responder: Responder | None = None,
     preferences: PreferenceMemory | None = None,
     quiz_seed: int = 0,
+    asked_questions: AskedQuestionsLedger | None = None,
 ) -> None:
     """组装点：注册 ``ingest`` / ``query_weak_concepts`` /（有 responder 时）``start_quiz``。
 
@@ -433,7 +441,8 @@ def register_learning_tools(
     ``responder`` 为 ``None`` 时**不注册** ``start_quiz``——受控考核无从逐题作答（如 S2 的 ingest /
     query 单测装配无需交互作答）；真机 react 装配注入 ``InteractiveResponder`` 后即可考核。
     ``preferences`` 透传给 ``start_quiz`` → ``assess_once`` 解析出题语言；``quiz_seed`` 给选题种子
-    （replay 传固定值 → 可复现，CLI 可传可变值）。
+    （replay 传固定值 → 可复现，CLI 可传可变值）；``asked_questions`` 透传跨会话去重台账
+    （skeleton-ledger.md #8），``None`` 时行为不变（向后兼容）。
     """
     registry.register(
         make_ingest_tool(
@@ -455,5 +464,6 @@ def register_learning_tools(
                 responder=responder,
                 preferences=preferences,
                 quiz_seed=quiz_seed,
+                asked_questions=asked_questions,
             )
         )

@@ -34,6 +34,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.grading import (
     VerdictLabel,
@@ -123,6 +124,7 @@ async def assess_once(
     emitter: EventEmitter,
     rng: Rng,
     recently_asked: dict[str, list[str]] | None = None,
+    asked_questions: AskedQuestionsLedger | None = None,
     focus: Focus = "mixed",
     preferences: PreferenceMemory | None = None,
     resource_ids: list[str] | None = None,
@@ -136,10 +138,20 @@ async def assess_once(
     ``recently_asked``：会话内**已问过**台账（item_id → 已问过的题目文本列表），由考核循环入口
     （``run_quiz``）持有并跨轮累积、下传做去重（"LLM 判卷，代码记账"——已问过是代码持有的状态）。
     默认 ``None`` = 不去重、向后兼容：既有测试 / eval harness 不传它时行为一字不变（出题函数收到
-    空 ``asked_before`` → message / replay_key / prompt 版本号不变）。取被考 item 的已问列表下传给
-    出题函数；成功发出 ``QUESTION_ASKED`` 后，把本轮新题文本追加进 ``recently_asked[item_id]``。
-    ``recently_asked`` 的 keys 同时作**本会话已考过**的 item 集下传选题（``asked_item_ids``），
-    实现 R1-S7 的覆盖优先：先考未考过的，考完一遍才兜底复考薄弱（修 dogfood 的"锁死同一 item"）。
+    空 ``asked_before`` → message / replay_key / prompt 版本号不变）。``recently_asked`` 的 keys
+    同时作**本会话已考过**的 item 集下传选题（``asked_item_ids``），实现 R1-S7 的覆盖优先：先考
+    未考过的，考完一遍才兜底复考薄弱（修 dogfood 的"锁死同一 item"）——**刻意保持会话范围**：
+    "mixed"覆盖优先问的是"这次坐下来学，有没有还没碰过的"，不该被跨会话历史污染成"这个概念
+    这辈子有没有被问过"（那样用久的知识库会让"覆盖优先"永远无题可选）。
+
+    ``asked_questions``：**跨会话持久**的已问过台账（``AskedQuestionsLedger`` 协议，见
+    ``asked_questions.py``；skeleton-ledger.md #8 修复）——修的是"关掉 CLI 重开，复考同一薄弱
+    概念可能被逐字重问上次会话问过的题"这个真实 bug（``recently_asked`` 只在**单次会话内**生效）。
+    默认 ``None`` = 不接持久层、向后兼容。给 ``generate_question``/``generate_multiple_choice``
+    的 ``asked_before`` 是 ``recently_asked``（本会话）与 ``asked_questions``（历史会话）两路
+    已问文本的**并集**——两条防线互补而非互相替代：会话内防线永远存在（哪怕不接持久层），持久层
+    只是把它的记忆窗口从"这次会话"延伸到"所有会话"。成功发出 ``QUESTION_ASKED`` 后，本轮新题
+    文本同时追加进两边（各自独立地：``recently_asked`` 给的仍是本会话覆盖优先要用的 keys）。
 
     ``focus``：选题聚焦档位（``mixed`` 默认 / ``new`` 只考未考过 / ``weak`` 复习薄弱），透传
     ``select_target``。默认 ``mixed`` 向后兼容——旧调用方不传它时行为等价于"未考过优先、否则全集"
@@ -214,8 +226,13 @@ async def assess_once(
 
         # e. 分型出题（role=enrich）+ 校验门（缝 3）。选择题走 MC 出题；追问用深挖 prompt 变体；
         #    开放走标准出题。三者都发 QUESTION_ASKED（带 question_type，锚定真实 item + 非空证据）。
-        #    从会话内"已问过"台账取被考 item 的已问列表下传做去重（None = 不去重、向后兼容）。
-        asked_before = recently_asked.get(target.item_id, []) if recently_asked is not None else []
+        #    从会话内 + 跨会话"已问过"台账取被考 item 的已问列表下传做去重（都为 None = 不去重、
+        #    向后兼容；只接一边也行——两条防线互补，见函数 docstring）。
+        asked_before: list[str] = []
+        if recently_asked is not None:
+            asked_before += recently_asked.get(target.item_id, [])
+        if asked_questions is not None:
+            asked_before += asked_questions.asked_before(target.item_id)
         mc: MultipleChoiceQuestion | None = None
         if effective == "选择题":
             mc = await generate_multiple_choice(
@@ -258,9 +275,12 @@ async def assess_once(
         emitter.emit(
             LearningEvent.QUESTION_ASKED, parent_span_id=assessment_span, payload=asked_payload
         )
-        # 记账：把本轮已出的题追加进会话内"已问过"台账，供后续复考该 item 时去重（代码记账）。
+        # 记账：把本轮已出的题追加进会话内 + 跨会话"已问过"台账（各自独立），供后续复考该 item
+        # 时去重（代码记账）。
         if recently_asked is not None:
             recently_asked.setdefault(target.item_id, []).append(question_text)
+        if asked_questions is not None:
+            asked_questions.record_asked(target.item_id, question_text)
 
         # f. 作答（注入的 responder，async）。选择题把 options 透传给 responder，开放 / 追问传 None
         #    （ScriptedResponder 忽略 options）。

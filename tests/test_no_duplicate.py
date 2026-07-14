@@ -17,6 +17,7 @@ from collections.abc import Sequence
 
 import pytest
 
+from grandquiz.domain.learning.asked_questions import DictAskedQuestionsLedger
 from grandquiz.domain.learning.assessment import assess_once
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import LearningMemory
@@ -262,3 +263,63 @@ async def test_session_reassessment_produces_no_verbatim_duplicate() -> None:
     # 台账累积了两轮的题；两轮题归一化后不相等——会话内零逐字重复。
     assert len(recently_asked[item_id]) == 2
     assert dedup_key(asked_texts[0]) != dedup_key(asked_texts[1])
+
+
+_DUP_DEFAULT_Q = "什么是闭包？"  # 须与 _DupProvider._DEFAULT_Q 逐字一致（跨类边界不取私有属性）
+
+
+async def test_cross_session_ledger_alone_prevents_repeat_without_session_dict() -> None:
+    # skeleton-ledger.md #8 的核心场景：没有 recently_asked（模拟全新会话，进程内台账已随上次
+    # 会话退出而清空），只有跨会话持久台账里"上次会话问过"的记录——去重防线必须仍然生效。
+    store, item_id = _single_item_store()
+    memory = LearningMemory()
+    memory.record_verdict(item_id, "错")
+
+    asked_questions = DictAskedQuestionsLedger()
+    asked_questions.record_asked(item_id, _DUP_DEFAULT_Q)  # 模拟"上次会话问过默认题"
+
+    emitter, events = _emitter()
+    await assess_once(
+        store=store,
+        provider=_DupProvider(),
+        responder=ScriptedResponder(answer="我的作答"),
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        recently_asked=None,  # 新会话：进程内台账是空的（真机场景下压根没传）
+        asked_questions=asked_questions,
+    )
+    asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
+    # 假 provider 只在 prompt 里看到"已问过"才会换题——本轮拿到的已问列表完全来自持久台账。
+    assert dedup_key(str(asked.payload["question"])) != dedup_key(_DUP_DEFAULT_Q)
+    # 本轮新题同时被记进了持久台账（累积，不是覆盖）。
+    assert asked_questions.asked_before(item_id) == [
+        _DUP_DEFAULT_Q,
+        str(asked.payload["question"]),
+    ]
+
+
+async def test_session_dict_and_cross_session_ledger_are_independent() -> None:
+    # 两条防线各自累积、互不干扰：record 只进各自的台账，不会串到对方。
+    store, item_id = _single_item_store()
+    memory = LearningMemory()
+    memory.record_verdict(item_id, "错")
+
+    recently_asked: dict[str, list[str]] = {}
+    asked_questions = DictAskedQuestionsLedger()
+
+    emitter, events = _emitter()
+    await assess_once(
+        store=store,
+        provider=_DupProvider(),
+        responder=ScriptedResponder(answer="我的作答"),
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        recently_asked=recently_asked,
+        asked_questions=asked_questions,
+    )
+    asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
+    question_text = str(asked.payload["question"])
+    assert recently_asked[item_id] == [question_text]  # 会话内台账记了一条
+    assert asked_questions.asked_before(item_id) == [question_text]  # 持久台账也记了同一条

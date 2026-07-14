@@ -65,7 +65,7 @@ async def run_quiz(
     是脊柱投影、非业务耦合）。会话结束打印 ``trace_id`` + 库位置。
     """
     _ensure_parent(db_path)
-    store, memory, preferences = build_learning_stores(db_path)
+    store, memory, preferences, asked_questions = build_learning_stores(db_path)
     if prefer_lang is not None:
         # 显式设置出题语言偏好（confidence 恒 1.0），跨会话留存、后续覆盖 task 默认语言。
         preferences.set_preference(QUESTION_LANGUAGE_KEY, prefer_lang)
@@ -85,9 +85,9 @@ async def run_quiz(
             resolved_trace_db, trace_id=trace_id, subscribers=[QuizEventPrinter(console)]
         )
         policy = RecoveryPolicy(emitter)  # 每轮失败统一裁决（读异常 error_class 标、发事件上脊柱）
-        # SKELETON: 会话内进程内"已问过"台账（item_id → 已问过的题目文本），跨轮累积、经 assess_once
-        # 下传出题函数做去重——复考同一薄弱概念时每轮换角度、不逐字重问。正式版是与 Learning Memory
-        # 并列的跨会话 SQLite 去重表（跨会话持久），见 docs/skeleton-ledger.md #8。
+        # 会话内进程内"已问过"台账（item_id → 已问过的题目文本），跨轮累积、经 assess_once 下传出题
+        # 函数做去重——复考同一薄弱概念时每轮换角度、不逐字重问。与 asked_questions（跨会话持久，
+        # skeleton-ledger.md #8 已修）互补：前者管本会话覆盖优先选题，后者管跨会话去重记忆。
         recently_asked: dict[str, list[str]] = {}
         banner = f"「{title}」" if title else ""
         console.print(f"[bold]开始考核{banner}——共 {rounds} 轮（Ctrl+C 随时退出）[/]")
@@ -103,6 +103,7 @@ async def run_quiz(
                         emitter=emitter,
                         rng=new_rng(seed + round_index),
                         recently_asked=recently_asked,
+                        asked_questions=asked_questions,
                         preferences=preferences,
                     )
                 except Exception as exc:
@@ -123,6 +124,7 @@ async def run_quiz(
         store.close()
         memory.close()
         preferences.close()
+        asked_questions.close()
         if trace_store is not None:
             trace_store.close()
 
