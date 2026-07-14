@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
-from grandquiz.domain.learning.assessment import assess_once
+from grandquiz.domain.learning.assessment.engine import assess_once
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.ingest import ingest_resource
 from grandquiz.domain.learning.memory import LearningMemory

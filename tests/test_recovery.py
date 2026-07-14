@@ -12,10 +12,10 @@ kernel 领域无关：本模块禁止 import domain（``lint-imports`` 门），
 分类只读异常自带的 ``error_class`` 标（domain / providers 各自打标，domain→kernel 合法方向）。
 """
 
-from grandquiz.domain.learning.fetch import FetchError
-from grandquiz.domain.learning.grading import GradingError
-from grandquiz.domain.learning.question import QuestionError
-from grandquiz.domain.learning.reader import ReaderError
+from grandquiz.domain.learning.assessment.grading import GradingError
+from grandquiz.domain.learning.assessment.question import QuestionError
+from grandquiz.domain.learning.ingest.fetch import FetchError
+from grandquiz.domain.learning.ingest.reader import ReaderError
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.recovery import Decision, ErrorClass, RecoveryPolicy, classify

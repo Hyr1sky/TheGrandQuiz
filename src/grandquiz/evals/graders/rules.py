@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import cast
 
-from grandquiz.domain.learning.assessment import AssessmentResult
+from grandquiz.domain.learning.assessment.engine import AssessmentResult
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.ingest import IngestResult
 from grandquiz.domain.learning.models import KnowledgeItem

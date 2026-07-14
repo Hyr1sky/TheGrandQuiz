@@ -42,7 +42,7 @@ M3.1（喂 URL → 深读 → 审批 → 入库）落地了下列骨架欠账的
 |---|---|---|
 | #2 存储 | `# SKELETON(M7)` | `src/grandquiz/domain/learning/store.py`（`LearningStore` 纯 dict） |
 | #3 审批门 | `# SKELETON` | `src/grandquiz/domain/learning/approval.py`（`ApprovalGate` 协议 + `ScriptedApprovalGate`） |
-| #4 Reader 执行器 | `# SKELETON` | `src/grandquiz/domain/learning/reader.py`（`Reader` 内联执行器） |
+| #4 Reader 执行器 | `# SKELETON` | `src/grandquiz/domain/learning/ingest/reader.py`（`Reader` 内联执行器） |
 
 （#5 prompt 版本号已在 item 2 落地为版本化 prompt 文件，代码标记随之移除。）
 

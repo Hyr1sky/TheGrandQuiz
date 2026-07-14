@@ -35,27 +35,27 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
-from grandquiz.domain.learning.events import LearningEvent
-from grandquiz.domain.learning.grading import (
+from grandquiz.domain.learning.assessment.grading import (
     VerdictLabel,
     grade_answer,
     grade_multiple_choice,
 )
-from grandquiz.domain.learning.memory import Memory
-from grandquiz.domain.learning.models import KnowledgeItem
-from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY, PreferenceMemory
-from grandquiz.domain.learning.question import (
+from grandquiz.domain.learning.assessment.question import (
     MultipleChoiceQuestion,
     generate_multiple_choice,
     generate_question,
 )
-from grandquiz.domain.learning.responder import Responder
-from grandquiz.domain.learning.routing import (
+from grandquiz.domain.learning.assessment.routing import (
     QuestionType,
     resolve_question_type,
     route_question_type,
 )
-from grandquiz.domain.learning.selection import Focus, apply_scope, select_target
+from grandquiz.domain.learning.assessment.selection import Focus, apply_scope, select_target
+from grandquiz.domain.learning.events import LearningEvent
+from grandquiz.domain.learning.memory import Memory
+from grandquiz.domain.learning.models import KnowledgeItem
+from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY, PreferenceMemory
+from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.clock import Rng
 from grandquiz.kernel.events import EventEmitter

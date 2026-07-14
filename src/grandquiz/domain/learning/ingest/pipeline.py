@@ -23,14 +23,14 @@ from pydantic import BaseModel
 
 from grandquiz.domain.learning.approval import ApprovalGate
 from grandquiz.domain.learning.events import LearningEvent
-from grandquiz.domain.learning.fetch import FetchError, fetch_resource
-from grandquiz.domain.learning.models import KnowledgeItem, LearningResource
-from grandquiz.domain.learning.reader import (
+from grandquiz.domain.learning.ingest.fetch import FetchError, fetch_resource
+from grandquiz.domain.learning.ingest.reader import (
     UNTRUSTED_READ_HOOK,
     Reader,
     ReaderError,
     neutralize_fence,
 )
+from grandquiz.domain.learning.models import KnowledgeItem, LearningResource
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.events import EventEmitter
 from grandquiz.kernel.hooks import HookManager

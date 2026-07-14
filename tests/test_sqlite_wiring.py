@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
-from grandquiz.domain.learning.assessment import assess_once
+from grandquiz.domain.learning.assessment.engine import assess_once
 from grandquiz.domain.learning.ingest import ingest_resource
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.responder import ScriptedResponder

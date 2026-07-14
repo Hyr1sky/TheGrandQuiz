@@ -15,13 +15,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ValidationError
 
+from grandquiz.domain.learning.assessment.question import MultipleChoiceQuestion
 from grandquiz.domain.learning.models import (
     CitedEvidence,
     KnowledgeItem,
     ungrounded_citations,
 )
 from grandquiz.domain.learning.prompts import load_prompt
-from grandquiz.domain.learning.question import MultipleChoiceQuestion
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.kernel.recovery import ErrorClass
 from grandquiz.providers.base import Completion, Message, Provider

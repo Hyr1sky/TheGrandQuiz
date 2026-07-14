@@ -13,7 +13,7 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from grandquiz.domain.learning.grading import VerdictLabel
+from grandquiz.domain.learning.assessment.grading import VerdictLabel
 from grandquiz.domain.learning.memory import LearningMemory, SqliteLearningMemory
 from grandquiz.kernel.db import connect
 

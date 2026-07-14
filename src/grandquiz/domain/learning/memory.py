@@ -32,7 +32,7 @@ from typing import Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from grandquiz.domain.learning.grading import VerdictLabel
+from grandquiz.domain.learning.assessment.grading import VerdictLabel
 from grandquiz.kernel.db import connect, migrate
 
 _LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"

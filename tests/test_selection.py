@@ -13,9 +13,9 @@
 
 import pytest
 
+from grandquiz.domain.learning.assessment.selection import apply_scope, select_target
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem
-from grandquiz.domain.learning.selection import apply_scope, select_target
 from grandquiz.kernel.clock import new_rng
 
 

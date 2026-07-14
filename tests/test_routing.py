@@ -10,12 +10,12 @@ GKB-S5（缝 3，ADR-0006）：`resolve_question_type(intent, state)` 冻结同�
 
 import pytest
 
-from grandquiz.domain.learning.memory import ConceptState
-from grandquiz.domain.learning.routing import (
+from grandquiz.domain.learning.assessment.routing import (
     QuestionType,
     resolve_question_type,
     route_question_type,
 )
+from grandquiz.domain.learning.memory import ConceptState
 
 # 护栏锚（与 routing._SHORT_ANSWER_INTENTS 同一集，此处显式列出以断言外部行为、不引私有符号）：
 # 这些短答类意图短语**绝不**得到"选择题"。

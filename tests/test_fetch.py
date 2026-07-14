@@ -8,7 +8,7 @@ import hashlib
 
 import pytest
 
-from grandquiz.domain.learning.fetch import FetchError, fetch_resource
+from grandquiz.domain.learning.ingest.fetch import FetchError, fetch_resource
 
 _ALLOWED = {"example.com", "docs.python.org"}
 

@@ -18,8 +18,8 @@ from __future__ import annotations
 
 from typing import cast
 
+from grandquiz.domain.learning.assessment.question import dedup_key
 from grandquiz.domain.learning.events import LearningEvent
-from grandquiz.domain.learning.question import dedup_key
 from grandquiz.evals.harness import SolveResult
 from grandquiz.kernel.events import AgentEvent
 

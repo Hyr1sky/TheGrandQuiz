@@ -10,14 +10,14 @@ from collections.abc import Sequence
 
 import pytest
 
-from grandquiz.domain.learning.models import Evidence, KnowledgeItem
-from grandquiz.domain.learning.question import (
+from grandquiz.domain.learning.assessment.question import (
     GeneratedQuestion,
     MultipleChoiceQuestion,
     QuestionError,
     generate_multiple_choice,
     generate_question,
 )
+from grandquiz.domain.learning.models import Evidence, KnowledgeItem
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Completion, Message, Role, Usage

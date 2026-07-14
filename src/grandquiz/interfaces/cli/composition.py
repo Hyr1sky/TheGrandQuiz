@@ -18,7 +18,8 @@ from urllib.parse import urlparse
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.asked_questions import SqliteAskedQuestionsLedger
 from grandquiz.domain.learning.context import learner_context_provider
-from grandquiz.domain.learning.fetch import ALLOW_ANY_DOMAIN, FetchError
+from grandquiz.domain.learning.ingest.fetch import ALLOW_ANY_DOMAIN, FetchError
+from grandquiz.domain.learning.ingest.web_fetch import create_http_source
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.preference import SqlitePreferenceMemory
 from grandquiz.domain.learning.prompts import load_prompt
@@ -26,7 +27,6 @@ from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.domain.learning.summarizer import LLMSummarizer
 from grandquiz.domain.learning.tools import register_learning_tools
-from grandquiz.domain.learning.web_fetch import create_http_source
 from grandquiz.kernel.clock import SystemClock
 from grandquiz.kernel.context import (
     BudgetCompressionPolicy,

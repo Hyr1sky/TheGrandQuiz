@@ -20,12 +20,12 @@ from typing import Any
 
 import pytest
 
-from grandquiz.domain.learning.assessment import AssessmentResult, assess_once
+from grandquiz.domain.learning.assessment.engine import AssessmentResult, assess_once
+from grandquiz.domain.learning.assessment.selection import Focus, select_target
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.responder import ScriptedResponder
-from grandquiz.domain.learning.selection import Focus, select_target
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.evals.harness import build_event_harness as _harness
 from grandquiz.evals.harness import summarize_spans as _summ

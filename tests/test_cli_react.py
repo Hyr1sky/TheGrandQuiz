@@ -1,7 +1,7 @@
 """R1-S4：真机 ReAct CLI（``grandquiz react``）——组装 + 会话循环 + Rich 呈现（骨架 + 回放冒烟）。
 
 覆盖（AFK，不触真网 / 真 key）：
-- ``_ScopedEmitter`` 加固：去掉 partial-subclass 脆弱，任意未覆写的 EventEmitter 成员经
+- ``ScopedEmitter`` 加固：去掉 partial-subclass 脆弱，任意未覆写的 EventEmitter 成员经
   ``__getattr__`` 委托 inner，不再 AttributeError（钉死回归）。
 - ``QuizEventPrinter`` 新事件（AGENT_TURN_* / TOOL_CALL_*）渲染 + 动态文本 escape。
 - ``run_react`` 会话循环：脚本化 provider 按剧本返回 tool_calls + 触发工具 + final，断言
@@ -20,14 +20,14 @@ import pytest
 from rich.console import Console
 
 from grandquiz.domain.learning.events import LearningEvent
-from grandquiz.domain.learning.fetch import FetchError
+from grandquiz.domain.learning.ingest.fetch import FetchError
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY, SqlitePreferenceMemory
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import SqliteLearningStore
-from grandquiz.domain.learning.tools import _ScopedEmitter  # pyright: ignore[reportPrivateUsage]
+from grandquiz.domain.learning.tools._scoped_emitter import ScopedEmitter
 from grandquiz.interfaces.cli.app import (
     _file_source,  # pyright: ignore[reportPrivateUsage]
     run_react,
@@ -172,13 +172,13 @@ def _emitter() -> tuple[EventEmitter, list[Any]]:
 
 
 # --------------------------------------------------------------------------- #
-# _ScopedEmitter 加固：__getattr__ 委托 inner（未覆写成员不再 AttributeError）
+# ScopedEmitter 加固：__getattr__ 委托 inner（未覆写成员不再 AttributeError）
 # --------------------------------------------------------------------------- #
 
 
 def test_scoped_emitter_delegates_unoverridden_member_to_inner() -> None:
     inner, events = _emitter()
-    scoped = _ScopedEmitter(inner, "root-span")
+    scoped = ScopedEmitter(inner, "root-span")
 
     # 覆写的三成员仍走 inner（单一真源：共享 seq / span 计数器）。
     inner.new_span_id()  # 推进 inner span 计数器

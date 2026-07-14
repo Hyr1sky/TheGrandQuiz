@@ -9,13 +9,13 @@ from collections.abc import Sequence
 
 import pytest
 
-from grandquiz.domain.learning.models import LearningResource
-from grandquiz.domain.learning.reader import (
+from grandquiz.domain.learning.ingest.reader import (
     UNTRUSTED_READ_HOOK,
     Reader,
     ReaderError,
     neutralize_fence,
 )
+from grandquiz.domain.learning.models import LearningResource
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.hooks import HookManager

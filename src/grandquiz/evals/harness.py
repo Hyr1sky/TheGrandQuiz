@@ -30,9 +30,10 @@ from typing import Any, Literal, Protocol, cast
 import yaml
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
-from grandquiz.domain.learning.assessment import AssessmentResult, assess_once
+from grandquiz.domain.learning.assessment.engine import AssessmentResult, assess_once
+from grandquiz.domain.learning.assessment.grading import VerdictLabel
+from grandquiz.domain.learning.assessment.selection import Focus, apply_scope, select_target
 from grandquiz.domain.learning.context import learner_context_provider
-from grandquiz.domain.learning.grading import VerdictLabel
 from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import (
@@ -47,7 +48,6 @@ from grandquiz.domain.learning.preference import (
 )
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.responder import ScriptedResponder
-from grandquiz.domain.learning.selection import Focus, apply_scope, select_target
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.domain.learning.tools import register_learning_tools
 from grandquiz.kernel.clock import ManualClock, new_rng

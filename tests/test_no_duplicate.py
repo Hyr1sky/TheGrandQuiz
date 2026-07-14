@@ -18,17 +18,17 @@ from collections.abc import Sequence
 import pytest
 
 from grandquiz.domain.learning.asked_questions import DictAskedQuestionsLedger
-from grandquiz.domain.learning.assessment import assess_once
-from grandquiz.domain.learning.events import LearningEvent
-from grandquiz.domain.learning.memory import LearningMemory
-from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
-from grandquiz.domain.learning.question import (
+from grandquiz.domain.learning.assessment.engine import assess_once
+from grandquiz.domain.learning.assessment.question import (
     QuestionError,
     dedup_key,
     generate_multiple_choice,
     generate_question,
     is_duplicate,
 )
+from grandquiz.domain.learning.events import LearningEvent
+from grandquiz.domain.learning.memory import LearningMemory
+from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock, new_rng

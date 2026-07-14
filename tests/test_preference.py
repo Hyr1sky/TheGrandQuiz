@@ -16,7 +16,7 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
-from grandquiz.domain.learning.assessment import assess_once
+from grandquiz.domain.learning.assessment.engine import assess_once
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import (

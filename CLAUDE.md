@@ -107,9 +107,20 @@ hook、recovery、eval 全部建在其上。
 - **测试分工**：确定性核心（状态机 / 选题 / 事件信封 / 销账）走 TDD（红-绿-重构），是 eval 命门；
   LLM 的两个槽（出题 / 判卷）不 unit-TDD，靠 replay 录放 + eval harness 验证。
 - **代码树跟依赖规则和真实文件走，不跟 aspiration 走**：保持 `kernel/providers/domain/interfaces/evals`
-  分层（它本身就编码了"领域无关 runtime"这一卖点，比扁平铺开更讲故事）；现在用扁平模块（`events.py`…），
-  一个概念长到 2+ 文件时才提升为子文件夹；**不预建空文件夹**。`domain/learning/` 的嵌套即使只有一个
-  领域也保留（标示 runtime 领域无关）。
+  分层（它本身就编码了"领域无关 runtime"这一卖点，比扁平铺开更讲故事）；单文件概念保持扁平，
+  **不预建空文件夹**。`domain/learning/` 的嵌套即使只有一个领域也保留（标示 runtime 领域无关）。
+- **子文件夹按角色分组，但用 git 共同改动历史验证边界是否为真**（2026-07-13，`domain/learning/`
+  拆出 `ingest/`(fetch+web_fetch+reader+pipeline)/`assessment/`(engine+question+grading+routing+
+  selection)/`tools/`(每个 ReAct 工具一个文件) 三个子包后的复盘）：候选分组先用
+  `git log --name-only` 查文件两两共同出现次数——真被同一个改动理由驱动的文件（如
+  `assessment.py`↔`selection.py` 5/5 次一起改）该分组；只是"长得像同一种模式"但从未一起改过的
+  （如 `store.py`/`memory.py`/`preference.py`/`asked_questions.py` 这套 Protocol+Dict+Sqlite
+  三段式，两两共同出现趋近于 0）不该只因形状相似就分组——那是审美分类，不是 CCP
+  （Common Closure Principle）意义上的真边界，摊平反而更诚实。子包内彼此 import 一律走精确
+  子模块路径（如 `assessment.selection` 而非包顶层 `assessment`）；包 `__init__.py` 只在**不产生
+  循环 import** 时才 re-export 主入口（`ingest/__init__.py` 转出 `ingest_resource`；
+  `assessment/__init__.py` 刻意留空——因为 `memory.py`（顶层）依赖 `assessment.grading`、
+  `assessment.engine` 又依赖 `memory.py`，若 `__init__` 贸然拉起 `engine.py` 会成环）。
 
 ## 工程规范
 

@@ -32,10 +32,8 @@ from grandquiz.domain.learning.preference import (
 )
 from grandquiz.domain.learning.responder import Responder, ScriptedResponder
 from grandquiz.domain.learning.store import LearningStore
-from grandquiz.domain.learning.tools import (
-    StartQuizResult,
-    register_learning_tools,
-)
+from grandquiz.domain.learning.tools import register_learning_tools
+from grandquiz.domain.learning.tools.start_quiz_tool import StartQuizResult
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
 from grandquiz.kernel.tools import ToolContext, ToolRegistry

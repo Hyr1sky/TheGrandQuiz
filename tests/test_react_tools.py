@@ -24,11 +24,9 @@ from grandquiz.domain.learning.models import (
     LearningResource,
 )
 from grandquiz.domain.learning.store import LearningStore
-from grandquiz.domain.learning.tools import (
-    IngestToolResult,
-    WeakConceptsResult,
-    register_learning_tools,
-)
+from grandquiz.domain.learning.tools import register_learning_tools
+from grandquiz.domain.learning.tools.ingest_tool import IngestToolResult
+from grandquiz.domain.learning.tools.query_weak_tool import WeakConceptsResult
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import EventEmitter, EventSink
 from grandquiz.kernel.runner import Runner

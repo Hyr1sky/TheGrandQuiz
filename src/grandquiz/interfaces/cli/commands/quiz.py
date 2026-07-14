@@ -7,7 +7,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.markup import escape
 
-from grandquiz.domain.learning.assessment import assess_once
+from grandquiz.domain.learning.assessment.engine import assess_once
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY
 from grandquiz.domain.learning.responder import Responder

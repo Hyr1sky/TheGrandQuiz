@@ -10,7 +10,7 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from grandquiz.domain.learning.web_fetch import create_http_source, extract_text_from_html
+from grandquiz.domain.learning.ingest.web_fetch import create_http_source, extract_text_from_html
 
 _PUBLIC_IP_A = "93.184.216.34"  # 任意真实公网地址——只关心 is_global 判定
 _PUBLIC_IP_B = "1.1.1.1"  # 注意：RFC 5737 的 TEST-NET 段（如 203.0.113.0/24）被 ipaddress 标记
@@ -47,7 +47,7 @@ def test_source_rejects_non_global_hosts(
     monkeypatch: pytest.MonkeyPatch, hostname: str, ip: str
 ) -> None:
     monkeypatch.setattr(
-        "grandquiz.domain.learning.web_fetch.socket.getaddrinfo",
+        "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
         _fake_getaddrinfo({hostname: ip}),
     )
     source = create_http_source(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
@@ -57,7 +57,7 @@ def test_source_rejects_non_global_hosts(
 
 def test_source_rejects_dns_resolution_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "grandquiz.domain.learning.web_fetch.socket.getaddrinfo", _fake_getaddrinfo({})
+        "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo", _fake_getaddrinfo({})
     )
     source = create_http_source(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
     with pytest.raises(ValueError, match="SSRF"):
@@ -66,7 +66,7 @@ def test_source_rejects_dns_resolution_failure(monkeypatch: pytest.MonkeyPatch) 
 
 def test_source_rejects_non_http_scheme(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "grandquiz.domain.learning.web_fetch.socket.getaddrinfo",
+        "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
         _fake_getaddrinfo({"public.test": _PUBLIC_IP_A}),
     )
     source = create_http_source(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
@@ -79,7 +79,7 @@ def test_source_rejects_non_http_scheme(monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_source_fetches_plain_text_successfully(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "grandquiz.domain.learning.web_fetch.socket.getaddrinfo",
+        "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
         _fake_getaddrinfo({"public.test": _PUBLIC_IP_A}),
     )
 
@@ -93,7 +93,7 @@ def test_source_fetches_plain_text_successfully(monkeypatch: pytest.MonkeyPatch)
 def test_source_follows_redirect_and_revalidates_each_hop(monkeypatch: pytest.MonkeyPatch) -> None:
     # 两跳都是公网主机——证明重定向目标主机（不只是最初的 host）也被 SSRF 检查覆盖到。
     monkeypatch.setattr(
-        "grandquiz.domain.learning.web_fetch.socket.getaddrinfo",
+        "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
         _fake_getaddrinfo({"start.test": _PUBLIC_IP_A, "final.test": _PUBLIC_IP_B}),
     )
 
@@ -109,7 +109,7 @@ def test_source_follows_redirect_and_revalidates_each_hop(monkeypatch: pytest.Mo
 def test_source_rejects_redirect_to_private_host(monkeypatch: pytest.MonkeyPatch) -> None:
     # 公网首跳、私网第二跳——经典 redirect-based SSRF：必须在第二跳就被拒，而非放行到底。
     monkeypatch.setattr(
-        "grandquiz.domain.learning.web_fetch.socket.getaddrinfo",
+        "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
         _fake_getaddrinfo({"start.test": _PUBLIC_IP_A, "internal.test": _PRIVATE_IP}),
     )
 
@@ -125,7 +125,7 @@ def test_source_rejects_redirect_to_private_host(monkeypatch: pytest.MonkeyPatch
 
 def test_source_rejects_too_many_redirects(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "grandquiz.domain.learning.web_fetch.socket.getaddrinfo",
+        "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
         _fake_getaddrinfo({"loop.test": _PUBLIC_IP_A}),
     )
 
@@ -142,7 +142,7 @@ def test_source_rejects_too_many_redirects(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_source_rejects_unsupported_content_type(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "grandquiz.domain.learning.web_fetch.socket.getaddrinfo",
+        "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
         _fake_getaddrinfo({"public.test": _PUBLIC_IP_A}),
     )
 
@@ -156,7 +156,7 @@ def test_source_rejects_unsupported_content_type(monkeypatch: pytest.MonkeyPatch
 
 def test_source_extracts_text_from_html(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "grandquiz.domain.learning.web_fetch.socket.getaddrinfo",
+        "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
         _fake_getaddrinfo({"public.test": _PUBLIC_IP_A}),
     )
     html = """

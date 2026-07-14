@@ -17,7 +17,8 @@ import json
 from pathlib import Path
 from typing import cast
 
-from grandquiz.domain.learning.assessment import assess_once
+from grandquiz.domain.learning.assessment.engine import assess_once
+from grandquiz.domain.learning.assessment.selection import select_target
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import (
     Evidence,
@@ -25,7 +26,6 @@ from grandquiz.domain.learning.models import (
     LearningResource,
 )
 from grandquiz.domain.learning.responder import ScriptedResponder
-from grandquiz.domain.learning.selection import select_target
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.events import EventEmitter, EventSink
