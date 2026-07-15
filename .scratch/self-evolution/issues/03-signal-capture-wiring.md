@@ -1,6 +1,10 @@
 # SE-S3 — 信号采集 + 记账接线 + 透明展示事件（把 S1+S2 接进考核编排）
 
-Status: ready-for-agent
+Status: done（merge 至 main `487883f`，六门全绿 635 passed / eval 14/14；主线程对抗审查零发现——
+byte-equivalence 经 diff 验证仅接住 emit 返回值 + gated 难度块、无 cassette 改动，负向测试真断言、
+close() 在 finally。口径按主线程决策：rounds=len(销账前 verdict_history) 无 +1、elapsed=事件 ts 差、
+had_struggle 只认"勉强"。第一条用户可感知的自进化竖切已落地：难度会变、经 DIFFICULTY_TIER_CHANGED
+在 CLI 显示。）
 Type: AFK
 
 ## Parent
