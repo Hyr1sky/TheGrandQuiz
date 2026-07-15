@@ -318,3 +318,106 @@ async def test_num_options_none_with_three_options_still_passes() -> None:
     assert len(mc.options) == 3
     assert provider.calls == 1  # 首次即过、无重试
     assert "个选项" not in provider.last_text  # None 时不注入任何选项数约束
+
+
+# --- SE-S5b：judge 验收闸门（quality_floor 传入才生效；None 时 judge 零调用、字节等价改动前）----
+
+
+class _JudgingProvider:
+    """按 role 分流：``enrich`` 出固定 MC、``basic`` 评干扰项（返回可注入的 ``DistractorLabel``）。
+
+    judge_distractor 走 role=basic（同判卷官），MC 出题走 role=enrich——本文件 generate_multiple_
+    choice 路径下 basic 槽**只可能**是 judge（MC 判卷是确定性代码、不打 LLM），按 role 分流无歧义。
+    分别计 ``enrich_calls``（出题）与 ``judge_calls``（评审）——断言 quality_floor=None 时 judge 零
+    调用、非 None 时 judge 触发重生成。
+    """
+
+    def __init__(self, *, mc_json: str, judge_label: str) -> None:
+        self._mc_json = mc_json
+        self._judge_label = judge_label
+        self.enrich_calls = 0
+        self.judge_calls = 0
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        if role == "enrich":
+            self.enrich_calls += 1
+            return Completion(text=self._mc_json, usage=Usage(prompt_tokens=5, completion_tokens=2))
+        self.judge_calls += 1
+        verdict = json.dumps(
+            {"label": self._judge_label, "rationale": "测试用固定理由"}, ensure_ascii=False
+        )
+        return Completion(text=verdict, usage=Usage(prompt_tokens=5, completion_tokens=2))
+
+
+async def test_quality_floor_weak_distractor_retries_then_raises() -> None:
+    # quality_floor="合理干扰"、judge 把干扰项判"无效干扰"（未达门槛）→ ModelRetry 重生成，重试
+    # 用尽 → QuestionError。judge 首个不达标干扰项即短路（每轮只 1 次 judge 调用），出题被重调
+    # max_attempts 次（证明发生了重生成）。
+    provider = _JudgingProvider(
+        mc_json=_mc_json(options=["变量本身", "值的快照", "外层作用域"], answer_index=0),
+        judge_label="无效干扰",
+    )
+    emitter, _ = _emitter()
+
+    with pytest.raises(QuestionError):
+        await generate_multiple_choice(
+            _item(),
+            provider=provider,
+            emitter=emitter,
+            parent_span_id="a",
+            max_attempts=2,
+            quality_floor="合理干扰",
+        )
+    assert provider.enrich_calls == 2  # 每轮 judge 不达标 → 重生成 → 用尽
+    assert provider.judge_calls == 2  # 每轮短路在首个干扰项 → 1 次/轮
+
+
+async def test_quality_floor_reasonable_distractors_pass_first_try() -> None:
+    # quality_floor="合理干扰"、judge 把每个干扰项都判"合理干扰"（达标）→ 首次即过、无重生成。
+    # 2 个干扰项都被评（无短路，因都达标）→ judge_calls == 2；出题只 1 次。judge 的 model span 亦
+    # 上脊柱（basic 槽事件可见）——高档题 trace 里能看到 judge 评了几次（可观测）。
+    provider = _JudgingProvider(
+        mc_json=_mc_json(options=["变量本身", "值的快照", "外层作用域"], answer_index=0),
+        judge_label="合理干扰",
+    )
+    emitter, events = _emitter()
+
+    mc = await generate_multiple_choice(
+        _item(),
+        provider=provider,
+        emitter=emitter,
+        parent_span_id="a",
+        quality_floor="合理干扰",
+    )
+    assert isinstance(mc, MultipleChoiceQuestion)
+    assert provider.enrich_calls == 1  # 首次即过
+    assert provider.judge_calls == 2  # 2 个干扰项各评一次
+    # judge 的 model span 挂在传入 parent_span_id 下、发 basic 角色的 MODEL_STARTED（可观测）。
+    basic_starts = [
+        e for e in events if e.type == EventType.MODEL_STARTED and e.payload.get("role") == "basic"
+    ]
+    assert len(basic_starts) == 2  # 两次 judge 调用各一个 model span
+    assert all(e.parent_span_id == "a" for e in basic_starts)
+
+
+async def test_quality_floor_none_never_calls_judge() -> None:
+    # **关键对照**：不传 quality_floor（默认 None）→ judge 一次都不调，哪怕干扰项本会被判"无效"。
+    # 首次即过、无重生成。证明默认路径逐字节等价改动前：judge 零调用是 cassette / replay
+    # 不破的命根。
+    provider = _JudgingProvider(
+        mc_json=_mc_json(options=["变量本身", "值的快照", "外层作用域"], answer_index=0),
+        judge_label="无效干扰",  # 若 judge 被调会判不达标——但 None 时根本不调
+    )
+    emitter, events = _emitter()
+
+    mc = await generate_multiple_choice(
+        _item(), provider=provider, emitter=emitter, parent_span_id="a"
+    )
+    assert isinstance(mc, MultipleChoiceQuestion)
+    assert provider.enrich_calls == 1  # 首次即过
+    assert provider.judge_calls == 0  # **judge 零调用**——默认路径不触发闸门
+    # 事件序仅出题一对 model span，无任何 basic（judge）槽事件——与改动前逐字节一致。
+    assert [e.type for e in events] == [EventType.MODEL_STARTED, EventType.MODEL_ENDED]
+    assert all(e.payload.get("role") != "basic" for e in events)  # 无 judge（basic）span

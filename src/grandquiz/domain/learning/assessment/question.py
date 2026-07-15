@@ -24,6 +24,8 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel, ValidationError
 
+from grandquiz.domain.learning.difficulty import distractor_meets_floor
+from grandquiz.domain.learning.judge import DistractorLabel, judge_distractor
 from grandquiz.domain.learning.models import (
     CitedEvidence,
     KnowledgeItem,
@@ -318,6 +320,7 @@ async def generate_multiple_choice(
     language: str = "中文",
     asked_before: Sequence[str] = (),
     num_options: int | None = None,
+    quality_floor: DistractorLabel | None = None,
 ) -> MultipleChoiceQuestion:
     """为 ``item`` 产一道锚定的选择题（首次接触概念的热身题型）；持续失败 → ``QuestionError``。
 
@@ -340,6 +343,23 @@ async def generate_multiple_choice(
     ``_parse_mc`` 末尾加一道"至少 ``num_options`` 项"的门。**``None`` 时（默认路径 / 既有调用方 /
     eval harness）不追加任何 message、``_parse_mc`` 行为完全不变**——发出的 message / replay_key /
     prompt 版本号与改动前逐字节相同（eval / cassette 字节等价的命根子）。
+    ``quality_floor``：**选择题难度硬杠杆②**（SE-S5b）——按被考 item 难度档要求的**最低可接受干扰项
+    质量档**（``DistractorLabel``），由 ``assess_once`` 读难度台账后经 ``distractor_quality_floor``
+    算出并下传（仅高档 4/5 非 None，见 ``difficulty.distractor_quality_floor``）。
+    **仅当非 None 时**，在 ``_parse_mc`` 拿到合法 MC **之后**、``return`` 之前，对**每个干扰项**
+    （``options`` 里除 ``answer_index`` 外的项）调 ``judge_distractor``（Tier-2 判官、role=basic）
+    评其 plausibility；
+    **任一**干扰项未达 ``quality_floor``（``not distractor_meets_floor``）→ ``ModelRetry``（点名太弱
+    的那个、要求换更有迷惑性的干扰项），由既有有界重试循环重新生成；重试预算耗尽仍不达标 →
+    ``QuestionError``（同 ``num_options`` 门，交 ``RecoveryPolicy`` DEGRADED 跳过本轮、不炸会话）。
+    **``None`` 时（默认路径 / 既有调用方 / eval harness）一次都不调 judge，行为与改动前逐字节等价**
+    （judge 一调都不调是 cassette 不破的命根子）——judge 只在升过默认档的概念上触发。judge 的 model
+    span 挂在传入的 ``parent_span_id`` 之下（``judge_distractor`` 自负责发 MODEL_STARTED/ENDED），
+    故高档题的 trace 里能看到 judge 评了几次、重生成了几次（可观测）。
+    **成本护栏**：judge 每题最多评 ``(选项数 - 1) × max_attempts`` 次（每次重生成都要重评全部干扰
+    项），且**仅高档（4/5）触发**——默认 / 降档 / 新概念（``quality_floor is None``）零 judge 开销。
+    门槛表（``_TIER_QUALITY_FLOOR``）与达标比较（``distractor_meets_floor``）均在 ``difficulty.py``
+    集中、可调。
     """
     if max_attempts < 1:
         raise ValueError("max_attempts 至少为 1")
@@ -375,16 +395,70 @@ async def generate_multiple_choice(
             prompt_version=prompt.version,
         )
         try:
-            return _parse_mc(
+            mc = _parse_mc(
                 completion.text,
                 valid_quotes,
                 asked_before=asked_before,
                 num_options=num_options,
             )
+            # judge 验收闸门（SE-S5b 杠杆②，**仅当调用方按难度档传入 quality_floor 时生效**）：
+            # 拿到合法 MC 后再逐个 judge 干扰项，任一不达标 → ModelRetry 重生成（由本循环重试）。
+            # quality_floor is None（默认路径 / 既有调用方 / eval harness）时**整个不参与、judge
+            # 一次都不调**——行为与改动前逐字节等价（cassette / replay 不破的命根子）。
+            if quality_floor is not None:
+                await _enforce_distractor_floor(
+                    mc,
+                    item,
+                    quality_floor,
+                    provider=provider,
+                    emitter=emitter,
+                    parent_span_id=parent_span_id,
+                )
+            return mc
         except ModelRetry as exc:
             last_error = str(exc)
             retry_note = f"上一次出题无法采用：{exc}。请只返回合法 JSON，且引用真实证据。"
     raise QuestionError(f"选择题出题失败（{max_attempts} 次尝试仍无合法输出）：{last_error}")
+
+
+async def _enforce_distractor_floor(
+    mc: MultipleChoiceQuestion,
+    item: KnowledgeItem,
+    quality_floor: DistractorLabel,
+    *,
+    provider: Provider,
+    emitter: EventEmitter,
+    parent_span_id: str | None,
+) -> None:
+    """对 MC 的每个干扰项跑 Tier-2 judge，任一未达 ``quality_floor`` → ``ModelRetry``（点名该项）。
+
+    干扰项 = ``options`` 里除 ``answer_index`` 外的全部项；正确项 = ``options[answer_index]``。
+    逐项调 ``judge_distractor``（role=basic，自负责发 model span 挂 ``parent_span_id`` 下），首个
+    不达标的干扰项即抛 ``ModelRetry``（**短路**：无需评完剩余项就知道本版不合格），反馈进下一次
+    出题上下文让重试换更有迷惑性的干扰项。全部达标则静默返回、调用方采用该 MC。``judge_distractor``
+    自身有界重试用尽会抛 ``JudgeError``（DEGRADED），本函数不拦截、任其冒泡由上层
+    ``RecoveryPolicy`` 优雅降级（不与"干扰项太弱"的确定性重生成信号混淆）。**仅在
+    ``quality_floor is not None`` 时被调用**，故只有高档（4/5）题会走到这里——成本护栏见
+    ``generate_multiple_choice`` docstring。
+    """
+    correct_answer = mc.options[mc.answer_index]
+    for index, option in enumerate(mc.options):
+        if index == mc.answer_index:
+            continue
+        verdict = await judge_distractor(
+            item,
+            question=mc.question,
+            correct_answer=correct_answer,
+            distractor=option,
+            provider=provider,
+            emitter=emitter,
+            parent_span_id=parent_span_id,
+        )
+        if not distractor_meets_floor(verdict.label, quality_floor):
+            raise ModelRetry(
+                f"干扰项「{option}」质量不足：judge 判为「{verdict.label}」，本题难度档要求至少"
+                f"「{quality_floor}」——请换一个更有迷惑性、需真懂概念才能排除的干扰项"
+            )
 
 
 def _append_num_options(messages: list[Message], num_options: int | None) -> None:

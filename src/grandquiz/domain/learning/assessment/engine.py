@@ -55,6 +55,7 @@ from grandquiz.domain.learning.difficulty import (
     DEFAULT_TIER,
     DifficultyLedger,
     MasterySignals,
+    distractor_quality_floor,
     next_tier,
     target_option_count,
     tier_change_reason,
@@ -269,6 +270,13 @@ async def assess_once(
                 if current_tier is not None and current_tier != DEFAULT_TIER
                 else None
             )
+            # SE-S5b 选择题硬杠杆②：干扰项质量 judge 验收闸门。distractor_quality_floor 内部**只对
+            # 高于默认档（3）的 tier 返回非 None**（tier 4→"较弱干扰"、5→"合理干扰"，≤3→None），故
+            # 不必在此再判 tier != DEFAULT_TIER；但 current_tier is None（未接难度台账 / difficulty
+            # =None）时必须 None——保证默认路径 / eval harness 一次都不调 judge、字节等价改动前。
+            quality_floor = (
+                distractor_quality_floor(current_tier) if current_tier is not None else None
+            )
             mc = await generate_multiple_choice(
                 target,
                 provider=provider,
@@ -277,6 +285,7 @@ async def assess_once(
                 language=language,
                 asked_before=asked_before,
                 num_options=num_options,
+                quality_floor=quality_floor,
             )
             question_text = mc.question
             asked_evidence = list(mc.cited_evidence)

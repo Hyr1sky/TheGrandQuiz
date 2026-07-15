@@ -24,6 +24,7 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
+from grandquiz.domain.learning.judge import DistractorLabel
 from grandquiz.kernel.db import connect, migrate
 
 _LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
@@ -288,3 +289,55 @@ def target_option_count(tier: DifficultyTier) -> int:
     读取点已大声失败）。
     """
     return _TIER_OPTION_COUNTS[tier]
+
+
+# ============================================================================
+# SE-S5b：档位 → 选择题干扰项质量闸门（选择题硬杠杆②，确定性映射 + 达标比较纯函数）
+# ============================================================================
+
+# 干扰项档位排序（``DistractorLabel`` 的偏序，值越大越硬）：无效 < 较弱 < 合理。judge
+# （``judge.py``）判每个干扰项一档，本表把三档收敛成可比较的序数，供 ``distractor_meets_floor``
+# 判"够不够硬"。
+# 三档全覆盖（``DistractorLabel`` = 三值），故直接索引不会 KeyError。
+_DISTRACTOR_LABEL_RANK: dict[DistractorLabel, int] = {
+    "无效干扰": 0,
+    "较弱干扰": 1,
+    "合理干扰": 2,
+}
+
+# 难度档 → 该档要求的**最低可接受干扰项档**（None = 不设 judge 闸门）的确定性映射。设计意图：干扰项
+# 质量闸门是"变难"方向的杠杆，故**只对高于默认档（3）的 tier 设门**——降档 / 默认档 / 新概念不该
+# 反过来要求更硬的干扰项（那会与 SE-S5a"默认档不加杠杆"的取向自相矛盾、且徒增默认路径重试耗尽
+# 风险）。tier 5 → "合理干扰"（最严：拒 较弱 / 无效）；tier 4 → "较弱干扰"（拒 无效）；tier 1/2/3
+# → None（不设门）。具体门槛是 v1 校准、可调：改映射只动这张表一处。5 档全覆盖。
+_TIER_QUALITY_FLOOR: dict[DifficultyTier, DistractorLabel | None] = {
+    1: None,
+    2: None,
+    3: None,
+    4: "较弱干扰",
+    5: "合理干扰",
+}
+
+
+def distractor_quality_floor(tier: DifficultyTier) -> DistractorLabel | None:
+    """据难度档返回选择题干扰项的**最低可接受质量档**——纯函数、无 I/O、确定性（SE-S5b 杠杆②）。
+
+    映射见 ``_TIER_QUALITY_FLOOR``：**只对高于默认档（3）的 tier 设 judge 闸门**——tier 5 要求全部
+    干扰项达"合理干扰"（拒 较弱 / 无效）、tier 4 要求达"较弱干扰"（拒 无效）、tier 1/2/3 返回
+    ``None``（不设门，档位不比默认更难时不该反要求更硬干扰项）。返回 ``None`` 时调用方
+    （``assess_once`` → ``generate_multiple_choice``）**完全不调 judge**——本闸门只在升过默认档的
+    概念上生效，把"难度"落到"干扰项够不够迷惑"这条可 judge 断言的题面维度上（PRD 决策 4 杠杆②）。
+    具体门槛 v1 校准、可调：只动 ``_TIER_QUALITY_FLOOR`` 一处。``tier`` 由 ``DifficultyTier`` 收敛
+    为 1..5、5 档全覆盖，故直接索引不会 KeyError。
+    """
+    return _TIER_QUALITY_FLOOR[tier]
+
+
+def distractor_meets_floor(label: DistractorLabel, floor: DistractorLabel) -> bool:
+    """判 judge 给某干扰项的 ``label`` 是否达到（≥）要求的最低档 ``floor``——纯函数、确定性。
+
+    按 ``_DISTRACTOR_LABEL_RANK`` 的偏序比较（无效 < 较弱 < 合理）：``rank(label) >= rank(floor)``
+    即达标。用在 ``generate_multiple_choice`` 的 judge 验收闸门里——任一干扰项不达标即 ``ModelRetry``
+    重生成。两参都由 ``DistractorLabel`` 收敛为三值、全覆盖，故直接索引不会 KeyError。
+    """
+    return _DISTRACTOR_LABEL_RANK[label] >= _DISTRACTOR_LABEL_RANK[floor]

@@ -16,6 +16,8 @@ from grandquiz.domain.learning.difficulty import (
     SLOW_MS,
     DifficultyTier,
     MasterySignals,
+    distractor_meets_floor,
+    distractor_quality_floor,
     next_tier,
     target_option_count,
 )
@@ -317,3 +319,56 @@ def test_target_option_count_boundaries_are_min_three_max_six() -> None:
 def test_target_option_count_deterministic() -> None:
     # 纯函数：同输入恒同输出。
     assert target_option_count(4) == target_option_count(4)
+
+
+# --- SE-S5b：档位 → 干扰项质量闸门（``distractor_quality_floor`` + ``distractor_meets_floor``）----
+
+
+def test_quality_floor_only_gates_above_default_tier() -> None:
+    # 逐档钉死：只有高于默认档（3）的 tier 设 judge 闸门；≤3 一律 None（不设门）。
+    assert distractor_quality_floor(1) is None
+    assert distractor_quality_floor(2) is None
+    assert distractor_quality_floor(3) is None
+    assert distractor_quality_floor(4) == "较弱干扰"
+    assert distractor_quality_floor(5) == "合理干扰"
+
+
+def test_quality_floor_default_tier_is_none() -> None:
+    # 默认档（从没考过的概念起点）不设闸门——与 SE-S5a"默认档不加杠杆"取向一致。
+    assert distractor_quality_floor(DEFAULT_TIER) is None
+
+
+def test_quality_floor_tier_five_strictest_tier_four_looser() -> None:
+    # tier 5 门槛（合理干扰）严于 tier 4（较弱干扰）：越高档要求干扰项越硬（钉死单调"变严"意图）。
+    floor5 = distractor_quality_floor(5)
+    floor4 = distractor_quality_floor(4)
+    assert floor5 == "合理干扰"
+    assert floor4 == "较弱干扰"
+    # 达 tier5 门槛的必也达 tier4 门槛，反之不然（门槛可比、且 5 严于 4）。
+    assert distractor_meets_floor("合理干扰", floor4)
+    assert not distractor_meets_floor("较弱干扰", floor5)
+
+
+def test_quality_floor_deterministic() -> None:
+    # 纯函数：同输入恒同输出。
+    assert distractor_quality_floor(5) == distractor_quality_floor(5)
+
+
+def test_meets_floor_合理干扰_floor_accepts_only_合理() -> None:
+    # floor=合理干扰（最严，tier5）：只有"合理干扰"达标，"较弱/无效"拒。
+    assert distractor_meets_floor("合理干扰", "合理干扰")
+    assert not distractor_meets_floor("较弱干扰", "合理干扰")
+    assert not distractor_meets_floor("无效干扰", "合理干扰")
+
+
+def test_meets_floor_较弱干扰_floor_accepts_合理_and_较弱() -> None:
+    # floor=较弱干扰（tier4）：合理、较弱都达标，只拒"无效干扰"。
+    assert distractor_meets_floor("合理干扰", "较弱干扰")
+    assert distractor_meets_floor("较弱干扰", "较弱干扰")
+    assert not distractor_meets_floor("无效干扰", "较弱干扰")
+
+
+def test_meets_floor_is_reflexive_at_each_label() -> None:
+    # 每一档都达自身门槛（≥ 比较的自反性，钉死"恰好达标即通过"边界）。
+    for label in ("合理干扰", "较弱干扰", "无效干扰"):
+        assert distractor_meets_floor(label, label)
