@@ -37,36 +37,39 @@ def _signals(
 # --- 规则骨架常量健全性（锁死"净分门限"与"单步"设计意图）--------------------------------
 
 
-def test_score_thresholds_require_two_net_positive_signals() -> None:
-    # 促升需净 +2、促降需净 -2——即"至少两路信号同向"才跨档，单路信号只维持。
+def test_promote_demote_thresholds_are_plus_minus_two() -> None:
+    # 促升需净 +2、促降需净 -2。注意判决轴恒投 ±1（见下方"判决基线"簇），故这不等于"两路彼此
+    # 独立的信号同向"，而是"判决基线 ± 一路速度/轮数佐证"——钉死这两个常量即锁死跨档灵敏度。
     assert PROMOTE_SCORE == 2
     assert DEMOTE_SCORE == -2
 
 
-# --- 单路信号：单独一路不足以跨档（只维持），符合"至少两路同向"设计 ----------------------
+# --- 判决基线 ±1 + 一路佐证：判决轴永不中性（每个销账概念必有判决历史），清爽销账 +1 起步、
+#     挣扎销账 -1 起步；一路速度/轮数佐证能否把它推过 ±2 门限。含刻意的**升降不对称**。--------
 
 
-def test_only_fast_holds() -> None:
-    # 仅"快"（+1）+ 默认无勉强（+1）实际已达 +2……故用"快 + 掉过勉强"抵消无勉强票来隔离"仅快"。
-    # 单纯只有速度这一路正向（其余中性）时净分 +1 → 维持。
-    result = next_tier(_MID, _signals(elapsed_ms=FAST_MS - 5_000, had_struggle=True))
-    assert result == _MID  # 快(+1) + 勉强(-1) + 轮数中性(0) = 0 → 维持
+def test_clean_baseline_alone_holds() -> None:
+    # 判决基线本身：清爽销账（无勉强 +1）、速度缺失 + 轮数中性 → 净 +1 → 维持（单靠判决轴不升）。
+    result = next_tier(_MID, _signals(had_struggle=False))
+    assert result == _MID
 
 
-def test_only_struggle_holds() -> None:
-    # 仅"掉过勉强"一路负向（速度缺失、轮数中性）→ 净 -1 → 维持（未达促降 -2）。
+def test_struggle_baseline_alone_holds() -> None:
+    # 判决基线本身：挣扎销账（掉过勉强 -1）、速度缺失 + 轮数中性 → 净 -1 → 维持（单靠判决轴不降）。
     result = next_tier(_MID, _signals(had_struggle=True))
     assert result == _MID
 
 
-def test_only_slow_holds() -> None:
-    # 仅"慢"一路负向，但默认"无勉强"是 +1，净 0 → 维持。
-    result = next_tier(_MID, _signals(elapsed_ms=SLOW_MS + 5_000))
+def test_lone_negative_corroborator_cannot_demote_clean_discharge() -> None:
+    # 刻意的不对称：清爽销账（+1）+ 单个负向佐证（慢 -1）净 0 → 维持——负向佐证单独抵不过判决
+    # 基线、不足以降档。只有真的掉过"勉强"才会降（见 test_slow_and_struggle_demotes）。避免一次
+    # 偶然慢就下调难度。
+    result = next_tier(_MID, _signals(elapsed_ms=SLOW_MS + 5_000, had_struggle=False))
     assert result == _MID
 
 
-def test_only_dragged_rounds_holds() -> None:
-    # 仅"销账拖了很多轮"一路负向（-1）+ 默认无勉强（+1）净 0 → 维持。
+def test_lone_dragged_corroborator_cannot_demote_clean_discharge() -> None:
+    # 同上不对称：清爽销账（+1）+ 拖很多轮（-1）净 0 → 维持。
     result = next_tier(_MID, _signals(rounds_to_discharge=DRAGGED_DISCHARGE_ROUNDS + 2))
     assert result == _MID
 

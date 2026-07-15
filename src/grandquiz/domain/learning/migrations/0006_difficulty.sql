@@ -4,10 +4,11 @@
 -- 塞进薄弱表随销账丢失。item_id 唯一 → 每概念至多一行，set_tier 用 INSERT OR REPLACE 覆盖。
 -- 无时间戳列（determinism 纪律）：seq 自增主键给插入序，难度无需时序、读取按 item_id 定位，
 -- 排序不依赖墙上时间，保证 replay 逐字节一致。IF NOT EXISTS 兜底幂等。
+-- 不额外建 item_id 索引：UNIQUE 约束已隐式建唯一索引，tier_of 的 WHERE item_id=? 直接走它
+-- （与 0005 不同——那里 item_id 非唯一、需显式索引；此表每概念至多一行，显式索引是纯冗余）。
 
 CREATE TABLE IF NOT EXISTS difficulty (
     seq     INTEGER PRIMARY KEY AUTOINCREMENT,
     item_id TEXT    NOT NULL UNIQUE,
     tier    INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_difficulty_item ON difficulty (item_id);
