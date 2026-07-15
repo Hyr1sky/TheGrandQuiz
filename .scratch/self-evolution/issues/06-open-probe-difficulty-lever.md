@@ -1,6 +1,11 @@
 # SE-S6 — 开放/追问难度杠杆（提示词按档位 + 证据条选择，软腿如实标注）
 
-Status: ready-for-agent
+Status: done（merge 至 main `6815de8`，六门全绿 681 passed / eval 14/14）。`difficulty_prompt_hint(tier)`
+（4/5→逼深提示、1/2→放缓提示、3→None，三档而非五串——软杠杆无法断言"真更难"、五串是假精度）
++ `generate_question` 加 `difficulty_hint` 参（append-pattern，照 `_append_asked_before`，None 不追加）。
+**关键手法（对抗审查改定，与 issue 原文"加 {{DIFFICULTY_HINT}} 哨兵"相反）**：用追加消息而非改 prompt
+文件——open/probe cassette（case6/8/10/13）prompt hash 未变、零重录。**证据条选择（杠杆②）跳过、留后续**。
+软性如实标注：测试只断言"不同档追加不同 hint / 默认+None 不追加"，不断言"真更难"。
 Type: AFK
 
 ## Parent

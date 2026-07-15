@@ -1,6 +1,11 @@
 # PRD：自进化第一阶段（批内分段调度 + 难度自适应 + 透明展示）
 
-Status: in-progress（协作学习式开发——搭骨架 + 讲原理 + 守门，竖切逐增量推进；2026-07-14 起）
+Status: 6 个竖切全部落地（2026-07-14..15，S1 台账 `9400a4d` / S2 跨档规则同上 / S3 接线+透明展示
+`487883f` / S5a 选项数杠杆 `cc359a3` / S5b judge 闸门 `d96d8bb` / S4 批分段 `d655656` / S6 开放软杠杆
+`6815de8`）。S3 已 dogfood 验证（'上下文保护' 3→4 档）。**待做**：难度激活路径的真机端到端回归 cassette
+（capstone，唯一还没真机覆盖的路径——S1-S6 的确定性核心全是 fake-provider 单测 + difficulty=None
+字节等价，难度激活的真实模型行为只经 S3 一次性 dogfood，未落回归用例）。判卷 rubric 误伤源文忠实
+答案的问题见 [[r2-eval-case-candidates]] 第 3 条，留 UX 打磨阶段。
 Triage: ready-for-agent
 
 > 本 PRD 是 2026-07-14 一轮 `grill-with-docs` 讨论的产出，三个待定设计问题已全部拍板。
