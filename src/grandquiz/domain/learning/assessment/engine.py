@@ -55,6 +55,7 @@ from grandquiz.domain.learning.difficulty import (
     DEFAULT_TIER,
     DifficultyLedger,
     MasterySignals,
+    difficulty_prompt_hint,
     distractor_quality_floor,
     next_tier,
     target_option_count,
@@ -199,7 +200,8 @@ async def assess_once(
     ``ANSWER_JUDGED`` 时间戳差 / 判决分布 = 是否掉过"勉强"）调 ``next_tier``，**仅真跨档**
     （``new != current``）才写台账 + 发 ``DIFFICULTY_TIER_CHANGED``（PRD 决策 6）。难度**落到出题**
     从 SE-S5a 起：选择题分支读该 item 当前档 → 目标选项数（``target_option_count``）下传出题
-    （档越高、干扰项越多）；开放 / 追问的软杠杆是后续 SE-S6。
+    （档越高、干扰项越多）；SE-S6 起开放 / 追问分支读档 → 难度提示（``difficulty_prompt_hint``）
+    下传出题（高档逼边界 / 反例 / 跨概念，低档问核心定义）——**软杠杆，如实承认比 MC 硬杠杆软**。
     """
     # a. 开 assessment span（根）。此后任何未预期异常都必须闭合它（见末尾 except）。
     #    先读全库候选池（全局 KB，非 task 局部——修 #2 跨会话丢知识），再按 scope 收窄（apply_scope，
@@ -291,6 +293,17 @@ async def assess_once(
             asked_evidence = list(mc.cited_evidence)
         else:
             prompt_name = "question_probe" if effective == "追问" else "question_generate"
+            # SE-S6 开放 / 追问难度软杠杆：读该 item 当前档 → 难度提示（高档逼边界 / 反例 / 跨概念，
+            # 低档问核心定义），下传出题请求。读法与上方 MC 分支的 current_tier 一致（两分支互斥、
+            # 每次执行只读一次，无重复读）。difficulty_prompt_hint **内部对默认档（3）返回 None**、
+            # 只对非默认档给提示；current_tier is None（未接难度台账 / difficulty=None）→ hint=None
+            # → generate_question 不追加任何 message、发出的 message / replay_key / prompt 版本号
+            # 逐字节等价改动前（cassette 不破的命根）。**软性如实标注**：这条比 MC 硬杠杆软——只保证
+            # 不同档追加不同提示，不保证高档题真的更难（深度主观、超出确定性可断言范围）。
+            current_tier = difficulty.tier_of(target.item_id) if difficulty is not None else None
+            difficulty_hint = (
+                difficulty_prompt_hint(current_tier) if current_tier is not None else None
+            )
             generated = await generate_question(
                 target,
                 provider=provider,
@@ -299,6 +312,7 @@ async def assess_once(
                 prompt_name=prompt_name,
                 language=language,
                 asked_before=asked_before,
+                difficulty_hint=difficulty_hint,
             )
             question_text = generated.question
             asked_evidence = list(generated.cited_evidence)

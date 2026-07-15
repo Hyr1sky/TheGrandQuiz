@@ -16,6 +16,7 @@ from grandquiz.domain.learning.difficulty import (
     SLOW_MS,
     DifficultyTier,
     MasterySignals,
+    difficulty_prompt_hint,
     distractor_meets_floor,
     distractor_quality_floor,
     next_tier,
@@ -372,3 +373,58 @@ def test_meets_floor_is_reflexive_at_each_label() -> None:
     # 每一档都达自身门槛（≥ 比较的自反性，钉死"恰好达标即通过"边界）。
     for label in ("合理干扰", "较弱干扰", "无效干扰"):
         assert distractor_meets_floor(label, label)
+
+
+# --- SE-S6：档位 → 开放 / 追问难度提示（``difficulty_prompt_hint`` 纯函数，软杠杆）------------
+# 软性如实标注：本函数是难度落到题面的**软腿**——只断言"不同档给不同提示文本 / 默认档给 None"，
+# **不断言"高档提示真的让题更难"**（深度主观、外部不可验证，见 difficulty_prompt_hint docstring）。
+
+
+def test_prompt_hint_high_tiers_are_non_empty_deep_hint() -> None:
+    # 高档 4/5 → 非空逼深提示（含"边界"字样，钉死"问边界 / 反例"的口径，mutation：改成放缓应变红）。
+    for tier in (4, 5):
+        hint = difficulty_prompt_hint(tier)
+        assert hint is not None
+        assert hint != ""
+        assert "边界" in hint  # 逼深提示的判别特征（问边界条件 / 反例 / 跨概念）
+
+
+def test_prompt_hint_low_tiers_are_non_empty_easy_hint() -> None:
+    # 低档 1/2 → 非空放缓提示（含"核心"字样，钉死"只问核心定义 / 基本理解"的口径）。
+    for tier in (1, 2):
+        hint = difficulty_prompt_hint(tier)
+        assert hint is not None
+        assert hint != ""
+        assert "核心" in hint  # 放缓提示的判别特征（问最核心的定义 / 基本理解）
+
+
+def test_prompt_hint_default_tier_is_none() -> None:
+    # 默认档（3）→ None：不加提示、保持出题官自然深度（与 SE-S5 "只对非默认档加杠杆"取向一致）。
+    assert difficulty_prompt_hint(3) is None
+    assert difficulty_prompt_hint(DEFAULT_TIER) is None
+
+
+def test_prompt_hint_high_and_low_bands_differ() -> None:
+    # "各档文本不同"：逼深提示（高档）与放缓提示（低档）是**不同**的文本（钉死三挡：逼深 / 放缓 /
+    # None 两两可区分）。4/5 刻意共用一句、1/2 刻意共用一句——软腿不细分成假精度的多句（见
+    # difficulty_prompt_hint docstring），故断言的是**band 间**不同，而非每个 tier 都不同。
+    hard = difficulty_prompt_hint(5)
+    easy = difficulty_prompt_hint(1)
+    assert hard is not None and easy is not None
+    assert hard != easy
+    # 三挡两两可区分（None 与两种非空提示都不同——None 天然与非空不等，此处显式记录设计意图）。
+    assert difficulty_prompt_hint(3) is None
+    assert hard != difficulty_prompt_hint(3)
+    assert easy != difficulty_prompt_hint(3)
+
+
+def test_prompt_hint_bands_share_within_band() -> None:
+    # 设计意图钉死：4/5 共用同一逼深提示、1/2 共用同一放缓提示（软腿三挡而非五档细分）。
+    assert difficulty_prompt_hint(4) == difficulty_prompt_hint(5)
+    assert difficulty_prompt_hint(1) == difficulty_prompt_hint(2)
+
+
+def test_prompt_hint_deterministic() -> None:
+    # 纯函数：同输入恒同输出。
+    assert difficulty_prompt_hint(5) == difficulty_prompt_hint(5)
+    assert difficulty_prompt_hint(3) == difficulty_prompt_hint(3)

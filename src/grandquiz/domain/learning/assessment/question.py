@@ -171,6 +171,7 @@ async def generate_question(
     prompt_name: str = "question_generate",
     language: str = "中文",
     asked_before: Sequence[str] = (),
+    difficulty_hint: str | None = None,
 ) -> GeneratedQuestion:
     """为 ``item`` 产出一道 grounded 题；持续失败 → ``QuestionError``。见模块 docstring。
 
@@ -187,6 +188,15 @@ async def generate_question(
     从 ``recently_asked`` 取被考 item 的已问列表下传，"LLM 判卷，代码记账"）。**仅当非空时**往 user
     message 注入"请换角度、勿重复"的约束（为空时发出的 message 一字不改——保证首次出题及不传台账的
     调用方 message / replay_key / prompt 版本不变），并在 ``_parse`` 的归一化去重门用它做重复判定。
+    ``difficulty_hint``：**开放 / 追问难度软杠杆**（SE-S6）——按被考 item 难度档算出的难度提示文本，
+    由 ``assess_once`` 读难度台账经 ``difficulty.difficulty_prompt_hint`` 算出并下传（高档逼边界 /
+    反例 / 跨概念，低档问核心定义；默认档 / 未接台账 → None）。**仅当非 None 时**才追加一条难度约束
+    user message（照 ``asked_before`` / ``num_options`` 的"可选追加、None 时一字不改"先例，见
+    ``_append_difficulty_hint``）；**``None`` 时（默认路径 / 既有调用方 / eval harness）不追加任何
+    message**——发出的 message / replay_key / prompt 版本号与改动前**逐字节相同**（eval / cassette
+    字节等价的命根）。开放题与追问共用本入口，两者都经此追加（``prompt_name`` 只决定加载哪个模板）。
+    **软性如实标注**：这条比 MC 硬杠杆软——只保证不同档追加不同提示文本，**不保证也不断言"高档题真的
+    更难"**（深度是主观的、超出确定性可断言范围，见 ``difficulty.difficulty_prompt_hint``）。
     """
     if max_attempts < 1:
         raise ValueError("max_attempts 至少为 1")
@@ -207,6 +217,8 @@ async def generate_question(
         ),
     ]
     _append_asked_before(base_messages, asked_before)
+    # 顺序固定（先 asked_before 再 difficulty_hint）保证可复现：难度提示恒在"换角度"约束之后追加。
+    _append_difficulty_hint(base_messages, difficulty_hint)
     retry_note: str | None = None
     last_error = ""
     for _ in range(max_attempts):
@@ -243,6 +255,21 @@ def _append_asked_before(messages: list[Message], asked_before: Sequence[str]) -
             content=(f"已问过以下问题，请换一个角度提问、不要重复：\n{asked_block}"),
         )
     )
+
+
+def _append_difficulty_hint(messages: list[Message], difficulty_hint: str | None) -> None:
+    """难度提示非 None 时，往 user message 追加一条难度约束（内容即 hint）；None 则一字不改。
+
+    SE-S6 开放 / 追问软杠杆，照 ``_append_asked_before`` 的"可选追加、None 时 message 逐字节不变"
+    先例：仅 ``difficulty_hint is not None`` 时追加，内容就是调用方（``assess_once`` 经
+    ``difficulty.difficulty_prompt_hint``）按难度档算好的整句提示文本；``difficulty_hint is None``
+    （默认路径 / 既有调用方 / eval harness）时**不追加任何 message**——保证发出的 message /
+    replay_key / prompt 版本号与改动前逐字节相同（cassette / replay 不破的命根）。开放题与追问共用
+    本函数（``generate_question`` 是两者共用入口）。
+    """
+    if difficulty_hint is None:
+        return
+    messages.append(Message(role="user", content=difficulty_hint))
 
 
 async def _call_model(

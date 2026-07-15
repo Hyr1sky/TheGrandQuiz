@@ -313,3 +313,103 @@ async def test_probe_prompt_variant_reflected_in_trace_prompt_version() -> None:
     assert isinstance(question, GeneratedQuestion)  # 追问与开放共用 schema
     started = next(e for e in events if e.type == EventType.MODEL_STARTED)
     assert str(started.payload["prompt_version"]).startswith("question_probe@")
+
+
+# --- SE-S6：开放 / 追问难度软杠杆（difficulty_hint 传入才追加；None 时逐字节等价改动前）----------
+# 软性如实标注：这里只断言"hint 非 None 时被追加进 messages / None 时一字不追加"，**不断言**"高档
+# 题真的更难"（深度主观、超出确定性可断言范围，见 difficulty.difficulty_prompt_hint）。
+
+_HINT_SENTINEL = "【SE-S6 难度提示占位·请问边界与反例】"
+
+
+class _MessageCapturingProvider:
+    """返回固定文本、留存最后一次收到的 messages（断言难度提示被 / 未被追加）。"""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.calls = 0
+        self.last_messages: list[Message] = []
+        self.last_text = ""
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        self.calls += 1
+        self.last_messages = list(messages)
+        self.last_text = "\n".join(m.content for m in messages)
+        return Completion(text=self.text, usage=Usage(prompt_tokens=5, completion_tokens=2))
+
+
+async def test_difficulty_hint_appended_to_open_question() -> None:
+    # 传 difficulty_hint → 发出的 messages 含该 hint（作为一条 user message 追加）。
+    provider = _MessageCapturingProvider(
+        json.dumps({"question": "什么是闭包？", "cited_evidence": [_QUOTE]})
+    )
+    emitter, _ = _emitter()
+
+    await generate_question(
+        _item(),
+        provider=provider,
+        emitter=emitter,
+        parent_span_id="a",
+        difficulty_hint=_HINT_SENTINEL,
+    )
+
+    assert provider.calls == 1
+    assert _HINT_SENTINEL in provider.last_text  # 难度提示确实注入了出题请求
+    # 追加为一条独立 user message（内容恰为 hint），且在 system + item + (无 asked_before) 之后。
+    hint_msgs = [m for m in provider.last_messages if m.content == _HINT_SENTINEL]
+    assert len(hint_msgs) == 1
+    assert hint_msgs[0].role == "user"
+
+
+async def test_difficulty_hint_appended_to_probe_question() -> None:
+    # 追问（prompt_name=question_probe）走同一入口 → 难度提示同样被追加（开放 + 追问都覆盖）。
+    provider = _MessageCapturingProvider(
+        json.dumps({"question": "为什么？", "cited_evidence": [_QUOTE]})
+    )
+    emitter, _ = _emitter()
+
+    await generate_question(
+        _item(),
+        provider=provider,
+        emitter=emitter,
+        parent_span_id="a",
+        prompt_name="question_probe",
+        difficulty_hint=_HINT_SENTINEL,
+    )
+
+    assert provider.calls == 1
+    assert _HINT_SENTINEL in provider.last_text  # 追问路径同样注入难度提示
+
+
+async def test_difficulty_hint_none_is_byte_equivalent_to_absent() -> None:
+    # **关键对照**：显式传 difficulty_hint=None 与完全不传 → 发出的 messages 逐字节相同（证明默认
+    # 路径不追加任何难度约束；这是 eval / cassette 字节等价的命根）。开放与追问都验一遍。
+    q_json = json.dumps({"question": "什么是闭包？", "cited_evidence": [_QUOTE]})
+    for prompt_name in ("question_generate", "question_probe"):
+        absent = _MessageCapturingProvider(q_json)
+        emitter_a, _ = _emitter()
+        await generate_question(
+            _item(),
+            provider=absent,
+            emitter=emitter_a,
+            parent_span_id="a",
+            prompt_name=prompt_name,
+        )
+        none_arg = _MessageCapturingProvider(q_json)
+        emitter_b, _ = _emitter()
+        await generate_question(
+            _item(),
+            provider=none_arg,
+            emitter=emitter_b,
+            parent_span_id="a",
+            prompt_name=prompt_name,
+            difficulty_hint=None,
+        )
+        # 逐字节等价：两次发出的 messages 完全相同（role + content 均一致）。
+        assert [m.model_dump() for m in absent.last_messages] == [
+            m.model_dump() for m in none_arg.last_messages
+        ]
+        # 且既有默认路径不含任何难度提示占位。
+        assert _HINT_SENTINEL not in none_arg.last_text

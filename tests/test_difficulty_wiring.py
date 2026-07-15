@@ -514,3 +514,165 @@ async def test_none_difficulty_does_not_trigger_distractor_judge_gate() -> None:
 
     assert result.question_type == "选择题"
     assert provider.judge_calls == 0  # difficulty=None → 无 judge 闸门
+
+
+# --------------------------------------------------------------------------- #
+# SE-S6：开放 / 追问难度软杠杆的 assess_once 接线（高档 → 注入难度提示；默认档 / None → 不注入）
+# --------------------------------------------------------------------------- #
+# 软性如实标注：只断言"高档 → enrich 文本含逼深提示 / 默认档 · None → 不含任何难度提示"，**不断言**
+# "高档题真的更难"（深度主观、超出确定性可断言范围，见 difficulty.difficulty_prompt_hint）。
+
+# 逼深提示 / 放缓提示的判别子串（稳定锚，独立于完整措辞——改措辞只要仍含这些字样即可）。
+_HARD_HINT_MARK = "高难度考核"
+_EASY_HINT_MARK = "入门考核"
+
+
+class _HintCapturingProvider:
+    """开放 / 追问出题（enrich）留存收到的 messages 文本；判卷（basic）按注入 verdict 判。
+
+    断言 assess_once 把难度档 → 难度提示注入开放 / 追问出题请求：高档（4/5）→ enrich 文本含逼深
+    提示；默认档 / difficulty=None → 不含任何难度提示。``cited_evidence`` 恒引被考 item 真实证据使
+    锚定门放行；MC 判卷走确定性代码、不打 basic 槽，故开放 / 追问路径下 basic **只可能**是 LLM
+    判卷官——按 role 分流无歧义。
+    """
+
+    def __init__(self, *, verdict: str) -> None:
+        self._verdict = verdict
+        self.enrich_calls = 0
+        self.last_enrich_text = ""
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        text = "\n".join(m.content for m in messages)
+        quote = next(q for q in QUOTES if q in text)
+        if role == "enrich":
+            self.enrich_calls += 1
+            self.last_enrich_text = text
+            payload = {"question": "该知识点的核心是什么？", "cited_evidence": [quote]}
+            return Completion(
+                text=json.dumps(payload, ensure_ascii=False),
+                usage=Usage(prompt_tokens=7, completion_tokens=3),
+            )
+        payload = {"verdict": self._verdict, "cited_evidence": [quote]}
+        return Completion(
+            text=json.dumps(payload, ensure_ascii=False),
+            usage=Usage(prompt_tokens=7, completion_tokens=3),
+        )
+
+
+async def test_high_tier_injects_difficulty_hint_into_open_question() -> None:
+    # 全库预置最高档（5）+ 被考 item 处"观察中"→ 路由到开放 → 出题请求注入逼深提示（含高难度考核）。
+    # 答"错"使 观察中 → 薄弱（非销账，tier 不动），保证 hint 由 tier5 算出、不被销账跨档干扰。
+    store, item_ids = build_stocked_store()
+    difficulty = DictDifficultyLedger()
+    for item_id in item_ids:
+        difficulty.set_tier(item_id, 5)
+    memory = LearningMemory()
+    target = item_ids[0]
+    memory.record_verdict(target, "错")  # → 薄弱
+    memory.record_verdict(target, "对")  # → 观察中（下一轮路由到开放）
+    assert memory.state_of(target) == "观察中"
+    provider = _HintCapturingProvider(verdict="错")
+    emitter, _ = _harness()
+
+    result = await assess_once(
+        store=store,
+        provider=provider,
+        responder=ScriptedResponder(answer="任意"),
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        focus="weak",  # 锁定薄弱 / 观察中集，确保考的是 target
+        difficulty=difficulty,
+    )
+
+    assert result.item_id == target
+    assert result.question_type == "开放"
+    assert _HARD_HINT_MARK in provider.last_enrich_text  # tier5 → 逼深提示注入开放出题
+    assert _EASY_HINT_MARK not in provider.last_enrich_text  # 高档不给放缓提示
+
+
+async def test_high_tier_injects_difficulty_hint_into_probe_question() -> None:
+    # 全库预置最高档（5）+ 被考 item 处"薄弱"→ 路由到追问 → 出题请求同样注入逼深提示（开放 + 追问都
+    # 覆盖）。答"对"使 薄弱 → 观察中（非销账，tier 不动）。
+    store, item_ids = build_stocked_store()
+    difficulty = DictDifficultyLedger()
+    for item_id in item_ids:
+        difficulty.set_tier(item_id, 5)
+    memory = LearningMemory()
+    target = item_ids[0]
+    memory.record_verdict(target, "错")  # → 薄弱（下一轮路由到追问）
+    assert memory.state_of(target) == "薄弱"
+    provider = _HintCapturingProvider(verdict="对")
+    emitter, _ = _harness()
+
+    result = await assess_once(
+        store=store,
+        provider=provider,
+        responder=ScriptedResponder(answer="任意"),
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        focus="weak",
+        difficulty=difficulty,
+    )
+
+    assert result.item_id == target
+    assert result.question_type == "追问"
+    assert _HARD_HINT_MARK in provider.last_enrich_text  # 追问路径同样注入逼深提示
+
+
+async def test_default_tier_injects_no_difficulty_hint_open() -> None:
+    # 对照：全库默认档（3）→ difficulty_prompt_hint(3)=None → 开放出题不含任何难度提示。
+    store, item_ids = build_stocked_store()
+    difficulty = DictDifficultyLedger()
+    for item_id in item_ids:
+        difficulty.set_tier(item_id, DEFAULT_TIER)
+    memory = LearningMemory()
+    target = item_ids[0]
+    memory.record_verdict(target, "错")  # → 薄弱
+    memory.record_verdict(target, "对")  # → 观察中 → 开放
+    provider = _HintCapturingProvider(verdict="错")
+    emitter, _ = _harness()
+
+    result = await assess_once(
+        store=store,
+        provider=provider,
+        responder=ScriptedResponder(answer="任意"),
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        focus="weak",
+        difficulty=difficulty,
+    )
+
+    assert result.question_type == "开放"
+    assert _HARD_HINT_MARK not in provider.last_enrich_text  # 默认档不注入难度提示
+    assert _EASY_HINT_MARK not in provider.last_enrich_text
+
+
+async def test_none_difficulty_injects_no_hint_open() -> None:
+    # 对照：不传 difficulty（默认 None）→ current_tier=None → hint=None → 开放出题不含任何难度提示。
+    # 与 SE-S5 的 difficulty=None gated 一致：默认路径字节等价改动前，不读档、不追加。
+    store, item_ids = build_stocked_store()
+    memory = LearningMemory()
+    target = item_ids[0]
+    memory.record_verdict(target, "错")  # → 薄弱
+    memory.record_verdict(target, "对")  # → 观察中 → 开放
+    provider = _HintCapturingProvider(verdict="错")
+    emitter, _ = _harness()
+
+    result = await assess_once(
+        store=store,
+        provider=provider,
+        responder=ScriptedResponder(answer="任意"),
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        focus="weak",
+    )
+
+    assert result.question_type == "开放"
+    assert _HARD_HINT_MARK not in provider.last_enrich_text  # difficulty=None → 无难度提示
+    assert _EASY_HINT_MARK not in provider.last_enrich_text
