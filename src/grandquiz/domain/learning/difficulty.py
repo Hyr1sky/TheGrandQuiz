@@ -11,6 +11,9 @@
   销账丢失。协议形状照 ``asked_questions.py`` 的 Protocol + Dict + Sqlite 三段式。
 - **SE-S2 跨档规则**：``next_tier`` 纯函数据三路信号（销账轮数 / 答题耗时 / 判决分布）裁决该概念
   升 / 降 / 维持一档。照 ``memory.py`` 的 ``apply_verdict``——无 I/O、不发事件、不碰随机 / 时钟。
+- **SE-S5a 选择题选项数杠杆**：``target_option_count`` 纯函数把难度档映射到选择题目标选项数
+  （档越高、干扰项越多、越难靠排除法蒙对），是"让难度落到题面"的第一条腿。同样确定性、无 I/O
+  （被 ``assess_once`` 的选择题分支读、下传出题请求）。
 
 determinism 纪律：难度表无时间戳列（``seq`` 排序）；``next_tier`` 无 clock / random；domain 层不
 import time / datetime / uuid。
@@ -261,3 +264,27 @@ def tier_change_reason(
     if signals.elapsed_ms is not None and signals.elapsed_ms >= SLOW_MS:
         reasons.append("答得慢")
     return f"答得又虚又费劲（{'、'.join(reasons)}）——下调难度"
+
+
+# ============================================================================
+# SE-S5a：档位 → 选择题目标选项数（选择题硬杠杆①，确定性映射）
+# ============================================================================
+
+# 难度档 → 选择题目标选项数（1 正确项 + N-1 干扰项）的确定性映射。设计意图：档 ≤ 默认档给
+# 最简 3 项（最易靠排除法蒙对）、默认档（3）给 4 项、高档递增到 6 项——档位越高、干扰项越多、
+# 越难排除，把"难度"落到可断言的题面结构上（PRD 决策 4 杠杆①）。**单调不减**（难度只加不减
+# 选项，不出现"更难反而选项更少"）。具体值是 v1 校准、可调：改映射只动这张表一处，
+# ``target_option_count`` 随之变，不散落各处。5 档全覆盖（``DifficultyTier`` = 1..5）。
+_TIER_OPTION_COUNTS: dict[DifficultyTier, int] = {1: 3, 2: 3, 3: 4, 4: 5, 5: 6}
+
+
+def target_option_count(tier: DifficultyTier) -> int:
+    """据难度档返回选择题的目标选项数（1 正确项 + N-1 干扰项）——纯函数、无 I/O、确定性。
+
+    映射见 ``_TIER_OPTION_COUNTS``：1/2 档 3 项、3 档（默认档）4 项、4 档 5 项、5 档 6 项——
+    档位越高、干扰项越多、越难靠排除法蒙对（PRD 决策 4 杠杆①）。映射**单调不减**（难度只加不
+    减选项）。具体值 v1 校准、可调：只动 ``_TIER_OPTION_COUNTS`` 一处。``tier`` 由
+    ``DifficultyTier`` 收敛为 1..5、5 档全覆盖，故直接索引不会 KeyError（越界档在 ``_coerce_tier``
+    读取点已大声失败）。
+    """
+    return _TIER_OPTION_COUNTS[tier]

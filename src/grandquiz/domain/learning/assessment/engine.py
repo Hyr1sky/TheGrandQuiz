@@ -52,9 +52,11 @@ from grandquiz.domain.learning.assessment.routing import (
 )
 from grandquiz.domain.learning.assessment.selection import Focus, apply_scope, select_target
 from grandquiz.domain.learning.difficulty import (
+    DEFAULT_TIER,
     DifficultyLedger,
     MasterySignals,
     next_tier,
+    target_option_count,
     tier_change_reason,
 )
 from grandquiz.domain.learning.events import LearningEvent
@@ -194,8 +196,9 @@ async def assess_once(
     信号只在 ``ConceptRecord`` 被删那一刻可捕获，非销账轮不动难度，"每轮微调"留后续）。销账那刻据
     三路信号（销账轮数 = 转移前 ``verdict_history`` 长度 / 答题耗时 = ``QUESTION_ASKED``→
     ``ANSWER_JUDGED`` 时间戳差 / 判决分布 = 是否掉过"勉强"）调 ``next_tier``，**仅真跨档**
-    （``new != current``）才写台账 + 发 ``DIFFICULTY_TIER_CHANGED``（PRD 决策 6；本期难度尚不影响
-    出题，那是 SE-S5/S6）。
+    （``new != current``）才写台账 + 发 ``DIFFICULTY_TIER_CHANGED``（PRD 决策 6）。难度**落到出题**
+    从 SE-S5a 起：选择题分支读该 item 当前档 → 目标选项数（``target_option_count``）下传出题
+    （档越高、干扰项越多）；开放 / 追问的软杠杆是后续 SE-S6。
     """
     # a. 开 assessment span（根）。此后任何未预期异常都必须闭合它（见末尾 except）。
     #    先读全库候选池（全局 KB，非 task 局部——修 #2 跨会话丢知识），再按 scope 收窄（apply_scope，
@@ -253,6 +256,19 @@ async def assess_once(
             asked_before += asked_questions.asked_before(target.item_id)
         mc: MultipleChoiceQuestion | None = None
         if effective == "选择题":
+            # SE-S5a 选择题硬杠杆①：难度**只在概念离开默认档后**才落到题面——接了难度台账
+            # （difficulty is not None）且被考 item 的档 ≠ 默认档（3）时，读档 → 目标选项数
+            # （档越高、干扰项越多、越难靠排除法蒙对），下传出题请求。**默认档（含全部新概念）与
+            # 未接台账（eval harness）→ num_options=None、不注入选项数约束**——
+            # generate_multiple_choice 发出的 message / replay_key 逐字节等价改动前。刻意只在
+            # "已适应"概念上加杠杆：新概念保持出题官自然给的选项数（不把"默认 MC 提到 4 项硬底"
+            # 这个独立的题面质量变更混进本增量，也免默认路径重试耗尽风险）；升/降档后才收紧/放宽。
+            current_tier = difficulty.tier_of(target.item_id) if difficulty is not None else None
+            num_options = (
+                target_option_count(current_tier)
+                if current_tier is not None and current_tier != DEFAULT_TIER
+                else None
+            )
             mc = await generate_multiple_choice(
                 target,
                 provider=provider,
@@ -260,6 +276,7 @@ async def assess_once(
                 parent_span_id=assessment_span,
                 language=language,
                 asked_before=asked_before,
+                num_options=num_options,
             )
             question_text = mc.question
             asked_evidence = list(mc.cited_evidence)
@@ -375,7 +392,8 @@ async def assess_once(
         #      恒 True 退化）；
         #    · elapsed_ms = (ANSWER_JUDGED.ts − QUESTION_ASKED.ts)×1000 取整（决策 B）。
         #    只有真跨档（new != current）才写台账 + 发 DIFFICULTY_TIER_CHANGED（照
-        #    CONCEPT_STATE_CHANGED 的"无转移不发"先例；本期难度尚不影响出题，SE-S5/S6 才落到题面）。
+        #    CONCEPT_STATE_CHANGED 的"无转移不发"先例）。难度落到出题从 SE-S5a 起（选择题分支据档
+        #    算目标选项数下传出题，见上方 e 步）；此处仍只管"改档 + 透明展示"，两者解耦。
         #    销账必判"对"、故与下方"勉强 / 错"才触发的 FOLLOWUP_GIVEN 互斥，两块先后无可观察交错。
         if difficulty is not None and transition.to_state == "销账" and before_record is not None:
             signals = MasterySignals(

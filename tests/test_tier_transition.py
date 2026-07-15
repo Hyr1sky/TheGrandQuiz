@@ -7,6 +7,7 @@
 """
 
 from grandquiz.domain.learning.difficulty import (
+    DEFAULT_TIER,
     DEMOTE_SCORE,
     DRAGGED_DISCHARGE_ROUNDS,
     FAST_MS,
@@ -16,6 +17,7 @@ from grandquiz.domain.learning.difficulty import (
     DifficultyTier,
     MasterySignals,
     next_tier,
+    target_option_count,
 )
 
 _MID: DifficultyTier = 3  # 中间档，升降都有空间
@@ -280,3 +282,38 @@ def test_dragged_rounds_boundary_is_inclusive() -> None:
 def test_deterministic_same_input_same_output() -> None:
     sig = _signals(rounds_to_discharge=QUICK_DISCHARGE_ROUNDS, elapsed_ms=FAST_MS - 1)
     assert next_tier(_MID, sig) == next_tier(_MID, sig)
+
+
+# --- SE-S5a：档位 → 选择题目标选项数（``target_option_count`` 纯函数，逐档 + 单调 + 边界）------
+
+
+def test_target_option_count_each_tier() -> None:
+    # 逐档钉死映射值（mutation：改任一档的选项数应被这条杀掉）。默认档（3）给 4 项。
+    assert target_option_count(1) == 3
+    assert target_option_count(2) == 3
+    assert target_option_count(3) == 4
+    assert target_option_count(4) == 5
+    assert target_option_count(5) == 6
+
+
+def test_target_option_count_default_tier_is_four() -> None:
+    # 默认档（从没考过的概念起点）= 4 项——锁死"标准档给 4 项"的口径（与 DEFAULT_TIER 联动）。
+    assert target_option_count(DEFAULT_TIER) == 4
+
+
+def test_target_option_count_is_monotonic_non_decreasing() -> None:
+    # 单调不减：难度只加不减选项，绝不出现"更难反而选项更少"（钉死设计意图）。
+    counts = [target_option_count(t) for t in (1, 2, 3, 4, 5)]
+    assert counts == sorted(counts)
+    assert all(counts[i] <= counts[i + 1] for i in range(len(counts) - 1))
+
+
+def test_target_option_count_boundaries_are_min_three_max_six() -> None:
+    # 边界：最低档不低于 3 项（选择题至少要有可排除的干扰项），最高档到 6 项。
+    assert target_option_count(1) == 3  # 下界
+    assert target_option_count(5) == 6  # 上界
+
+
+def test_target_option_count_deterministic() -> None:
+    # 纯函数：同输入恒同输出。
+    assert target_option_count(4) == target_option_count(4)

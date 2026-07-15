@@ -317,6 +317,7 @@ async def generate_multiple_choice(
     max_attempts: int = 3,
     language: str = "中文",
     asked_before: Sequence[str] = (),
+    num_options: int | None = None,
 ) -> MultipleChoiceQuestion:
     """为 ``item`` 产一道锚定的选择题（首次接触概念的热身题型）；持续失败 → ``QuestionError``。
 
@@ -332,6 +333,13 @@ async def generate_multiple_choice(
     ``language`` 同 ``generate_question``：字面替换模板 ``{{LANGUAGE}}`` 哨兵，版本号跨语言稳定。
     ``asked_before`` 同 ``generate_question``：非空时注入"换角度"约束、并在 ``_parse_mc`` 归一化
     去重门用作重复判定（为空则 message 一字不改）——会话内不重复出同一道选择题。
+    ``num_options``：**选择题难度硬杠杆①**（SE-S5a）——按被考 item 的难度档算出的目标选项数，由
+    ``assess_once`` 读难度台账后下传（档越高、选项越多、越难靠排除法蒙对，见
+    ``difficulty.target_option_count``）。**仅当非 None 时**才追加一条选项数约束（照
+    ``asked_before`` 的"可选追加、为空一字不改"先例，见 ``_append_num_options``），并在
+    ``_parse_mc`` 末尾加一道"至少 ``num_options`` 项"的门。**``None`` 时（默认路径 / 既有调用方 /
+    eval harness）不追加任何 message、``_parse_mc`` 行为完全不变**——发出的 message / replay_key /
+    prompt 版本号与改动前逐字节相同（eval / cassette 字节等价的命根子）。
     """
     if max_attempts < 1:
         raise ValueError("max_attempts 至少为 1")
@@ -352,6 +360,7 @@ async def generate_multiple_choice(
         ),
     ]
     _append_asked_before(base_messages, asked_before)
+    _append_num_options(base_messages, num_options)
     retry_note: str | None = None
     last_error = ""
     for _ in range(max_attempts):
@@ -366,15 +375,45 @@ async def generate_multiple_choice(
             prompt_version=prompt.version,
         )
         try:
-            return _parse_mc(completion.text, valid_quotes, asked_before=asked_before)
+            return _parse_mc(
+                completion.text,
+                valid_quotes,
+                asked_before=asked_before,
+                num_options=num_options,
+            )
         except ModelRetry as exc:
             last_error = str(exc)
             retry_note = f"上一次出题无法采用：{exc}。请只返回合法 JSON，且引用真实证据。"
     raise QuestionError(f"选择题出题失败（{max_attempts} 次尝试仍无合法输出）：{last_error}")
 
 
+def _append_num_options(messages: list[Message], num_options: int | None) -> None:
+    """按难度档要求恰好给出 ``num_options`` 个选项时，往 user message 追加选项数约束（None 不改）。
+
+    照 ``_append_asked_before`` 的"可选追加、为空时 message 逐字节不变"先例（SE-S5a 选择题硬杠杆
+    ①）：仅 ``num_options is not None`` 时追加一条约束，指明目标选项数 + 干扰项质量 / 平行度要求；
+    ``num_options is None``（默认路径、既有调用方 / eval harness）时**不追加任何 message**——保证
+    发出的 message / replay_key / prompt 版本号与改动前逐字节相同。
+    """
+    if num_options is None:
+        return
+    messages.append(
+        Message(
+            role="user",
+            content=(
+                f"本题请恰好给出 {num_options} 个选项："
+                f"1 个正确项 + {num_options - 1} 个有迷惑性、需真懂概念才能排除的干扰项；"
+                "选项之间在长度 / 具体度上保持平行，不要让正确项被表面特征出卖。"
+            ),
+        )
+    )
+
+
 def _parse_mc(
-    text: str, valid_quotes: set[str], asked_before: Sequence[str] = ()
+    text: str,
+    valid_quotes: set[str],
+    asked_before: Sequence[str] = (),
+    num_options: int | None = None,
 ) -> MultipleChoiceQuestion:
     try:
         data = json.loads(text)
@@ -421,4 +460,14 @@ def _parse_mc(
     # 归一化去重门（缝 3，与开放题同规则）：题干归一化后命中会话内"已问过"台账 → ModelRetry。
     if is_duplicate(mc.question, asked_before):
         raise ModelRetry("与已问过的题重复：请换一个角度提问，不要重复已考过的问题")
+    # 选项数硬杠杆门（SE-S5a，缝 3，**仅当调用方按难度档传入 num_options 时生效**）：档越高、要求
+    # 选项越多、越难靠排除法蒙对。少于目标数 → ModelRetry，反馈进下一次上下文让重试补足干扰项。
+    # 放在所有既有门之后（不与既有 >= 2 / answer_index / 去重 / meta / 长度门抢先报错）；
+    # num_options is None（默认路径 / 既有调用方 / eval harness）时**此门整个不参与**——行为与
+    # 改动前逐字节等价。
+    if num_options is not None and len(mc.options) < num_options:
+        raise ModelRetry(
+            f"选项数不足：本题难度档要求至少 {num_options} 个选项（现 {len(mc.options)} 项），"
+            "请补足有迷惑性、需真懂概念才能排除的干扰项"
+        )
     return mc

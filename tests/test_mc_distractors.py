@@ -252,3 +252,69 @@ async def test_existing_fake_options_pass_anti_tell_gates(
     assert list(mc.options) == options
     assert provider.calls == 1  # 首次即过、无误伤重试
     assert [e.type for e in events] == [EventType.MODEL_STARTED, EventType.MODEL_ENDED]
+
+
+# --- SE-S5a：选项数硬杠杆门（num_options 传入才生效；None 时行为逐字节等价改动前）------------
+
+_SIX_OPTIONS = ["变量本身", "值的快照", "外层作用域", "定义时环境", "调用时环境", "全局对象"]
+_THREE_OPTIONS = ["变量本身", "值的快照", "外层作用域"]
+
+
+class _MessageCapturingProvider:
+    """返回固定文本、并留存最后一次收到的 messages（用于断言选项数约束被注入）。"""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.calls = 0
+        self.last_text = ""
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        self.calls += 1
+        self.last_text = "\n".join(m.content for m in messages)
+        return Completion(text=self.text, usage=Usage(prompt_tokens=5, completion_tokens=2))
+
+
+async def test_num_options_six_with_six_options_passes() -> None:
+    # 传 num_options=6、provider 恰返回 6 个平衡选项 → 首次即过，options 数 == 6，且注入了约束。
+    provider = _MessageCapturingProvider(_mc_json(options=_SIX_OPTIONS, answer_index=0))
+    emitter, _ = _emitter()
+
+    mc = await generate_multiple_choice(
+        _item(), provider=provider, emitter=emitter, parent_span_id="a", num_options=6
+    )
+    assert len(mc.options) == 6
+    assert provider.calls == 1
+    assert "6 个选项" in provider.last_text  # 选项数约束确实注入了出题请求
+
+
+async def test_num_options_six_with_three_options_retries_then_raises() -> None:
+    # 传 num_options=6、provider 只回 3 个选项 → 选项数门不达标 → ModelRetry 用尽 → QuestionError。
+    provider = _MessageCapturingProvider(_mc_json(options=_THREE_OPTIONS, answer_index=0))
+    emitter, _ = _emitter()
+
+    with pytest.raises(QuestionError):
+        await generate_multiple_choice(
+            _item(),
+            provider=provider,
+            emitter=emitter,
+            parent_span_id="a",
+            max_attempts=2,
+            num_options=6,
+        )
+    assert provider.calls == 2  # 每次都因选项不足重试 → 用尽
+
+
+async def test_num_options_none_with_three_options_still_passes() -> None:
+    # **关键对照**：不传 num_options（默认 None）→ 选项数门整个不参与，3 选项仍过既有 >= 2 门。
+    # 证明默认路径逐字节等价改动前：既有调用方 / eval harness 不受新门影响。
+    provider = _MessageCapturingProvider(_mc_json(options=_THREE_OPTIONS, answer_index=0))
+    emitter, _ = _emitter()
+
+    mc = await generate_multiple_choice(
+        _item(), provider=provider, emitter=emitter, parent_span_id="a"
+    )
+    assert len(mc.options) == 3
+    assert provider.calls == 1  # 首次即过、无重试
+    assert "个选项" not in provider.last_text  # None 时不注入任何选项数约束

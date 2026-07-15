@@ -8,8 +8,15 @@ LLM / cassette（销账走开放题的 LLM 判卷槽，verdict 由 fake 直接�
 耗时信号（决策 B）经 ``ManualClock`` 的 ``tick`` 确定：开放题路径下 QUESTION_ASKED→ANSWER_JUDGED
 之间恒隔 3 次 emit（判卷的一对 model span + ANSWER_JUDGED 自身），故 ``elapsed = 3 × tick ×
 1000`` ms——``tick=1`` → 3000ms（快，≤FAST_MS）、``tick=100`` → 300000ms（慢，≥SLOW_MS）。
+
+**SE-S5a 追加**（选择题选项数杠杆的 assess_once 接线）：难度档 → 目标选项数下传选择题出题请求。
+用 ``_NumOptionsEchoProvider``（回读注入的选项数约束、回产对应数量选项）断言外部行为：高档 →
+请求更多选项；``difficulty=None`` → 不注入、回落基线（默认路径等价改动前）。
 """
 
+import json
+import re
+from collections.abc import Sequence
 from pathlib import Path
 
 from rich.console import Console
@@ -26,6 +33,7 @@ from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.evals.harness import (
     MC_WRONG,
+    QUOTES,
     AssessFakeProvider,
     build_stocked_store,
 )
@@ -33,6 +41,7 @@ from grandquiz.interfaces.cli.composition import build_learning_stores
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
+from grandquiz.providers.base import Completion, Message, Role, Usage
 
 _SEED = 42
 
@@ -156,6 +165,8 @@ async def test_discharge_but_net_maintains_does_not_emit_or_change() -> None:
 
 async def test_non_discharge_wrong_answer_leaves_difficulty_untouched() -> None:
     # 答错入薄弱（非销账转移）→ 难度块整个不进（to_state != "销账"）：不发事件、台账不动。
+    # SE-S5a 下此 item 停在默认档 3 → 不注入选项数约束（只在离开默认档后才落到题面），故仍用
+    # 原 AssessFakeProvider（2 项 MC）即可，无需 num_options-aware provider。
     store, _item_ids = build_stocked_store()
     memory = LearningMemory()  # fresh → 选择题（MC）；选错 → 判错入薄弱
     difficulty = DictDifficultyLedger()
@@ -287,3 +298,95 @@ def test_printer_escapes_difficulty_reason_markup() -> None:
         )
     )
     assert "[bold]标记[/]" in console.export_text()
+
+
+# --------------------------------------------------------------------------- #
+# SE-S5a：选择题选项数杠杆的 assess_once 接线（高档 → 更多选项；difficulty=None → 基线）
+# --------------------------------------------------------------------------- #
+
+
+class _NumOptionsEchoProvider:
+    """出题按注入的选项数约束回产对应数量的 MC 选项（验证 assess_once 把难度档 → 选项数注入出题）。
+
+    从组装好的 messages 正则读出"恰好给出 N 个选项"的 N，回产 N 个平衡选项（正确项恒在下标 0）；
+    无约束（``difficulty=None`` 默认路径）→ 回落 2 项。从 messages 回抽被考 item 真实证据使锚定门
+    放行。健康态 MC 判卷走确定性代码、不打 basic 槽，故只被 enrich 出题调用一次。``requested`` 记
+    每次请求的选项数，供外部断言"选项数随档位走"。
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.roles: list[Role] = []
+        self.requested: list[int] = []
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        self.calls += 1
+        self.roles.append(role)
+        text = "\n".join(m.content for m in messages)
+        quote = next(q for q in QUOTES if q in text)
+        match = re.search(r"恰好给出 (\d+) 个选项", text)
+        n = int(match.group(1)) if match else 2
+        self.requested.append(n)
+        options = ["正确选项", *(f"干扰项{i}" for i in range(1, n))]
+        payload = {
+            "question": "该知识点的核心是什么？",
+            "options": options,
+            "answer_index": 0,
+            "cited_evidence": [quote],
+        }
+        return Completion(
+            text=json.dumps(payload, ensure_ascii=False),
+            usage=Usage(prompt_tokens=7, completion_tokens=3),
+        )
+
+
+async def test_high_tier_requests_more_mc_options() -> None:
+    # 全库所有 item 预置最高档（5）→ 无论选中哪个，target_option_count(5)=6 → 出题请求 6 个选项，
+    # 且发出的 QUESTION_ASKED 带 6 个选项（外部可断言：选项数随档位增）。
+    store, item_ids = build_stocked_store()
+    difficulty = DictDifficultyLedger()
+    for item_id in item_ids:
+        difficulty.set_tier(item_id, 5)
+    memory = LearningMemory()  # fresh → 选择题（MC）路径
+    provider = _NumOptionsEchoProvider()
+    emitter, events = _harness()
+
+    result = await assess_once(
+        store=store,
+        provider=provider,
+        responder=ScriptedResponder(answer="正确选项"),
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        difficulty=difficulty,
+    )
+
+    assert result.question_type == "选择题"
+    assert provider.requested == [6]  # 档 5 → 6 个选项被请求（tier → num_options 接线生效）
+    asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
+    assert len(asked.payload["options"]) == 6
+
+
+async def test_default_none_difficulty_requests_baseline_options() -> None:
+    # 对照：不传 difficulty（默认 None）→ 不读档、不注入选项数约束 → provider 回落 2 项。证明选项数
+    # 注入 gated 在 difficulty is not None：默认路径不含"个选项"约束，出题请求等价改动前。
+    store, _item_ids = build_stocked_store()
+    memory = LearningMemory()  # fresh → 选择题（MC）路径
+    provider = _NumOptionsEchoProvider()
+    emitter, events = _harness()
+
+    result = await assess_once(
+        store=store,
+        provider=provider,
+        responder=ScriptedResponder(answer="正确选项"),
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+    )
+
+    assert result.question_type == "选择题"
+    assert provider.requested == [2]  # 无难度台账 → 无约束 → provider 回落基线 2
+    asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
+    assert len(asked.payload["options"]) == 2
