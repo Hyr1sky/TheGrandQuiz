@@ -14,6 +14,7 @@ from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
 from grandquiz.domain.learning.assessment.engine import AssessmentResult, assess_once
 from grandquiz.domain.learning.assessment.grading import VerdictLabel
 from grandquiz.domain.learning.assessment.selection import Focus
+from grandquiz.domain.learning.difficulty import DifficultyLedger
 from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.preference import PreferenceMemory
 from grandquiz.domain.learning.responder import Responder
@@ -105,6 +106,7 @@ def make_start_quiz_tool(
     preferences: PreferenceMemory | None = None,
     quiz_seed: int = 0,
     asked_questions: AskedQuestionsLedger | None = None,
+    difficulty: DifficultyLedger | None = None,
 ) -> Tool:
     """建 ``start_quiz(count)`` 工具：受控一问一答子流程，内部跑 ``assess_once × count``。
 
@@ -140,6 +142,10 @@ def make_start_quiz_tool(
     ``asked_questions``：跨会话持久的已问过台账（``AskedQuestionsLedger``，skeleton-ledger.md
     #8 修复）——透传每题 ``assess_once``，与 ``recently_asked``（会话内）互补，让"换角度去重"这条
     防线在关掉 CLI 重开后依然生效。``None``（默认）= 不接持久层、向后兼容。
+
+    ``difficulty``：跨会话持久的难度台账（``DifficultyLedger``，SE-S3）——透传每题 ``assess_once``，
+    销账那刻据三路信号跨档、真跨档才发 ``DIFFICULTY_TIER_CHANGED``。``None``（默认）= 不接难度自
+    适应、向后兼容（行为字节等价改动前）。
     """
     seed_counter = _QuizSeedCounter(seed=quiz_seed)
     recently_asked: dict[str, list[str]] = {}
@@ -169,6 +175,7 @@ def make_start_quiz_tool(
                     preferences=preferences,
                     resource_ids=params.resource_ids,
                     question_type=params.question_type,
+                    difficulty=difficulty,
                 )
             except KeyboardInterrupt:
                 # 用户取消作答：结束本次考核，返回已完成部分（不把取消当空作答污染判卷）。

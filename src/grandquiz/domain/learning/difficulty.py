@@ -226,3 +226,38 @@ def _speed_vote(elapsed_ms: int | None) -> int:
     if elapsed_ms >= SLOW_MS:
         return -1
     return 0
+
+
+def tier_change_reason(
+    from_tier: DifficultyTier, to_tier: DifficultyTier, signals: MasterySignals
+) -> str:
+    """据跨档方向 + 哪些信号促成，产一句中文说明（供 ``DIFFICULTY_TIER_CHANGED`` 的 reason 字段）。
+
+    纯函数、无 I/O。**与 ``next_tier`` 同源读同一批阈值常量**（``QUICK_DISCHARGE_ROUNDS`` /
+    ``DRAGGED_DISCHARGE_ROUNDS`` / ``FAST_MS`` / ``SLOW_MS``）——单独拆成 helper 便于单测，且让
+    reason 措辞与跨档规则同源（改阈值只动一处、说明不与规则脱节）。它只解释"为什么跨了这一档"，
+    **不重算该不该跨**（那是 ``next_tier`` 的活；本函数假定调用方已确认真跨档
+    ``to_tier != from_tier``）。
+
+    方向由 ``from/to`` 定，措辞取 ``next_tier`` docstring 末尾的口径：
+    - **升档**（``to_tier > from_tier``）："答得又快又干脆"——升档由判决基线（无勉强 +1）+ 至少一路
+      正向佐证（快 / 少轮）推过门限，故"没掉过勉强"必成立、必有至少一条速度 / 轮数佐证。
+    - **降档**（``to_tier < from_tier``）："答得又虚又费劲"——降档必由掉过"勉强"（-1）+ 至少一路负向
+      佐证（慢 / 拖轮）推过门限，故"掉过勉强"必成立、必有至少一条佐证。
+    """
+    if to_tier > from_tier:
+        reasons: list[str] = ["全程没掉过'勉强'"]
+        if signals.rounds_to_discharge <= QUICK_DISCHARGE_ROUNDS:
+            reasons.append(f"{signals.rounds_to_discharge} 轮就掌握")
+        if signals.elapsed_ms is not None and signals.elapsed_ms <= FAST_MS:
+            reasons.append("答得快")
+        return f"答得又快又干脆（{'、'.join(reasons)}）——上调难度"
+    # 降档（to_tier < from_tier）
+    reasons = []
+    if signals.had_struggle:
+        reasons.append("掉过'勉强'")
+    if signals.rounds_to_discharge >= DRAGGED_DISCHARGE_ROUNDS:
+        reasons.append(f"来回考了 {signals.rounds_to_discharge} 轮")
+    if signals.elapsed_ms is not None and signals.elapsed_ms >= SLOW_MS:
+        reasons.append("答得慢")
+    return f"答得又虚又费劲（{'、'.join(reasons)}）——下调难度"

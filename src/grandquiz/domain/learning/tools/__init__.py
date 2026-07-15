@@ -34,6 +34,7 @@ from typing import Literal
 
 from grandquiz.domain.learning.approval import ApprovalGate
 from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
+from grandquiz.domain.learning.difficulty import DifficultyLedger
 from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.preference import PreferenceMemory
 from grandquiz.domain.learning.responder import Responder
@@ -61,6 +62,7 @@ def register_learning_tools(
     preferences: PreferenceMemory | None = None,
     quiz_seed: int = 0,
     asked_questions: AskedQuestionsLedger | None = None,
+    difficulty: DifficultyLedger | None = None,
 ) -> None:
     """组装点：注册 ``ingest`` / ``query_weak_concepts`` /（有 responder 时）``start_quiz``。
 
@@ -71,7 +73,8 @@ def register_learning_tools(
     query 单测装配无需交互作答）；真机 react 装配注入 ``InteractiveResponder`` 后即可考核。
     ``preferences`` 透传给 ``start_quiz`` → ``assess_once`` 解析出题语言；``quiz_seed`` 给选题种子
     （replay 传固定值 → 可复现，CLI 可传可变值）；``asked_questions`` 透传跨会话去重台账
-    （skeleton-ledger.md #8），``None`` 时行为不变（向后兼容）。
+    （skeleton-ledger.md #8），``None`` 时行为不变（向后兼容）。``difficulty`` 透传难度台账
+    （SE-S3），``None`` 时不接难度自适应（向后兼容）。
     """
     registry.register(
         make_ingest_tool(
@@ -94,5 +97,6 @@ def register_learning_tools(
                 preferences=preferences,
                 quiz_seed=quiz_seed,
                 asked_questions=asked_questions,
+                difficulty=difficulty,
             )
         )

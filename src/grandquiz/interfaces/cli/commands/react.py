@@ -79,7 +79,7 @@ async def run_react(
     _ensure_parent(db_path)
     resolved_trace_db = _resolve_trace_db(db_path, trace_db_path)
     _ensure_parent(resolved_trace_db)
-    store, memory, preferences, asked_questions = build_learning_stores(db_path)
+    store, memory, preferences, asked_questions, difficulty = build_learning_stores(db_path)
     trace_store: TraceStore | None = None
     runner: Runner | None = None
     trace_id = uuid.uuid4().hex
@@ -94,6 +94,7 @@ async def run_react(
             memory=memory,
             preferences=preferences,
             asked_questions=asked_questions,
+            difficulty=difficulty,
             materials_dir=materials_dir,
             responder=responder,
             seed=seed,
@@ -138,6 +139,7 @@ async def run_react(
         memory.close()
         preferences.close()
         asked_questions.close()
+        difficulty.close()
         if trace_store is not None:
             trace_store.close()
 

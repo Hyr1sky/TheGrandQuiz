@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.asked_questions import SqliteAskedQuestionsLedger
 from grandquiz.domain.learning.context import learner_context_provider
+from grandquiz.domain.learning.difficulty import SqliteDifficultyLedger
 from grandquiz.domain.learning.ingest.fetch import ALLOW_ANY_DOMAIN, FetchError
 from grandquiz.domain.learning.ingest.web_fetch import create_http_source
 from grandquiz.domain.learning.memory import SqliteLearningMemory
@@ -149,20 +150,27 @@ def _web_and_file_source(materials_dir: Path) -> Callable[[str], str]:
 def build_learning_stores(
     db_path: Path,
 ) -> tuple[
-    SqliteLearningStore, SqliteLearningMemory, SqlitePreferenceMemory, SqliteAskedQuestionsLedger
+    SqliteLearningStore,
+    SqliteLearningMemory,
+    SqlitePreferenceMemory,
+    SqliteAskedQuestionsLedger,
+    SqliteDifficultyLedger,
 ]:
-    """建考核会话的四件持久件（store / memory / preference / asked_questions），全落**同一**
-    learning db 文件。
+    """建考核会话的五件持久件（store / memory / preference / asked_questions / difficulty），全落
+    **同一** learning db 文件。
 
-    quiz / react 会话都要这四件同源（薄弱点、偏好、已问过台账与知识共库、跨会话留存）；工厂按
-    固定顺序构造并返回，调用方在 finally 里逐个 ``close()``。``asked_questions``（skeleton-ledger.md
-    #8）是第四件——修"关掉 CLI 重开、复考同一薄弱概念被逐字重问旧题"这个真实 bug。
+    quiz / react 会话都要这五件同源（薄弱点、偏好、已问过台账、难度台账与知识共库、跨会话留存）；
+    工厂按固定顺序构造并返回，调用方在 finally 里逐个 ``close()``。``asked_questions``
+    （skeleton-ledger.md #8）修"关掉 CLI 重开、复考同一薄弱概念被逐字重问旧题"这个真实 bug；
+    ``difficulty``（SE-S3）是第五件——每个 KnowledgeItem 的离散 5 档难度，销账那刻据三路信号跨档、
+    跨会话留存（User Story 11）。
     """
     store = SqliteLearningStore(db_path)
     memory = SqliteLearningMemory(db_path)
     preferences = SqlitePreferenceMemory(db_path)  # 偏好与 store / memory 共用同一 learning db
     asked_questions = SqliteAskedQuestionsLedger(db_path)
-    return store, memory, preferences, asked_questions
+    difficulty = SqliteDifficultyLedger(db_path)  # 难度台账与 store / memory 共用同一 learning db
+    return store, memory, preferences, asked_questions, difficulty
 
 
 def build_event_backbone(
@@ -196,6 +204,7 @@ def build_react_runner(
     memory: SqliteLearningMemory,
     preferences: SqlitePreferenceMemory,
     asked_questions: SqliteAskedQuestionsLedger,
+    difficulty: SqliteDifficultyLedger,
     materials_dir: Path,
     responder: Responder,
     seed: int,
@@ -235,6 +244,7 @@ def build_react_runner(
         preferences=preferences,  # 出题语言偏好透传给 assess_once
         quiz_seed=seed,
         asked_questions=asked_questions,  # 跨会话去重台账（skeleton-ledger.md #8）
+        difficulty=difficulty,  # 跨会话难度台账（SE-S3）：销账那刻据三路信号跨档
     )
     prompt = load_prompt(_REACT_PROMPT_NAME)
     # ContextBuilder（M5）分区装配：system 前言区（版本化 react 系统提示）+ 学情注入分区

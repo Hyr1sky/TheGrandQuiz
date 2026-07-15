@@ -42,3 +42,9 @@ class LearningEvent:
     # summary + evidence 组正解文本，非 LLM 产）。payload 含 item_id + correct_answer；判"对"不发。
     # 在 CONCEPT_STATE_CHANGED 之后、assessment.ended 之前（见 assessment 模块 docstring 时序）。
     FOLLOWUP_GIVEN = "learning.followup_given"
+
+    # SE-S3 难度自适应透明展示：销账那一刻据三路信号（销账轮数 / 答题耗时 / 判决分布）跨档时发
+    # 此事件——**仅真跨档（new != current）才发**（照 CONCEPT_STATE_CHANGED 的"无转移不发"先例，
+    # 避免噪声）。payload 含 item_id / concept / from_tier / to_tier / reason（据哪路信号跨档的
+    # 简短说明，取自 next_tier 的可解释性）。kernel 不认识它（领域无关脊柱，经泛型 emit 上脊柱）。
+    DIFFICULTY_TIER_CHANGED = "learning.difficulty_tier_changed"

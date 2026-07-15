@@ -51,6 +51,12 @@ from grandquiz.domain.learning.assessment.routing import (
     route_question_type,
 )
 from grandquiz.domain.learning.assessment.selection import Focus, apply_scope, select_target
+from grandquiz.domain.learning.difficulty import (
+    DifficultyLedger,
+    MasterySignals,
+    next_tier,
+    tier_change_reason,
+)
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.models import KnowledgeItem
@@ -129,6 +135,7 @@ async def assess_once(
     preferences: PreferenceMemory | None = None,
     resource_ids: list[str] | None = None,
     question_type: str | None = None,
+    difficulty: DifficultyLedger | None = None,
 ) -> AssessmentResult:
     """对**全局 KB** 跑一轮单题考核，全程发事件。见模块 docstring。
 
@@ -178,6 +185,17 @@ async def assess_once(
     （既有测试 / eval / cassette 一字不变）。``QUESTION_ASKED`` payload 同记 ``routed``（自适应
     会给的）与 ``effective``（实际用的），供 eval 断言意图透传；``AssessmentResult.question_type``
     透出 effective。
+
+    ``difficulty``：**难度台账**（``DifficultyLedger`` 协议，见 ``difficulty.py``；SE-S3 接线）——把
+    SE-S1 台账 + SE-S2 跨档规则接进真实考核编排的注入点。默认 ``None`` = **不接难度自适应、行为逐
+    字节等价改动前**（难度块整个 gated 在 ``difficulty is not None``，连销账前那次 ``record_of`` 读
+    都不做 → 真正零开销零行为变化；既有测试 / eval harness / golden cassette 不传它时 message /
+    replay_key / 事件序列一字不变）。本期难度**只在"销账"这一确定时刻更新**（SE-S3 决策：销账轮数
+    信号只在 ``ConceptRecord`` 被删那一刻可捕获，非销账轮不动难度，"每轮微调"留后续）。销账那刻据
+    三路信号（销账轮数 = 转移前 ``verdict_history`` 长度 / 答题耗时 = ``QUESTION_ASKED``→
+    ``ANSWER_JUDGED`` 时间戳差 / 判决分布 = 是否掉过"勉强"）调 ``next_tier``，**仅真跨档**
+    （``new != current``）才写台账 + 发 ``DIFFICULTY_TIER_CHANGED``（PRD 决策 6；本期难度尚不影响
+    出题，那是 SE-S5/S6）。
     """
     # a. 开 assessment span（根）。此后任何未预期异常都必须闭合它（见末尾 except）。
     #    先读全库候选池（全局 KB，非 task 局部——修 #2 跨会话丢知识），再按 scope 收窄（apply_scope，
@@ -272,7 +290,10 @@ async def assess_once(
             # MC 另带 options 供"用户视图"；answer_index 刻意不进事件（不泄露答案键——判卷走 in-code
             # mc 对象的确定性比对，答案键仍在 model span 输出里可供 trace / replay 复查）。
             asked_payload["options"] = list(mc.options)
-        emitter.emit(
+        # 接住返回的 AgentEvent（带注入 Clock 的 .ts）——SE-S3 决策 B：本轮答题耗时近似 =
+        # (ANSWER_JUDGED.ts − QUESTION_ASKED.ts)。接住返回值不改变发射行为、零副作用（replay 下
+        # ManualClock 使其确定、生产 SystemClock 下是真实墙上时间——都对），只在销账时才被读。
+        q_event = emitter.emit(
             LearningEvent.QUESTION_ASKED, parent_span_id=assessment_span, payload=asked_payload
         )
         # 记账：把本轮已出的题追加进会话内 + 跨会话"已问过"台账（各自独立），供后续复考该 item
@@ -313,7 +334,8 @@ async def assess_once(
 
         # h. 代码记账：verdict 属"勉强 / 错"→ weak_item_id = 被考 item；"对"→ None（不由 LLM 产）。
         weak_item_id = target.item_id if verdict_label in _WEAK_VERDICTS else None
-        emitter.emit(
+        # 接住返回的 AgentEvent（决策 B）——与 q_event 一起算销账那刻的答题耗时近似。
+        j_event = emitter.emit(
             LearningEvent.ANSWER_JUDGED,
             parent_span_id=assessment_span,
             payload={
@@ -329,6 +351,10 @@ async def assess_once(
         # i. 代码记三态账（LLM 判卷、代码记账）：写 Learning Memory 并把转移上脊柱。
         #    三态转移 / 连对销账全在 memory 的纯代码里；这里只把结果发成 CONCEPT_STATE_CHANGED
         #    （在 ANSWER_JUDGED 之后、assessment.ended 之前）。
+        #    SE-S3 决策 A：销账那刻被删的"观察中"记录里的 verdict_history 长度即销账轮数——记录随
+        #    record_verdict 即被删、事后无法回读，故须在 record_verdict **之前**读快照。gated 在
+        #    difficulty is not None：默认路径连这次读都不做（真正零开销、字节等价改动前）。
+        before_record = memory.record_of(target.item_id) if difficulty is not None else None
         transition = memory.record_verdict(target.item_id, verdict_label)
         emitter.emit(
             LearningEvent.CONCEPT_STATE_CHANGED,
@@ -340,6 +366,38 @@ async def assess_once(
                 "consecutive_correct": transition.consecutive_correct,
             },
         )
+
+        # i-bis. 难度自适应（SE-S3）：**仅在销账那一刻**据三路信号跨档（信号 1 只在此刻可得）。
+        #    销账路径上 before_record 必非 None（那是被删的"观察中"记录）。三路信号：
+        #    · 销账轮数 = len(转移前 verdict_history)（决策 A：无 +1——最快销账 错→对→对 被删记录的
+        #      history=["错","对"] 长度 2，正是 SE-S2 QUICK_DISCHARGE_ROUNDS 校准口径）；
+        #    · had_struggle = 是否掉过"勉强"（**只认"勉强"、不认"错"**——认"错"会因销账必先入薄弱而
+        #      恒 True 退化）；
+        #    · elapsed_ms = (ANSWER_JUDGED.ts − QUESTION_ASKED.ts)×1000 取整（决策 B）。
+        #    只有真跨档（new != current）才写台账 + 发 DIFFICULTY_TIER_CHANGED（照
+        #    CONCEPT_STATE_CHANGED 的"无转移不发"先例；本期难度尚不影响出题，SE-S5/S6 才落到题面）。
+        #    销账必判"对"、故与下方"勉强 / 错"才触发的 FOLLOWUP_GIVEN 互斥，两块先后无可观察交错。
+        if difficulty is not None and transition.to_state == "销账" and before_record is not None:
+            signals = MasterySignals(
+                rounds_to_discharge=len(before_record.verdict_history),
+                elapsed_ms=round((j_event.ts - q_event.ts) * 1000),
+                had_struggle="勉强" in before_record.verdict_history,
+            )
+            current_tier = difficulty.tier_of(target.item_id)
+            new_tier = next_tier(current_tier, signals)
+            if new_tier != current_tier:
+                difficulty.set_tier(target.item_id, new_tier)
+                emitter.emit(
+                    LearningEvent.DIFFICULTY_TIER_CHANGED,
+                    parent_span_id=assessment_span,
+                    payload={
+                        "item_id": target.item_id,
+                        "concept": target.concept,
+                        "from_tier": current_tier,
+                        "to_tier": new_tier,
+                        "reason": tier_change_reason(current_tier, new_tier, signals),
+                    },
+                )
 
         # j. 后置追问：判"勉强 / 错"→ 给正解（确定性代码，从被考 item 的 summary + evidence
         #    组文本），发 FOLLOWUP_GIVEN（在 CONCEPT_STATE_CHANGED 之后、assessment.ended 之前）。

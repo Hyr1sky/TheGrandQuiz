@@ -7,6 +7,7 @@
 - ``ANSWER_JUDGED`` → 判决着色（对=green / 勉强=yellow / 错=red）+ 回显作答
 - ``FOLLOWUP_GIVEN`` → ``Panel``（标题="正解"）呈现 correct_answer
 - ``CONCEPT_STATE_CHANGED`` → 一行状态转移
+- ``DIFFICULTY_TIER_CHANGED`` → 一行难度跨档（"难度：3 → 4 档（原因）"，SE-S3 透明展示）
 
 R1-S4 起还投影 ReAct 骨架的 kernel 级事件（``grandquiz react`` 的对话循环用）：
 
@@ -50,6 +51,8 @@ class QuizEventPrinter:
             self._render_followup(event)
         elif event.type == LearningEvent.CONCEPT_STATE_CHANGED:
             self._render_state_change(event)
+        elif event.type == LearningEvent.DIFFICULTY_TIER_CHANGED:
+            self._render_difficulty_change(event)
         elif event.type == EventType.AGENT_TURN_STARTED:
             self._render_agent_turn_started(event)
         elif event.type == EventType.TOOL_CALL_STARTED:
@@ -91,6 +94,14 @@ class QuizEventPrinter:
         self._console.print(
             f"  · 概念状态：{from_state} → {to_state}（连对 {consecutive_correct}）"
         )
+
+    def _render_difficulty_change(self, event: AgentEvent) -> None:
+        # SE-S3 透明展示：难度跨档一行呈现（照 _render_state_change 的一行式风格）。reason 由代码
+        # 确定性产出、理论上不含 markup，但仍 escape（同本消费者对所有动态文本的防御约定）。
+        from_tier = event.payload.get("from_tier", "?")
+        to_tier = event.payload.get("to_tier", "?")
+        reason = str(event.payload.get("reason", ""))
+        self._console.print(f"  · 难度：{from_tier} → {to_tier} 档（{escape(reason)}）")
 
     def _render_agent_turn_started(self, event: AgentEvent) -> None:
         user_message = str(event.payload.get("user_message", ""))

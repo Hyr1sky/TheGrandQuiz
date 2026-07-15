@@ -65,7 +65,7 @@ async def run_quiz(
     是脊柱投影、非业务耦合）。会话结束打印 ``trace_id`` + 库位置。
     """
     _ensure_parent(db_path)
-    store, memory, preferences, asked_questions = build_learning_stores(db_path)
+    store, memory, preferences, asked_questions, difficulty = build_learning_stores(db_path)
     if prefer_lang is not None:
         # 显式设置出题语言偏好（confidence 恒 1.0），跨会话留存、后续覆盖 task 默认语言。
         preferences.set_preference(QUESTION_LANGUAGE_KEY, prefer_lang)
@@ -105,6 +105,7 @@ async def run_quiz(
                         recently_asked=recently_asked,
                         asked_questions=asked_questions,
                         preferences=preferences,
+                        difficulty=difficulty,
                     )
                 except Exception as exc:
                     # 统一裁决：assess_once 按契约原样冒泡一切异常（保 eval / replay——不吞
@@ -125,6 +126,7 @@ async def run_quiz(
         memory.close()
         preferences.close()
         asked_questions.close()
+        difficulty.close()
         if trace_store is not None:
             trace_store.close()
 

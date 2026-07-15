@@ -1,0 +1,289 @@
+"""SE-S3 难度信号采集 + 记账接线 + 透明展示事件——断言外部可观测行为（台账末态 + 发出的事件）。
+
+把 SE-S1 台账 + SE-S2 跨档规则接进 ``assess_once`` 编排后，验证**销账那一刻**：采集三路信号、
+调 ``next_tier``、**仅真跨档**才写台账 + 发 ``DIFFICULTY_TIER_CHANGED``。全程用内存实现
+（``DictDifficultyLedger`` / ``LearningMemory``）+ ``ManualClock`` + canned provider，避免真
+LLM / cassette（销账走开放题的 LLM 判卷槽，verdict 由 fake 直接给）。
+
+耗时信号（决策 B）经 ``ManualClock`` 的 ``tick`` 确定：开放题路径下 QUESTION_ASKED→ANSWER_JUDGED
+之间恒隔 3 次 emit（判卷的一对 model span + ANSWER_JUDGED 自身），故 ``elapsed = 3 × tick ×
+1000`` ms——``tick=1`` → 3000ms（快，≤FAST_MS）、``tick=100`` → 300000ms（慢，≥SLOW_MS）。
+"""
+
+from pathlib import Path
+
+from rich.console import Console
+
+from grandquiz.domain.learning.assessment.engine import assess_once
+from grandquiz.domain.learning.difficulty import (
+    DEFAULT_TIER,
+    DictDifficultyLedger,
+    MasterySignals,
+    tier_change_reason,
+)
+from grandquiz.domain.learning.events import LearningEvent
+from grandquiz.domain.learning.memory import LearningMemory
+from grandquiz.domain.learning.responder import ScriptedResponder
+from grandquiz.evals.harness import (
+    MC_WRONG,
+    AssessFakeProvider,
+    build_stocked_store,
+)
+from grandquiz.interfaces.cli.composition import build_learning_stores
+from grandquiz.interfaces.cli.printer import QuizEventPrinter
+from grandquiz.kernel.clock import ManualClock, new_rng
+from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
+
+_SEED = 42
+
+
+def _harness(*, tick: float = 1.0) -> tuple[EventEmitter, list[AgentEvent]]:
+    """确定性事件装配（可调 ``ManualClock`` tick 以控制答题耗时信号）：收集列表订阅同一 sink。"""
+    events: list[AgentEvent] = []
+    sink = EventSink()
+    sink.subscribe(events.append)
+    emitter = EventEmitter(sink, ManualClock(tick=tick), trace_id="run")
+    return emitter, events
+
+
+async def _discharge(
+    *,
+    history_verdicts: list[str],
+    tick: float,
+    difficulty: DictDifficultyLedger | None,
+) -> tuple[str, list[AgentEvent]]:
+    """把某 item 经 ``history_verdicts`` 喂到"观察中"（末位须为"对"），再答对一次触发销账。
+
+    返回 (被考 item_id, 本轮销账 assess 的事件列表)。``history_verdicts`` 是销账**前**要建的
+    verdict 历史——销账那刻被删记录的 ``verdict_history`` 即等于它（决策 A：无 +1）。
+    """
+    store, item_ids = build_stocked_store()
+    memory = LearningMemory()
+    target = item_ids[0]
+    for verdict in history_verdicts:
+        memory.record_verdict(target, verdict)  # type: ignore[arg-type]
+    assert memory.state_of(target) == "观察中"  # 末位"对"应把它推到观察中
+
+    emitter, events = _harness(tick=tick)
+    result = await assess_once(
+        store=store,
+        provider=AssessFakeProvider(verdict="对"),  # 观察中 → 开放 → LLM 判卷返回"对" → 销账
+        responder=ScriptedResponder(answer="任意"),
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        focus="weak",  # 锁定薄弱 / 观察中集，确保考的是 target
+        difficulty=difficulty,
+    )
+    assert result.item_id == target
+    assert result.question_type == "开放"  # 观察中 → 开放（走 LLM 判卷，与耗时 3-tick 假设一致）
+    assert memory.state_of(target) is None  # 已销账
+    return target, events
+
+
+# --------------------------------------------------------------------------- #
+# 销账 → 真跨档：升 / 降各一（决策 A 口径 + 决策 B 耗时 + 只真跨档才发事件）
+# --------------------------------------------------------------------------- #
+
+
+async def test_quick_clean_discharge_promotes_and_emits_event() -> None:
+    # 快速清爽销账（错→对→对：被删 history=["错","对"] 长度 2 → 少轮 +1；无"勉强" +1；tick=1 → 快
+    # +1 → 净分 +3 → 升一档）。断言台账升档 + 发 DIFFICULTY_TIER_CHANGED（from/to/reason 齐全）。
+    difficulty = DictDifficultyLedger()
+    target, events = await _discharge(
+        history_verdicts=["错", "对"], tick=1.0, difficulty=difficulty
+    )
+
+    assert difficulty.tier_of(target) == DEFAULT_TIER + 1  # 3 → 4
+
+    changed = [e for e in events if e.type == LearningEvent.DIFFICULTY_TIER_CHANGED]
+    assert len(changed) == 1
+    payload = changed[0].payload
+    assert payload["item_id"] == target
+    assert payload["concept"]  # 概念名非空
+    assert payload["from_tier"] == DEFAULT_TIER
+    assert payload["to_tier"] == DEFAULT_TIER + 1
+    assert "上调难度" in payload["reason"]
+    # 时序：DIFFICULTY_TIER_CHANGED 在 CONCEPT_STATE_CHANGED 之后、assessment.ended 之前。
+    types = [e.type for e in events]
+    assert (
+        types.index(LearningEvent.CONCEPT_STATE_CHANGED)
+        < types.index(LearningEvent.DIFFICULTY_TIER_CHANGED)
+        < types.index("assessment.ended")
+    )
+
+
+async def test_dragged_struggle_discharge_demotes_and_emits_event() -> None:
+    # 拖沓 + 勉强销账（错→勉强→错→对：被删 history 长度 4 → 拖轮 -1；掉过"勉强" -1；tick=100 → 慢
+    # -1 → 净分 -3 → 降一档）。断言台账降档 + 发事件（降向 reason）。
+    difficulty = DictDifficultyLedger()
+    target, events = await _discharge(
+        history_verdicts=["错", "勉强", "错", "对"], tick=100.0, difficulty=difficulty
+    )
+
+    assert difficulty.tier_of(target) == DEFAULT_TIER - 1  # 3 → 2
+
+    changed = [e for e in events if e.type == LearningEvent.DIFFICULTY_TIER_CHANGED]
+    assert len(changed) == 1
+    payload = changed[0].payload
+    assert payload["from_tier"] == DEFAULT_TIER
+    assert payload["to_tier"] == DEFAULT_TIER - 1
+    assert "下调难度" in payload["reason"]
+    assert "掉过" in payload["reason"]  # 降档必因掉过"勉强"
+
+
+# --------------------------------------------------------------------------- #
+# 只真跨档才发：销账但净分维持（不跨档）→ 不发事件、台账不动
+# --------------------------------------------------------------------------- #
+
+
+async def test_discharge_but_net_maintains_does_not_emit_or_change() -> None:
+    # 销账但净分维持（错→勉强→对：被删 history 长度 3 → 轮数中性 0；掉过"勉强" -1；tick=1 → 快 +1
+    # → 净分 0 → 维持）。仅真跨档才发事件 → 不发 DIFFICULTY_TIER_CHANGED、台账仍是默认档。
+    difficulty = DictDifficultyLedger()
+    target, events = await _discharge(
+        history_verdicts=["错", "勉强", "对"], tick=1.0, difficulty=difficulty
+    )
+
+    assert difficulty.tier_of(target) == DEFAULT_TIER  # 未变
+    assert LearningEvent.DIFFICULTY_TIER_CHANGED not in {e.type for e in events}
+
+
+# --------------------------------------------------------------------------- #
+# 非销账轮：不动难度、不发事件（本期只在销账那一刻更新）
+# --------------------------------------------------------------------------- #
+
+
+async def test_non_discharge_wrong_answer_leaves_difficulty_untouched() -> None:
+    # 答错入薄弱（非销账转移）→ 难度块整个不进（to_state != "销账"）：不发事件、台账不动。
+    store, _item_ids = build_stocked_store()
+    memory = LearningMemory()  # fresh → 选择题（MC）；选错 → 判错入薄弱
+    difficulty = DictDifficultyLedger()
+    emitter, events = _harness()
+
+    result = await assess_once(
+        store=store,
+        provider=AssessFakeProvider(verdict="对"),  # MC 判卷走代码、verdict 对它无效
+        responder=ScriptedResponder(answer=MC_WRONG),
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        difficulty=difficulty,
+    )
+
+    assert result.verdict == "错"
+    assert LearningEvent.DIFFICULTY_TIER_CHANGED not in {e.type for e in events}
+    assert difficulty.tier_of(str(result.item_id)) == DEFAULT_TIER
+
+
+async def test_non_discharge_correct_to_observing_leaves_difficulty_untouched() -> None:
+    # 答对但未销账（薄弱 → 观察中）：非销账转移 → 难度不动、不发事件（销账信号只在真销账那刻可得）。
+    store, item_ids = build_stocked_store()
+    target = item_ids[0]
+    memory = LearningMemory()
+    memory.record_verdict(target, "错")  # → 薄弱
+    difficulty = DictDifficultyLedger()
+    emitter, events = _harness()
+
+    result = await assess_once(
+        store=store,
+        provider=AssessFakeProvider(verdict="对"),  # 薄弱 → 追问 → 判对 → 观察中（不销账）
+        responder=ScriptedResponder(answer="任意"),
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        focus="weak",
+        difficulty=difficulty,
+    )
+
+    assert result.item_id == target
+    assert result.concept_state == "观察中"  # 未销账
+    assert LearningEvent.DIFFICULTY_TIER_CHANGED not in {e.type for e in events}
+    assert difficulty.tier_of(target) == DEFAULT_TIER
+
+
+# --------------------------------------------------------------------------- #
+# difficulty=None 默认路径：销账也不发事件（字节等价探针）
+# --------------------------------------------------------------------------- #
+
+
+async def test_default_none_difficulty_emits_no_event_even_on_discharge() -> None:
+    # 不传 difficulty（默认 None）：即便销账也**不**发 DIFFICULTY_TIER_CHANGED（难度块整个 gated）。
+    _target, events = await _discharge(history_verdicts=["错", "对"], tick=1.0, difficulty=None)
+    assert LearningEvent.DIFFICULTY_TIER_CHANGED not in {e.type for e in events}
+
+
+# --------------------------------------------------------------------------- #
+# tier_change_reason 纯函数单测（升 / 降各一）
+# --------------------------------------------------------------------------- #
+
+
+def test_tier_change_reason_promotion() -> None:
+    reason = tier_change_reason(
+        3, 4, MasterySignals(rounds_to_discharge=2, elapsed_ms=1000, had_struggle=False)
+    )
+    assert "上调难度" in reason
+    assert "没掉过" in reason  # 升档必因全程未虚
+    assert "2 轮就掌握" in reason  # 少轮佐证
+    assert "答得快" in reason  # 快佐证
+
+
+def test_tier_change_reason_demotion() -> None:
+    reason = tier_change_reason(
+        3, 2, MasterySignals(rounds_to_discharge=4, elapsed_ms=150_000, had_struggle=True)
+    )
+    assert "下调难度" in reason
+    assert "掉过" in reason  # 降档必因掉过"勉强"
+    assert "来回考了 4 轮" in reason  # 拖轮佐证
+    assert "答得慢" in reason  # 慢佐证
+
+
+# --------------------------------------------------------------------------- #
+# 透传链 & 展示：build_learning_stores 5 元组 + printer 渲染
+# --------------------------------------------------------------------------- #
+
+
+def test_build_learning_stores_returns_five_persistent_pieces(tmp_path: Path) -> None:
+    pieces = build_learning_stores(tmp_path / "learning.db")
+    assert len(pieces) == 5  # store / memory / preference / asked_questions / difficulty
+    store, memory, preferences, asked_questions, difficulty = pieces
+    try:
+        # 第五件是难度台账：新 item 读到默认档（跨会话留存的空态起点）。
+        assert difficulty.tier_of("item-x") == DEFAULT_TIER
+        difficulty.set_tier("item-x", 5)
+        assert difficulty.tier_of("item-x") == 5
+    finally:
+        store.close()
+        memory.close()
+        preferences.close()
+        asked_questions.close()
+        difficulty.close()
+
+
+def _event(event_type: str, payload: dict[str, object]) -> AgentEvent:
+    return AgentEvent(type=event_type, seq=0, ts=0.0, trace_id="t", payload=payload)
+
+
+def test_printer_renders_difficulty_change() -> None:
+    console = Console(record=True, width=100)
+    QuizEventPrinter(console)(
+        _event(
+            LearningEvent.DIFFICULTY_TIER_CHANGED,
+            {"from_tier": 3, "to_tier": 4, "reason": "答得又快又干脆——上调难度"},
+        )
+    )
+    out = console.export_text()
+    assert "难度：3 → 4 档" in out
+    assert "上调难度" in out
+
+
+def test_printer_escapes_difficulty_reason_markup() -> None:
+    # reason 理论上可含 markup 元字符（防御性 escape）：不抛 MarkupError、字面呈现即算过。
+    console = Console(record=True, width=100)
+    QuizEventPrinter(console)(
+        _event(
+            LearningEvent.DIFFICULTY_TIER_CHANGED,
+            {"from_tier": 2, "to_tier": 1, "reason": "含 [bold]标记[/] 的 [/red"},
+        )
+    )
+    assert "[bold]标记[/]" in console.export_text()
