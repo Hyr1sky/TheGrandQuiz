@@ -78,6 +78,14 @@ _ASSESSMENT_ENDED = "assessment.ended"
 # verdict 属"勉强 / 错"→ 该 item 记为薄弱（代码记账，非 LLM 产）+ 触发后置追问（给正解）。
 _WEAK_VERDICTS: frozenset[VerdictLabel] = frozenset({"勉强", "错"})
 
+# 选择题出题重试头寸（SE-S5b 兜底，2026-07-15 dogfood 洞察）：judge 验收闸门开启（高档，
+# quality_floor 非 None）时，"出题→judge→不达标重生成"会吃掉重试预算——dogfood 里一道 tier4 题
+# 踩着默认 3 次上限才过，再差一版就 QuestionError 跳整轮。故闸门开启时给更多头寸（5），降低偶发
+# 跳题；闸门关闭（默认档 / eval harness）沿用 3（= generate_multiple_choice 默认，字节等价改动前）。
+# 这是零风险兜底、不碰难度语义（选项数 / 门槛 / 档位映射不变）；真正的判官策略重设计另议。
+_MC_ATTEMPTS_DEFAULT = 3
+_MC_ATTEMPTS_WITH_JUDGE_FLOOR = 5
+
 
 def _resolve_language(preferences: PreferenceMemory | None) -> str:
     """按 **偏好(question_language) > 硬兜底"中文"** 解析出题 / 判卷有效语言（确定性代码，非 LLM）。
@@ -279,6 +287,11 @@ async def assess_once(
             quality_floor = (
                 distractor_quality_floor(current_tier) if current_tier is not None else None
             )
+            # judge 闸门开启时给出题更多重试头寸（免踩线跳题，见 _MC_ATTEMPTS_* 注释）；关闭时
+            # 沿用默认 3，与改动前逐字节等价（max_attempts 不进 message / replay_key）。
+            mc_attempts = (
+                _MC_ATTEMPTS_WITH_JUDGE_FLOOR if quality_floor is not None else _MC_ATTEMPTS_DEFAULT
+            )
             mc = await generate_multiple_choice(
                 target,
                 provider=provider,
@@ -288,6 +301,7 @@ async def assess_once(
                 asked_before=asked_before,
                 num_options=num_options,
                 quality_floor=quality_floor,
+                max_attempts=mc_attempts,
             )
             question_text = mc.question
             asked_evidence = list(mc.cited_evidence)
