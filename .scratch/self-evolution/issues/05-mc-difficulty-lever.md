@@ -1,6 +1,12 @@
 # SE-S5 — 选择题难度杠杆（档位 → 选项数 + judge 验收闸门）
 
-Status: ready-for-agent
+Status: 拆成 S5a（已完成）+ S5b（待做）。
+- **S5a 选项数杠杆**：merge 至 main `cc359a3`，六门全绿 645 passed / eval 14/14。杠杆①（档位→
+  选项数 + `_parse_mc` 至少-N 门）落地。**设计决策（对抗审查改定，1b）**：只在概念 tier≠默认档(3)
+  时注入选项数约束——默认档/新概念保持出题官自然选项数（真机+eval 双双字节等价、无重试耗尽风险、
+  4 个 CLI 测试无需改动），只有升/降档概念收紧/放宽。judge 复用未涉及（S5a 无 judge）。
+- **S5b judge 验收闸门**（ready-for-agent，杠杆②）：出题后 `judge_distractor`（role=basic）判干扰项
+  达标否、不达标重生成（有界重试→降级）。要碰真机 cassette 录制，属人机边界、待用户在场时做。
 Type: AFK
 
 ## Parent
