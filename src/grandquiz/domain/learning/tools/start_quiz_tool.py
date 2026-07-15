@@ -5,6 +5,7 @@ LLM 的软工具方案（那套 deepseek 守不住：编题 / MC 答案加前缀
 confabulate）。
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Literal
 
@@ -26,8 +27,76 @@ from grandquiz.kernel.events import EventEmitter
 from grandquiz.kernel.tools import Tool, ToolContext
 from grandquiz.providers.base import Provider
 
+logger = logging.getLogger(__name__)
+
 # start_quiz 单次调用的出题上限：挡 LLM 传超大 count 把一次工具调用拖成长跑（保守取 20）。
 _MAX_QUIZ_COUNT = 20
+
+
+def _clamp_count(n: int) -> int:
+    """把请求题数夹到 ``[1, _MAX_QUIZ_COUNT]``（挡 0 / 负 / 超大）。
+
+    与改动前 handler 的 ``min(max(params.count, 1), _MAX_QUIZ_COUNT)`` 逐字节等价——是 SE-S4
+    保"无分段路径字节不变"的锚点。
+    """
+    return min(max(n, 1), _MAX_QUIZ_COUNT)
+
+
+class QuizSegment(BaseModel):
+    """批内一段（SE-S4）：连续 ``count`` 道题共用同一题型意图短语 ``question_type``。
+
+    ``question_type`` 是**用户原话里的题型意图短语**（"选择题" / "简答" / "追问"…），同 ADR-0006 的
+    口径——LLM 只抽短语、代码用冻结同义表映射到既有三题型（**不是**最终题型枚举、也不新增第 4
+    题型）。
+    ``count`` 为该段题数；``<= 0`` 的段在 ``expand_segments`` 里贡献 0 题、被跳过（fail-soft，容
+    LLM 抽出 0 / 负）。
+    """
+
+    count: int
+    question_type: str
+
+
+def expand_segments(
+    segments: list[QuizSegment] | None,
+    *,
+    count: int,
+    question_type: str | None,
+) -> list[str | None]:
+    """把「分段列表 或 单值题型」展开成**每题一个题型意图**的列表（纯函数，无 I/O / 随机 / 时钟）。
+
+    返回列表每个元素是喂给该题 ``assess_once(question_type=...)`` → ``resolve_question_type`` 的意图
+    短语（``None`` = 该题不指定、回落记忆状态自适应路由）。逐位置解析仍复用 ADR-0006 的仲裁，本
+    函数**不做任何题型裁决**、只负责编排展开。口径（各分支都被单测钉死）：
+
+    - ``segments`` 为 ``None`` 或空列表 → ``[question_type] * _clamp_count(count)``：**改动前单值
+      行为**——单一题型重复 clamp(count) 次（``question_type`` 可为 ``None`` = 全程自适应）。此路径
+      与旧 ``for _ in range(min(max(count, 1), _MAX_QUIZ_COUNT))`` 逐字节等价（字节等价的锚）。
+    - ``segments`` 非空 → 展平：对每段把 ``seg.question_type`` 重复 ``seg.count`` 次、顺序拼接；
+      **分段存在时总题数 = 各段 count 之和**（``count`` 入参此时被忽略）。其中：
+        - 某段 ``count <= 0`` → 该段贡献 0 题（跳过），不报错（fail-soft）。
+        - 展平后总数 > ``_MAX_QUIZ_COUNT`` → **截断**到前 ``_MAX_QUIZ_COUNT`` 题并 log 警告（不静默
+          丢，与单值路径同一上限，挡 LLM 传超大段把一次调用拖成长跑）。
+        - 展平后为空（各段全 0 / 负）→ 回落 ``[question_type] * _clamp_count(count or 1)``：防退化
+          成 0 题（0 题会让工具空转、返回 asked=0，对用户是"我要考试却什么都没发生"）。
+    """
+    if not segments:
+        return [question_type] * _clamp_count(count)
+    intents: list[str | None] = []
+    for seg in segments:
+        if seg.count > 0:
+            intents.extend([seg.question_type] * seg.count)
+    if not intents:
+        # 各段 count 全 <= 0：回落单值路径，避免退化成 0 题（fail-soft）。
+        return [question_type] * _clamp_count(count or 1)
+    if len(intents) > _MAX_QUIZ_COUNT:
+        logger.warning(
+            "start_quiz 分段总题数 %d 超上限 %d，截断到前 %d 题（分段调度 SE-S4）",
+            len(intents),
+            _MAX_QUIZ_COUNT,
+            _MAX_QUIZ_COUNT,
+        )
+        intents = intents[:_MAX_QUIZ_COUNT]
+    return intents
 
 
 @dataclass
@@ -85,6 +154,11 @@ class _StartQuizParams(BaseModel):
     # （"简答"/"选择题"/"追问"…），代码用冻结同义表映射到既有三题型、显式意图胜过记忆状态自适应
     # 路由；None（默认）= 不指定 → 按薄弱状态自适应路由。别自造题型、别把"简答"填成"选择题"。
     question_type: str | None = None
+    # 批内分段调度（SE-S4）：按题目位置分段指定题型（"前 3 道选择、后 2 道简答"）。仍逐题交互、
+    # 非批量出卷。None（默认）= 不分段 → 走上面的单值 question_type / count 老路（字节等价）。给了
+    # segments 时**总题数 = 各段 count 之和**（count 入参被忽略）；每题的 question_type 仍逐题走
+    # resolve_question_type（ADR-0006，无新裁决）。展开逻辑见 expand_segments。
+    segments: list[QuizSegment] | None = None
 
 
 def _weak_concepts(store: Store, memory: Memory) -> list[WeakConcept]:
@@ -134,6 +208,12 @@ def make_start_quiz_tool(
     ``resolve_question_type`` 用冻结同义表映射到既有三题型——**显式意图胜过记忆状态自适应路由**，
     未知 / ``None``（默认）回落自适应；短答意图代码层禁止映射到"选择题"（护栏，防复现 #1）。
 
+    ``segments``（``_StartQuizParams`` 字段，批内分段调度，SE-S4）：按题目位置分段指定题型（"前 3
+    道选择、后 2 道简答"）——经 ``expand_segments`` 展开成逐题意图后，**每题仍走**
+    ``resolve_question_type``（复用 ADR-0006，无新裁决逻辑）。``None``（默认）= 不分段，走单值
+    ``question_type`` / ``count`` 老路，行为字节等价改动前；给了 ``segments`` 时总题数 = 各段
+    count 之和（``count`` 入参被忽略）。仍逐题一问一答，非批量出卷。
+
     ``preferences``：透传给 ``assess_once`` 解析出题语言（**偏好 > 中文**）；``None`` 时行为不变
     （走"中文"兜底）。``recently_asked`` / ``_QuizSeedCounter`` 在闭包捕获、跨同一会话的多次
     ``start_quiz`` 累积（复考换角度去重 + 选题种子确定性推进）。空库 → 优雅返回 ``refused``（不调
@@ -158,9 +238,13 @@ def make_start_quiz_tool(
             else ctx.emitter
         )
         concept_by_id = {it.item_id: it.concept for it in store.all_items()}
-        count = min(max(params.count, 1), _MAX_QUIZ_COUNT)  # 夹到 [1, 上限]，挡 0 / 负 / 超大
+        # 展开成逐题题型意图（SE-S4）：无分段 → [question_type]*clamp(count)（字节等价改动前）；
+        # 有分段 → 各段展平。每题仍逐题走 resolve_question_type，无新裁决。
+        intents = expand_segments(
+            params.segments, count=params.count, question_type=params.question_type
+        )
         rounds: list[QuizRoundResult] = []
-        for _ in range(count):
+        for intent in intents:
             try:
                 result: AssessmentResult = await assess_once(
                     store=store,
@@ -174,7 +258,7 @@ def make_start_quiz_tool(
                     focus=params.focus,
                     preferences=preferences,
                     resource_ids=params.resource_ids,
-                    question_type=params.question_type,
+                    question_type=intent,
                     difficulty=difficulty,
                 )
             except KeyboardInterrupt:
@@ -209,25 +293,27 @@ def make_start_quiz_tool(
             "从全库发起一次考核：出 count 道题（默认 1）逐题问用户并判卷，返回考了几题 / "
             "每题判决 / 暴露的薄弱点小结。你只触发它、转述小结——"
             "不要复述题目、不要自行判卷、不要编题。\n"
-            "据用户意图填两个可选旋钮（都不填 = 全库、按掌握状态自适应出题）：\n"
+            "据用户意图填可选旋钮（都不填 = 全库、按掌握状态自适应出题）：\n"
             "· resource_ids（考哪份材料）：从上文【学情】里的库存材料清单认出用户点名的主题对应的 "
             "exact resource_id 填入（可多选）——语义匹配是你的活（'代理通信协议' 认到 ACP 那条）；"
             "认不出对应材料 / 用户没点具体材料 → 别填，宁可诚实拒答也不考错库。\n"
-            "· question_type（要哪种题型）：只抽用户原话里的题型意图短语（如 '简答' / '选择题' / "
+            "· question_type（整批一种题型）：只抽用户原话里的题型意图短语（如 '简答' / '选择题' / "
             "'追问'）原样填入，由代码映射到题型；用户没点题型 → 别填。"
-            "别自造题型、别把 '简答' 填成 '选择题'。**该 question_type 作用于本次全部 count 道题——"
-            "本工具一次只出一种题型**。\n"
-            "· **要混合题型**（如'一道选择一道简答'）：请**分多次调用本工具**，"
-            "每次一个 question_type + 对应 count（先 {question_type:'选择题',count:1} "
-            "再 {question_type:'简答',count:1}）；"
-            "**别用 focus 表达'混合'——focus 是选题覆盖策略、与题型无关**。\n"
+            "别自造题型、别把 '简答' 填成 '选择题'。该 question_type 作用于本次全部 count 道题。\n"
+            "· segments（按位置分段的不同题型）：用户想在一轮里**先 X 题一种、再 Y 题另一种**"
+            "（如'先 3 道选择再 2 道简答'）时填此项——一个分段列表，每段填 {count, question_type}"
+            "（question_type 同上、只抽意图短语）。给了 segments 时**总题数 = 各段 count 之和**"
+            "（此时忽略顶层 count），仍是逐题一问一答。简单场景（整批一种题型或自适应）不填 "
+            "segments、只用 question_type 或都不填即可。**别用 focus 表达'混合'——focus 是选题"
+            "覆盖策略、与题型无关**。\n"
             "· focus（选题聚焦，非题型）：mixed=覆盖优先（默认，先考没考过的），new=只考没考过的"
             "（用户说'考其他的 / 换一批'），weak=复习薄弱（用户说'复习 / 考薄弱'）。\n"
             "工具输入示例——用户'考代理通信协议的简答题'（清单里该主题的 resource_id 记作 r-acp）："
             '{"resource_ids": ["r-acp"], "question_type": "简答"}；'
-            "用户'随便考我一道'：{}（两旋钮都不填 = 全库自动路由）；"
-            '用户\'一道选择一道简答\' → 分两次调用：先 {"question_type": "选择题", "count": 1} '
-            '再 {"question_type": "简答", "count": 1}。'
+            "用户'随便考我一道'：{}（都不填 = 全库自动路由）；"
+            "用户'先 3 道选择再 2 道简答' → 一次调用填 segments："
+            '{"segments": [{"count": 3, "question_type": "选择题"}, '
+            '{"count": 2, "question_type": "简答"}]}。'
         ),
         params=_StartQuizParams,
         handler=handler,

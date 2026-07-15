@@ -15,9 +15,12 @@ LLM 槽本身经脚本化 / 回放 provider 验证（不 unit-TDD LLM）。start
 """
 
 import json
+import logging
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import (
@@ -33,7 +36,11 @@ from grandquiz.domain.learning.preference import (
 from grandquiz.domain.learning.responder import Responder, ScriptedResponder
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.domain.learning.tools import register_learning_tools
-from grandquiz.domain.learning.tools.start_quiz_tool import StartQuizResult
+from grandquiz.domain.learning.tools.start_quiz_tool import (
+    QuizSegment,
+    StartQuizResult,
+    expand_segments,
+)
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
 from grandquiz.kernel.tools import ToolContext, ToolRegistry
@@ -634,3 +641,186 @@ async def test_start_quiz_record_then_replay_is_identical(tmp_path: Path) -> Non
     assert _payload_of(events1, "learning.question_asked") == _payload_of(
         events2, "learning.question_asked"
     )
+
+
+# --------------------------------------------------------------------------- #
+# SE-S4 批内分段调度：expand_segments 纯函数（TDD 命门，各 mutation 可杀）
+# --------------------------------------------------------------------------- #
+
+
+def _seg(count: int, question_type: str) -> QuizSegment:
+    return QuizSegment(count=count, question_type=question_type)
+
+
+# 出题上限（= start_quiz_tool._MAX_QUIZ_COUNT）：不引私有常量，而由"单值路径 clamp 超大 count"
+# 的返回长度反推——同一上限、外部可观测行为，避免测试硬编码 20 或触 reportPrivateUsage。
+_CAP = len(expand_segments(None, count=1_000_000, question_type="x"))
+
+
+def test_expand_segments_none_repeats_single_value() -> None:
+    # segments=None → 单值重复 clamp(count) 次——改动前 `for _ in range(count)` 行为的字节等价锚。
+    assert expand_segments(None, count=3, question_type="选择题") == ["选择题", "选择题", "选择题"]
+    assert expand_segments(None, count=1, question_type=None) == [None]  # None = 全程自适应
+
+
+def test_expand_segments_empty_list_same_as_none() -> None:
+    # 空列表 = 无分段 → 走 None 同分支（单值重复），不退化成 0 题。
+    assert expand_segments([], count=2, question_type="简答") == ["简答", "简答"]
+
+
+def test_expand_segments_none_clamps_count() -> None:
+    # clamp 到 [1, 上限]：0 / 负 → 1 题；超上限 → 截到上限（同旧 min(max(...))）。
+    assert _CAP > 1  # 上限本身 > 1（否则下面的超限断言退化）
+    assert expand_segments(None, count=0, question_type="x") == ["x"]
+    assert expand_segments(None, count=-5, question_type="x") == ["x"]
+    assert expand_segments(None, count=_CAP + 3, question_type="x") == ["x"] * _CAP
+
+
+def test_expand_segments_flattens_in_order() -> None:
+    # 多段展平：顺序 = 选择×3 + 简答×2（顺序不能乱）；顶层 count / question_type 被忽略。
+    out = expand_segments([_seg(3, "选择题"), _seg(2, "简答")], count=99, question_type="追问")
+    assert out == ["选择题", "选择题", "选择题", "简答", "简答"]
+
+
+def test_expand_segments_total_is_sum_not_count_param() -> None:
+    # 总题数 = 各段 count 之和，钉死"分段存在时忽略顶层 count"。
+    out = expand_segments([_seg(1, "a"), _seg(4, "b")], count=1, question_type="c")
+    assert out == ["a", "b", "b", "b", "b"]
+
+
+def test_expand_segments_truncates_over_max(caplog: pytest.LogCaptureFixture) -> None:
+    # 段和超上限 → 截断到前 _CAP 题（与单值路径同一上限），且大声 log（不静默丢）。
+    with caplog.at_level(logging.WARNING):
+        out = expand_segments([_seg(_CAP + 5, "选择题")], count=1, question_type=None)
+    assert out == ["选择题"] * _CAP
+    assert "截断" in caplog.text  # 截断不静默——大声报告
+
+
+def test_expand_segments_skips_nonpositive_segment() -> None:
+    # 某段 count <= 0 → 该段贡献 0 题（跳过），不报错（fail-soft）；其余段照常展平。
+    segs = [_seg(2, "选择题"), _seg(0, "简答"), _seg(-3, "追问"), _seg(1, "开放")]
+    assert expand_segments(segs, count=99, question_type=None) == ["选择题", "选择题", "开放"]
+
+
+def test_expand_segments_all_nonpositive_falls_back() -> None:
+    # 各段全 0 / 负 → 展平为空 → 回落单值路径 clamp(count or 1)，防退化成 0 题。
+    segs = [_seg(0, "选择题"), _seg(-1, "简答")]
+    assert expand_segments(segs, count=3, question_type="开放") == ["开放", "开放", "开放"]
+    assert expand_segments(segs, count=0, question_type=None) == [None]  # count=0 也保底 1 题
+
+
+# --------------------------------------------------------------------------- #
+# SE-S4 集成（脚本化 provider）：分段逐题按位置解析题型，复用 resolve_question_type（无新裁决）
+# --------------------------------------------------------------------------- #
+
+
+class _SegmentProvider:
+    """按出题提示词分型响应：MC 提示（含"单项选择题"）→ MC JSON；否则 → 开放题 JSON。
+
+    据此可在一次 start_quiz 里既出选择题又出开放题（供分段调度断言逐题题型序列）；basic 判卷官
+    注入 verdict="对"（开放题走 LLM 判卷路径、概念保持未追踪）。题干带调用序避免会话内去重门误伤。
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        self.calls += 1
+        payload: dict[str, Any]
+        if role == "enrich":
+            if any("单项选择题" in m.content for m in messages):
+                payload = {
+                    "question": f"闭包的核心是什么？#{self.calls}",
+                    "options": [_MC_CORRECT, _MC_WRONG],
+                    "answer_index": 0,
+                    "cited_evidence": [_QUOTE],
+                }
+            else:
+                payload = {
+                    "question": f"请解释闭包如何捕获变量？#{self.calls}",
+                    "cited_evidence": [_QUOTE],
+                }
+        else:
+            payload = {"verdict": "对", "cited_evidence": [_QUOTE]}
+        return Completion(
+            text=json.dumps(payload, ensure_ascii=False),
+            usage=Usage(prompt_tokens=7, completion_tokens=3),
+        )
+
+
+class _EitherResponder:
+    """选择题（有 options）→ 逐字返回 options[index]；开放题（options=None）→ 返回固定文本。"""
+
+    def __init__(self, *, index: int = 0, text: str = "我的作答") -> None:
+        self._index = index
+        self._text = text
+
+    async def answer(self, prompt: str, *, options: Sequence[str] | None = None) -> str:
+        return options[self._index] if options is not None else self._text
+
+
+def _effectives(events: list[AgentEvent]) -> list[str]:
+    """逐题 QUESTION_ASKED 的 effective 题型序列（断言分段调度确落到实际出题）。"""
+    return [str(e.payload["effective"]) for e in events if e.type == "learning.question_asked"]
+
+
+async def test_start_quiz_segments_schedule_per_position_types() -> None:
+    # 分段：前 3 选择题 + 后 2 简答 → 逐题 effective 序列 = 选择×3 + 开放×2（简答冻结映射到开放）。
+    # fresh memory 自适应本会给全"选择题"，故后 2 题的"开放"证明分段逐题透传了 intent——mutation
+    # 可杀：若 segments 未接线 / 未逐位置透传，后 2 题退回"选择题"，序列断言变红。
+    store = LearningStore()
+    # 5 概念 = 5 题：mixed 覆盖优先逐题选不同 item，5 题全答对 → 概念保持未追踪、routed 恒为选择题。
+    _seed_store(store, ["闭包", "装饰器", "生成器", "迭代器", "协程"])
+    provider = _SegmentProvider()
+    registry = ToolRegistry()
+    _register(
+        registry,
+        store=store,
+        memory=LearningMemory(),
+        provider=provider,
+        responder=_EitherResponder(index=0),  # MC 逐字选对；开放返回文本
+    )
+    emitter, events = _emitter_with_events()
+
+    segs = [
+        {"count": 3, "question_type": "选择题"},
+        {"count": 2, "question_type": "简答"},
+    ]
+    result = StartQuizResult.model_validate_json(
+        await registry.dispatch("start_quiz", {"segments": segs}, ctx=_ctx(emitter))
+    )
+
+    assert result.status == "completed"
+    assert result.asked == 5  # 总题数 = 各段 count 之和（3 + 2）；顶层 count 缺省被忽略
+    assert _effectives(events) == ["选择题", "选择题", "选择题", "开放", "开放"]
+
+
+async def test_start_quiz_segment_unknown_intent_falls_back_soft() -> None:
+    # 未知题型意图段 → resolve_question_type 回落自适应（fresh memory → 选择题），
+    # 不炸（fail-soft）。
+    store = LearningStore()
+    _seed_store(store, ["闭包", "装饰器"])
+    provider = _McProvider()  # 回落到选择题 → MC 路径
+    registry = ToolRegistry()
+    _register(
+        registry,
+        store=store,
+        memory=LearningMemory(),
+        provider=provider,
+        responder=ScriptedResponder(answer=_MC_CORRECT),
+    )
+    emitter, events = _emitter_with_events()
+
+    result = StartQuizResult.model_validate_json(
+        await registry.dispatch(
+            "start_quiz",
+            {"segments": [{"count": 2, "question_type": "念咒题"}]},
+            ctx=_ctx(emitter),
+        )
+    )
+
+    assert result.status == "completed"
+    assert result.asked == 2  # 未知意图不炸，正常出 2 题
+    assert _effectives(events) == ["选择题", "选择题"]  # 未知短语 → 回落自适应（fresh → 选择题）
