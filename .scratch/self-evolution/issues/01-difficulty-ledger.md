@@ -1,6 +1,7 @@
 # SE-S1 — 难度台账（DifficultyLedger：新表，独立于 Learning Memory）
 
-Status: ready-for-agent
+Status: done（merge 至 main `9400a4d`，六门全绿 624 passed；与 SE-S2 同一 AFK 批次实现、
+经主线程对抗性审查修正后合入。`difficulty.py` 台账三段式 + migration 0006。）
 Type: AFK
 
 ## Parent
