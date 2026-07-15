@@ -5,8 +5,13 @@ Status: 拆成 S5a（已完成）+ S5b（待做）。
   选项数 + `_parse_mc` 至少-N 门）落地。**设计决策（对抗审查改定，1b）**：只在概念 tier≠默认档(3)
   时注入选项数约束——默认档/新概念保持出题官自然选项数（真机+eval 双双字节等价、无重试耗尽风险、
   4 个 CLI 测试无需改动），只有升/降档概念收紧/放宽。judge 复用未涉及（S5a 无 judge）。
-- **S5b judge 验收闸门**（ready-for-agent，杠杆②）：出题后 `judge_distractor`（role=basic）判干扰项
-  达标否、不达标重生成（有界重试→降级）。要碰真机 cassette 录制，属人机边界、待用户在场时做。
+- **S5b judge 验收闸门**（**已完成**，merge 至 main `d96d8bb`，六门全绿 668 passed / eval 14/14）：
+  `distractor_quality_floor(tier)`（`{4:较弱,5:合理,≤3:None}`——只对高档设门）+ `generate_multiple_choice`
+  加 `quality_floor` 参：拿到合法 MC 后逐个 judge 干扰项、任一不达标短路 ModelRetry 重生成。**核心
+  keyless 落地**（重分析发现：eval 恒 difficulty=None→judge 永不触发→现有 cassette 一个不破、无需
+  重录，与 issue 原文"要真机录制"相反）。控制测试 `test_quality_floor_none_never_calls_judge` 钉死
+  默认路径 judge 零调用。judge 每题最多 (选项数-1)×attempts 次、仅高档触发（成本护栏）。真机 demo
+  录制留到 S6 后的端到端 capstone。
 Type: AFK
 
 ## Parent
