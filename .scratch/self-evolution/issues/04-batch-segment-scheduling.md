@@ -1,6 +1,11 @@
 # SE-S4 — 批内分段调度（start_quiz 按位置分段指定题型）
 
-Status: ready-for-agent
+Status: done（merge 至 main `d655656`，六门全绿 655 passed / eval 14/14、case14 原样绿）。
+`expand_segments` 纯函数（None/空→单值重复 clamp(count)、字节等价锚；非空→展平、总数=段和、
+段 count≤0 跳过、超上限截断+warning、全 0 回落）+ `QuizSegment` + handler 逐位置意图，每题仍走
+`resolve_question_type`（ADR-0006，无新裁决）。**关键事实（对抗审查改定，与本 issue 原文相反）**：
+工具 description **不进 replay_key**（`replay.py` 只 hash messages+role+model），故改 description
+**无需重录 case14**——本增量零 cassette 改动、react_system.md 未碰。
 Type: AFK
 
 ## Parent
