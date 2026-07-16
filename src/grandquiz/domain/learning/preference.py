@@ -29,7 +29,7 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from grandquiz.kernel.db import connect, migrate
+from grandquiz.domain.learning.persistence import DatabaseSource, database_from
 
 _LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -109,16 +109,17 @@ class SqlitePreferenceMemory:
     ``model_validate`` 反序列化）。schema 无时间戳列，不破坏 replay。
     """
 
-    def __init__(self, db_path: str | Path) -> None:
-        self._conn = connect(db_path)
-        migrate(self._conn, _LEARNING_MIGRATIONS_DIR)
+    def __init__(self, db_path: DatabaseSource) -> None:
+        self._db = database_from(db_path)
+        self._conn = self._db.connection
 
     def set_preference(
         self, key: str, value: str, *, confidence: float = _EXPLICIT_CONFIDENCE
     ) -> None:
         """设置 ``key`` 的偏好值（``confidence`` 不传即显式的 1.0，``INSERT OR REPLACE`` 覆盖）。"""
         self._conn.execute(
-            "INSERT OR REPLACE INTO preferences (key, value, confidence) VALUES (?, ?, ?)",
+            "INSERT INTO preferences (key, value, confidence) VALUES (?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value, confidence=excluded.confidence",
             (key, value, confidence),
         )
         self._conn.commit()
@@ -137,7 +138,7 @@ class SqlitePreferenceMemory:
 
     def close(self) -> None:
         """关闭底层连接（跨会话验收：关闭后用同一 db_path 重开，偏好仍在、confidence 不变）。"""
-        self._conn.close()
+        self._db.close()
 
 
 def detect_language(text: str) -> Literal["中文", "英文"] | None:

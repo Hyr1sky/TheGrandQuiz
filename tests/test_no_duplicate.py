@@ -78,7 +78,6 @@ def test_is_duplicate_empty_ledger_never_hits() -> None:
 def _item() -> KnowledgeItem:
     return KnowledgeItem.create(
         resource_id="res",
-        index=0,
         concept="闭包",
         summary="函数捕获定义时的作用域",
         evidence=[Evidence(quote=_QUOTE)],
@@ -222,7 +221,6 @@ def _single_item_store() -> tuple[LearningStore, str]:
     store.add_resource(resource)
     item = KnowledgeItem.create(
         resource_id=resource.resource_id,
-        index=0,
         concept="闭包",
         summary="函数捕获定义时的作用域",
         evidence=[Evidence(quote=_QUOTE)],

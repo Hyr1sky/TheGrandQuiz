@@ -104,7 +104,6 @@ def _stock_sqlite(db: Path) -> str:
     store.add_resource(resource)
     item = KnowledgeItem.create(
         resource_id=resource.resource_id,
-        index=0,
         concept="闭包",
         summary="闭包捕获变量而非值",
         evidence=[Evidence(quote=_QUOTE)],

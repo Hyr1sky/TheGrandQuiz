@@ -73,10 +73,13 @@ async def ingest_resource(
         payload={"url": url},
     )
     resource = LearningResource.create(url=url)
+    previous = store.get_resource(resource.resource_id)
 
     def fail(reason: str) -> IngestResult:
-        # 领域失败分支（fetch / Reader 共用）：标 failed、闭合 span、优雅返回（不 raise，case 7）。
-        store.set_resource_status(resource.resource_id, "failed")
+        # 首次 ingest 失败留下 failed 诊断记录；刷新失败不覆盖既有获批 read 快照。
+        if previous is None or previous.status != "read":
+            failed = resource.model_copy(update={"status": "failed"})
+            store.add_resource(failed)
         emitter.emit(
             LearningEvent.RESOURCE_FETCH_FAILED,
             parent_span_id=ingest_span,
@@ -86,8 +89,7 @@ async def ingest_resource(
         return IngestResult(status="failed", resource_id=resource.resource_id, items=[])
 
     try:
-        # b. 建 resource（内容寻址，同 URL 覆盖），发 RESOURCE_CREATED。
-        store.add_resource(resource)
+        # b. 发 staged resource 事件；fetch / Reader / 审批完成前不覆盖既有获批快照。
         emitter.emit(
             LearningEvent.RESOURCE_CREATED,
             parent_span_id=ingest_span,
@@ -102,7 +104,7 @@ async def ingest_resource(
         except FetchError as exc:
             return fail(f"fetch: {exc}")
 
-        # d. 回填内容 + hash，status=read，trusted=False（持久化，日后不重抓）；RESOURCE_READ 让
+        # d. 回填 staged 内容 + hash，status=read，trusted=False；RESOURCE_READ 让
         #    成功侧状态跃迁也上脊柱（对称于 RESOURCE_FETCH_FAILED，兑现"回放=事件流回放"）。
         resource = resource.model_copy(
             update={
@@ -112,7 +114,6 @@ async def ingest_resource(
                 "trusted": False,
             }
         )
-        store.add_resource(resource)
         emitter.emit(
             LearningEvent.RESOURCE_READ,
             parent_span_id=ingest_span,
@@ -142,12 +143,10 @@ async def ingest_resource(
             return fail(f"reader: {exc}")
         candidates = read_result.items
 
-        # 深读成功 → 把资源级 topic（RAG-metadata）写入 resources.topic（S2 已建列），资源覆盖存回。
+        # 深读成功 → 把资源级 topic（RAG-metadata）写入 staged resource。
         # 深读失败（failed 分支）绝不到这里，故失败资源 topic 恒 None（保持契约）。topic 是目录式
         # scope 清单的人类可读来源（GKB-S3）。此步不发新事件——RESOURCE_READ 已上脊柱、事件序不变。
         resource = resource.model_copy(update={"topic": read_result.topic})
-        store.add_resource(resource)
-
         emitter.emit(
             LearningEvent.ITEMS_EXTRACTED,
             parent_span_id=ingest_span,
@@ -162,8 +161,8 @@ async def ingest_resource(
             candidates, emitter=emitter, parent_span_id=ingest_span
         )
 
-        # g. 只入库获批者（eval case 1：未获批不进 store），发 approved / item_created。
-        store.add_items(approved)
+        # g. 审批完成后一次原子替换 resource revision + 获批 KnowledgeItem 快照。
+        store.replace_snapshot(resource, approved)
         emitter.emit(
             LearningEvent.RESOURCE_APPROVED,
             parent_span_id=ingest_span,

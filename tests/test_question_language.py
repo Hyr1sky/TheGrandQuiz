@@ -92,7 +92,6 @@ def _stocked_store() -> LearningStore:
         [
             KnowledgeItem.create(
                 resource_id=resource.resource_id,
-                index=0,
                 concept="闭包",
                 summary="函数捕获定义时所在作用域的变量",
                 evidence=[Evidence(quote=_QUOTE)],

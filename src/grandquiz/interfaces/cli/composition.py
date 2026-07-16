@@ -22,6 +22,7 @@ from grandquiz.domain.learning.difficulty import SqliteDifficultyLedger
 from grandquiz.domain.learning.ingest.fetch import ALLOW_ANY_DOMAIN, FetchError
 from grandquiz.domain.learning.ingest.web_fetch import create_http_source
 from grandquiz.domain.learning.memory import SqliteLearningMemory
+from grandquiz.domain.learning.persistence import LearningDatabase
 from grandquiz.domain.learning.preference import SqlitePreferenceMemory
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.responder import Responder
@@ -165,11 +166,12 @@ def build_learning_stores(
     ``difficulty``（SE-S3）是第五件——每个 KnowledgeItem 的离散 5 档难度，销账那刻据三路信号跨档、
     跨会话留存（User Story 11）。
     """
-    store = SqliteLearningStore(db_path)
-    memory = SqliteLearningMemory(db_path)
-    preferences = SqlitePreferenceMemory(db_path)  # 偏好与 store / memory 共用同一 learning db
-    asked_questions = SqliteAskedQuestionsLedger(db_path)
-    difficulty = SqliteDifficultyLedger(db_path)  # 难度台账与 store / memory 共用同一 learning db
+    database = LearningDatabase(db_path)
+    store = SqliteLearningStore(database)
+    memory = SqliteLearningMemory(database)
+    preferences = SqlitePreferenceMemory(database)
+    asked_questions = SqliteAskedQuestionsLedger(database)
+    difficulty = SqliteDifficultyLedger(database)
     return store, memory, preferences, asked_questions, difficulty
 
 

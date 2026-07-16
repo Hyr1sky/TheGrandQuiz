@@ -51,7 +51,6 @@ def _emitter() -> tuple[EventEmitter, list[AgentEvent]]:
 def _item() -> KnowledgeItem:
     return KnowledgeItem.create(
         resource_id="res",
-        index=0,
         concept="闭包",
         summary="函数捕获定义时的作用域",
         evidence=[Evidence(quote=_QUOTE)],

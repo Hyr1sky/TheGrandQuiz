@@ -33,7 +33,7 @@ from typing import Literal, Protocol, Self
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from grandquiz.domain.learning.assessment.grading import VerdictLabel
-from grandquiz.kernel.db import connect, migrate
+from grandquiz.domain.learning.persistence import DatabaseSource, database_from
 
 _LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -201,9 +201,9 @@ class SqliteLearningMemory:
     SQLite 是 I/O 但确定，schema 无时间戳列，不破坏 replay。
     """
 
-    def __init__(self, db_path: str | Path) -> None:
-        self._conn = connect(db_path)
-        migrate(self._conn, _LEARNING_MIGRATIONS_DIR)
+    def __init__(self, db_path: DatabaseSource) -> None:
+        self._db = database_from(db_path)
+        self._conn = self._db.connection
 
     def record_verdict(self, item_id: str, verdict: VerdictLabel) -> Transition:
         """按 ``verdict`` 更新 ``item_id`` 的记录并返回转移信息（销账 = ``DELETE`` 行）。"""
@@ -249,7 +249,7 @@ class SqliteLearningMemory:
 
     def close(self) -> None:
         """关闭底层连接（跨会话验收：关闭后用同一 db_path 重开，薄弱点仍在、状态 / 连对不变）。"""
-        self._conn.close()
+        self._db.close()
 
     def _read_record(self, item_id: str) -> ConceptRecord | None:
         row = self._conn.execute(
@@ -273,8 +273,11 @@ class SqliteLearningMemory:
     def _write_record(self, record: ConceptRecord) -> None:
         history_json = json.dumps(record.verdict_history, sort_keys=True, ensure_ascii=False)
         self._conn.execute(
-            "INSERT OR REPLACE INTO learning_memory "
-            "(item_id, state, consecutive_correct, verdict_history) VALUES (?, ?, ?, ?)",
+            "INSERT INTO learning_memory "
+            "(item_id, state, consecutive_correct, verdict_history) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(item_id) DO UPDATE SET state=excluded.state, "
+            "consecutive_correct=excluded.consecutive_correct, "
+            "verdict_history=excluded.verdict_history",
             (record.item_id, record.state, record.consecutive_correct, history_json),
         )
         self._conn.commit()

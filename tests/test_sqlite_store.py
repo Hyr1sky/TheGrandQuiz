@@ -10,6 +10,9 @@
 
 from pathlib import Path
 
+from grandquiz.domain.learning.asked_questions import SqliteAskedQuestionsLedger
+from grandquiz.domain.learning.difficulty import SqliteDifficultyLedger
+from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.store import LearningStore, SqliteLearningStore, Store
 
@@ -17,7 +20,6 @@ from grandquiz.domain.learning.store import LearningStore, SqliteLearningStore, 
 def _item(resource_id: str, index: int, concept: str) -> KnowledgeItem:
     return KnowledgeItem.create(
         resource_id=resource_id,
-        index=index,
         concept=concept,
         summary="摘要",
         evidence=[Evidence(quote="原文片段")],
@@ -92,10 +94,58 @@ def test_set_resource_status_missing_raises_keyerror() -> None:
 
 def test_items_for_resource_returns_only_that_resource_in_order() -> None:
     store = _sqlite()
+    for resource_id in ("r1", "r2"):
+        store.add_resource(
+            LearningResource(resource_id=resource_id, url=f"https://example.com/{resource_id}")
+        )
     store.add_items([_item("r1", 0, "闭包"), _item("r1", 1, "提升"), _item("r2", 0, "无关")])
     got = store.items_for_resource("r1")
-    assert [i.item_id for i in got] == ["r1#000", "r1#001"]
-    assert [i.concept for i in got] == ["闭包", "提升"]
+    assert [i.item_id for i in got] == sorted(i.item_id for i in got)
+    assert {i.concept for i in got} == {"闭包", "提升"}
+
+
+def test_replace_snapshot_matches_dict_and_removes_stale_items() -> None:
+    stores: list[Store] = [LearningStore(), _sqlite()]
+    resource = LearningResource.create(url="https://example.com/a")
+    retained = _item(resource.resource_id, 0, "闭包")
+    removed = _item(resource.resource_id, 1, "作用域")
+    updated = retained.model_copy(update={"summary": "修订后的摘要", "confidence": 0.9})
+    for store in stores:
+        store.replace_snapshot(resource, [retained, removed])
+        store.replace_snapshot(resource.model_copy(update={"topic": "闭包"}), [updated])
+    assert stores[0].items_for_resource(resource.resource_id) == [updated]
+    assert stores[1].items_for_resource(resource.resource_id) == [updated]
+    assert stores[0].get_resource(resource.resource_id) == stores[1].get_resource(
+        resource.resource_id
+    )
+
+
+def test_replace_snapshot_cascades_removed_item_state_without_touching_retained_state(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "learning.db"
+    store = SqliteLearningStore(db)
+    memory = SqliteLearningMemory(db)
+    asked = SqliteAskedQuestionsLedger(db)
+    difficulty = SqliteDifficultyLedger(db)
+    resource = LearningResource.create(url="https://example.com/a")
+    retained = _item(resource.resource_id, 0, "闭包")
+    removed = _item(resource.resource_id, 1, "作用域")
+    store.replace_snapshot(resource, [retained, removed])
+    for item in (retained, removed):
+        memory.record_verdict(item.item_id, "错")
+        asked.record_asked(item.item_id, f"关于 {item.concept} 的问题")
+        difficulty.set_tier(item.item_id, 4)
+
+    updated = retained.model_copy(update={"summary": "新摘要"})
+    store.replace_snapshot(resource, [updated])
+
+    assert memory.state_of(retained.item_id) == "薄弱"
+    assert asked.asked_before(retained.item_id) == ["关于 闭包 的问题"]
+    assert difficulty.tier_of(retained.item_id) == 4
+    assert memory.state_of(removed.item_id) is None
+    assert asked.asked_before(removed.item_id) == []
+    assert difficulty.tier_of(removed.item_id) == 3
 
 
 def test_matches_dict_store_on_shared_scenario() -> None:
@@ -119,9 +169,11 @@ def test_matches_dict_store_on_shared_scenario() -> None:
 
 def test_knowledge_item_round_trip_field_by_field() -> None:
     store = _sqlite()
+    store.add_resource(
+        LearningResource(resource_id="res123", url="https://example.com/res123")
+    )
     item = KnowledgeItem.create(
         resource_id="res123",
-        index=7,
         concept="闭包捕获变量而非值",
         summary="闭包保存的是变量引用，循环里共享同一绑定",
         evidence=[
@@ -163,16 +215,16 @@ def test_resource_round_trip_preserves_none_and_bool() -> None:
 
 
 def test_add_items_is_idempotent_overwrite() -> None:
-    # INSERT OR REPLACE：同 item_id 二次入库覆盖、不重复成行（同 dict 版覆盖语义）。
+    # 身份字段不变时，同 item_id 二次入库更新展示字段、不重复成行。
     store = _sqlite()
+    store.add_resource(LearningResource(resource_id="r1", url="https://example.com/r1"))
     first = _item("r1", 0, "闭包")
     store.add_items([first])
     updated = KnowledgeItem.create(
         resource_id="r1",
-        index=0,
-        concept="闭包（修订）",
+        concept="闭包",
         summary="改后的摘要",
-        evidence=[Evidence(quote="新的原文")],
+        evidence=[Evidence(quote="原文片段")],
         confidence=0.95,
     )
     store.add_items([updated])
@@ -185,6 +237,7 @@ def test_tmp_path_file_db_works(tmp_path: Path) -> None:
     # 真实文件 db（非 :memory:）也能正常读写——跨会话验收的地基。
     db = tmp_path / "learning.db"
     store = SqliteLearningStore(db)
+    store.add_resource(LearningResource(resource_id="r1", url="https://example.com/r1"))
     item = _item("r1", 0, "闭包")
     store.add_items([item])
     assert store.items_for_resource("r1") == [item]

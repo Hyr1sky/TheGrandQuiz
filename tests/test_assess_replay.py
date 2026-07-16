@@ -52,7 +52,6 @@ def _stocked_store() -> LearningStore:
         [
             KnowledgeItem.create(
                 resource_id=resource.resource_id,
-                index=index,
                 concept=concept,
                 summary=summary,
                 evidence=[Evidence(quote=quote)],

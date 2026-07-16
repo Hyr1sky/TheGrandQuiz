@@ -234,6 +234,41 @@ async def test_run_ingest_reads_material_and_persists_items(tmp_path: Path) -> N
     assert "闭包" in console.export_text()  # Rich 打印了抽出的知识点
 
 
+async def test_run_ingest_keeps_same_named_files_from_different_directories(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "course-a" / "material.txt"
+    second = tmp_path / "course-b" / "material.txt"
+    first.parent.mkdir()
+    second.parent.mkdir()
+    first.write_text("第一份材料", encoding="utf-8")
+    second.write_text("第二份材料", encoding="utf-8")
+    db = tmp_path / "learning.db"
+    console = Console(record=True, width=100)
+
+    first_result = await run_ingest(
+        title="A",
+        material_path=first,
+        db_path=db,
+        provider=_ReaderProvider(),
+        console=console,
+    )
+    second_result = await run_ingest(
+        title="B",
+        material_path=second,
+        db_path=db,
+        provider=_ReaderProvider(),
+        console=console,
+    )
+
+    assert first_result.resource_id != second_result.resource_id
+    store = SqliteLearningStore(db)
+    try:
+        assert len(store.all_items()) == 2
+    finally:
+        store.close()
+
+
 # --- run_quiz 粘合 ----------------------------------------------------------
 
 
@@ -244,7 +279,6 @@ def _stock_sqlite(db: Path) -> str:
     store.add_resource(resource)
     item = KnowledgeItem.create(
         resource_id=resource.resource_id,
-        index=0,
         concept="闭包",
         summary="闭包捕获变量而非值",
         evidence=[Evidence(quote=_QUOTE)],

@@ -76,7 +76,7 @@ class ModelRetry(Exception):
 
 
 class ReaderCandidate(BaseModel):
-    """Reader 输出中的单个候选——**不含 id**；Reader 再经 ``KnowledgeItem.create`` 按序号赋 id。
+    """Reader 输出中的单个候选——不含 id，由 KnowledgeItem 工厂按概念证据指纹赋 id。
 
     这里刻意不给 ``evidence`` 加 ``min_length``：空 evidence 留给 ``KnowledgeItem`` 的硬校验门
     挡下（决策 3），让"幽灵 item 被拒"这条不变量只有一个权威落点。
@@ -224,11 +224,11 @@ class Reader:
         except ValidationError as exc:
             raise ModelRetry(f"输出不符合 schema：{_stable_error_summary(exc)}") from exc
         items: list[KnowledgeItem] = []
-        for index, candidate in enumerate(output.candidates):
+        seen_ids: set[str] = set()
+        for candidate in output.candidates:
             try:
                 item = KnowledgeItem.create(
                     resource_id=resource_id,
-                    index=index,
                     concept=candidate.concept,
                     summary=candidate.summary,
                     evidence=candidate.evidence,
@@ -237,7 +237,10 @@ class Reader:
             except ValidationError as exc:
                 # 空 evidence / 空串 quote·concept·summary 被硬约束挡下 → 重试或拒绝
                 raise ModelRetry(
-                    f"候选 {index} 无法构造 KnowledgeItem：{_stable_error_summary(exc)}"
+                    f"候选 {candidate.concept!r} 无法构造 KnowledgeItem：{_stable_error_summary(exc)}"
                 ) from exc
+            if item.item_id in seen_ids:
+                raise ModelRetry(f"候选存在重复概念指纹：{candidate.concept!r}")
+            seen_ids.add(item.item_id)
             items.append(item)
         return ReadResult(topic=output.topic, items=items)

@@ -91,10 +91,8 @@ async def test_valid_candidates_become_validated_knowledge_items() -> None:
     items = result.items
     # 资源级 topic 与 items 一并 surface 给调用方（ingest 据此写 resources.topic，GKB-S3）。
     assert result.topic == "JavaScript 作用域机制"
-    assert [i.item_id for i in items] == [
-        f"{resource.resource_id}#000",
-        f"{resource.resource_id}#001",
-    ]
+    assert len({item.item_id for item in items}) == 2
+    assert all(len(item.item_id) == 16 for item in items)
     assert [i.concept for i in items] == ["闭包", "变量提升"]
     assert items[0].evidence[0].quote == "闭包捕获的是变量而非值"
     assert provider.calls == 1  # 首次即校验通过，无重试
@@ -105,6 +103,56 @@ async def test_valid_candidates_become_validated_knowledge_items() -> None:
         EventType.MODEL_STARTED,
         EventType.MODEL_ENDED,
     ]
+
+
+async def test_candidate_reordering_preserves_knowledge_item_identity() -> None:
+    resource = _resource()
+    original_data = json.loads(_VALID_JSON)
+    reordered_data = {
+        **original_data,
+        "candidates": list(reversed(original_data["candidates"])),
+    }
+    first_emitter, _ = _emitter()
+    second_emitter, _ = _emitter()
+
+    first = await _reader().read(
+        resource,
+        "抓取内容",
+        provider=_FixedProvider(_VALID_JSON),
+        emitter=first_emitter,
+        parent_span_id="ig",
+    )
+    second = await _reader().read(
+        resource,
+        "抓取内容",
+        provider=_FixedProvider(json.dumps(reordered_data)),
+        emitter=second_emitter,
+        parent_span_id="ig",
+    )
+
+    first_ids = {item.concept: item.item_id for item in first.items}
+    second_ids = {item.concept: item.item_id for item in second.items}
+    assert second_ids == first_ids
+
+
+async def test_duplicate_candidate_fingerprint_retries_then_fails() -> None:
+    data = json.loads(_VALID_JSON)
+    duplicate = dict(data["candidates"][0])
+    duplicate["summary"] = "摘要不同但概念证据身份相同"
+    duplicate["confidence"] = 0.1
+    data["candidates"].append(duplicate)
+    provider = _FixedProvider(json.dumps(data))
+    emitter, _ = _emitter()
+
+    with pytest.raises(ReaderError, match="重复概念指纹"):
+        await _reader(max_attempts=2).read(
+            _resource(),
+            "抓取内容",
+            provider=provider,
+            emitter=emitter,
+            parent_span_id="ig",
+        )
+    assert provider.calls == 2
 
 
 async def test_malformed_json_retries_then_raises_reader_error() -> None:

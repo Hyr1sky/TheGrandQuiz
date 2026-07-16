@@ -2,11 +2,13 @@
 
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 from rich.console import Console
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
+from grandquiz.domain.learning.models import derive_id
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.interfaces.cli.commands import _print_trace_location
 from grandquiz.interfaces.cli.composition import (
@@ -21,6 +23,12 @@ from grandquiz.providers.base import Provider
 from grandquiz.providers.llm import OpenAICompatProvider
 
 __all__ = ["_run_ingest_cli", "run_ingest"]
+
+
+def _local_material_url(material_path: Path) -> str:
+    """Build a stable, non-disclosing locator for one local file."""
+    path_token = derive_id(str(material_path.resolve()))
+    return f"file://{_LOCAL_HOST}/{path_token}/{quote(material_path.name, safe='')}"
 
 
 async def run_ingest(
@@ -49,7 +57,7 @@ async def run_ingest(
     _ensure_parent(resolved_trace_db)
     store = SqliteLearningStore(db_path)
     trace_store: TraceStore | None = None  # try 内构造 + None-guard 关闭，建失败不泄漏 store
-    url = f"file://{_LOCAL_HOST}/{material_path.name}"
+    url = _local_material_url(material_path)
     trace_id = uuid.uuid4().hex
     try:
         emitter, trace_store = build_event_backbone(resolved_trace_db, trace_id=trace_id)

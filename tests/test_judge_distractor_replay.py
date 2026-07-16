@@ -27,7 +27,6 @@ _CORRECT = "变量"
 _DISTRACTORS = ["值", "内存地址", "函数名"]
 _ITEM = KnowledgeItem.create(
     resource_id="res",
-    index=0,
     concept="闭包",
     summary="能访问外层函数作用域变量的函数",
     evidence=[Evidence(quote="闭包捕获变量而非值")],

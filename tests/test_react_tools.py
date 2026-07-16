@@ -71,7 +71,6 @@ _EXPECTED_CONCEPTS = ["事件脊柱", "确定性回放"]
 def _stored_item(resource_id: str, index: int, concept: str) -> KnowledgeItem:
     return KnowledgeItem.create(
         resource_id=resource_id,
-        index=index,
         concept=concept,
         summary=f"{concept} 摘要",
         evidence=[Evidence(quote=f"{concept} 原文")],

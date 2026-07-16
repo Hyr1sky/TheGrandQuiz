@@ -5,6 +5,8 @@
 """
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
@@ -12,7 +14,25 @@ _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
     """打开一个 SQLite 连接。``":memory:"`` 供测试 / 回放用。"""
-    return sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+@contextmanager
+def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    """在最外层调用处提交或回滚；同连接嵌套调用复用现有事务。"""
+    if conn.in_transaction:
+        yield conn
+        return
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield conn
+    except Exception:
+        conn.rollback()
+        raise
+    else:
+        conn.commit()
 
 
 def migrate(conn: sqlite3.Connection, migrations_dir: str | Path = _MIGRATIONS_DIR) -> None:

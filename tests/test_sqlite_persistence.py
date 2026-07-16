@@ -16,7 +16,6 @@ from grandquiz.domain.learning.store import SqliteLearningStore
 def _item(resource_id: str, index: int, concept: str) -> KnowledgeItem:
     return KnowledgeItem.create(
         resource_id=resource_id,
-        index=index,
         concept=concept,
         summary=f"{concept} 的摘要",
         evidence=[Evidence(quote=f"{concept} 的原文证据")],

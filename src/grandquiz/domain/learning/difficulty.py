@@ -25,7 +25,7 @@ from typing import Literal, Protocol
 from pydantic import BaseModel, ConfigDict
 
 from grandquiz.domain.learning.judge import DistractorLabel
-from grandquiz.kernel.db import connect, migrate
+from grandquiz.domain.learning.persistence import DatabaseSource, database_from
 
 _LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -85,9 +85,9 @@ class SqliteDifficultyLedger:
     定位、不依赖时序，保证 replay 逐字节一致）。
     """
 
-    def __init__(self, db_path: str | Path) -> None:
-        self._conn = connect(db_path)
-        migrate(self._conn, _LEARNING_MIGRATIONS_DIR)
+    def __init__(self, db_path: DatabaseSource) -> None:
+        self._db = database_from(db_path)
+        self._conn = self._db.connection
 
     def tier_of(self, item_id: str) -> DifficultyTier:
         row = self._conn.execute(
@@ -100,14 +100,15 @@ class SqliteDifficultyLedger:
 
     def set_tier(self, item_id: str, tier: DifficultyTier) -> None:
         self._conn.execute(
-            "INSERT OR REPLACE INTO difficulty (item_id, tier) VALUES (?, ?)",
+            "INSERT INTO difficulty (item_id, tier) VALUES (?, ?) "
+            "ON CONFLICT(item_id) DO UPDATE SET tier=excluded.tier",
             (item_id, tier),
         )
         self._conn.commit()
 
     def close(self) -> None:
         """关闭底层连接（跨会话验收：关闭后用同一 db_path 重开，档位仍在、不重置回默认）。"""
-        self._conn.close()
+        self._db.close()
 
 
 def _coerce_tier(value: int) -> DifficultyTier:

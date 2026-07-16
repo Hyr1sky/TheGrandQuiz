@@ -22,7 +22,6 @@ from grandquiz.kernel.clock import new_rng
 def _item(index: int, concept: str) -> KnowledgeItem:
     return KnowledgeItem.create(
         resource_id="res",
-        index=index,
         concept=concept,
         summary=f"{concept} 的摘要",
         evidence=[Evidence(quote=f"{concept} 的证据")],
@@ -234,7 +233,6 @@ def _multi_resource_items() -> list[KnowledgeItem]:
     def _mk(resource_id: str, index: int, concept: str) -> KnowledgeItem:
         return KnowledgeItem.create(
             resource_id=resource_id,
-            index=index,
             concept=concept,
             summary=f"{concept} 摘要",
             evidence=[Evidence(quote=f"{concept} 证据")],

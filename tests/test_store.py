@@ -10,7 +10,6 @@ from grandquiz.domain.learning.store import LearningStore
 def _item(resource_id: str, index: int, concept: str) -> KnowledgeItem:
     return KnowledgeItem.create(
         resource_id=resource_id,
-        index=index,
         concept=concept,
         summary="摘要",
         evidence=[Evidence(quote="原文片段")],
@@ -40,8 +39,31 @@ def test_items_for_resource_returns_only_that_resource_in_order() -> None:
     store = LearningStore()
     store.add_items([_item("r1", 0, "闭包"), _item("r1", 1, "提升"), _item("r2", 0, "无关")])
     got = store.items_for_resource("r1")
-    assert [i.item_id for i in got] == ["r1#000", "r1#001"]
-    assert [i.concept for i in got] == ["闭包", "提升"]
+    assert [i.item_id for i in got] == sorted(i.item_id for i in got)
+    assert {i.concept for i in got} == {"闭包", "提升"}
+
+
+def test_replace_snapshot_removes_stale_items_and_updates_retained_items() -> None:
+    store = LearningStore()
+    resource = LearningResource.create(url="https://example.com/a")
+    retained = _item(resource.resource_id, 0, "闭包")
+    removed = _item(resource.resource_id, 1, "作用域")
+    store.replace_snapshot(resource, [retained, removed])
+
+    updated = retained.model_copy(update={"summary": "修订后的摘要", "confidence": 0.9})
+    store.replace_snapshot(resource.model_copy(update={"topic": "闭包"}), [updated])
+
+    assert store.items_for_resource(resource.resource_id) == [updated]
+    assert store.get_resource(resource.resource_id) is not None
+    assert store.get_resource(resource.resource_id).topic == "闭包"  # type: ignore[union-attr]
+
+
+def test_replace_snapshot_accepts_explicit_empty_snapshot() -> None:
+    store = LearningStore()
+    resource = LearningResource.create(url="https://example.com/a")
+    store.replace_snapshot(resource, [_item(resource.resource_id, 0, "闭包")])
+    store.replace_snapshot(resource, [])
+    assert store.items_for_resource(resource.resource_id) == []
 
 
 # --- all_items：全库全局读（不按 resource 过滤，按 item_id 升序） --------------------
@@ -55,7 +77,8 @@ def test_all_items_single_resource_item_id_sorted() -> None:
     # 单资源：即便乱序入库，all_items 也按 item_id 升序（确定性顺序契约）。
     store = LearningStore()
     store.add_items([_item("r1", 1, "提升"), _item("r1", 0, "闭包")])
-    assert [i.item_id for i in store.all_items()] == ["r1#000", "r1#001"]
+    ids = [i.item_id for i in store.all_items()]
+    assert ids == sorted(ids)
 
 
 def test_all_items_spans_all_resources_item_id_sorted() -> None:

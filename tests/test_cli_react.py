@@ -439,7 +439,6 @@ def _seed_two_resources(db_path: Path) -> tuple[str, list[str], list[str]]:
     a_items = [
         KnowledgeItem.create(
             resource_id=res_a.resource_id,
-            index=i,
             concept=concept,
             summary=f"{concept} 摘要",
             evidence=[Evidence(quote=_QUOTE)],
@@ -451,7 +450,6 @@ def _seed_two_resources(db_path: Path) -> tuple[str, list[str], list[str]]:
     b_items = [
         KnowledgeItem.create(
             resource_id=res_b.resource_id,
-            index=0,
             concept="事件循环",
             summary="事件循环 摘要",
             evidence=[Evidence(quote=_QUOTE)],
@@ -583,7 +581,6 @@ def _seed_weak_concept(db_path: Path) -> None:
     resource = LearningResource.create(url=_MATERIAL_URL)
     item = KnowledgeItem.create(
         resource_id=resource.resource_id,
-        index=0,
         concept="闭包",
         summary="闭包捕获的是变量引用",
         evidence=[Evidence(quote=_QUOTE)],

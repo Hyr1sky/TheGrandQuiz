@@ -6,12 +6,14 @@
 
 ## 项目状态
 
-🟢 MVP 竖切已跑通（2026-07-10）：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel`（事件脊柱 /
+🟢 MVP 竖切已跑通（2026-07-16）：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel`（事件脊柱 /
 runner / tools / hooks / context / recovery / trace）+ `providers`（OpenAI 兼容 + Record/Replay）+
 `domain/learning`（考核竖切：喂材料 → 深读入库 → 出题 → 判卷 → 薄弱记账）+ `cli`（`ingest` / `quiz` /
 `react` / `report` / `trace` 子命令）+ `evals`（Tier-1 规则 harness）。**最小 ReAct 对话核 + 全局知识库**
-已落地：`grandquiz react` 可真机跑——自然语言在持久全局库里选材料、定题型、按薄弱点考核。五门（ruff /
-format / import-linter / pyright / pytest）全绿。下一程：让 eval 成为迭代 gate + 上下文压缩。
+已落地：`grandquiz react` 可真机跑——自然语言在持久全局库里选材料、定题型、按薄弱点考核。上下文预算 /
+滚动摘要、真实网络抓取、跨会话题目去重与自适应难度第一阶段也已完成；五门（ruff / format /
+import-linter / pyright / pytest）全绿。当前进入[稳定性加固](.scratch/stability-hardening/PRD.md)：先修资源
+身份、scope 误回退、流式抓取和 Replay 指纹，再推进新的 Web 获取 / 搜索与 MCP 能力。
 
 ## 文档
 
@@ -21,6 +23,7 @@ format / import-linter / pyright / pytest）全绿。下一程：让 eval 成为
 | [docs/architecture.md](docs/architecture.md) | 目标架构：四层分层 + 事件总线脊柱，五大基建模块设计要点 |
 | [docs/reference-map.md](docs/reference-map.md) | 参考实现映射（scholarmate-digital-human 移植清单 + 外部参考仓库） |
 | [docs/adr/](docs/adr/) | 架构决策记录 |
+| [.scratch/stability-hardening/PRD.md](.scratch/stability-hardening/PRD.md) | 当前开发：文档基线 + P1/P2 稳定性加固 |
 
 ## 开发
 

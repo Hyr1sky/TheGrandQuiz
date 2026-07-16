@@ -131,20 +131,20 @@ Hook 抛异常必须被隔离，不能炸掉整个 turn。
 
 ```text
 0.  建仓 + 脚手架 + 工程规范        → 验证：CI 全绿的空项目              ✅ 2026-06-12
-1.  移植核心 + 事件化改造 runner     → 验证：CLI REPL 能和无工具 agent 对话
-2.  TraceStore + Replay Provider    → 验证：一次对话可完整回放
-3.  考核竖切（走骨架）              → 验证：手喂 URL → 深读 → "考我" → 判卷，一条链路跑通并落 trace
+1.  移植核心 + 事件化改造 runner     → 验证：CLI REPL 能和无工具 agent 对话 ✅ 2026-06-18
+2.  TraceStore + Replay Provider    → 验证：一次对话可完整回放             ✅ 2026-07-04
+3.  考核竖切（走骨架）              → 验证：手喂 URL → 深读 → "考我" → 判卷，一条链路跑通并落 trace ✅ 2026-07-05
         ├ 手动喂 URL 的 mock 资源源
         ├ Reader subagent 深读产出 KnowledgeItem
         ├ 审批门（深读产出 → 入库）
         ├ 出题（题型路由）+ 判卷（判决三值 + 证据锚定）
         └ Learning Memory（薄弱概念入库 / 销账）
-4-7. 由竖切拉动逐层加硬 kernel：
+4-7. 由竖切拉动逐层加硬 kernel：                                      ✅ 2026-07-08
         HookManager（审批门 / trace 写入挂上去）
         ContextBuilder + 跨轮裁剪（多轮考核 token 不膨胀）
         RecoveryPolicy + 错误分类（深读 fetch 失败走标记/换源）
         Memory 接口规整 + SQLite（Learning + Preference 跨会话生效）
-8.  Eval harness                    → 验证：CONTEXT.md / roadmap 的 8 个考核竖切用例跑通
+8.  Eval harness                    → 验证：CONTEXT.md / roadmap 的考核竖切用例跑通 ✅ 2026-07-06
 ```
 
 步骤 3 是产品的脉搏，越早可跑越好；步骤 4-7 不是新需求，而是把竖切里临时凑合的 kernel 部件

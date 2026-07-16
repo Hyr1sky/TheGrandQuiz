@@ -113,33 +113,70 @@ def test_resource_topic_round_trips_when_set() -> None:
     assert LearningResource(**resource.model_dump()).topic == "代理通信协议"
 
 
-def test_item_create_id_is_resource_scoped_and_zero_padded() -> None:
+def test_item_create_id_is_stable_for_normalized_identity_content() -> None:
     resource_id = derive_id("t", "https://example.com/a")
-    item = KnowledgeItem.create(
+    first = KnowledgeItem.create(
         resource_id=resource_id,
-        index=1,
-        concept="闭包",
+        concept="  闭包  ",
         summary="函数捕获定义时的作用域",
         evidence=_one_evidence(),
         confidence=0.9,
     )
-    assert item.item_id == f"{resource_id}#001"
-    assert item.resource_id == resource_id
-    # concept_key 二期跨资源归并预留，MVP 恒 None
-    assert item.concept_key is None
-
-
-@pytest.mark.parametrize("index", [0, 5, 42, 999])
-def test_item_id_is_zero_padded_to_three_digits(index: int) -> None:
-    item = KnowledgeItem.create(
-        resource_id="r",
-        index=index,
-        concept="c",
-        summary="s",
-        evidence=_one_evidence(),
-        confidence=0.5,
+    equivalent = KnowledgeItem.create(
+        resource_id=resource_id,
+        concept="闭包",
+        summary="不同的摘要不会改变身份",
+        evidence=[Evidence(quote="闭包捕获的是变量而非值")],
+        confidence=0.1,
     )
-    assert item.item_id == f"r#{index:03d}"
+    assert first.item_id == equivalent.item_id
+    assert first.resource_id == resource_id
+    # concept_key 二期跨资源归并预留，MVP 恒 None
+    assert first.concept_key is None
+
+
+def test_item_create_id_is_resource_scoped() -> None:
+    first = KnowledgeItem.create(
+        resource_id="r1", concept="c", summary="s", evidence=_one_evidence(), confidence=0.5
+    )
+    second = KnowledgeItem.create(
+        resource_id="r2", concept="c", summary="s", evidence=_one_evidence(), confidence=0.5
+    )
+    assert first.item_id != second.item_id
+
+
+def test_item_create_id_ignores_evidence_order_and_duplicates() -> None:
+    evidence = [Evidence(quote="证据 B"), Evidence(quote="证据 A")]
+    first = KnowledgeItem.create(
+        resource_id="r", concept="c", summary="s", evidence=evidence, confidence=0.5
+    )
+    second = KnowledgeItem.create(
+        resource_id="r",
+        concept="c",
+        summary="s2",
+        evidence=[Evidence(quote="证据 A"), Evidence(quote="证据 B"), Evidence(quote="证据 A")],
+        confidence=0.8,
+    )
+    assert first.item_id == second.item_id
+
+
+@pytest.mark.parametrize(
+    ("concept", "evidence"),
+    [
+        ("不同概念", [Evidence(quote="闭包捕获的是变量而非值")]),
+        ("闭包", [Evidence(quote="不同证据")]),
+    ],
+)
+def test_item_create_id_changes_with_substantive_identity_content(
+    concept: str, evidence: list[Evidence]
+) -> None:
+    baseline = KnowledgeItem.create(
+        resource_id="r", concept="闭包", summary="s", evidence=_one_evidence(), confidence=0.5
+    )
+    changed = KnowledgeItem.create(
+        resource_id="r", concept=concept, summary="s", evidence=evidence, confidence=0.5
+    )
+    assert baseline.item_id != changed.item_id
 
 
 # --- evidence 非空硬校验（决策 3）------------------------------------------
@@ -249,7 +286,6 @@ def test_resource_rejects_invalid_status() -> None:
 def test_knowledge_item_round_trips_through_model_dump() -> None:
     item = KnowledgeItem.create(
         resource_id="r",
-        index=0,
         concept="闭包",
         summary="函数捕获定义时的作用域",
         evidence=[Evidence(quote="片段一"), Evidence(quote="片段二")],
@@ -275,7 +311,6 @@ def _sample_models() -> list[BaseModel]:
         Evidence(quote="片段", locator="§1.2"),
         KnowledgeItem.create(
             resource_id="r",
-            index=0,
             concept="闭包",
             summary="摘要",
             evidence=_one_evidence(),

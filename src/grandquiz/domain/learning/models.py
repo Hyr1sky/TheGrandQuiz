@@ -9,9 +9,9 @@
   （注入时钟），模型不存 ``created_at``。
 
 ID 派生约定（工厂在构造点保证确定性，调用方拿不到手写随机 id）：
-``resource_id = derive_id(url)``（**内容寻址**，同 URL 全局唯一，见 ADR-0005——``LearningTask``
-已消解、知识进同一全局 KB）；``item_id = f"{resource_id}#{index:03d}"``（``index`` 为 Reader 输出中
-的序号），资源内唯一不变（ADR-0002 边界不动）。
+``resource_id = derive_id(locator)``（locator-addressed，同一规范 locator 全局唯一，ADR-0007）；
+``item_id = derive_id(resource_id, item_fingerprint)``，其中 fingerprint 来自规范化概念名 + 稳定排序的
+evidence 引文。Reader 重排不改变 KnowledgeItem 身份。
 """
 
 import hashlib
@@ -79,6 +79,17 @@ class Evidence(BaseModel):
     locator: str | None = None
 
 
+def _identity_text(value: str) -> str:
+    """Normalize model-authored identity text without erasing punctuation."""
+    normalized = unicodedata.normalize("NFKC", value)
+    return " ".join(normalized.split()).casefold()
+
+
+def _item_fingerprint(concept: str, evidence: Iterable[Evidence]) -> str:
+    quotes = sorted({_identity_text(item.quote) for item in evidence})
+    return derive_id(_identity_text(concept), *quotes)
+
+
 class KnowledgeItem(BaseModel):
     """深读一个资源产出的最小知识单元，资源内唯一——概念同一性的边界（ADR-0002）。
 
@@ -100,15 +111,14 @@ class KnowledgeItem(BaseModel):
         cls,
         *,
         resource_id: str,
-        index: int,
         concept: str,
         summary: str,
         evidence: list[Evidence],
         confidence: float,
     ) -> Self:
-        """工厂：``item_id = f"{resource_id}#{index:03d}"``（``index`` 为 Reader 输出中的序号）。"""
+        """按资源 + 概念证据指纹生成不受 Reader 顺序影响的稳定 ID。"""
         return cls(
-            item_id=f"{resource_id}#{index:03d}",
+            item_id=derive_id(resource_id, _item_fingerprint(concept, evidence)),
             resource_id=resource_id,
             concept=concept,
             summary=summary,
@@ -118,7 +128,7 @@ class KnowledgeItem(BaseModel):
 
 
 class LearningResource(BaseModel):
-    """全局 KB 里的一个学习资源（待深读 / 已深读 / 深读失败），**内容寻址**（ADR-0005）。
+    """全局 KB 里的一个学习资源（待深读 / 已深读 / 深读失败），按 locator 标识（ADR-0007）。
 
     ``resource_id = derive_id(url)``——同 URL 全局唯一，不再挂在某个 ``LearningTask`` 下
     （``LearningTask`` 已消解）；重 ingest 同一 URL → 同 resource_id → ``INSERT OR REPLACE`` 天然

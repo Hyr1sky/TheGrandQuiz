@@ -1,7 +1,9 @@
 # PRD：Context Compression（工作记忆的预算 + 压缩）
 
-Status: in-progress（协作学习式开发——我搭骨架+讲原理+守门，逐增量推进；2026-07-10 起）
-Triage: ready-for-agent
+Status: done（2026-07-10..12：C1 `b4f09f1` / C2 `11edb7f` / C3a `b2cb180` /
+C3b `87ef1a8` / production wiring `451241a` + `c0e3d17`；已知局限保留在本文 gap-review，转入
+稳定性加固 SH-S7 处理）
+Triage: ready-for-human
 
 ## Problem Statement
 

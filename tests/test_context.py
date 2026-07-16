@@ -152,7 +152,6 @@ def _seed_item(store: LearningStore, concept: str, index: int) -> str:
     store.add_resource(resource)
     item = KnowledgeItem.create(
         resource_id=resource.resource_id,
-        index=index,
         concept=concept,
         summary=f"{concept}的要点",
         evidence=[Evidence(quote=f"{concept}的原文")],

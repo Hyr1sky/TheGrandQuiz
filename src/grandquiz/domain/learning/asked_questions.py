@@ -20,7 +20,7 @@
 from pathlib import Path
 from typing import Protocol
 
-from grandquiz.kernel.db import connect, migrate
+from grandquiz.domain.learning.persistence import DatabaseSource, database_from
 
 _LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -61,9 +61,9 @@ class SqliteAskedQuestionsLedger:
     不来自墙上时间，保证 replay 逐字节一致）。
     """
 
-    def __init__(self, db_path: str | Path) -> None:
-        self._conn = connect(db_path)
-        migrate(self._conn, _LEARNING_MIGRATIONS_DIR)
+    def __init__(self, db_path: DatabaseSource) -> None:
+        self._db = database_from(db_path)
+        self._conn = self._db.connection
 
     def asked_before(self, item_id: str) -> list[str]:
         rows = self._conn.execute(
@@ -81,4 +81,4 @@ class SqliteAskedQuestionsLedger:
 
     def close(self) -> None:
         """关闭底层连接（跨会话验收：关闭后用同一 db_path 重开，已问过的题仍在）。"""
-        self._conn.close()
+        self._db.close()

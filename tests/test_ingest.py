@@ -105,7 +105,8 @@ async def test_happy_path_only_approved_items_enter_store() -> None:
     # eval case 1：Reader 出 3 个候选，审批只放 2 个，store 里就只有这 2 个（未审批不入库）。
     assert result.status == "read"
     stored = store.items_for_resource(result.resource_id)
-    assert [i.concept for i in stored] == ["闭包", "事件循环"]
+    assert {i.concept for i in stored} == {"闭包", "事件循环"}
+    assert [i.item_id for i in stored] == sorted(i.item_id for i in stored)
     assert len(result.items) == 2
     # 审批预览事件确实含全部 3 个候选（审批发生在入库前）。
     extracted = next(e for e in events if e.type == LearningEvent.ITEMS_EXTRACTED)
@@ -179,6 +180,71 @@ async def test_fetch_failure_marks_resource_failed_and_produces_no_ghost_items()
     assert resource.topic is None
     assert store.items_for_resource(result.resource_id) == []
     trace.close()
+
+
+async def test_failed_refresh_preserves_previous_approved_snapshot() -> None:
+    emitter, _events, trace = _harness()
+    store = LearningStore()
+    resource_id = await _seed_approved_snapshot(store, emitter)
+    previous_resource = store.get_resource(resource_id)
+    previous_items = store.items_for_resource(resource_id)
+
+    result = await ingest_resource(
+        _URL,
+        source=lambda _url: (_ for _ in ()).throw(RuntimeError("抓取超时")),
+        provider=_FixedProvider(_READER_JSON),
+        store=store,
+        approval=ScriptedApprovalGate(keep=_keep_two),
+        emitter=emitter,
+        max_bytes=4096,
+        allowed_domains=_ALLOWED,
+    )
+
+    assert result.status == "failed"
+    assert store.get_resource(resource_id) == previous_resource
+    assert store.items_for_resource(resource_id) == previous_items
+    trace.close()
+
+
+async def test_approval_exception_preserves_previous_approved_snapshot() -> None:
+    emitter, _events, trace = _harness()
+    store = LearningStore()
+    resource_id = await _seed_approved_snapshot(store, emitter)
+    previous_resource = store.get_resource(resource_id)
+    previous_items = store.items_for_resource(resource_id)
+
+    class _CancelledApproval:
+        def request_approval(self, candidates: list[KnowledgeItem], **_: object) -> list[KnowledgeItem]:
+            raise RuntimeError("用户取消审批")
+
+    with pytest.raises(RuntimeError, match="用户取消审批"):
+        await ingest_resource(
+            _URL,
+            source=lambda _url: "更新后的材料",
+            provider=_FixedProvider(_READER_JSON),
+            store=store,
+            approval=_CancelledApproval(),
+            emitter=emitter,
+            max_bytes=4096,
+            allowed_domains=_ALLOWED,
+        )
+    assert store.get_resource(resource_id) == previous_resource
+    assert store.items_for_resource(resource_id) == previous_items
+    trace.close()
+
+
+async def _seed_approved_snapshot(store: LearningStore, emitter: EventEmitter) -> str:
+    result = await ingest_resource(
+        _URL,
+        source=lambda _url: "原始材料",
+        provider=_FixedProvider(_READER_JSON),
+        store=store,
+        approval=ScriptedApprovalGate(keep=_keep_two),
+        emitter=emitter,
+        max_bytes=4096,
+        allowed_domains=_ALLOWED,
+    )
+    return result.resource_id
 
 
 async def _run_once(provider: Provider, emitter: EventEmitter) -> None:

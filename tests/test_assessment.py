@@ -106,7 +106,6 @@ def _stocked_store() -> tuple[LearningStore, list[str]]:
     items = [
         KnowledgeItem.create(
             resource_id=resource.resource_id,
-            index=index,
             concept=concept,
             summary=f"{concept} 的一句话摘要",
             evidence=[Evidence(quote=quote)],
@@ -678,7 +677,6 @@ def _two_resource_store() -> tuple[LearningStore, str, str, list[str], list[str]
     a_items = [
         KnowledgeItem.create(
             resource_id=res_a.resource_id,
-            index=index,
             concept=concept,
             summary=f"{concept} 摘要",
             evidence=[Evidence(quote=quote)],
@@ -689,7 +687,6 @@ def _two_resource_store() -> tuple[LearningStore, str, str, list[str], list[str]
     b_items = [
         KnowledgeItem.create(
             resource_id=res_b.resource_id,
-            index=index,
             concept=concept,
             summary=f"{concept} 摘要",
             evidence=[Evidence(quote=quote)],

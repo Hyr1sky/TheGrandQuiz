@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Literal, Protocol
 
 from grandquiz.domain.learning.models import KnowledgeItem, LearningResource
-from grandquiz.kernel.db import connect, migrate
+from grandquiz.domain.learning.persistence import DatabaseSource, database_from
 
 _LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -35,6 +35,9 @@ class Store(Protocol):
     def get_resource(self, resource_id: str) -> LearningResource | None: ...
     def set_resource_status(self, resource_id: str, status: ResourceStatus) -> None: ...
     def add_items(self, items: list[KnowledgeItem]) -> None: ...
+    def replace_snapshot(
+        self, resource: LearningResource, items: list[KnowledgeItem]
+    ) -> None: ...
     def items_for_resource(self, resource_id: str) -> list[KnowledgeItem]: ...
     def all_items(self) -> list[KnowledgeItem]: ...
     def resource_topics(self) -> list[tuple[str, str]]: ...
@@ -67,6 +70,20 @@ class LearningStore:
         """按 ``item_id`` 逐个入库（资源内唯一，ADR-0002）。仅获批 item 应流到此处。"""
         for item in items:
             self._items[item.item_id] = item
+
+    def replace_snapshot(self, resource: LearningResource, items: list[KnowledgeItem]) -> None:
+        """原子替换资源的获批知识快照；空列表表示获批清空。"""
+        _validate_snapshot(resource, items)
+        resources = dict(self._resources)
+        stored_items = {
+            item_id: item
+            for item_id, item in self._items.items()
+            if item.resource_id != resource.resource_id
+        }
+        resources[resource.resource_id] = resource
+        stored_items.update((item.item_id, item) for item in items)
+        self._resources = resources
+        self._items = stored_items
 
     def items_for_resource(self, resource_id: str) -> list[KnowledgeItem]:
         """某资源下已入库的 item，**按 item_id 升序**（与 SQLite 版一致的确定性顺序契约）。"""
@@ -101,17 +118,21 @@ class SqliteLearningStore:
     天然去重）。SQLite 是 I/O 但确定（同操作同状态），schema 无时间戳列，故不破坏 replay。
     """
 
-    def __init__(self, db_path: str | Path) -> None:
-        self._conn = connect(db_path)
-        migrate(self._conn, _LEARNING_MIGRATIONS_DIR)
+    def __init__(self, db_path: DatabaseSource) -> None:
+        self._db = database_from(db_path)
+        self._conn = self._db.connection
 
     # --- resources ---------------------------------------------------------
     def add_resource(self, resource: LearningResource) -> None:
         """按 ``resource_id`` 存 / 覆盖（``INSERT OR REPLACE``）。``trusted`` 存 0/1。"""
         self._conn.execute(
-            "INSERT OR REPLACE INTO resources "
+            "INSERT INTO resources "
             "(resource_id, url, raw_content, content_hash, trusted, status, topic) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(resource_id) DO UPDATE SET "
+            "url=excluded.url, raw_content=excluded.raw_content, "
+            "content_hash=excluded.content_hash, trusted=excluded.trusted, "
+            "status=excluded.status, topic=excluded.topic",
             (
                 resource.resource_id,
                 resource.url,
@@ -158,9 +179,13 @@ class SqliteLearningStore:
             data = item.model_dump()
             evidence_json = json.dumps(data["evidence"], sort_keys=True, ensure_ascii=False)
             self._conn.execute(
-                "INSERT OR REPLACE INTO knowledge_items "
+                "INSERT INTO knowledge_items "
                 "(item_id, resource_id, concept, summary, evidence, confidence, concept_key) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(item_id) DO UPDATE SET "
+                "resource_id=excluded.resource_id, concept=excluded.concept, "
+                "summary=excluded.summary, evidence=excluded.evidence, "
+                "confidence=excluded.confidence, concept_key=excluded.concept_key",
                 (
                     item.item_id,
                     item.resource_id,
@@ -172,6 +197,69 @@ class SqliteLearningStore:
                 ),
             )
         self._conn.commit()
+
+    def replace_snapshot(self, resource: LearningResource, items: list[KnowledgeItem]) -> None:
+        """在一个事务中 upsert revision，并删除本次获批快照之外的旧 item。"""
+        _validate_snapshot(resource, items)
+        with self._db.transaction():
+            self._upsert_resource(resource)
+            self._upsert_items(items)
+            item_ids = [item.item_id for item in items]
+            if item_ids:
+                placeholders = ", ".join("?" for _ in item_ids)
+                self._conn.execute(
+                    f"DELETE FROM knowledge_items WHERE resource_id = ? "
+                    f"AND item_id NOT IN ({placeholders})",
+                    (resource.resource_id, *item_ids),
+                )
+            else:
+                self._conn.execute(
+                    "DELETE FROM knowledge_items WHERE resource_id = ?",
+                    (resource.resource_id,),
+                )
+
+    def _upsert_resource(self, resource: LearningResource) -> None:
+        self._conn.execute(
+            "INSERT INTO resources "
+            "(resource_id, url, raw_content, content_hash, trusted, status, topic) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(resource_id) DO UPDATE SET "
+            "url=excluded.url, raw_content=excluded.raw_content, "
+            "content_hash=excluded.content_hash, trusted=excluded.trusted, "
+            "status=excluded.status, topic=excluded.topic",
+            (
+                resource.resource_id,
+                resource.url,
+                resource.raw_content,
+                resource.content_hash,
+                int(resource.trusted),
+                resource.status,
+                resource.topic,
+            ),
+        )
+
+    def _upsert_items(self, items: list[KnowledgeItem]) -> None:
+        for item in items:
+            data = item.model_dump()
+            evidence_json = json.dumps(data["evidence"], sort_keys=True, ensure_ascii=False)
+            self._conn.execute(
+                "INSERT INTO knowledge_items "
+                "(item_id, resource_id, concept, summary, evidence, confidence, concept_key) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(item_id) DO UPDATE SET "
+                "resource_id=excluded.resource_id, concept=excluded.concept, "
+                "summary=excluded.summary, evidence=excluded.evidence, "
+                "confidence=excluded.confidence, concept_key=excluded.concept_key",
+                (
+                    item.item_id,
+                    item.resource_id,
+                    item.concept,
+                    item.summary,
+                    evidence_json,
+                    item.confidence,
+                    item.concept_key,
+                ),
+            )
 
     def items_for_resource(self, resource_id: str) -> list[KnowledgeItem]:
         """某资源下已入库的 item，按 ``item_id`` 升序（含资源内序号，确定性且稳定）。"""
@@ -206,7 +294,7 @@ class SqliteLearningStore:
 
     def close(self) -> None:
         """关闭底层连接（跨会话验收：关闭后用同一 db_path 重开，数据仍在）。"""
-        self._conn.close()
+        self._db.close()
 
 
 def _row_to_item(row: Any) -> KnowledgeItem:
@@ -222,3 +310,11 @@ def _row_to_item(row: Any) -> KnowledgeItem:
             "concept_key": row[6],
         }
     )
+
+
+def _validate_snapshot(resource: LearningResource, items: list[KnowledgeItem]) -> None:
+    mismatched = [item.item_id for item in items if item.resource_id != resource.resource_id]
+    if mismatched:
+        raise ValueError(
+            f"快照含不属于资源 {resource.resource_id} 的 KnowledgeItem：{', '.join(mismatched)}"
+        )
