@@ -1,6 +1,6 @@
 # SH-S2 — 考核 scope 三态与未解析拒答
 
-Status: implementation-done / cassette pending
+Status: done（真实 case14 cassette 已重录，五门全绿）
 Type: AFK
 
 ## Parent
@@ -21,7 +21,7 @@ Type: AFK
 - [x] scope mode、请求标签、ID 与命中数进入事件脊柱
 - [x] 工具遗漏必填 scope 或给出非法组合时走 ModelRetry，不进入 workflow
 - [x] 脚本化 ReAct 轨迹覆盖“不存在材料”与“随便考我”两种相反意图
-- [ ] 五门全绿，旧工具 cassette 明确进入重录清单
+- [x] 五门全绿，旧工具 cassette 明确进入重录清单
 
 ## Blocked by
 

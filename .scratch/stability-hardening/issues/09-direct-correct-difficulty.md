@@ -1,6 +1,6 @@
 # SH-S8 — 一路答对的难度演化
 
-Status: implementation-done / HITL cassette pending
+Status: done（难度激活真实 cassette + 离线回放通过，五门全绿）
 Type: AFK
 
 ## Parent
@@ -20,8 +20,8 @@ Type: AFK
 - [x] 与薄弱销账升降路径共享一套纯函数，不产生冲突双写
 - [x] 难度变化事件只在已提交真跨档时发出
 - [x] 跨会话持久与 Dict / SQLite parity 成立
-- [ ] 难度激活真实 cassette 与 eval 用例通过
-- [ ] 五门全绿
+- [x] 难度激活真实 cassette 与 eval 用例通过
+- [x] 五门全绿
 
 ## Blocked by
 

@@ -1,6 +1,6 @@
 # SH-S10 — 稳定性加固完成审计
 
-Status: HITL closing / external approval blocked
+Status: HITL closing
 Type: HITL
 
 ## Parent
@@ -16,8 +16,8 @@ Type: HITL
 
 - [ ] S1-S9 每条 acceptance criterion 有直接证据，不以“未发现问题”代替证明
 - [ ] learning DB 备份可打开，新库从真实材料重建并完成考核闭环
-- [ ] 全部受影响 cassette 已重录或明确废弃，无旧工具契约假绿
-- [ ] Ruff、format、Pyright、import-linter、全量 pytest 全绿
+- [x] 全部受影响 cassette 已重录或明确废弃，无旧工具契约假绿
+- [x] Ruff、format、Pyright、import-linter、全量 pytest 全绿
 - [ ] 全部 eval 与关键真机 trace 通过，成本 / token /错误信息完整
 - [ ] README、CONTEXT、architecture、ADR、PRD、issue、skeleton ledger 状态一致
 - [ ] 残余风险和明确 Out of Scope 形成最终报告
@@ -41,13 +41,13 @@ Type: HITL
 | Slice | Evidence | State |
 | --- | --- | --- |
 | S1 | stable local locator / item fingerprint tests; Dict/SQLite snapshot parity; FK cascade; migration 0007 | implementation done |
-| S2 | discriminated `QuizScope`; unresolved/empty scope and tool validation tests | implementation done |
-| S3 | async stream tests prove decompressed byte cutoff stops later reads; SSRF/redirect/error taxonomy tests | implementation done |
-| S4 | v2 tool contract fingerprint tests cover order normalization and schema/description/set misses | implementation done; cassette pending |
-| S5 | `LearningStateWriter` rollback injection tests for Dict/SQLite; state events emitted only after commit | implementation done |
-| S6 | durable processor failure propagation + best-effort observer isolation; CLI false-success regression test | implementation done |
-| S7 | full messages/tools request budget tests; tool-loop growth rejection; asked-history cap/context priority tests | implementation done |
-| S8 | unified `evolve_difficulty`; direct-correct/reset/discharge tests; Dict/SQLite cross-session parity; event test | implementation done; cassette pending |
+| S2 | discriminated `QuizScope`; unresolved/empty scope and tool validation tests; real case14 replay | done |
+| S3 | async stream tests prove decompressed byte cutoff stops later reads; SSRF/redirect/error taxonomy tests | done |
+| S4 | v2 tool contract fingerprint tests + real assessment/case14 cassette re-recording | done |
+| S5 | `LearningStateWriter` rollback injection tests for Dict/SQLite; state events emitted only after commit | done |
+| S6 | durable processor failure propagation + best-effort observer isolation; CLI false-success regression test | done |
+| S7 | full messages/tools request budget tests; tool-loop growth rejection; asked-history cap/context priority tests | done |
+| S8 | unified evolution tests + real three-round 3→4 difficulty activation replay | done |
 | S9 | `CliApprovalGate` full preview/select/reject/cancel tests; requested/decided events; production composition no keep-all | implementation done; terminal HITL pending |
 
 Static gates are green:
@@ -59,15 +59,13 @@ pyright: pass (0 errors)
 import-linter: pass (71 files, 254 dependencies, 1 contract kept)
 ```
 
-Pytest currently collects 718 tests: `714 passed / 4 failed`. The four failures have two root causes:
+Pytest currently collects 719 tests: `719 passed`. No cassette was forged or manually re-keyed. Real recording evidence:
 
-1. `tests/fixtures/assess.cassette.json` no longer matches the stable item selection/prompt request.
-2. `tests/fixtures/eval_case14_bulk_quiz.cassette.json` no longer matches the required scope schema, prompt and tool
-   execution fingerprint. This directly fails two eval assertions and leaves the generated case14 report without a span
-   tree, causing the fourth failure.
-
-No cassette was forged or manually re-keyed. A real recording attempt using `.env` was rejected before process launch by
-the external approval reviewer: `codex-auto-review` unavailable for the configured account, HTTP 404.
+1. `assess.cassette.json`: enrich 模型针对 pass@k 出题并逐字锚定证据；用闭包答案作答后 basic 判为“错”。
+2. `eval_case14_bulk_quiz.cassette.json`: ReAct 只调用一次
+   `start_quiz(scope=all, count=3, focus=mixed, question_type=选择题)`，三题均走受控 workflow。
+3. `difficulty_activation.cassette.json`: 同一闭包 KnowledgeItem 连续三轮真实判“对”，第二轮唯一触发
+   3→4 档，第三轮以高档提示继续出题；离线回放护住完整路径。
 
 ### Real database evidence
 
@@ -76,21 +74,15 @@ the external approval reviewer: `codex-auto-review` unavailable for the configur
 - Both currently contain 4 resources, 31 knowledge items and 0 preferences.
 - Production DB has not been migrated or cleared. Migration/rebuild remains an explicit HITL step.
 
-### Remaining HITL commands
+### Remaining HITL
 
-```bash
-uv run --env-file .env python scripts/record_assess.py
-uv run --env-file .env python scripts/record_eval_react_case14.py
-uv run pytest
-```
-
-After cassette recording, run a real `grandquiz ingest` or `grandquiz react` ingest turn and exercise keep, reject and
-cancel once each. Only after backing up again should the real learning DB be opened by the new code to apply migrations
-0005-0008 or be rebuilt from source materials.
+Run a real `grandquiz ingest` or `grandquiz react` ingest turn and exercise keep, reject and cancel once each. Only after
+backing up again should the real learning DB be opened by the new code to apply migrations 0005-0008 or be rebuilt from
+source materials.
 
 ### Residual scope
 
 - Durable approval/answer suspend-resume with persisted pending state remains a skeleton item, not part of the delivered
   blocking CLI adapter.
 - Article extraction quality, `web_search`, browser fallback and MCP adapters remain in the separate Web Acquisition PRD.
-- The stability PRD must not be marked done until the two cassettes, real DB rebuild and terminal approval evidence pass.
+- The stability PRD must not be marked done until the real DB rebuild and terminal approval evidence pass.

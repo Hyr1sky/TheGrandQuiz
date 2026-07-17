@@ -20,7 +20,8 @@ CLI 审批；持久 suspend/resume 作为后续独立竖切，不再声称现有
 - [x] 审批请求与最终决策进入事件脊柱，trace 不泄露额外敏感内容
 - [x] scripted adapter 继续服务确定性测试，真实 CLI 不再 keep-all
 - [x] 文档诚实区分已交付阻塞审批与未交付 suspend/resume
-- [ ] 真机交互验收与五门通过
+- [x] 五门全绿
+- [ ] 真机交互 keep / reject / cancel 验收
 
 ## Blocked by
 

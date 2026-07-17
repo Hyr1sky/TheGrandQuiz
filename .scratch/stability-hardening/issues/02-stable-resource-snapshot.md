@@ -22,7 +22,7 @@ Type: HITL
 - [x] resource、item、关联账外键与 upsert 不会因 delete-then-insert 误清保留状态
 - [x] Dict / SQLite 对快照替换结果 parity；迁移幂等
 - [ ] 清理真实 learning DB 前完成带日期备份并验证可打开；真实材料可重建
-- [ ] 五门全绿，受影响 cassette 清单明确
+- [x] 五门全绿，受影响 cassette 清单明确
 
 ## Blocked by
 

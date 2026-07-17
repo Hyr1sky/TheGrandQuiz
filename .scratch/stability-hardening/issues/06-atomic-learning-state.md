@@ -1,6 +1,6 @@
 # SH-S5 — 判决与学习状态原子提交
 
-Status: implementation-done
+Status: done
 Type: AFK
 
 ## Parent
@@ -20,7 +20,7 @@ Type: AFK
 - [x] Dict / SQLite 对成功、回滚和重试结果 parity
 - [x] 复用 SH-S1 transaction seam，不新增第二套事务 helper
 - [x] 多连接或调用顺序不再是调用方必须知道的 interface 细节
-- [ ] 五门全绿
+- [x] 五门全绿
 
 ## Blocked by
 

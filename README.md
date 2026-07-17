@@ -14,8 +14,9 @@ runner / tools / hooks / context / recovery / trace）+ `providers`（OpenAI 兼
 滚动摘要、真实网络抓取、跨会话题目去重与自适应难度第一阶段也已完成。当前
 [稳定性加固](.scratch/stability-hardening/PRD.md) 的 S1-S9 代码实现已收口：资源身份 / 原子快照、scope
 三态、流式抓取、Replay 指纹、原子学习状态、durable trace、完整请求预算、直答难度演化与真实 CLI
-审批均已有测试。静态四门全绿；全量 pytest 为 `714 passed / 4 failed`，4 个失败均由两份待真机重录的
-cassette 直接或派生触发。真实 DB 重建、cassette 重录与终端验收完成后再进入 Web Acquisition。
+审批均已有测试。真实模型已重录受影响 cassette，并新增“连续直答正确 3→4 档→高档继续出题”的
+难度激活回放；静态四门全绿，全量 pytest 为 `719 passed`。真实 DB 重建与终端审批验收完成后再进入
+Web Acquisition。
 
 ## 文档
 

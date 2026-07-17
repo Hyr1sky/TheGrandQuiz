@@ -1,6 +1,6 @@
 # SH-S4 — Replay 执行指纹
 
-Status: implementation-done / HITL cassette pending
+Status: done（真实 cassette 已重录，ReAct eval 与五门全绿）
 Type: HITL
 
 ## Parent
@@ -20,8 +20,8 @@ schema 或公开生成参数变化后，旧 cassette 必须大声失效。
 - [x] Recording 与 Replay 使用同一指纹实现，无重复序列化规则
 - [x] 旧纯文本路径的迁移策略和 cassette 清单明确
 - [x] fake provider 回放测试覆盖工具契约变化导致 ReplayMiss
-- [ ] 真实模型 cassette 重录并跑通 ReAct eval
-- [ ] 五门全绿
+- [x] 真实模型 cassette 重录并跑通 ReAct eval
+- [x] 五门全绿
 
 ## Blocked by
 

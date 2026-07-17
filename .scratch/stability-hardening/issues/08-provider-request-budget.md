@@ -1,6 +1,6 @@
 # SH-S7 — 完整 Provider 出站预算
 
-Status: implementation-done
+Status: done
 Type: AFK
 
 ## Parent
@@ -20,7 +20,7 @@ Type: AFK
 - [x] 分区软预算不会按 hash 排序静默丢弃更重要的薄弱概念
 - [x] 预算错误含 messages / tools / total 的可解释 token 估算
 - [x] Replay 对同一预算输入保持确定性
-- [ ] 五门全绿
+- [x] 五门全绿
 
 ## Blocked by
 

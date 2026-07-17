@@ -1,6 +1,6 @@
 # SH-S3 — 异步流式 Web Fetch 硬限制
 
-Status: implementation-done
+Status: done
 Type: AFK
 
 ## Parent
@@ -21,7 +21,7 @@ Type: AFK
 - [x] 结构化结果至少含 requested/final URL、正文、content type 与 content hash
 - [x] MockTransport / 可控流测试证明超限时未完整读取响应
 - [x] 现有本地文件 ingest 与 fetch 失败领域语义不回归
-- [ ] 五门全绿
+- [x] 五门全绿
 
 ## Blocked by
 

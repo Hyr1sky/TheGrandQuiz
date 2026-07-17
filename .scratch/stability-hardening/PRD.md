@@ -1,6 +1,6 @@
 # PRD：稳定性加固（文档权威基线 + P1/P2 完整性修复）
 
-Status: HITL closing（2026-07-17：S1-S9 代码完成；待真实 DB、两份 cassette、CLI 真机验收）
+Status: HITL closing（2026-07-17：S1-S9 代码、真实 cassette 与五门完成；待真实 DB、CLI 真机验收）
 Triage: ready-for-agent
 
 ## Problem Statement
@@ -62,8 +62,8 @@ Replay 能识别当前执行契约、trace 失败不会静默伪装成功，且�
 
 - 每个 issue 是一个可独立验收的竖切；确定性核心先写失败测试。
 - 每个竖切同步更新相关权威文档，不把文档治理推迟到所有代码完成之后。
-- 五门固定为 Ruff、format check、Pyright、import-linter、pytest；实现后当前基线为静态四门全绿、
-  `714 passed / 4 failed`，pytest 失败均由两份待真录 cassette 直接或派生触发。
+- 五门固定为 Ruff、format check、Pyright、import-linter、pytest；当前五门全绿，全量 pytest 为
+  `719 passed`，受影响 cassette 均由真实模型重录，另有难度激活 capstone 回放。
 
 ## Proposed Vertical Slices
 
@@ -76,22 +76,22 @@ Replay 能识别当前执行契约、trace 失败不会静默伪装成功，且�
    - 修同名本地文件碰撞；定义重 ingest 的稳定身份、旧 item 清理与关联账 reconciliation。
    - 先审议 ADR-0007；允许备份后清库切换 schema。预研确认 S1 的快照提交与 S5 必须复用同一个
      transaction seam，S1 不得落一次性私有事务 helper。
-3. **SH-S2 显式 scope 解析失败拒答**（实现完成）
+3. **SH-S2 显式 scope 解析失败拒答**（done）
    - 区分“用户没指定范围”和“指定了但没解析成功”，后者零出题、零 provider 调用。
-4. **SH-S3 异步流式 Web Fetch**（实现完成）
+4. **SH-S3 异步流式 Web Fetch**（done）
    - 流式限制解压后字节数；保留 SSRF、逐跳重定向、超时与内容类型守卫。
    - 落结构化获取结果，为独立 Web Acquisition PRD 提供稳定 seam。
-5. **SH-S4 Replay 执行指纹**（实现完成，HITL cassette 待重录）
+5. **SH-S4 Replay 执行指纹**（done，真实 cassette 已重录）
    - 把 tool specs 等执行契约纳入指纹；旧 cassette 明确失效；fake 回放先绿。
    - 真实 cassette 重录作为本 issue 的 HITL 收口。
-6. **SH-S5 学习状态原子提交**（实现完成）
+6. **SH-S5 学习状态原子提交**（done）
    - 复用 S1 已建立的 transaction seam，让一次判决的 Learning Memory、Difficulty、AskedQuestions
      相关状态共享事务语义；不另建第二套事务模块。
-7. **SH-S6 Durable Trace 失败语义**（实现完成）
+7. **SH-S6 Durable Trace 失败语义**（done）
    - 区分 durable processor 与 best-effort observer；trace 写失败不得静默报告成功。
-8. **SH-S7 完整出站上下文预算**（实现完成）
+8. **SH-S7 完整出站上下文预算**（done）
    - 预算覆盖 tool specs、循环追加消息、工具结果和持久题目历史。
-9. **SH-S8 一路答对的难度演化**（实现完成，HITL cassette 待重录）
+9. **SH-S8 一路答对的难度演化**（done，难度激活 capstone 已真录）
    - 补齐自进化 User Story 12，并增加难度激活真实 cassette 验收。
 10. **SH-S9 真实审批门**（实现完成，HITL 终端验收待执行）
     - 先交付 CLI 可筛选候选的真实行为；suspend/resume 作为独立后续竖切，不伪装成已完成。

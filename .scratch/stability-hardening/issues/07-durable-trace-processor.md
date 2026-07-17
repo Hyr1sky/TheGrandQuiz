@@ -1,6 +1,6 @@
 # SH-S6 — Durable Trace 失败语义
 
-Status: implementation-done
+Status: done
 Type: AFK
 
 ## Parent
@@ -19,7 +19,7 @@ Type: AFK
 - [x] TraceStore 注入写失败时 turn 不报告成功，用户不收到误导 trace 位置
 - [x] 失败本身可被上层观察且不递归触发无限事件发布
 - [x] 正常事件顺序、span 配对与 processor 扇出不回归
-- [ ] 五门全绿
+- [x] 五门全绿
 
 ## Blocked by
 

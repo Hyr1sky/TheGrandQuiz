@@ -1,22 +1,26 @@
 {
-  "82dfe63f2a63c374dddc369ec6ba0f59f6d63e939becd31932482a0e359ef57a": {
-    "model": "deepseek-chat",
+  "024c454adb5be8018728ad7942632f23e5b535e8d14e58ae847a81bd8009b06e": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
     "role": "basic",
-    "text": "{\"verdict\": \"勉强\", \"reason\": \"你提到了闭包能记住外层变量，但未解释为什么捕获的是变量本身而非值快照——缺少对闭包捕获机制（如引用而非复制）的说明。\", \"cited_evidence\": [\"闭包捕获的是变量本身而非当时的值快照\"]}",
+    "text": "{\"verdict\": \"错\", \"reason\": \"没有回答 pass@k 的含义，而是解释了闭包概念，完全答非所问。\", \"cited_evidence\": [\"pass@k means success in at least one of k attempts\"]}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "usage": {
-      "completion_tokens": 68,
-      "prompt_tokens": 634,
-      "total_tokens": 702
+      "completion_tokens": 139,
+      "prompt_tokens": 635,
+      "total_tokens": 774
     }
   },
-  "e2767265e3a78402bd8d212444e61c4ac3c597945360553e5f475ec65d75d07e": {
-    "model": "qwen-plus",
+  "f06eb039f47b5f9d6a90811244fac569c6831d9fbf42f9d4e958a2b3f6736f72": {
+    "fingerprint_version": 2,
+    "model": "qwen3.7-plus",
     "role": "enrich",
-    "text": "{\"question\": \"为什么闭包捕获的是变量本身而非当时的值快照？请结合闭包的定义说明原因。\", \"cited_evidence\": [\"闭包捕获的是变量本身而非当时的值快照\"]}",
+    "text": "{\"question\": \"请解释 pass@k 的含义，即在 k 次尝试中需要满足什么条件才算成功？\", \"cited_evidence\": [\"pass@k means success in at least one of k attempts\"]}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "usage": {
-      "completion_tokens": 48,
-      "prompt_tokens": 367,
-      "total_tokens": 415
+      "completion_tokens": 46,
+      "prompt_tokens": 349,
+      "total_tokens": 395
     }
   }
 }
