@@ -1,7 +1,7 @@
 # PRD：宽口径 kernel 加硬（Kernel Hardening —— 补搭建顺序 M4/5/6）
 
-Status: backlog（Phase 0 窄口径落地后启动；详细 issue 届时再建，遵循 CLAUDE.md "不提前建满 issue"）
-Triage: needs-triage（待 Phase 0 收口后细化）
+Status: done（M6 RecoveryPolicy `5f1bbf6`、M4 HookManager `1c2b29a`、M5 ContextBuilder `d2ded87` 已落地）
+Triage: ready-for-human（仅归档复核；无待实现 issue）
 
 ## Problem Statement
 

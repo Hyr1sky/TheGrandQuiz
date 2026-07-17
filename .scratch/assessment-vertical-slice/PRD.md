@@ -1,6 +1,6 @@
 # PRD: 考核竖切 MVP（Assessment Vertical Slice）
 
-Status: ready-for-agent
+Status: done（M1-M3.4 六个考核竖切 issue 全部完成；后续 M8 Eval Harness 由独立 PRD 完成）
 Created: 2026-06-15
 
 > 一条穿透全部 runtime 能力的最小考核循环。本 PRD 覆盖 MVP 的目标、领域模型与 8 个验收用例；

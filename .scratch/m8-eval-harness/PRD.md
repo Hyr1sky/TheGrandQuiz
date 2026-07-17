@@ -1,6 +1,6 @@
 # PRD: M8 Eval Harness + 它护住的 dogfood 质量修复
 
-Status: ready-for-agent
+Status: done（5 个 issue 全部完成：三项 dogfood 质量修复 + Tier-1 harness + 质量回归 scorer）
 Created: 2026-07-06
 
 > 把"可评测的 Agent Runtime"做实：将现有 8 个考核用例形式化为 inspect_ai 式 Task/Solver/Scorer + 报告

@@ -1,6 +1,6 @@
 # PRD: 让 runtime 可见（Runtime Visibility · Tier A①）
 
-Status: ready-for-agent
+Status: done（4 个 issue 全部完成：processor 管线、真机 trace、HTML 查看器、CLI 导出）
 Created: 2026-07-06
 
 > "可观测 runtime" 目前只是宣称——trace / span 树 / token / latency 全被捕获、却从不 surface，
