@@ -21,6 +21,8 @@ class LearningEvent:
     RESOURCE_READ = (
         "learning.resource_read"  # 抓取成功回填内容后：资源状态跃迁上脊柱（对称于 fetch_failed）
     )
+    DOCUMENT_PARSED = "learning.document_parsed"  # 候选 revision 的确定性树已建立（尚未提交）
+    REVISION_COMMITTED = "learning.revision_committed"  # 审批后 revision/tree 原子成为 current
     RESOURCE_FETCH_FAILED = "learning.resource_fetch_failed"  # eval case 7：深读失败，不产幽灵 item
     ITEMS_EXTRACTED = "learning.items_extracted"  # Reader 产候选（审批前预览）
     RESOURCE_APPROVED = "learning.resource_approved"  # 用户经审批门通过

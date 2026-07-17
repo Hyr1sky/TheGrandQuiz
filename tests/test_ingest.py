@@ -95,12 +95,14 @@ async def test_happy_path_only_approved_items_enter_store() -> None:
         _INGEST_STARTED,
         LearningEvent.RESOURCE_CREATED,
         LearningEvent.RESOURCE_READ,
+        LearningEvent.DOCUMENT_PARSED,
         EventType.HOOK_INVOKED,
         EventType.MODEL_STARTED,
         EventType.MODEL_ENDED,
         LearningEvent.ITEMS_EXTRACTED,
         APPROVAL_REQUESTED,
         APPROVAL_DECIDED,
+        LearningEvent.REVISION_COMMITTED,
         LearningEvent.RESOURCE_APPROVED,
         LearningEvent.ITEM_CREATED,
         LearningEvent.ITEM_CREATED,
@@ -125,6 +127,17 @@ async def test_happy_path_only_approved_items_enter_store() -> None:
     assert resource.trusted is False
     # GKB-S3：Reader 抽出的资源级 topic 落库到 resources.topic（深读成功才产）。
     assert resource.topic == "React Hooks 与 JS 运行时"
+    revision = store.current_revision(resource.resource_id)
+    assert revision is not None
+    parsed = next(e for e in events if e.type == LearningEvent.DOCUMENT_PARSED)
+    assert parsed.payload == {
+        "resource_id": resource.resource_id,
+        "revision_id": revision.revision_id,
+        "node_count": 2,
+        "synthetic_node_count": 1,
+    }
+    committed = next(e for e in events if e.type == LearningEvent.REVISION_COMMITTED)
+    assert committed.payload["revision_id"] == revision.revision_id
 
     # span 树：ingest 为根，Reader 的 model span 挂其下；领域事件是点事件（不进树）。
     roots = trace.span_tree("run")
@@ -212,11 +225,12 @@ async def test_failed_refresh_preserves_previous_approved_snapshot() -> None:
 
 
 async def test_approval_exception_preserves_previous_approved_snapshot() -> None:
-    emitter, _events, trace = _harness()
+    emitter, events, trace = _harness()
     store = LearningStore()
     resource_id = await _seed_approved_snapshot(store, emitter)
     previous_resource = store.get_resource(resource_id)
     previous_items = store.items_for_resource(resource_id)
+    event_count = len(events)
 
     class _CancelledApproval:
         def request_approval(
@@ -237,6 +251,9 @@ async def test_approval_exception_preserves_previous_approved_snapshot() -> None
         )
     assert store.get_resource(resource_id) == previous_resource
     assert store.items_for_resource(resource_id) == previous_items
+    attempted_types = {event.type for event in events[event_count:]}
+    assert LearningEvent.DOCUMENT_PARSED in attempted_types
+    assert LearningEvent.REVISION_COMMITTED not in attempted_types
     trace.close()
 
 
@@ -346,6 +363,8 @@ async def test_provider_exception_propagates_and_closes_ingest_span() -> None:
     types = [e.type for e in events]
     assert types[-1] == _INGEST_ENDED
     assert EventType.MODEL_ENDED in types
+    assert LearningEvent.DOCUMENT_PARSED in types
+    assert LearningEvent.REVISION_COMMITTED not in types
     roots = trace.span_tree("run")
     assert len(roots) == 1
     assert roots[0].type == "ingest"

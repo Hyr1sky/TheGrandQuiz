@@ -9,12 +9,14 @@ expected_events:
   - ingest.started
   - learning.resource_created
   - learning.resource_read
+  - learning.document_parsed
   - hook.invoked  # 深读前经 HookManager 应用注入中和 interceptor（M4）
   - model.started
   - model.ended
   - learning.items_extracted
   - approval.requested
   - approval.decided
+  - learning.revision_committed
   - learning.resource_approved
   - learning.item_created
   - learning.item_created

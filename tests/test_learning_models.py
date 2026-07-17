@@ -16,9 +16,11 @@ import grandquiz.domain.learning.events as events_mod
 import grandquiz.domain.learning.models as models_mod
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.models import (
+    DocumentNode,
     Evidence,
     KnowledgeItem,
     LearningResource,
+    ResourceRevision,
     derive_id,
     ungrounded_citations,
 )
@@ -351,6 +353,29 @@ def test_model_field_sets_are_pinned() -> None:
         "trusted",
         "status",
         "topic",
+        "current_revision_id",
+    }
+    assert set(ResourceRevision.model_fields) == {
+        "revision_id",
+        "resource_id",
+        "content_hash",
+        "raw_content",
+        "trusted",
+    }
+    assert set(DocumentNode.model_fields) == {
+        "node_id",
+        "revision_id",
+        "parent_node_id",
+        "kind",
+        "ordinal",
+        "depth",
+        "title",
+        "section_path",
+        "start_offset",
+        "end_offset",
+        "content_fingerprint",
+        "synthetic",
+        "summary",
     }
 
 
@@ -386,6 +411,8 @@ def test_events_module_is_kernel_free() -> None:
 def test_learning_event_constants_are_namespaced() -> None:
     for value in (
         LearningEvent.RESOURCE_CREATED,
+        LearningEvent.DOCUMENT_PARSED,
+        LearningEvent.REVISION_COMMITTED,
         LearningEvent.RESOURCE_FETCH_FAILED,
         LearningEvent.ITEMS_EXTRACTED,
         LearningEvent.RESOURCE_APPROVED,

@@ -22,6 +22,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from grandquiz.domain.learning.approval import ApprovalGate
+from grandquiz.domain.learning.document import build_document_snapshot
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.ingest.fetch import FetchError, FetchSource, fetch_resource
 from grandquiz.domain.learning.ingest.reader import (
@@ -125,6 +126,19 @@ async def ingest_resource(
                 "content_hash": content_hash,
             },
         )
+        document = build_document_snapshot(resource)
+        if document is None:  # pragma: no cover - fetch 成功保证 content/hash 同时存在
+            raise RuntimeError("已读取资源缺少可解析的 content/hash")
+        emitter.emit(
+            LearningEvent.DOCUMENT_PARSED,
+            parent_span_id=ingest_span,
+            payload={
+                "resource_id": resource.resource_id,
+                "revision_id": document.revision.revision_id,
+                "node_count": len(document.nodes),
+                "synthetic_node_count": sum(node.synthetic for node in document.nodes),
+            },
+        )
 
         # e. Reader 深读。重试用尽拿不到合法输出（ReaderError）→ 领域失败 → fail()。
         #    provider 基础设施异常 / ReplayMiss 非领域失败 → 冒泡到外层 except。
@@ -165,6 +179,21 @@ async def ingest_resource(
 
         # g. 审批完成后一次原子替换 resource revision + 获批 KnowledgeItem 快照。
         store.replace_snapshot(resource, approved)
+        committed_revision = store.current_revision(resource.resource_id)
+        if (
+            committed_revision is None
+            or committed_revision.revision_id != document.revision.revision_id
+        ):
+            raise RuntimeError("获批 revision/tree 未成为当前快照")
+        emitter.emit(
+            LearningEvent.REVISION_COMMITTED,
+            parent_span_id=ingest_span,
+            payload={
+                "resource_id": resource.resource_id,
+                "revision_id": committed_revision.revision_id,
+                "node_count": len(document.nodes),
+            },
+        )
         emitter.emit(
             LearningEvent.RESOURCE_APPROVED,
             parent_span_id=ingest_span,

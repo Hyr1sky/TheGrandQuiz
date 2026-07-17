@@ -145,8 +145,57 @@ class LearningResource(BaseModel):
     trusted: bool = False
     status: Literal["pending", "read", "failed"] = "pending"
     topic: str | None = None
+    current_revision_id: str | None = None
 
     @classmethod
     def create(cls, *, url: str) -> Self:
         """工厂：``resource_id = derive_id(url)``（内容寻址，同 URL 全局唯一）。"""
         return cls(resource_id=derive_id(url), url=url)
+
+
+class ResourceRevision(BaseModel):
+    """LearningResource 某次获批内容的不可变版本（ADR-0008）。"""
+
+    revision_id: str
+    resource_id: str
+    content_hash: NonEmptyStr
+    raw_content: str
+    trusted: bool = False
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        resource_id: str,
+        content_hash: str,
+        raw_content: str,
+        trusted: bool = False,
+    ) -> Self:
+        return cls(
+            revision_id=derive_id(resource_id, content_hash),
+            resource_id=resource_id,
+            content_hash=content_hash,
+            raw_content=raw_content,
+            trusted=trusted,
+        )
+
+
+DocumentNodeKind = Literal["document", "section", "paragraph", "list", "table", "code"]
+
+
+class DocumentNode(BaseModel):
+    """ResourceRevision 内可导航、可精确定位的原文结构节点（ADR-0008）。"""
+
+    node_id: str
+    revision_id: str
+    parent_node_id: str | None
+    kind: DocumentNodeKind
+    ordinal: int = Field(ge=0)
+    depth: int = Field(ge=0)
+    title: str | None = None
+    section_path: str
+    start_offset: int = Field(ge=0)
+    end_offset: int = Field(ge=0)
+    content_fingerprint: str
+    synthetic: bool = False
+    summary: str | None = None
