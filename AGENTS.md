@@ -13,12 +13,14 @@ hooks/context/clock/recovery/trace/db）+ `providers/`（OpenAI 兼容 + Record/
 （考核竖切 ingest→深读→出题→判卷→薄弱记账）+ `interfaces/cli/`（ingest/quiz/react/report/trace 子命令）
 + `evals/`（Tier-1 规则 harness）。**最小 ReAct 对话核（R1）与全局 KB 重构均已落地**（`grandquiz react`
 可真机跑：自然语言选材料 + 定题型的持久全局知识库考核）；上下文压缩、真实网络抓取、跨会话去重与
-自适应难度第一阶段也已完成。[稳定性加固](.scratch/stability-hardening/PRD.md) S1-S9 与长文 Reader
-预算内分块已实现；受影响 cassette 已用真实模型重录，并新增难度激活回放。五门全绿，全量 pytest 为
-`730 passed`。生产 DB 已备份、迁移到 schema v9；三份真实材料的 88 个 KnowledgeItem 无损保留，并已
-确定性回填为 3 个 ResourceRevision / 1551 个 DocumentNode。修订化文档树 DS-S1 已完成，精确 Evidence、
-节点化 Reader 与 Agentic Search 仍按 `.scratch/document-structure/` 推进。真实考核 trace 已完成出题、作答、
-判决与持久记账闭环，稳定性加固正式收口。设计权威仍在 `docs/` 与 `CONTEXT.md`。
+自适应难度第一阶段也已完成。[稳定性加固](.scratch/stability-hardening/PRD.md) 已收口；其上的
+[修订化文档结构](.scratch/document-structure/PRD.md) DS-S1–S4 代码也已落地：不可变 revision/tree、精确
+Evidence、自然节点 Reader、FTS5 与有界 Agentic Search。生产 DB 已备份并迁移到 schema v11；三份真实材料的
+88 个 KnowledgeItem、学习状态与 item 身份无损保留，形成 3 revisions / 1551 nodes / 1551 FTS rows；135 条
+evidence 确定性回填为 83 resolved / 52 unresolved。静态四门全绿，全量 pytest 当前为 `750 passed / 4 failed`：
+根因是 Reader 与 ReAct case14 两份受 prompt/tool schema 变更影响、必须用真实模型重录的 cassette，另两项为
+case14 级联失败。真实重录和 HITL 验收前不得声称五门全绿。DS-S5 KnowledgeRelation 仍关闭，等待 DS-S1–S4
+真实回放与 dogfood 证据后再决定是否实验。设计权威仍在 `docs/` 与 `CONTEXT.md`。
 **动手写代码前按序读**：
 
 - [CONTEXT.md](CONTEXT.md) — 领域语言权威表（先读这个统一术语）

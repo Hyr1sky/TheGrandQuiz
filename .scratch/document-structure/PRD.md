@@ -1,7 +1,7 @@
 # PRD：修订化文档树、精确溯源与渐进式 Agentic Search
 
-Status: in-progress（DS-S1 done；DS-S2–S4 ready-for-agent；DS-S5 eval-gated）
-Triage: ready-for-agent
+Status: in-progress（DS-S1 done；DS-S2–S4 code-complete / ready-for-human；DS-S5 deferred, eval-gated）
+Triage: ready-for-human
 Decision: [ADR-0008](../../docs/adr/0008-revisioned-document-tree-and-grounded-knowledge-graph.md)
 
 ## Problem Statement
@@ -167,14 +167,26 @@ related、contradicts 关系。跨资源 CanonicalConcept 与 Learning Memory �
 
 1. **DS-S1 ResourceRevision + DocumentNode 当前快照**（AFK，done 2026-07-17）
    - 确定性 parser、revision/tree schema、迁移回填、原子 current 切换和 store parity。
-2. **DS-S2 精确 Evidence 与可解析 citation**（AFK）
+2. **DS-S2 精确 Evidence 与可解析 citation**（code-complete 2026-07-17，真实回放待收口）
    - evidence 正规化、locator 校验、旧 quote 回填审计、Reader node-local 输出和引用展示。
-3. **DS-S3 Reader 节点化覆盖型深读**（AFK）
+3. **DS-S3 Reader 节点化覆盖型深读**（code-complete 2026-07-17，真实 Reader cassette 待重录）
    - 用自然节点批次替换临时 token chunk，保持预算、重试、审批、快照原子性和真实 cassette。
-4. **DS-S4 FTS5 + 渐进式 Agentic Search**（AFK）
+4. **DS-S4 FTS5 + 渐进式 Agentic Search**（code-complete 2026-07-17，真实 ReAct cassette 待重录）
    - 大纲、搜索、展开、读取工具，严格 scope、预算、trace 与检索 eval。
-5. **DS-S5 KnowledgeRelation eval 门控实验**（HITL）
+5. **DS-S5 KnowledgeRelation eval 门控实验**（HITL，暂缓）
    - 类型化语义边、provenance、前置知识/多跳对照 eval；由证据决定保留，不推进全局概念归并。
+
+## Implementation checkpoint（2026-07-17）
+
+- DS-S1–S4 的本地代码、迁移、确定性测试和 Agentic Search capstone 已实现；静态四门全绿。
+- 生产 `learning.db` 已在 SHA256 可核对备份后从 schema v9 迁移到 v11。3 resources / 88 items /
+  3 revisions / 1551 nodes、Learning Memory、Asked Questions 与 Difficulty 均无差异；135 条旧 evidence
+  确定性回填为 83 resolved / 52 unresolved，FTS 有 1551 current-only rows，完整性检查通过。
+- 全量 pytest 当前为 `750 passed / 4 failed`。只有两个独立根因：Reader prompt 的节点定位契约使旧
+  `reader_extract` cassette 失效；新增搜索工具及 system prompt 使 ReAct case14 cassette 失效。另两项是
+  case14 的 eval/report 级联红灯。两份 cassette 必须经 `.env` 真实模型重录，禁止手工改写。
+- DS-S5 暂不建表、不抽关系、不接生产消费路径。先完成上述真实重录和至少一次 dogfood；再预注册基线、
+  数据集、相关性/grounding/token/latency 指标，交由 HITL 决定是否启动可删除实验。
 
 ## Out of Scope
 

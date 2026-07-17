@@ -149,7 +149,8 @@ classDiagram
 > 2026-06-15 领域模型精化（保持 ADR-0002）：KnowledgeItem 的 `evidence` 落为 `{quote, locator|None}`
 > 结构（locator 携 section_path/锚点，MVP 可 None）；LearningResource 持久化原始抓取内容（blob + content_hash）。
 > 二者在当时为“出处定位符”与文档结构树留下了无需重抓的地基；ADR-0008 已将其升级为
-> ResourceRevision + DocumentNode + 精确 evidence 架构，其中 revision/tree 已由 DS-S1 交付。
+> ResourceRevision + DocumentNode + 精确 evidence 架构；DS-S1–S4 已交付代码与生产迁移，真实 Reader/ReAct
+> cassette 重录后才完成五门收口。
 
 ## Subagent Plan
 
@@ -376,16 +377,16 @@ fallback LLM 语义抽取且给边打 `EXTRACTED/INFERRED/AMBIGUOUS` 置信标�
 的"结构"，LLM 三元组抽取是昂贵且噪的 fallback，只在没有结构信号时才用**。代码有 AST，我们的散文学习材料
 没有——对应的"廉价结构"是文档层级（section 树），语义边才需要 LLM。
 
-- **Layer 0 — ResourceRevision（确定性 source 层，DS-S1 已实现）**：LearningResource 继续是稳定 locator；
+- **Layer 0 — ResourceRevision（确定性 source 层，DS-S1–S4 已实现）**：LearningResource 继续是稳定 locator；
   每次获批内容形成不可变 revision，保存当时原文与 content_hash。当前 revision 进入默认搜索/考核，旧 revision
   只供历史 trace 与 citation 解析，重 ingest 不再让旧引用失去原文。
-- **Layer 1 — DocumentNode tree（便宜可靠的结构层，DS-S1 已实现）**：Markdown 标题、段落、表格、列表和代码块由代码
+- **Layer 1 — DocumentNode tree（便宜可靠的结构层，DS-S1–S4 已实现）**：Markdown 标题、段落、表格、列表和代码块由代码
   确定性解析为带 source span 的父子树；`section_path` 是可读路径，`node_id` 才是身份。SQLite adjacency rows +
   recursive CTE + FTS5 支撑“大纲 → 稀疏搜索 → 展开节点 → 精确正文”，不需要 LLM 决定结构。
-- **Layer 2 — KnowledgeItem + grounding（当前考核货币的深化）**：Reader 从自然节点提取 item；每条 evidence
+- **Layer 2 — KnowledgeItem + grounding（DS-S2/DS-S3 已实现）**：Reader 从自然节点提取 item；每条 evidence
   必须锚定 revision、node 和精确 span，并由代码核对 quote。KnowledgeItem 身份继续遵守 ADR-0002/0007，
   DocumentNode 不能替代 item，一个 item 可跨节点、一个节点也可产多个 item。
-- **Layer 3 — KnowledgeRelation（LLM 推断、eval 门控）**：Reader 只在已抽取 item 集合内提出
+- **Layer 3 — KnowledgeRelation（DS-S5，LLM 推断、eval 门控且当前关闭）**：Reader 只在已抽取 item 集合内提出
   prerequisite / related / contradicts，边是带 confidence、evidence provenance、prompt version、trace id 和
   review status 的普通 SQLite 行。前置知识感知选题或多跳问答对基线有稳定提升才保留；section 层级不得自动
   升格为语义边。

@@ -1,6 +1,6 @@
 # DS-S5 — KnowledgeRelation eval 门控实验
 
-Status: ready-for-agent
+Status: deferred（eval-gated；等待 DS-S1–S4 真实回放与 dogfood）
 Type: HITL
 
 ## Parent
@@ -18,6 +18,13 @@ Type: HITL
 section 父子关系当作知识关系。HITL 只用于审核真实边样本和接受 eval 结论，代码与自动测试仍应可由 agent 完成。
 
 覆盖 PRD User Stories：18、21、24–26。
+
+## Gate decision（2026-07-17）
+
+暂不启动实现，也不预建 relation schema。DS-S3 Reader 与 DS-S4 ReAct 的真实 cassette 尚待重录，生产
+Agentic Search 也尚未 dogfood；此时添加关系抽取会把 grounding 基线与语义图变量混在一起，无法给出可信的
+增益结论。启动本实验前必须先锁定：真实材料样本、无关系基线、相关性/grounding/token/latency 指标、最低收益
+阈值和 HITL 抽样方法。未达到门槛时默认删除实验路径，KnowledgeItem 与 Learning Memory 身份语义不变。
 
 ## Acceptance criteria
 

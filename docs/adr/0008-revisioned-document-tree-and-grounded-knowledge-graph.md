@@ -3,6 +3,10 @@
 - 状态：已接受
 - 日期：2026-07-17
 
+> 实施状态（2026-07-17）：DS-S1–S4 代码与生产 schema v11 迁移已完成；两份受 Reader prompt / ReAct tool
+> schema 影响的真实 cassette 待重录，完成前不声称五门全绿。DS-S5 KnowledgeRelation 仍按本 ADR 的 eval 门控
+> 原则关闭，未创建关系 schema 或生产消费路径。
+
 ## 背景
 
 当前 ingest 把学习材料的完整正文保存到 `LearningResource.raw_content`，Reader 再把正文编译为扁平的

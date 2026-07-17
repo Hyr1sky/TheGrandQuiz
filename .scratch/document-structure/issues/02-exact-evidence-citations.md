@@ -1,6 +1,6 @@
 # DS-S2 — 精确 Evidence 与可解析 citation
 
-Status: ready-for-agent
+Status: ready-for-human（code complete；真实 Reader cassette 待 DS-S3 重录）
 Type: AFK
 
 ## Parent
@@ -21,21 +21,30 @@ fail closed，不能获批写入。
 
 ## Acceptance criteria
 
-- [ ] Evidence 持久模型保存 revision_id、node_id、section_path、global source span、可选 page/block、quote 与 quote hash
-- [ ] evidence 关联使用普通 SQLite 行与外键，KnowledgeItem 对外模型仍可稳定返回有序 evidence 列表
-- [ ] 提交校验证明 node 属于 revision、span 位于 node/raw content、quote 规范化后与原文一致；失败阻止整个新快照
-- [ ] Reader 只返回本批已提供的 node key 与 node-local offsets，代码负责解析数据库身份和 global offsets
-- [ ] 一个 KnowledgeItem 可引用多个节点，一个节点可支持多个 item；evidence 顺序与 item fingerprint 输入确定性稳定
-- [ ] locator、section_path 或 summary 单独变化不改变 item_id；概念名/quote 实质变化仍遵守 ADR-0007 指纹规则
-- [ ] citation renderer 输出可读资源标签、明确 revision、section_path、位置、quote 和有界上下文
-- [ ] 解析历史 citation 时读取其声明 revision，不静默切换到 current revision；旧 revision 不存在时返回结构化错误
-- [ ] 当前旧 quote 唯一匹配时确定性回填 node/span；多处匹配或未命中时标为 unresolved 并进入审计报告
-- [ ] 旧 unresolved evidence 不让现有 KnowledgeItem 从考核池消失；新 Reader 候选 locator 未解析则不可提交
-- [ ] backfill 可重入，重复运行不改变已解析 locator、item_id、学习状态或审计计数
+- [x] Evidence 持久模型保存 revision_id、node_id、section_path、global source span、可选 page/block、quote 与 quote hash
+- [x] evidence 关联使用普通 SQLite 行与外键，KnowledgeItem 对外模型仍可稳定返回有序 evidence 列表
+- [x] 提交校验证明 node 属于 revision、span 位于 node/raw content、quote 规范化后与原文一致；失败阻止整个新快照
+- [x] Reader 只返回本批已提供的 node key 与 node-local offsets，代码负责解析数据库身份和 global offsets
+- [x] 一个 KnowledgeItem 可引用多个节点，一个节点可支持多个 item；evidence 顺序与 item fingerprint 输入确定性稳定
+- [x] locator、section_path 或 summary 单独变化不改变 item_id；概念名/quote 实质变化仍遵守 ADR-0007 指纹规则
+- [x] citation renderer 输出可读资源标签、明确 revision、section_path、位置、quote 和有界上下文
+- [x] 解析历史 citation 时读取其声明 revision，不静默切换到 current revision；旧 revision 不存在时返回结构化错误
+- [x] 当前旧 quote 唯一匹配时确定性回填 node/span；多处匹配或未命中时标为 unresolved 并进入审计报告
+- [x] 旧 unresolved evidence 不让现有 KnowledgeItem 从考核池消失；新 Reader 候选 locator 未解析则不可提交
+- [x] backfill 可重入，重复运行不改变已解析 locator、item_id、学习状态或审计计数
 - [ ] property/generative tests 覆盖 Unicode、规范化空白、重复 quote、跨节点 quote、边界 offset 和篡改 quote hash
-- [ ] citation 校验/拒绝事件进入 trace，包含 revision/node、失败分类和可公开 fingerprint，不泄漏本地绝对路径
-- [ ] fake provider 测试覆盖有效、多 evidence、未知 node、越界 span、改写 quote 的结构化重试/失败路径
+- [x] citation 校验/拒绝事件进入 trace，包含 revision/node、失败分类和可公开 fingerprint，不泄漏本地绝对路径
+- [x] fake provider 测试覆盖有效、多 evidence、未知 node、越界 span、改写 quote 的结构化重试/失败路径
 - [ ] 五门全绿；需要变化的 Reader cassette 明确列入 DS-S3 真录清单，不手工重写 cassette
+
+## Completion evidence（2026-07-17）
+
+- `0010_exact_evidence.sql` 增加带外键的有序 evidence 行；v9 打开时唯一 quote 确定性定位，重复/缺失进入
+  unresolved 审计，重开结果不变。
+- `citations.py` 统一执行 grounding、篡改检测、历史 revision 解析与稳定 renderer；新 snapshot 任一证据失败
+  即整体回滚。
+- 生产库回填 135 条 evidence：83 resolved / 52 unresolved；88 个 item 全部保留，学习状态无差异。
+- 尚欠的唯一验收门是 DS-S3 真实 Reader cassette；当前静态四门绿、全量 pytest `750 passed / 4 failed`。
 
 ## Blocked by
 
