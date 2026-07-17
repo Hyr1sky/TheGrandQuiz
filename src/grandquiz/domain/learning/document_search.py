@@ -6,7 +6,11 @@ from typing import Literal, Protocol, Self
 
 from pydantic import BaseModel, Field, model_validator
 
-from grandquiz.domain.learning.citations import ResolvedCitation, resolve_citation
+from grandquiz.domain.learning.citations import (
+    CitationResolutionError,
+    ResolvedCitation,
+    resolve_citation,
+)
 from grandquiz.domain.learning.models import (
     DocumentNode,
     Evidence,
@@ -54,11 +58,18 @@ class ReadBudgetExceeded(ValueError):
 
     error_class = ErrorClass.DEGRADED
 
+    def __init__(self, *, used: int, requested: int, limit: int) -> None:
+        self.used = used
+        self.requested = requested
+        self.limit = limit
+        super().__init__(f"节点读取预算不足：已用 {used}，本次 {requested}，上限 {limit}")
+
 
 class EvidenceNotReadError(ValueError):
     """citation span 未被本 turn 的有界 read 覆盖。"""
 
     error_class = ErrorClass.DEGRADED
+    classification = "evidence_not_read"
 
 
 class DocumentSearchHit(BaseModel):
@@ -70,6 +81,7 @@ class DocumentSearchHit(BaseModel):
     title: str | None = None
     excerpt: str
     score: float
+    untrusted: bool = True
 
 
 class NodeReadResult(BaseModel):
@@ -81,6 +93,8 @@ class NodeReadResult(BaseModel):
     end_offset: int = Field(ge=0)
     content: str
     has_more: bool
+    budget_used: int = Field(ge=0)
+    budget_limit: int = Field(gt=0)
     untrusted: bool = True
 
 
@@ -197,7 +211,9 @@ class DocumentSearch:
         used = self._read_usage.get(budget_key, 0)
         if used + consumed > self._turn_read_budget:
             raise ReadBudgetExceeded(
-                f"节点读取预算不足：已用 {used}，本次 {consumed}，上限 {self._turn_read_budget}"
+                used=used,
+                requested=consumed,
+                limit=self._turn_read_budget,
             )
         self._read_usage[budget_key] = used + consumed
         self._read_ranges.setdefault(budget_key, []).append((node.node_id, start, end))
@@ -210,6 +226,8 @@ class DocumentSearch:
             end_offset=node.start_offset + end,
             content=node_content[start:end],
             has_more=end < len(node_content),
+            budget_used=used + consumed,
+            budget_limit=self._turn_read_budget,
         )
 
     def cite_node(
@@ -242,10 +260,13 @@ class DocumentSearch:
             raise ScopeResolutionError([f"{resource_id}:{node_id}"])
         node_content = revision.raw_content[node.start_offset : node.end_offset]
         if not (0 <= start < end <= len(node_content)):
-            raise ValueError("citation span 超出节点边界")
+            raise CitationResolutionError("span_out_of_bounds", "citation span 超出节点边界")
         actual_quote = node_content[start:end]
         if actual_quote != quote:
-            raise ValueError("citation quote 与已读取 source span 不一致")
+            raise CitationResolutionError(
+                "quote_mismatch",
+                "citation quote 与已读取 source span 不一致",
+            )
         evidence = Evidence(
             quote=quote,
             locator=EvidenceLocator(

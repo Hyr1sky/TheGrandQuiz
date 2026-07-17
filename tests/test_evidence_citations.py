@@ -3,6 +3,8 @@
 import hashlib
 import json
 import shutil
+import sqlite3
+from itertools import product
 from pathlib import Path
 
 import pytest
@@ -16,12 +18,14 @@ from grandquiz.domain.learning.citations import (
     resolve_citation,
 )
 from grandquiz.domain.learning.document import build_document_snapshot
+from grandquiz.domain.learning.document_search import DocumentSearch, SearchScope
 from grandquiz.domain.learning.models import (
     Evidence,
     EvidenceLocator,
     KnowledgeItem,
     LearningResource,
 )
+from grandquiz.domain.learning.persistence import LearningDatabase
 from grandquiz.domain.learning.store import LearningStore, SqliteLearningStore
 from grandquiz.kernel.db import connect, migrate
 
@@ -57,6 +61,35 @@ def test_unique_quote_is_grounded_to_revision_node_and_exact_source_span() -> No
     assert "React > Hooks" in render_citation(resource, grounded.evidence[0])
 
 
+def test_grounding_accepts_normalized_whitespace_but_persists_exact_source_quote() -> None:
+    content = "# 文档\n\nAlpha\t beta\n gamma。\n"
+    resource = LearningResource.create(url="https://example.com/whitespace").model_copy(
+        update={
+            "raw_content": content,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+            "status": "read",
+        }
+    )
+    snapshot = build_document_snapshot(resource)
+    assert snapshot is not None
+    item = KnowledgeItem.create(
+        resource_id=resource.resource_id,
+        concept="空白规范化",
+        summary="摘要",
+        evidence=[Evidence(quote="Alpha beta gamma。")],
+        confidence=0.9,
+    )
+
+    grounded = ground_items(snapshot, [item])[0]
+    evidence = grounded.evidence[0]
+    locator = evidence.locator
+    assert isinstance(locator, EvidenceLocator)
+    assert evidence.quote == "Alpha\t beta\n gamma。"
+    assert content[locator.start_offset : locator.end_offset] == evidence.quote
+    assert locator.quote_hash == hashlib.sha256(evidence.quote.encode()).hexdigest()
+    assert grounded.item_id == item.item_id
+
+
 @pytest.mark.parametrize("quote", ["重复", "不存在"])
 def test_ambiguous_or_missing_quote_is_rejected(quote: str) -> None:
     content = "# 文档\n\n重复。重复。\n"
@@ -79,6 +112,67 @@ def test_ambiguous_or_missing_quote_is_rejected(quote: str) -> None:
 
     with pytest.raises(GroundingError, match="无法唯一定位"):
         ground_items(snapshot, [item])
+
+
+def test_overlapping_quote_occurrences_are_ambiguous() -> None:
+    content = "aaaa"
+    resource = LearningResource.create(url="https://example.com/overlap").model_copy(
+        update={
+            "raw_content": content,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+            "status": "read",
+        }
+    )
+    snapshot = build_document_snapshot(resource)
+    assert snapshot is not None
+    item = KnowledgeItem.create(
+        resource_id=resource.resource_id,
+        concept="重叠引文",
+        summary="摘要",
+        evidence=[Evidence(quote="aaa")],
+        confidence=0.8,
+    )
+
+    with pytest.raises(GroundingError) as error:
+        ground_items(snapshot, [item])
+    assert error.value.classification == "quote_ambiguous"
+
+
+def test_generated_unicode_quotes_preserve_exact_offsets_at_node_boundaries() -> None:
+    quotes = ["知识点🧭", "cafe\u0301", "数学∑", "العربية"]
+    placements = [("", "尾部"), ("前部", "尾部"), ("前部", "")]
+    for index, (quote, (prefix, suffix)) in enumerate(product(quotes, placements)):
+        paragraph = f"{prefix}{quote}{suffix}"
+        content = f"# Unicode\n\n{paragraph}\n"
+        resource = LearningResource.create(url=f"https://example.com/unicode-{index}").model_copy(
+            update={
+                "raw_content": content,
+                "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+                "status": "read",
+            }
+        )
+        snapshot = build_document_snapshot(resource)
+        assert snapshot is not None
+        item = KnowledgeItem.create(
+            resource_id=resource.resource_id,
+            concept=f"Unicode {index}",
+            summary="摘要",
+            evidence=[Evidence(quote=quote)],
+            confidence=0.9,
+        )
+
+        grounded = ground_items(snapshot, [item])[0]
+        evidence = grounded.evidence[0]
+        locator = evidence.locator
+        assert isinstance(locator, EvidenceLocator)
+        assert content[locator.start_offset : locator.end_offset] == quote
+        node = next(node for node in snapshot.nodes if node.node_id == locator.node_id)
+        assert node.start_offset <= locator.start_offset
+        assert locator.end_offset <= node.end_offset
+        if not prefix:
+            assert locator.start_offset == node.start_offset
+        if not suffix:
+            assert not content[locator.end_offset : node.end_offset].strip()
 
 
 def test_quote_crossing_natural_nodes_is_rejected_instead_of_anchored_to_section() -> None:
@@ -238,6 +332,66 @@ def test_tampered_quote_hash_rejects_whole_snapshot_and_preserves_current(tmp_pa
         store.replace_snapshot(resource, [tampered])
     assert error.value.classification == "quote_hash_mismatch"
     assert store.items_for_resource(resource.resource_id) == previous
+    store.close()
+
+
+def test_evidence_write_failure_rolls_back_revision_tree_items_and_search(tmp_path: Path) -> None:
+    database = LearningDatabase(tmp_path / "learning.db")
+    store = SqliteLearningStore(database)
+    first_content = "# 第一版\n\n旧证据 needle-old。\n"
+    first = LearningResource.create(url="https://example.com/evidence-atomic").model_copy(
+        update={
+            "raw_content": first_content,
+            "content_hash": hashlib.sha256(first_content.encode()).hexdigest(),
+            "status": "read",
+        }
+    )
+    first_document = build_document_snapshot(first)
+    assert first_document is not None
+    first_item = KnowledgeItem.create(
+        resource_id=first.resource_id,
+        concept="旧证据",
+        summary="旧摘要",
+        evidence=[Evidence(quote="旧证据 needle-old。")],
+        confidence=0.9,
+    )
+    store.replace_snapshot(first, [ground_items(first_document, [first_item])[0]])
+    previous_revision = store.current_revision(first.resource_id)
+    previous_nodes = store.document_nodes(first.resource_id)
+    previous_items = store.items_for_resource(first.resource_id)
+    database.connection.execute(
+        "CREATE TRIGGER fail_evidence_insert BEFORE INSERT ON knowledge_item_evidence "
+        "BEGIN SELECT RAISE(FAIL, 'evidence write failed'); END"
+    )
+    database.commit()
+
+    second_content = "# 第二版\n\n新证据 needle-new。\n"
+    second = first.model_copy(
+        update={
+            "raw_content": second_content,
+            "content_hash": hashlib.sha256(second_content.encode()).hexdigest(),
+        }
+    )
+    second_document = build_document_snapshot(second)
+    assert second_document is not None
+    second_item = KnowledgeItem.create(
+        resource_id=second.resource_id,
+        concept="新证据",
+        summary="新摘要",
+        evidence=[Evidence(quote="新证据 needle-new。")],
+        confidence=0.9,
+    )
+
+    with pytest.raises(sqlite3.IntegrityError, match="evidence write failed"):
+        store.replace_snapshot(second, [ground_items(second_document, [second_item])[0]])
+
+    assert store.current_revision(first.resource_id) == previous_revision
+    assert store.document_nodes(first.resource_id) == previous_nodes
+    assert store.items_for_resource(first.resource_id) == previous_items
+    search = DocumentSearch(store)
+    scope = SearchScope(mode="selected", resource_ids=[first.resource_id])
+    assert search.search("needle old", scope=scope)
+    assert search.search("needle new", scope=scope) == []
     store.close()
 
 

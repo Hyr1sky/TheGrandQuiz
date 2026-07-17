@@ -652,6 +652,74 @@ async def test_document_reader_converts_node_local_span_to_exact_revision_locato
     assert content[locator.start_offset : locator.end_offset] == "闭包证据。"
 
 
+class _MultiNodeEvidenceProvider:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        payload = json.loads(
+            next(message.content for message in messages if message.role == "user")
+        )
+        nodes = payload["untrusted_document_nodes"]
+        evidence: list[dict[str, object]] = []
+        for node in nodes[:2]:
+            quote = node["content"].strip()
+            start = node["content"].index(quote)
+            evidence.append(
+                {
+                    "node_key": node["node_key"],
+                    "start_offset": start,
+                    "end_offset": start + len(quote),
+                    "quote": quote,
+                }
+            )
+        return Completion(
+            text=json.dumps(
+                {
+                    "topic": "跨节点证据",
+                    "candidates": [
+                        {
+                            "concept": "跨节点概念",
+                            "summary": "由两个自然节点共同支持",
+                            "evidence": evidence,
+                            "confidence": 0.9,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            usage=Usage(),
+        )
+
+
+async def test_document_reader_preserves_multi_node_evidence_order_and_locators() -> None:
+    content = "第一条证据。\n\n第二条证据。\n"
+    resource = LearningResource.create(url="https://example.com/multi-node-reader").model_copy(
+        update={
+            "raw_content": content,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+            "status": "read",
+        }
+    )
+    document = build_document_snapshot(resource)
+    assert document is not None
+    emitter, _ = _emitter()
+
+    result = await _reader().read_document(
+        resource,
+        document,
+        provider=_MultiNodeEvidenceProvider(),
+        emitter=emitter,
+        parent_span_id="ig",
+    )
+
+    evidence = result.items[0].evidence
+    assert [candidate.quote for candidate in evidence] == ["第一条证据。", "第二条证据。"]
+    locators = [candidate.locator for candidate in evidence]
+    assert all(isinstance(locator, EvidenceLocator) for locator in locators)
+    node_ids = {locator.node_id for locator in locators if isinstance(locator, EvidenceLocator)}
+    assert len(node_ids) == 2
+
+
 class _CoveringNodeProvider:
     def __init__(self) -> None:
         self.seen_keys: list[str] = []

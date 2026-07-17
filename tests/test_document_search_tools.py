@@ -47,9 +47,9 @@ def _stock(store: SqliteLearningStore) -> tuple[LearningResource, KnowledgeItem]
     return resource, grounded
 
 
-def _registry(store: SqliteLearningStore) -> ToolRegistry:
+def _registry(store: SqliteLearningStore, *, turn_read_budget: int = 100) -> ToolRegistry:
     registry = ToolRegistry()
-    for tool in make_document_search_tools(store=store, turn_read_budget=100):
+    for tool in make_document_search_tools(store=store, turn_read_budget=turn_read_budget):
         registry.register(tool)
     return registry
 
@@ -76,6 +76,8 @@ async def test_progressive_tools_find_read_and_resolve_grounded_citation(tmp_pat
         )
     )
     assert [node.section_path for node in outline.nodes] == ["Runtime", "Runtime > Events"]
+    assert all(node.untrusted for node in outline.nodes)
+    assert "不可信" in outline.trust_notice
 
     searched = DocumentSearchResult.model_validate_json(
         await registry.dispatch(
@@ -89,6 +91,8 @@ async def test_progressive_tools_find_read_and_resolve_grounded_citation(tmp_pat
         )
     )
     hit = next(hit for hit in searched.hits if hit.kind == "paragraph")
+    assert hit.untrusted is True
+    assert "不可信" in searched.trust_notice
     with pytest.raises(ValueError, match="尚未由本 turn"):
         await registry.dispatch(
             "resolve_node_citation",
@@ -101,6 +105,11 @@ async def test_progressive_tools_find_read_and_resolve_grounded_citation(tmp_pat
             },
             ctx=context,
         )
+    rejected = events[-1]
+    assert rejected.type == LearningEvent.CITATION_REJECTED
+    assert rejected.payload["classification"] == "evidence_not_read"
+    assert "quote" not in rejected.payload
+    assert len(rejected.payload["quote_fingerprint"]) == 64
     read = DocumentReadResult.model_validate_json(
         await registry.dispatch(
             "read_document_node",
@@ -141,11 +150,15 @@ async def test_progressive_tools_find_read_and_resolve_grounded_citation(tmp_pat
     assert [event.type for event in events] == [
         LearningEvent.DOCUMENT_OUTLINE_VIEWED,
         LearningEvent.DOCUMENT_NODES_SEARCHED,
+        LearningEvent.CITATION_REJECTED,
         LearningEvent.DOCUMENT_NODE_READ,
         LearningEvent.CITATION_RESOLVED,
         LearningEvent.CITATION_RESOLVED,
     ]
     assert all(event.parent_span_id == "tool" for event in events)
+    read_event = next(event for event in events if event.type == LearningEvent.DOCUMENT_NODE_READ)
+    assert read_event.payload["budget_used"] == len(read.content)
+    assert read_event.payload["budget_limit"] == 100
     store.close()
 
 
@@ -164,4 +177,108 @@ async def test_search_tool_rejects_unresolved_scope_without_search_event(tmp_pat
             ctx=context,
         )
     assert [event.type for event in events] == [LearningEvent.DOCUMENT_SEARCH_REJECTED]
+    store.close()
+
+
+async def test_read_budget_rejection_event_records_usage_and_limit(tmp_path: Path) -> None:
+    store = SqliteLearningStore(tmp_path / "learning.db")
+    resource, _ = _stock(store)
+    registry = _registry(store, turn_read_budget=5)
+    context, events = _context()
+    node = next(
+        candidate
+        for candidate in store.document_nodes(resource.resource_id)
+        if candidate.kind == "paragraph"
+    )
+
+    with pytest.raises(ValueError, match="预算不足"):
+        await registry.dispatch(
+            "read_document_node",
+            {"resource_id": resource.resource_id, "node_id": node.node_id, "max_chars": 6},
+            ctx=context,
+        )
+
+    assert [event.type for event in events] == [LearningEvent.DOCUMENT_NODE_READ]
+    assert events[0].payload == {
+        "resource_id": resource.resource_id,
+        "node_id": node.node_id,
+        "ok": False,
+        "reason": "budget_exceeded",
+        "budget_used": 0,
+        "budget_requested": 6,
+        "budget_limit": 5,
+    }
+    store.close()
+
+
+async def test_read_quote_mismatch_emits_structured_citation_rejection(tmp_path: Path) -> None:
+    store = SqliteLearningStore(tmp_path / "learning.db")
+    resource, _ = _stock(store)
+    registry = _registry(store)
+    context, events = _context()
+    node = next(
+        candidate
+        for candidate in store.document_nodes(resource.resource_id)
+        if candidate.kind == "paragraph"
+    )
+    read = DocumentReadResult.model_validate_json(
+        await registry.dispatch(
+            "read_document_node",
+            {"resource_id": resource.resource_id, "node_id": node.node_id, "max_chars": 30},
+            ctx=context,
+        )
+    )
+    start = read.content.index("trace")
+
+    with pytest.raises(ValueError, match="quote"):
+        await registry.dispatch(
+            "resolve_node_citation",
+            {
+                "resource_id": resource.resource_id,
+                "node_id": node.node_id,
+                "start": start,
+                "end": start + len("trace"),
+                "quote": "tracz",
+            },
+            ctx=context,
+        )
+
+    assert [event.type for event in events] == [
+        LearningEvent.DOCUMENT_NODE_READ,
+        LearningEvent.CITATION_REJECTED,
+    ]
+    assert events[-1].payload["classification"] == "quote_mismatch"
+    assert "quote" not in events[-1].payload
+    store.close()
+
+
+async def test_unresolved_item_citation_emits_structured_rejection(tmp_path: Path) -> None:
+    store = SqliteLearningStore(tmp_path / "learning.db")
+    resource = LearningResource.create(url="https://example.com/unresolved-item")
+    store.add_resource(resource)
+    item = KnowledgeItem.create(
+        resource_id=resource.resource_id,
+        concept="旧知识",
+        summary="仍可考但 citation 未解析",
+        evidence=[Evidence(quote="旧证据")],
+        confidence=0.8,
+    )
+    store.add_items([item])
+    registry = _registry(store)
+    context, events = _context()
+
+    with pytest.raises(ValueError, match="精确 locator"):
+        await registry.dispatch(
+            "resolve_item_citation",
+            {"item_id": item.item_id, "evidence_index": 0},
+            ctx=context,
+        )
+
+    assert [event.type for event in events] == [LearningEvent.CITATION_REJECTED]
+    assert events[0].payload == {
+        "source": "knowledge_item",
+        "item_id": item.item_id,
+        "evidence_index": 0,
+        "classification": "unresolved",
+    }
     store.close()

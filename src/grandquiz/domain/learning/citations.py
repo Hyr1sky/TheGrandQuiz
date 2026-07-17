@@ -1,6 +1,7 @@
 """KnowledgeItem evidence 的确定性 grounding 与 citation 渲染（ADR-0008）。"""
 
 import hashlib
+import re
 from typing import Protocol
 
 from pydantic import BaseModel, Field
@@ -67,18 +68,18 @@ def ground_items(snapshot: DocumentSnapshot, items: list[KnowledgeItem]) -> list
 
 
 def _ground_evidence(snapshot: DocumentSnapshot, evidence: Evidence) -> Evidence:
-    quote = evidence.quote
-    starts = _find_all(snapshot.revision.raw_content, quote)
-    if len(starts) != 1:
-        reason = "未在原文出现" if not starts else f"在原文出现 {len(starts)} 次"
-        classification = "quote_missing" if not starts else "quote_ambiguous"
+    proposed_quote = evidence.quote
+    matches = _find_all(snapshot.revision.raw_content, proposed_quote)
+    if len(matches) != 1:
+        reason = "未在原文出现" if not matches else f"在原文出现 {len(matches)} 次"
+        classification = "quote_missing" if not matches else "quote_ambiguous"
         raise GroundingError(
             classification,
-            quote,
-            f"Evidence quote 无法唯一定位（{reason}）：{quote!r}",
+            proposed_quote,
+            f"Evidence quote 无法唯一定位（{reason}）：{proposed_quote!r}",
         )
-    start = starts[0]
-    end = start + len(quote)
+    start, end = matches[0]
+    quote = snapshot.revision.raw_content[start:end]
     node = _smallest_containing_node(snapshot.nodes, start, end)
     if node is None:
         raise GroundingError(
@@ -97,15 +98,21 @@ def _ground_evidence(snapshot: DocumentSnapshot, evidence: Evidence) -> Evidence
     return Evidence(quote=quote, locator=locator)
 
 
-def _find_all(content: str, quote: str) -> list[int]:
-    starts: list[int] = []
-    cursor = 0
-    while True:
-        found = content.find(quote, cursor)
-        if found < 0:
-            return starts
-        starts.append(found)
-        cursor = found + 1
+def _find_all(content: str, quote: str) -> list[tuple[int, int]]:
+    """定位空白规范化后的 quote，同时保留原文精确 source span。"""
+    parts = quote.split()
+    if not parts:
+        return []
+    if len(parts) == 1 and parts[0] == quote:
+        matches: list[tuple[int, int]] = []
+        cursor = 0
+        while (start := content.find(quote, cursor)) >= 0:
+            matches.append((start, start + len(quote)))
+            cursor = start + 1
+        return matches
+    normalized_pattern = r"\s+".join(re.escape(part) for part in parts)
+    pattern = re.compile(f"(?=({normalized_pattern}))")
+    return [(match.start(1), match.end(1)) for match in pattern.finditer(content)]
 
 
 def _smallest_containing_node(

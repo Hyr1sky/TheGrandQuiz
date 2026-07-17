@@ -75,6 +75,33 @@ def test_search_rejects_query_without_fts_terms(tmp_path: Path) -> None:
     store.close()
 
 
+def test_same_named_sections_use_stable_node_id_tie_break(tmp_path: Path) -> None:
+    store = SqliteLearningStore(tmp_path / "learning.db")
+    resource = _resource(
+        "https://example.com/repeated-sections",
+        "# 文档\n\n## Replay\n\nneedle evidence。\n\n## Replay\n\nneedle evidence。\n",
+        "重复章节",
+    )
+    store.replace_snapshot(resource, [])
+    search = DocumentSearch(store)
+
+    first = search.search(
+        "needle evidence",
+        scope=SearchScope(mode="selected", resource_ids=[resource.resource_id]),
+        limit=20,
+    )
+    second = search.search(
+        "needle evidence",
+        scope=SearchScope(mode="selected", resource_ids=[resource.resource_id]),
+        limit=20,
+    )
+    paragraphs = [hit for hit in first if hit.kind == "paragraph"]
+    assert len(paragraphs) == 2
+    assert [hit.node_id for hit in paragraphs] == sorted(hit.node_id for hit in paragraphs)
+    assert second == first
+    store.close()
+
+
 def test_unresolved_selected_scope_fails_closed_before_search(tmp_path: Path) -> None:
     store = SqliteLearningStore(tmp_path / "learning.db")
     search = DocumentSearch(store)
