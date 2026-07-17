@@ -1,0 +1,19 @@
+{
+  "material": {
+    "path": "tests/materials/eval_paper.txt",
+    "sha256": "98e96fd5113fc13991010f9b5c6923ad776be915abfd87e7e808d0d861362764",
+    "bytes": 14776
+  },
+  "legacy_token_chunk": {
+    "source_commit": "ef50def",
+    "cassette_key_prefix": "b5ab84fbd775",
+    "model_calls": 1,
+    "candidates": 16,
+    "duplicate_candidate_fingerprints": 0,
+    "prompt_tokens": 3481,
+    "completion_tokens": 1946,
+    "coverage": "full material in one budgeted request"
+  },
+  "document_node_reader": null,
+  "decision": "pending real node-aware cassette"
+}
