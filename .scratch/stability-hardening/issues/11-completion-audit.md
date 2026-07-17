@@ -1,6 +1,6 @@
 # SH-S10 — 稳定性加固完成审计
 
-Status: HITL closing
+Status: done
 Type: HITL
 
 ## Parent
@@ -15,10 +15,10 @@ Type: HITL
 ## Acceptance criteria
 
 - [x] S1-S9 与真机暴露的 S11 每条 acceptance criterion 有直接证据，不以“未发现问题”代替证明
-- [ ] learning DB 备份可打开，新库从真实材料重建并完成考核闭环
+- [x] learning DB 备份可打开，新库从真实材料重建并完成考核闭环
 - [x] 全部受影响 cassette 已重录或明确废弃，无旧工具契约假绿
 - [x] Ruff、format、Pyright、import-linter、全量 pytest 全绿
-- [ ] 全部 eval 与关键真机 trace 通过，成本 / token /错误信息完整
+- [x] 全部 eval 与关键真机 trace 通过，成本 / token /错误信息完整
 - [x] README、CONTEXT、architecture、ADR、PRD、issue、skeleton ledger 状态一致
 - [x] 残余风险和明确 Out of Scope 形成最终报告
 
@@ -90,10 +90,14 @@ Pytest currently collects 721 tests: `721 passed`. No cassette was forged or man
 - 生产库最终为 schema v8、`quick_check=ok`、`foreign_key_check` 为空，3 resources / 88 items；三份
   `content_hash` 与迁移前原文一致，资源内无同名 concept、无空 evidence、无孤儿外键。
 
-### Remaining HITL
+### Production quiz closure
 
-仅剩从新库完成一次真实 quiz：该步骤会把获批 KnowledgeItem 的摘要 / 证据发给 `.env` 模型用于出题与
-判卷，需用户单独授权并回答一道题；完成后才勾选“新库重建并完成考核闭环”与“关键真机 trace”。
+用户单独授权后，从新库运行一轮真实选择题考核。系统选中 Hook 资源的 `SubagentStart and SubagentStop`
+（item `30a4a4aca68c0a23`），真实模型生成四选一题；用户选择正确项后代码判为“对”。trace
+`6c61b5074c174fb7a81b9c801ab8ed4b` 依次包含 `assessment.started`、一对 model span（835 tokens）、
+`learning.question_asked`、`learning.answer_judged`、`learning.concept_state_changed` 与
+`assessment.ended(ok=true)`。生产 DB 持久化 1 条 asked question，Difficulty 为 tier 3 / correct streak 1；
+该正确答案不制造虚假 weak memory，故 learning_memory 仍为 0。
 
 ### Residual scope
 
@@ -101,4 +105,4 @@ Pytest currently collects 721 tests: `721 passed`. No cassette was forged or man
   blocking CLI adapter.
 - Article extraction quality, `web_search`, browser fallback and MCP adapters remain in the separate Web Acquisition PRD.
 - Reader 分块可能让同名概念或文末练习题跨片重复；当前由真实审批门剔除，不在本次暗改 ADR-0007 身份。
-- The stability PRD must not be marked done until the real quiz trace passes.
+- 以上均是后续独立范围，不影响本 PRD 已完成的稳定性基线。

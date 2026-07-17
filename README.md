@@ -6,7 +6,7 @@
 
 ## 项目状态
 
-🟡 稳定性加固收口中（2026-07-17）：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel`（事件脊柱 /
+🟢 稳定性加固已收口（2026-07-17）：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel`（事件脊柱 /
 runner / tools / hooks / context / recovery / trace）+ `providers`（OpenAI 兼容 + Record/Replay）+
 `domain/learning`（考核竖切：喂材料 → 深读入库 → 出题 → 判卷 → 薄弱记账）+ `cli`（`ingest` / `quiz` /
 `react` / `report` / `trace` 子命令）+ `evals`（Tier-1 规则 harness）。**最小 ReAct 对话核 + 全局知识库**
@@ -16,7 +16,8 @@ runner / tools / hooks / context / recovery / trace）+ `providers`（OpenAI 兼
 原子快照、scope 三态、流式抓取、Replay 指纹、原子学习状态、durable trace、完整请求预算、直答难度
 演化与真实 CLI 审批均已有测试。真实模型已重录受影响 cassette，并新增“连续直答正确 3→4 档→高档继续出题”的
 难度激活回放；静态四门全绿，全量 pytest 为 `721 passed`。生产 DB 已备份、迁移到 schema v8，并由
-三份真实材料审批重建为 88 个 KnowledgeItem；完成一次真实考核闭环后再进入 Web Acquisition。
+三份真实材料审批重建为 88 个 KnowledgeItem；真实考核已完成出题、作答、判决与持久记账闭环。下一程
+进入独立的 Web Acquisition PRD。
 
 ## 文档
 

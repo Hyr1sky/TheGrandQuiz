@@ -1,8 +1,8 @@
 # PRD：稳定性加固（文档权威基线 + P1/P2 完整性修复）
 
-Status: HITL closing（2026-07-17：S1-S9、长文 Reader 修复、真实 cassette、五门与 DB 审批重建完成；
-待一次真实考核闭环）
-Triage: ready-for-human
+Status: done（2026-07-17：S1-S9 + 真机暴露的 S11 全部完成；真实 cassette、五门、DB 备份迁移、
+三份长文审批重建与生产考核闭环通过）
+Triage: ready-for-human（仅归档复核；无待实现 issue）
 
 ## Problem Statement
 
@@ -97,7 +97,7 @@ Replay 能识别当前执行契约、trace 失败不会静默伪装成功，且�
    - 补齐自进化 User Story 12，并增加难度激活真实 cassette 验收。
 10. **SH-S9 真实审批门**（done，keep / reject / cancel 真机通过）
     - 先交付 CLI 可筛选候选的真实行为；suspend/resume 作为独立后续竖切，不伪装成已完成。
-11. **SH-S10 全量收口与完成审计**（HITL，blocked by: S1-S9 + 真机暴露的 S11）
+11. **SH-S10 全量收口与完成审计**（done）
     - 五门、全部 eval、cassette、清库重建 dogfood；更新所有权威文档与残余风险报告。
 12. **SH-S11 长文 Reader 预算内分块**（done，三份长文真实写入通过）
     - 保留 S7 的 32k Provider fail-closed 门；Reader 用确定性估算在门内切块，每片独立结构化校验、

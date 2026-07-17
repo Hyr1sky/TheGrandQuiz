@@ -16,7 +16,8 @@ hooks/context/clock/recovery/trace/db）+ `providers/`（OpenAI 兼容 + Record/
 自适应难度第一阶段也已完成。[稳定性加固](.scratch/stability-hardening/PRD.md) S1-S9 与长文 Reader
 预算内分块已实现；受影响 cassette 已用真实模型重录，并新增难度激活回放。五门全绿，全量 pytest 为
 `721 passed`。生产 DB 已备份、迁移到 schema v8，并由三份真实材料审批重建为 88 个 KnowledgeItem；
-一次真实考核闭环完成前，不得声称稳定性加固全部收口。设计权威仍在 `docs/` 与 `CONTEXT.md`。
+真实考核 trace 已完成出题、作答、判决与持久记账闭环，稳定性加固正式收口。设计权威仍在 `docs/` 与
+`CONTEXT.md`。
 **动手写代码前按序读**：
 
 - [CONTEXT.md](CONTEXT.md) — 领域语言权威表（先读这个统一术语）
