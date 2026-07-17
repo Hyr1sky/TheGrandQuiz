@@ -34,13 +34,13 @@ _Avoid_: 错题（薄弱的是概念，不是题目本身）、跨资源的抽�
 深读一个资源产出的最小知识单元（概念名 + 摘要 + 证据 + 置信度），资源内唯一。它就是概念同一性的边界：同一知识点出现在两个资源里是两个 item，MVP 不归并（二期以 concept_key 做跨资源别名归并）。证据带结构定位符（section_path 等），既强化 grounding 也锚定 ADR-0008 的 DocumentNode 文档结构树。
 _Avoid_: 知识点卡片、笔记
 
-**ResourceRevision**（ADR-0008，待实现）:
+**ResourceRevision**（ADR-0008，DS-S1 已实现）:
 LearningResource 某次获批内容的不可变版本，由 resource_id + content_hash 确定性标识，保存当时的原文与
 DocumentNode 树。LearningResource 仍按稳定 locator 定位，只把 current_revision_id 指向当前获批版本；旧版本
 不参与默认搜索和考核，但保留给历史 trace 与引用解析。
 _Avoid_: 把 URL 当内容版本、重 ingest 时原地覆盖后无法解释历史引用、把 revision hash 当 resource_id
 
-**DocumentNode**（ADR-0008，待实现）:
+**DocumentNode**（ADR-0008，DS-S1 已实现结构层）:
 ResourceRevision 内可导航、可精确定位的原文结构节点，形成 document / section / paragraph / table / code 等
 父子树，携带 node_id、section_path、顺序与 source span。它回答“原文在哪里、怎样组织”，不回答“知识点之间
 是什么语义关系”；KnowledgeItem 可由一条或多条 evidence 锚定 DocumentNode。

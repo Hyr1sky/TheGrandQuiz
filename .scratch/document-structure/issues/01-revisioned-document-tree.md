@@ -1,6 +1,6 @@
 # DS-S1 — ResourceRevision + DocumentNode 当前快照
 
-Status: ready-for-agent
+Status: done（2026-07-17，commit `d558de2`；五门全绿，730 passed；生产 v9 回填通过）
 Type: AFK
 
 ## Parent
@@ -20,21 +20,31 @@ FTS/Agent 工具。完成后，调用方已经可以稳定读取当前或指定�
 
 ## Acceptance criteria
 
-- [ ] 顺序 SQLite migration 建立不可变 ResourceRevision、DocumentNode 与 current revision 约束，显式外键检查通过
-- [ ] LearningResource 的稳定 locator 身份与现有 resource_id 不变；revision_id 可由 resource_id + content_hash 确定性复算
-- [ ] Markdown/纯文本 parser 覆盖嵌套标题、重复标题、无标题、空文档、列表、表格、代码块和超大 section
-- [ ] 每个文档有 synthetic root；所有非空原文被节点 source span 完整覆盖且不重叠，节点顺序和 node_id 重跑一致
-- [ ] section_path 只用于展示；重复/缺失标题仍产生不同且稳定的 node_id
-- [ ] 超大自然 section 按完整段落生成 synthetic children，单节点读取预算受控且正文不丢失
-- [ ] 候选 revision/tree 在审批前不替换 current；提交成功后 resource、revision、tree 与当前知识快照共享事务语义
-- [ ] 注入 revision/node/current-pointer 任一写失败时事务回滚，旧 current revision、旧 KnowledgeItem 和成功事件保持不变
-- [ ] 已获批旧 revision 保留、默认查询只返回 current；显式 revision 查询仍能读取旧大纲与原文
-- [ ] 当前 schema 夹具迁移后 resource_id、item_id、Learning Memory、AskedQuestions、Difficulty 与 Preference 均保留
-- [ ] 现有 raw_content/content_hash 确定性回填为初始 revision，迁移/回填可重入且不调用 Provider
-- [ ] Dict 与 SQLite adapter 对 revision 提交、树遍历、current 切换、历史读取、失败回滚的可观察结果 parity
-- [ ] parser 与 snapshot 事件进入事件脊柱，成功事件只在事务提交后发射，trace 能记录 revision/node 数与失败原因
-- [ ] 五门全绿；Provider messages、tool schema 与现有 cassette 无无关变化
+- [x] 顺序 SQLite migration 建立不可变 ResourceRevision、DocumentNode 与 current revision 约束，显式外键检查通过
+- [x] LearningResource 的稳定 locator 身份与现有 resource_id 不变；revision_id 可由 resource_id + content_hash 确定性复算
+- [x] Markdown/纯文本 parser 覆盖嵌套标题、重复标题、无标题、空文档、列表、表格、代码块和超大 section
+- [x] 每个文档有 synthetic root；所有非空原文被节点 source span 完整覆盖且不重叠，节点顺序和 node_id 重跑一致
+- [x] section_path 只用于展示；重复/缺失标题仍产生不同且稳定的 node_id
+- [x] 超大自然 section 按完整段落生成 synthetic children，单节点读取预算受控且正文不丢失
+- [x] 候选 revision/tree 在审批前不替换 current；提交成功后 resource、revision、tree 与当前知识快照共享事务语义
+- [x] 注入 revision/node/current-pointer 任一写失败时事务回滚，旧 current revision、旧 KnowledgeItem 和成功事件保持不变
+- [x] 已获批旧 revision 保留、默认查询只返回 current；显式 revision 查询仍能读取旧大纲与原文
+- [x] 当前 schema 夹具迁移后 resource_id、item_id、Learning Memory、AskedQuestions、Difficulty 与 Preference 均保留
+- [x] 现有 raw_content/content_hash 确定性回填为初始 revision，迁移/回填可重入且不调用 Provider
+- [x] Dict 与 SQLite adapter 对 revision 提交、树遍历、current 切换、历史读取、失败回滚的可观察结果 parity
+- [x] parser 与 snapshot 事件进入事件脊柱，成功事件只在事务提交后发射，trace 能记录 revision/node 数与失败原因
+- [x] 五门全绿；Provider messages、tool schema 与现有 cassette 无无关变化
 
 ## Blocked by
 
 None - can start immediately.
+
+## Completion evidence
+
+- `d558de2 feat: add revisioned document structure` 交付模型、parser、两种 Store、v9 migration、ingest 事件与测试。
+- Ruff、format check、Pyright、import-linter 全绿；全量 pytest `730 passed`，Tier-1 case1 已纳入新事件序列。
+- 生产迁移前备份：`~/.grandquiz/learning.db.backup-20260717-162203-pre-document-tree`，与迁移前原库
+  SHA256 均为 `439f70589dd329a43af5d18a433a1604ca6bc478feb327e458c97b1e1be4b0d8`，schema v8、quick_check=ok。
+- 生产库迁移后 schema v9、quick_check=ok、foreign_key_check 为空；3 resources → 3 revisions / 1551 nodes，
+  3 个 current_revision_id 全部有效。
+- resources、88 KnowledgeItems、1 AskedQuestion、1 Difficulty 与备份逐行 EXCEPT 差异均为 0；迁移未调用 LLM。

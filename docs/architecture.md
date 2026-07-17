@@ -90,7 +90,7 @@ Hook 抛异常必须被隔离，不能炸掉整个 turn。
 2. **跨轮次裁剪**：历史只保留最终 assistant 回答，丢弃 tool 调用中间过程（scholarmate 已知 TODO，新仓库第一天做对）
 3. 工具结果截断策略 + 渐进式披露：先给摘要，模型要详情再展开（scholarmate 的 catalog 模式已验证）
 
-### 文档结构与精确溯源（ADR-0008，待实现）
+### 文档结构与精确溯源（ADR-0008，DS-S1 已实现 revision/tree）
 
 学习材料不再只以完整 `raw_content` 和一次性 Reader token 分块存在。每个获批内容版本形成不可变
 `ResourceRevision`，并由确定性 parser 建立 `DocumentNode` 树；Reader、ReAct、Summarizer 与 eval 共享同一个
@@ -111,6 +111,10 @@ recursive CTE 与 FTS5，不引入向量库、图数据库或 Knowhere 重运行
 
 ingest Reader 按树的自然节点确定性覆盖材料，保留核心 workflow；开放 ReAct 才让 LLM 执行“大纲 → 搜索 →
 展开 → 精确正文”的 Agentic Search。所有解析、搜索、节点选择、预算与 citation 都上同一条事件脊柱。
+
+当前已交付不可变 ResourceRevision、确定性 Markdown/纯文本 DocumentNode parser、v8→v9 无损回填、历史
+revision 读取、原子 current 切换以及 `document_parsed/revision_committed` 事件；精确 Evidence、Reader 节点化
+与 FTS/Agentic Search 分别由 DS-S2–S4 继续交付，不能提前声称本节全部完成。
 
 ### 记忆系统
 

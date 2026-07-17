@@ -15,9 +15,10 @@ hooks/context/clock/recovery/trace/db）+ `providers/`（OpenAI 兼容 + Record/
 可真机跑：自然语言选材料 + 定题型的持久全局知识库考核）；上下文压缩、真实网络抓取、跨会话去重与
 自适应难度第一阶段也已完成。[稳定性加固](.scratch/stability-hardening/PRD.md) S1-S9 与长文 Reader
 预算内分块已实现；受影响 cassette 已用真实模型重录，并新增难度激活回放。五门全绿，全量 pytest 为
-`721 passed`。生产 DB 已备份、迁移到 schema v8，并由三份真实材料审批重建为 88 个 KnowledgeItem；
-真实考核 trace 已完成出题、作答、判决与持久记账闭环，稳定性加固正式收口。设计权威仍在 `docs/` 与
-`CONTEXT.md`。
+`730 passed`。生产 DB 已备份、迁移到 schema v9；三份真实材料的 88 个 KnowledgeItem 无损保留，并已
+确定性回填为 3 个 ResourceRevision / 1551 个 DocumentNode。修订化文档树 DS-S1 已完成，精确 Evidence、
+节点化 Reader 与 Agentic Search 仍按 `.scratch/document-structure/` 推进。真实考核 trace 已完成出题、作答、
+判决与持久记账闭环，稳定性加固正式收口。设计权威仍在 `docs/` 与 `CONTEXT.md`。
 **动手写代码前按序读**：
 
 - [CONTEXT.md](CONTEXT.md) — 领域语言权威表（先读这个统一术语）

@@ -1,6 +1,6 @@
 # PRD：修订化文档树、精确溯源与渐进式 Agentic Search
 
-Status: ready-for-agent
+Status: in-progress（DS-S1 done；DS-S2–S4 ready-for-agent；DS-S5 eval-gated）
 Triage: ready-for-agent
 Decision: [ADR-0008](../../docs/adr/0008-revisioned-document-tree-and-grounded-knowledge-graph.md)
 
@@ -165,7 +165,7 @@ related、contradicts 关系。跨资源 CanonicalConcept 与 Learning Memory �
 
 ## Proposed Vertical Slices
 
-1. **DS-S1 ResourceRevision + DocumentNode 当前快照**（AFK）
+1. **DS-S1 ResourceRevision + DocumentNode 当前快照**（AFK，done 2026-07-17）
    - 确定性 parser、revision/tree schema、迁移回填、原子 current 切换和 store parity。
 2. **DS-S2 精确 Evidence 与可解析 citation**（AFK）
    - evidence 正规化、locator 校验、旧 quote 回填审计、Reader node-local 输出和引用展示。
