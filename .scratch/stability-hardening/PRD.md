@@ -1,6 +1,7 @@
 # PRD：稳定性加固（文档权威基线 + P1/P2 完整性修复）
 
-Status: HITL closing（2026-07-17：S1-S9 代码、真实 cassette 与五门完成；待真实 DB、CLI 真机验收）
+Status: HITL closing（2026-07-17：S1-S9、长文 Reader 修复、真实 cassette 与五门完成；DB 已迁移，
+待真实材料审批重建与考核闭环）
 Triage: ready-for-agent
 
 ## Problem Statement
@@ -37,6 +38,7 @@ Replay 能识别当前执行契约、trace 失败不会静默伪装成功，且�
 10. 作为用户，即使一个概念从未答错，我连续答对后也希望系统逐步提升难度。
 11. 作为用户，我希望 Reader 候选在入库前真的可被审批剔除，而不是生产路径自动 keep-all。
 12. 作为维护者，我希望 README、PRD、ADR 与 skeleton ledger 对当前进度和剩余工作给出一致答案。
+13. 作为用户，我希望 Reader 能在 Provider 硬预算内深读长材料，而不是在审批前因单次请求过大失败。
 
 ## Locked Decisions
 
@@ -63,7 +65,7 @@ Replay 能识别当前执行契约、trace 失败不会静默伪装成功，且�
 - 每个 issue 是一个可独立验收的竖切；确定性核心先写失败测试。
 - 每个竖切同步更新相关权威文档，不把文档治理推迟到所有代码完成之后。
 - 五门固定为 Ruff、format check、Pyright、import-linter、pytest；当前五门全绿，全量 pytest 为
-  `719 passed`，受影响 cassette 均由真实模型重录，另有难度激活 capstone 回放。
+  `721 passed`，受影响 cassette 均由真实模型重录，另有难度激活 capstone 回放。
 
 ## Proposed Vertical Slices
 
@@ -95,8 +97,13 @@ Replay 能识别当前执行契约、trace 失败不会静默伪装成功，且�
    - 补齐自进化 User Story 12，并增加难度激活真实 cassette 验收。
 10. **SH-S9 真实审批门**（实现完成，HITL 终端验收待执行）
     - 先交付 CLI 可筛选候选的真实行为；suspend/resume 作为独立后续竖切，不伪装成已完成。
-11. **SH-S10 全量收口与完成审计**（HITL，blocked by: S1-S9）
+11. **SH-S10 全量收口与完成审计**（HITL，blocked by: S1-S9 + 真机暴露的 S11）
     - 五门、全部 eval、cassette、清库重建 dogfood；更新所有权威文档与残余风险报告。
+12. **SH-S11 长文 Reader 预算内分块**（实现完成，真实取消验收通过）
+    - 保留 S7 的 32k Provider fail-closed 门；Reader 用确定性估算在门内切块，每片独立结构化校验、
+      重试和落 model span，代码稳定聚合主题与 item。
+    - 短材料 messages 逐字不变；真实 Agentic-RL 从单请求 47,556 tokens 红灯变为 3 个成功分块，
+      取消审批后生产库仍为空。最终 keep/reject 写库归 S10 HITL 收口。
 
 ## Out of Scope
 

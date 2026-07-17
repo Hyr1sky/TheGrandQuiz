@@ -17,16 +17,18 @@ from grandquiz.domain.learning.ingest.reader import (
 )
 from grandquiz.domain.learning.models import LearningResource
 from grandquiz.kernel.clock import ManualClock
+from grandquiz.kernel.context import HeuristicTokenCounter
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.hooks import HookManager
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.budget import BudgetedProvider
 
 
-def _reader(**kwargs: int) -> Reader:
+def _reader(*, max_attempts: int = 3) -> Reader:
     """建一个注册了注入中和 interceptor 的 Reader——镜像 ingest 组装点（真客户装配）。"""
     hooks = HookManager()
     hooks.register_interceptor(UNTRUSTED_READ_HOOK, neutralize_fence)
-    return Reader(hooks=hooks, **kwargs)
+    return Reader(hooks=hooks, max_attempts=max_attempts)
 
 
 class _FixedProvider:
@@ -41,6 +43,55 @@ class _FixedProvider:
     ) -> Completion:
         self.calls += 1
         return Completion(text=self.text, usage=Usage(prompt_tokens=5, completion_tokens=2))
+
+
+class _ChunkCapturingProvider:
+    """记录 Reader 实际发送的材料片段，并为每片返回一个可验证候选。"""
+
+    def __init__(self) -> None:
+        self.chunks: list[str] = []
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        user_content = next(message.content for message in messages if message.role == "user")
+        chunk = user_content.split('"""\n', 1)[1].rsplit('\n"""', 1)[0]
+        self.chunks.append(chunk)
+        number = len(self.chunks)
+        return Completion(
+            text=json.dumps(
+                {
+                    "topic": "Agent Runtime 稳定性",
+                    "candidates": [
+                        {
+                            "concept": f"片段知识点 {number}",
+                            "summary": f"第 {number} 个片段的摘要",
+                            "evidence": [{"quote": chunk[:20]}],
+                            "confidence": 0.9,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            usage=Usage(prompt_tokens=5, completion_tokens=2),
+        )
+
+
+class _CharCounter:
+    def count(self, text: str) -> int:
+        return len(text)
+
+
+class _SequencedProvider:
+    def __init__(self, texts: list[str]) -> None:
+        self._texts = iter(texts)
+        self.calls = 0
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        self.calls += 1
+        return Completion(text=next(self._texts), usage=Usage())
 
 
 def _emitter() -> tuple[EventEmitter, list[str]]:
@@ -103,6 +154,79 @@ async def test_valid_candidates_become_validated_knowledge_items() -> None:
         EventType.MODEL_STARTED,
         EventType.MODEL_ENDED,
     ]
+
+
+async def test_large_document_is_chunked_before_provider_request_budget_gate() -> None:
+    # 真实故障回归：Reader 过去把整篇长文一次性发给 Provider，约 34k tokens 的材料在审批 / 写库前
+    # 被 32k 完整请求硬门挡下。Reader 应在门内确定性切块；硬门本身不得放宽或绕过。
+    content = "".join(
+        f"section-{index:05d}: " + "runtime stability " * 12 + "\n\n" for index in range(800)
+    )
+    inner = _ChunkCapturingProvider()
+    provider = BudgetedProvider(
+        inner=inner,
+        counter=HeuristicTokenCounter(),
+        ceiling=32_000,
+    )
+    emitter, types = _emitter()
+
+    result = await _reader().read(
+        _resource(),
+        content,
+        provider=provider,
+        emitter=emitter,
+        parent_span_id="ig",
+    )
+
+    assert len(inner.chunks) > 1
+    assert "".join(inner.chunks) == content
+    assert result.topic == "Agent Runtime 稳定性"
+    assert len(result.items) == len(inner.chunks)
+    assert types.count(EventType.HOOK_INVOKED) == 1
+    assert types.count(EventType.MODEL_STARTED) == len(inner.chunks)
+    assert types.count(EventType.MODEL_ENDED) == len(inner.chunks)
+
+
+async def test_chunk_reduce_uses_majority_topic_and_deduplicates_stable_item_ids() -> None:
+    def output(topic: str, concept: str) -> str:
+        return json.dumps(
+            {
+                "topic": topic,
+                "candidates": [
+                    {
+                        "concept": concept,
+                        "summary": "摘要",
+                        "evidence": [{"quote": "证据"}],
+                        "confidence": 0.9,
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+    hooks = HookManager()
+    hooks.register_interceptor(UNTRUSTED_READ_HOOK, neutralize_fence)
+    reader = Reader(hooks=hooks, token_counter=_CharCounter(), chunk_token_budget=4)
+    provider = _SequencedProvider(
+        [
+            output("整体主题", "重复概念"),
+            output("局部主题", "重复概念"),
+            output("整体主题", "新增概念"),
+        ]
+    )
+    emitter, _ = _emitter()
+
+    result = await reader.read(
+        _resource(),
+        "aaaabbbbcccc",
+        provider=provider,
+        emitter=emitter,
+        parent_span_id="ig",
+    )
+
+    assert provider.calls == 3
+    assert result.topic == "整体主题"
+    assert [item.concept for item in result.items] == ["重复概念", "新增概念"]
 
 
 async def test_candidate_reordering_preserves_knowledge_item_identity() -> None:

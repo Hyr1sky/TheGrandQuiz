@@ -12,11 +12,11 @@ runner / tools / hooks / context / recovery / trace）+ `providers`（OpenAI 兼
 `react` / `report` / `trace` 子命令）+ `evals`（Tier-1 规则 harness）。**最小 ReAct 对话核 + 全局知识库**
 已落地：`grandquiz react` 可真机跑——自然语言在持久全局库里选材料、定题型、按薄弱点考核。上下文预算 /
 滚动摘要、真实网络抓取、跨会话题目去重与自适应难度第一阶段也已完成。当前
-[稳定性加固](.scratch/stability-hardening/PRD.md) 的 S1-S9 代码实现已收口：资源身份 / 原子快照、scope
-三态、流式抓取、Replay 指纹、原子学习状态、durable trace、完整请求预算、直答难度演化与真实 CLI
-审批均已有测试。真实模型已重录受影响 cassette，并新增“连续直答正确 3→4 档→高档继续出题”的
-难度激活回放；静态四门全绿，全量 pytest 为 `719 passed`。真实 DB 重建与终端审批验收完成后再进入
-Web Acquisition。
+[稳定性加固](.scratch/stability-hardening/PRD.md) 的 S1-S9 与长文 Reader 预算分块已实现：资源身份 /
+原子快照、scope 三态、流式抓取、Replay 指纹、原子学习状态、durable trace、完整请求预算、直答难度
+演化与真实 CLI 审批均已有测试。真实模型已重录受影响 cassette，并新增“连续直答正确 3→4 档→高档继续出题”的
+难度激活回放；静态四门全绿，全量 pytest 为 `721 passed`。生产 DB 已备份并迁移到 schema v8；真实
+材料审批重建与考核闭环完成后再进入 Web Acquisition。
 
 ## 文档
 

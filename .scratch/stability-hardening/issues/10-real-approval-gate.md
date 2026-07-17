@@ -21,7 +21,8 @@ CLI 审批；持久 suspend/resume 作为后续独立竖切，不再声称现有
 - [x] scripted adapter 继续服务确定性测试，真实 CLI 不再 keep-all
 - [x] 文档诚实区分已交付阻塞审批与未交付 suspend/resume
 - [x] 五门全绿
-- [ ] 真机交互 keep / reject / cancel 验收
+- [x] 真机交互 cancel：30 个候选首项输入 `q`，trace 闭合且生产知识表保持零行
+- [ ] 真机交互 keep / reject 后写入生产 DB
 
 ## Blocked by
 
