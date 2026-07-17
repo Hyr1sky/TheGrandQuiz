@@ -23,9 +23,9 @@ hooks/context/clock/recovery/trace/db）+ `providers/`（OpenAI 兼容 + Record/
 - [CONTEXT.md](CONTEXT.md) — 领域语言权威表（先读这个统一术语）
 - [docs/architecture.md](docs/architecture.md) — 目标架构、两条核心设计判断、搭建顺序
 - [docs/roadmap.md](docs/roadmap.md) — MVP 考核竖切、领域模型、eval 用例
-- [docs/adr/](docs/adr/) — 七个不可逆决策（0001 提取式迁移 / 0002 概念同一性 / 0003 记忆四收二 /
+- [docs/adr/](docs/adr/) — 八个不可逆决策（0001 提取式迁移 / 0002 概念同一性 / 0003 记忆四收二 /
   0004 循环是 workflow / 0005 全局 KB·消解 LearningTask / 0006 用户显式题型覆盖 / 0007 稳定资源修订与
-  item 身份）
+  item 身份 / 0008 修订化文档树·精确溯源·分层知识图）
 
 ## 常用命令
 

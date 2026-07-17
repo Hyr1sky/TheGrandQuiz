@@ -90,6 +90,28 @@ Hook 抛异常必须被隔离，不能炸掉整个 turn。
 2. **跨轮次裁剪**：历史只保留最终 assistant 回答，丢弃 tool 调用中间过程（scholarmate 已知 TODO，新仓库第一天做对）
 3. 工具结果截断策略 + 渐进式披露：先给摘要，模型要详情再展开（scholarmate 的 catalog 模式已验证）
 
+### 文档结构与精确溯源（ADR-0008，待实现）
+
+学习材料不再只以完整 `raw_content` 和一次性 Reader token 分块存在。每个获批内容版本形成不可变
+`ResourceRevision`，并由确定性 parser 建立 `DocumentNode` 树；Reader、ReAct、Summarizer 与 eval 共享同一个
+Document Structure module，而不是各自切分和定位正文：
+
+```text
+LearningResource（稳定 locator）
+  └── ResourceRevision（不可变 content_hash 版本）
+        └── DocumentNode tree（确定性结构 + source span + FTS）
+              └── Evidence（revision + node + 精确 span）
+                    └── KnowledgeItem（学习 / 考核身份）
+```
+
+三类关系严格分层：DocumentNode 父子边只表达原文结构；KnowledgeItem 到 Evidence / DocumentNode 的边表达
+可校验 grounding；KnowledgeItem 之间的 prerequisite / related / contradicts 才是带置信度、provenance 与
+eval 门控的语义关系。`section_path` 用于 LLM 和用户导航，不作为节点身份。第一阶段用 SQLite adjacency rows、
+recursive CTE 与 FTS5，不引入向量库、图数据库或 Knowhere 重运行时。
+
+ingest Reader 按树的自然节点确定性覆盖材料，保留核心 workflow；开放 ReAct 才让 LLM 执行“大纲 → 搜索 →
+展开 → 精确正文”的 Agentic Search。所有解析、搜索、节点选择、预算与 citation 都上同一条事件脊柱。
+
 ### 记忆系统
 
 两类领域记忆 **Learning + Preference**（见 ADR-0003；Resource Memory 已并入 KnowledgeItem，Session 归 kernel 会话历史），SQLite + JSON 实现。关键机制：

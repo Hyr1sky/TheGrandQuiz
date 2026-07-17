@@ -148,7 +148,8 @@ classDiagram
 
 > 2026-06-15 领域模型精化（保持 ADR-0002）：KnowledgeItem 的 `evidence` 落为 `{quote, locator|None}`
 > 结构（locator 携 section_path/锚点，MVP 可 None）；LearningResource 持久化原始抓取内容（blob + content_hash）。
-> 二者让"出处定位符"与"资源内概念树"可事后构建而无需重抓——见 issue 03 与 reference-map（knowhere）。
+> 二者在当时为“出处定位符”与文档结构树留下了无需重抓的地基；ADR-0008 已将其升级为待实现的
+> ResourceRevision + DocumentNode + 精确 evidence 架构。
 
 ## Subagent Plan
 
@@ -363,7 +364,11 @@ eval extension points before adding many tools.
 > 2026-06-15 记录，基于对 [Ontos-AI/knowhere](https://github.com/Ontos-AI/knowhere) 的调研 + 一次对抗式设计审查。
 > 原则：最好的前向兼容是好的当前边界，不是投机接口——只埋"retrofit 贵 + 预留近乎免费 + 当前会堵死"的种子。
 
-### 轻量知识图谱：分四层，成本/时机各不同
+### 文档结构与轻量知识图谱：分层演进，成本/可信度各不同
+
+> 2026-07-17：长文 Reader 预算红灯证明“原文 blob + 临时 token 分块”不足以支撑稳定深读。ADR-0008 已接受，
+> 对应实施计划见 `.scratch/document-structure/`。以下 Layer 1 从旧称“资源内概念树”纠正为“文档结构树”：
+> section 父子关系表达作者如何组织原文，不能自动推导概念上下位或 prerequisite。
 
 关键教训（对标 [GitNexus](https://github.com/abhigyanpatwari/GitNexus)：纯 Tree-sitter AST、零 LLM 建
 `CALLS/IMPORTS/EXTENDS` 边；[graphify](https://github.com/safishamsi/graphify)：代码走 AST、仅文档
@@ -371,31 +376,37 @@ fallback LLM 语义抽取且给边打 `EXTRACTED/INFERRED/AMBIGUOUS` 置信标�
 的"结构"，LLM 三元组抽取是昂贵且噪的 fallback，只在没有结构信号时才用**。代码有 AST，我们的散文学习材料
 没有——对应的"廉价结构"是文档层级（section 树），语义边才需要 LLM。
 
-- **Layer 0 — 知识点（已在建，M3.1）**：Reader 抽取 → 摘要 + `section_path`。抽取产出精简摘要当索引
-  （而非 embedding→向量），是"无向量库 / agentic 检索"路线的核心。这是个领域无关抽象——学习域叫"知识点"，
-  条款 / 合规域就是"规则点"（同一 kernel 换 domain 即可，验证 runtime 可复用；但本项目聚焦学习、不建 rules 域）。
-- **Layer 1 — 资源内概念树（便宜的结构边，已由 provenance 预留）**：`section_path` 天然给父 / 子层级，
-  零 LLM。用于按结构导航概念、按层级排考序（先基础节点、再进阶子节点）。不违反 ADR-0002。
-- **Layer 2 — 概念间语义边，作为 Reader 单次遍历的副产品（eval 门控，MVP 后）**：Reader 本就把整篇读进
-  隔离上下文并产 KnowledgeItem[]，在**同一次调用**顺带吐 `{from_item, relation: prerequisite|related|
-  contradicts, to_item, confidence}`——是 SPO 三元组，但主体限定在已抽的 item、不另起抽取管线、带置信
-  标签（graphify 式）让选题代码只信高置信边。存普通 SQLite 行（knowhere 式，不上图数据库）。启用多跳提问
-  + **前置知识感知选题**（答错"useEffect 依赖"→ 发现其 prerequisite 是"闭包"→ 先补考"闭包"）。
-  成本 = 现有 Reader 调用的边际 token。
-- **Layer 3 — 跨资源图 / 归并（推迟）**：ADR-0002 二期 `concept_key` + knowhere 规则式重叠配方。不碰。
+- **Layer 0 — ResourceRevision（确定性 source 层，ADR-0008 待实现）**：LearningResource 继续是稳定 locator；
+  每次获批内容形成不可变 revision，保存当时原文与 content_hash。当前 revision 进入默认搜索/考核，旧 revision
+  只供历史 trace 与 citation 解析，重 ingest 不再让旧引用失去原文。
+- **Layer 1 — DocumentNode tree（便宜可靠的结构层）**：Markdown 标题、段落、表格、列表和代码块由代码
+  确定性解析为带 source span 的父子树；`section_path` 是可读路径，`node_id` 才是身份。SQLite adjacency rows +
+  recursive CTE + FTS5 支撑“大纲 → 稀疏搜索 → 展开节点 → 精确正文”，不需要 LLM 决定结构。
+- **Layer 2 — KnowledgeItem + grounding（当前考核货币的深化）**：Reader 从自然节点提取 item；每条 evidence
+  必须锚定 revision、node 和精确 span，并由代码核对 quote。KnowledgeItem 身份继续遵守 ADR-0002/0007，
+  DocumentNode 不能替代 item，一个 item 可跨节点、一个节点也可产多个 item。
+- **Layer 3 — KnowledgeRelation（LLM 推断、eval 门控）**：Reader 只在已抽取 item 集合内提出
+  prerequisite / related / contradicts，边是带 confidence、evidence provenance、prompt version、trace id 和
+  review status 的普通 SQLite 行。前置知识感知选题或多跳问答对基线有稳定提升才保留；section 层级不得自动
+  升格为语义边。
+- **Layer 4 — 跨资源 CanonicalConcept（推迟）**：ADR-0002 的 `concept_key`、aliases 与规则式重叠只提供
+  候选信号。未来若立项，CanonicalConcept 以 represented_by 聚合多个 source-grounded item，是可撤销投影，
+  不覆盖 KnowledgeItem、不自动迁移 Learning Memory。
 
 **eval 门控是回答"值不值"的成熟解法**：Layer 2 建在检索 / 选题缝后，加一个 eval 用例——"前置知识感知
 选题" vs "纯薄弱优先"基线，在薄弱概念解决率 / 出题相关性上是否有提升，跑 trace 量化，有提升才留。这把
 "SPO 图值不值这个成本"从玄学变成 A/B 数字，是本项目该秀的差异化肌肉。
 
-**纪律**：Layer 2 现在**不进 schema**（未跑通竖切前加边字段 = 过早抽象），但没被堵死——已预留的
-"LearningResource 持久化原始内容"让日后对存下的原文重跑一次 Reader 即可建边，无需重抓。故作 MVP 后的
-eval 门控实验，而非现在预留接口。**不采纳**：Leiden 社区检测（GraphRAG 血统，太重）、图数据库
-（Neo4j/FalkorDB/LadybugDB——两仓库都提供导出但核心可移植，我们坚持 SQLite 行）、向量库。
+**纪律**：ResourceRevision、DocumentNode 和精确 evidence 是当前要落地的 source-of-truth 基座；
+KnowledgeRelation 是独立实验 issue，不能为“以后也许有图”阻塞基础树和搜索交付。关系不藏 metadata JSON，
+也不提前建立全局 Concept。**不采纳**：Leiden 社区检测（GraphRAG 血统，太重）、图数据库
+（Neo4j/FalkorDB/LadybugDB）、向量库以及 Knowhere 重运行时。
 
 ### 其他方向（延续前几轮讨论）
 
-- 入库/检索深化为 agentic search（PageIndex 式"读大纲→选章节"逐步单次 LLM 调用），落在预留的"检索缝"后。
+- 入库 Reader 按 DocumentNode 自然节点确定性覆盖全文；开放 ReAct / Summarizer 使用 PageIndex 式
+  “读大纲 → 搜索 → 选章节 → 展开正文”。两者共享同一 Document Structure module，但只有开放路径由 LLM
+  决定读取分支，核心考核 workflow 不改为自由 ReAct。
 - 开放/定时任务 → 拉取相关资料 → 生成推送摘要 → 用户挑感兴趣的 → 进学习-考核-复习循环：复用
   ResourceCandidate + 审批门原语 + ADR-0004 的自由 ReAct（开放编排）+ interfaces 通道（定时触发即又一通道）。
 

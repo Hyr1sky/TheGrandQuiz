@@ -47,4 +47,6 @@
 | [anthropics/claude-agent-sdk-python](https://github.com/anthropics/claude-agent-sdk-python) | hook 体系设计（PreToolUse / PostToolUse 等生命周期点、matcher、可阻断语义） |
 | [UKGovernmentBEIS/inspect_ai](https://github.com/UKGovernmentBEIS/inspect_ai) | eval harness 金标准：Task / Solver / Scorer 分离，eval 日志与 replay 视图 |
 | [pydantic/pydantic-ai](https://github.com/pydantic/pydantic-ai) | 类型驱动的工具签名与结构化输出校验重试；`pydantic-evals` 的 case/dataset 组织 |
-| [Ontos-AI/knowhere](https://github.com/Ontos-AI/knowhere) | 层级保留的 section 树（`section_path` 作规范引用 = 出处定位符）；PageIndex 式"读大纲→选章节"逐步单次 LLM 调用（未来检索缝的实现）；规则式实体/关键词重叠建 `related` 边（无 LLM 抽取、存普通行）= 二期 concept_key 跨资源归并的配方，`normalize_entity`（小写+类型化）是规范化 recipe。**不要带过来**：重运行时（Postgres/Redis/S3/worker/FastAPI monorepo）、向量库、GraphRAG 式 LLM 实体抽取 + 社区检测、MinerU/VLM 多模态栈、大规模跨文档图导航 |
+| [VectifyAI/PageIndex](https://github.com/VectifyAI/PageIndex) | 层级树作为检索入口，“读大纲 → 选择分支 → 展开自然章节”的 vectorless Agentic Search；节点标题、摘要、顺序与 source range 共同服务可解释导航。借鉴检索行为，不照搬实现或“完全不分块”的宣传口径——超大自然节点仍须在代码预算内按段落生成 synthetic children |
+| [abhigyanpatwari/GitNexus](https://github.com/abhigyanpatwari/GitNexus) | 先确定性抽取结构节点/边，再把图变成 context、impact、trace 等查询能力；借鉴“结构图是查询基座而非可视化摆设”。代码 AST 图不直接类比散文语义图，我们只把确定性的 document hierarchy 放在高信任层 |
+| [Ontos-AI/knowhere](https://github.com/Ontos-AI/knowhere) | 保留 section hierarchy、跨文档关系与 evidence-based citation；规则式实体/关键词重叠可作为二期 concept_key 候选配方。**不要带过来**：重运行时（Postgres/Redis/S3/worker/FastAPI monorepo）、向量库、GraphRAG 式实体抽取 + 社区检测、MinerU/VLM 多模态栈、大规模跨文档图导航 |

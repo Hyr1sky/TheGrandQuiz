@@ -31,8 +31,26 @@ _Avoid_: 把六个学习技能当平权功能列表、复习计划（MVP 无排�
 _Avoid_: 错题（薄弱的是概念，不是题目本身）、跨资源的抽象概念（MVP 无此实体）、掌握度分数（用状态机不用连续分）
 
 **KnowledgeItem**:
-深读一个资源产出的最小知识单元（概念名 + 摘要 + 证据 + 置信度），资源内唯一。它就是概念同一性的边界：同一知识点出现在两个资源里是两个 item，MVP 不归并（二期以 concept_key 做跨资源别名归并）。证据带结构定位符（section_path 等），既强化 grounding 也为资源内概念树留地基。
+深读一个资源产出的最小知识单元（概念名 + 摘要 + 证据 + 置信度），资源内唯一。它就是概念同一性的边界：同一知识点出现在两个资源里是两个 item，MVP 不归并（二期以 concept_key 做跨资源别名归并）。证据带结构定位符（section_path 等），既强化 grounding 也锚定 ADR-0008 的 DocumentNode 文档结构树。
 _Avoid_: 知识点卡片、笔记
+
+**ResourceRevision**（ADR-0008，待实现）:
+LearningResource 某次获批内容的不可变版本，由 resource_id + content_hash 确定性标识，保存当时的原文与
+DocumentNode 树。LearningResource 仍按稳定 locator 定位，只把 current_revision_id 指向当前获批版本；旧版本
+不参与默认搜索和考核，但保留给历史 trace 与引用解析。
+_Avoid_: 把 URL 当内容版本、重 ingest 时原地覆盖后无法解释历史引用、把 revision hash 当 resource_id
+
+**DocumentNode**（ADR-0008，待实现）:
+ResourceRevision 内可导航、可精确定位的原文结构节点，形成 document / section / paragraph / table / code 等
+父子树，携带 node_id、section_path、顺序与 source span。它回答“原文在哪里、怎样组织”，不回答“知识点之间
+是什么语义关系”；KnowledgeItem 可由一条或多条 evidence 锚定 DocumentNode。
+_Avoid_: chunk（任意 token 窗口）、把章节父子关系称为概念上下位关系、用可重复/可变的 section_path 充当身份
+
+**KnowledgeRelation**（ADR-0008，实验能力）:
+两个 source-grounded KnowledgeItem 之间的类型化语义边，首批关系限定为 prerequisite / related /
+contradicts，必须携带 confidence、evidence provenance、抽取版本、trace id 与 review status。它是 LLM 推断的
+可撤销投影，不与 DocumentNode 的确定性结构边混同，也不藏在 metadata JSON 中。
+_Avoid_: 把文档层级自动提升为知识图谱、无置信度/无出处的自由三元组、用关系边替代 KnowledgeItem 身份
 
 **LearningTask**（已消解，ADR-0005）:
 ~~学习主题的容器与考核范围~~——**已废弃**。真机 dogfood 暴露"会话绑一个启动标题 = 换标题换库"把持久库切成孤岛（PRD #2）。现收敛到**全局 KB 单池**：不再有独立 `LearningTask` 实体、无 `tasks` 表；资源**内容寻址**（`resource_id = derive_id(url)`，同 URL 全局唯一、`INSERT OR REPLACE` 去重），进同一持久库。会话是无状态对话前端，`react`/`quiz` 的 `title` 降为可选横幅（只打印、不进派生 / 分区）。出题 / 判卷语言从 task 属性移入 [Preference Memory]（`question_language`，跨全库个人设置）。跨会话 / 跨材料的薄弱概念天然互见（[Learning Memory] 锚定 KnowledgeItem、本就不按 task 分区——ADR-0003 期望终态）。
