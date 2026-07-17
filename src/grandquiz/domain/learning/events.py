@@ -22,6 +22,18 @@ class LearningEvent:
         "learning.resource_read"  # 抓取成功回填内容后：资源状态跃迁上脊柱（对称于 fetch_failed）
     )
     DOCUMENT_PARSED = "learning.document_parsed"  # 候选 revision 的确定性树已建立（尚未提交）
+    READER_BATCH_STARTED = "learning.reader_batch.started"  # 自然节点覆盖批次 span
+    READER_BATCH_ENDED = "learning.reader_batch.ended"
+    DOCUMENT_OUTLINE_VIEWED = "learning.document_outline_viewed"
+    DOCUMENT_NODES_SEARCHED = "learning.document_nodes_searched"
+    DOCUMENT_SEARCH_REJECTED = "learning.document_search_rejected"
+    DOCUMENT_NODE_EXPANDED = "learning.document_node_expanded"
+    DOCUMENT_NODE_READ = "learning.document_node_read"
+    CITATION_RESOLVED = "learning.citation_resolved"
+    CITATION_VALIDATED = (
+        "learning.citation_validated"  # 候选 evidence 已逐条锚定 revision/node/span
+    )
+    CITATION_REJECTED = "learning.citation_rejected"  # grounding fail closed；payload 不含原文
     REVISION_COMMITTED = "learning.revision_committed"  # 审批后 revision/tree 原子成为 current
     RESOURCE_FETCH_FAILED = "learning.resource_fetch_failed"  # eval case 7：深读失败，不产幽灵 item
     ITEMS_EXTRACTED = "learning.items_extracted"  # Reader 产候选（审批前预览）

@@ -16,12 +16,14 @@ LLM 只在 Reader 的"深读"一个槽被调用。每步都在**同一条事件�
 未获批候选绝不进 store（eval case 1，审批门返回子集 + 本编排只入库获批者共同保证）。
 """
 
+import hashlib
 from collections.abc import Collection
 from typing import Literal
 
 from pydantic import BaseModel
 
 from grandquiz.domain.learning.approval import ApprovalGate
+from grandquiz.domain.learning.citations import CitationResolutionError, validate_exact_evidence
 from grandquiz.domain.learning.document import build_document_snapshot
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.ingest.fetch import FetchError, FetchSource, fetch_resource
@@ -29,9 +31,10 @@ from grandquiz.domain.learning.ingest.reader import (
     UNTRUSTED_READ_HOOK,
     Reader,
     ReaderError,
+    ReaderEvidenceError,
     neutralize_fence,
 )
-from grandquiz.domain.learning.models import KnowledgeItem, LearningResource
+from grandquiz.domain.learning.models import EvidenceLocator, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.events import EventEmitter
 from grandquiz.kernel.hooks import HookManager
@@ -148,16 +151,57 @@ async def ingest_resource(
         hooks.register_interceptor(UNTRUSTED_READ_HOOK, neutralize_fence)
         reader = Reader(hooks=hooks)
         try:
-            read_result = await reader.read(
+            read_result = await reader.read_document(
                 resource,
-                content,
+                document,
                 provider=provider,
                 emitter=emitter,
                 parent_span_id=ingest_span,
             )
+        except ReaderEvidenceError as exc:
+            emitter.emit(
+                LearningEvent.CITATION_REJECTED,
+                parent_span_id=ingest_span,
+                payload={
+                    "revision_id": document.revision.revision_id,
+                    "classification": exc.classification,
+                    "quote_fingerprint": exc.public_fingerprint,
+                },
+            )
+            return fail(f"reader evidence: {exc}")
         except ReaderError as exc:
             return fail(f"reader: {exc}")
-        candidates = read_result.items
+        try:
+            candidates = read_result.items
+            validate_exact_evidence(document, candidates)
+        except CitationResolutionError as exc:
+            emitter.emit(
+                LearningEvent.CITATION_REJECTED,
+                parent_span_id=ingest_span,
+                payload={
+                    "revision_id": document.revision.revision_id,
+                    "classification": exc.classification,
+                },
+            )
+            return fail(f"grounding: {exc}")
+        locators = [
+            evidence.locator
+            for candidate in candidates
+            for evidence in candidate.evidence
+            if isinstance(evidence.locator, EvidenceLocator)
+        ]
+        emitter.emit(
+            LearningEvent.CITATION_VALIDATED,
+            parent_span_id=ingest_span,
+            payload={
+                "revision_id": document.revision.revision_id,
+                "node_ids": sorted({locator.node_id for locator in locators}),
+                "evidence_count": len(locators),
+                "evidence_fingerprint": hashlib.sha256(
+                    "\0".join(sorted(locator.quote_hash for locator in locators)).encode("utf-8")
+                ).hexdigest(),
+            },
+        )
 
         # 深读成功 → 把资源级 topic（RAG-metadata）写入 staged resource。
         # 深读失败（failed 分支）绝不到这里，故失败资源 topic 恒 None（保持契约）。topic 是目录式

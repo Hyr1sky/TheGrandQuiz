@@ -50,7 +50,24 @@ class _ReaderProvider:
     async def complete(
         self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
     ) -> Completion:
-        return Completion(text=_READER_JSON, usage=Usage(prompt_tokens=7, completion_tokens=3))
+        request = json.loads(
+            next(message.content for message in messages if message.role == "user")
+        )
+        node = request["untrusted_document_nodes"][0]
+        start = node["content"].index(_QUOTE)
+        output = json.loads(_READER_JSON)
+        output["candidates"][0]["evidence"] = [
+            {
+                "node_key": node["node_key"],
+                "start_offset": start,
+                "end_offset": start + len(_QUOTE),
+                "quote": _QUOTE,
+            }
+        ]
+        return Completion(
+            text=json.dumps(output, ensure_ascii=False),
+            usage=Usage(prompt_tokens=7, completion_tokens=3),
+        )
 
 
 class _AssessProvider:
@@ -96,7 +113,7 @@ async def test_ingest_then_assess_run_unchanged_on_sqlite(tmp_path: Path) -> Non
     emitter1, _events1, trace1 = _harness("ingest")
     ingest_result = await ingest_resource(
         _URL,
-        source=lambda _url: "React hooks 深读材料",
+        source=lambda _url: f"React hooks 深读材料：{_QUOTE}",
         provider=_ReaderProvider(),
         store=store,
         approval=ScriptedApprovalGate(keep=lambda _item: True),

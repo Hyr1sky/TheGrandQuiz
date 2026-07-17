@@ -55,7 +55,24 @@ class _ReaderProvider:
     async def complete(
         self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
     ) -> Completion:
-        return Completion(text=_READER_JSON, usage=Usage(prompt_tokens=7, completion_tokens=3))
+        request = json.loads(
+            next(message.content for message in messages if message.role == "user")
+        )
+        node = request["untrusted_document_nodes"][0]
+        start = node["content"].index(_QUOTE)
+        output = json.loads(_READER_JSON)
+        output["candidates"][0]["evidence"] = [
+            {
+                "node_key": node["node_key"],
+                "start_offset": start,
+                "end_offset": start + len(_QUOTE),
+                "quote": _QUOTE,
+            }
+        ]
+        return Completion(
+            text=json.dumps(output, ensure_ascii=False),
+            usage=Usage(prompt_tokens=7, completion_tokens=3),
+        )
 
 
 class _McProvider:
@@ -148,11 +165,12 @@ async def test_run_ingest_persists_trace_to_independent_db_and_prints_trace_id(
         assert types[-1] == "ingest.ended"
         assert EventType.MODEL_STARTED in types and EventType.MODEL_ENDED in types
         assert LearningEvent.ITEM_CREATED in types
-        # build_span_tree 从库里重建 span 森林：ingest 为根，Reader 的 model span 挂其下。
+        # build_span_tree：ingest → 自然节点批次 → Reader model。
         roots = build_span_tree(events)
         assert len(roots) == 1
         assert roots[0].type == "ingest"
-        assert [c.type for c in roots[0].children] == ["model"]
+        assert [c.type for c in roots[0].children] == ["learning.reader_batch"]
+        assert [c.type for c in roots[0].children[0].children] == ["model"]
         assert store.span_tree(trace_id) == roots
     finally:
         store.close()

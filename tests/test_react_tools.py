@@ -194,8 +194,27 @@ class _ScriptedReactIngestProvider:
     ) -> Completion:
         self.calls += 1
         joined = "\n".join(m.content for m in messages)
-        if "不可信抓取内容" in joined:  # 内部 Reader 深读调用
-            return Completion(text=_READER_JSON, usage=Usage(prompt_tokens=11, completion_tokens=5))
+        if "untrusted_document_nodes" in joined:  # 内部 Reader 节点批次调用
+            request = json.loads(
+                next(message.content for message in messages if message.role == "user")
+            )
+            nodes = request["untrusted_document_nodes"]
+            output = json.loads(_READER_JSON)
+            for candidate in output["candidates"]:
+                for evidence in candidate["evidence"]:
+                    node = next(node for node in nodes if evidence["quote"] in node["content"])
+                    start = node["content"].index(evidence["quote"])
+                    evidence.update(
+                        {
+                            "node_key": node["node_key"],
+                            "start_offset": start,
+                            "end_offset": start + len(evidence["quote"]),
+                        }
+                    )
+            return Completion(
+                text=json.dumps(output, ensure_ascii=False),
+                usage=Usage(prompt_tokens=11, completion_tokens=5),
+            )
         if any(m.role == "tool" for m in messages):  # 见到工具结果 → 收敛 final
             return Completion(
                 text="已完成 ingest", usage=Usage(prompt_tokens=4, completion_tokens=3)
@@ -256,8 +275,9 @@ async def test_react_ingest_spans_nest_under_tool_call_and_messages_are_isolated
     # 内部编排根 span（ingest）重挂在 TOOL_CALL 之下（不是 agent_turn 的直接子节点）
     assert [c.type for c in tool_span.children] == ["ingest"]
     ingest_span = tool_span.children[0]
-    # Reader 的 model span 嵌在 ingest 之下（深层，不冒到 ReAct 主体）
-    assert "model" in [c.type for c in ingest_span.children]
+    # Reader 的 model span 嵌在自然节点批次之下（深层，不冒到 ReAct 主体）
+    assert [c.type for c in ingest_span.children] == ["learning.reader_batch"]
+    assert [c.type for c in ingest_span.children[0].children] == ["model"]
 
     # 隔离：ReAct 只收结构化结果字符串
     assert tool_span.output is not None

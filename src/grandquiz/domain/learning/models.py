@@ -19,7 +19,7 @@ import unicodedata
 from collections.abc import Iterable
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, BeforeValidator, Field, StringConstraints
+from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
 # 非空字符串（去首尾空白后至少 1 字符）：概念名 / 摘要 / 证据引文的硬约束。
 # 决策 3 的门原本只挡"evidence 列表为空"，不挡"引文为空串"——空串 quote/concept/summary
@@ -68,6 +68,36 @@ def derive_id(*parts: str) -> str:
     return digest[:16]
 
 
+class EvidenceLocator(BaseModel):
+    """Evidence 在不可变 revision/node 中的精确位置。"""
+
+    revision_id: str
+    node_id: str
+    section_path: str
+    start_offset: int = Field(ge=0)
+    end_offset: int = Field(ge=0)
+    quote_hash: str
+    page_start: int | None = Field(default=None, ge=1)
+    page_end: int | None = Field(default=None, ge=1)
+    block_id: str | None = None
+
+    @model_validator(mode="after")
+    def _span_is_non_empty(self) -> Self:
+        if self.end_offset <= self.start_offset:
+            raise ValueError("EvidenceLocator end_offset 必须大于 start_offset")
+        if (
+            self.page_start is not None
+            and self.page_end is not None
+            and self.page_end < self.page_start
+        ):
+            raise ValueError("EvidenceLocator page_end 不能早于 page_start")
+        return self
+
+    @property
+    def resolved(self) -> bool:
+        return True
+
+
 class Evidence(BaseModel):
     """KnowledgeItem 的证据：一段原文引文 + 可选结构定位符。
 
@@ -76,7 +106,16 @@ class Evidence(BaseModel):
     """
 
     quote: NonEmptyStr
-    locator: str | None = None
+    locator: EvidenceLocator | str | None = None
+
+
+class EvidenceAuditEntry(BaseModel):
+    """无法确定性回填的旧 evidence；保留知识可用性，同时显式进入审计。"""
+
+    item_id: str
+    ordinal: int = Field(ge=0)
+    quote: NonEmptyStr
+    reason: Literal["unresolved"] = "unresolved"
 
 
 def _identity_text(value: str) -> str:

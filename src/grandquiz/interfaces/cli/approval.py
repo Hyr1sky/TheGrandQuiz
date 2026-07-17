@@ -10,7 +10,7 @@ from grandquiz.domain.learning.approval import (
     emit_approval_decided,
     emit_approval_requested,
 )
-from grandquiz.domain.learning.models import KnowledgeItem
+from grandquiz.domain.learning.models import EvidenceLocator, KnowledgeItem
 from grandquiz.kernel.events import EventEmitter
 
 InputFn = Callable[[str], str]
@@ -69,7 +69,11 @@ class CliApprovalGate:
         self._console.print(f"置信度：{item.confidence:.2f}")
         self._console.print("证据：")
         for evidence in item.evidence:
-            locator = f" ({escape(evidence.locator)})" if evidence.locator else ""
+            if isinstance(evidence.locator, EvidenceLocator):
+                label = evidence.locator.section_path or "文档根"
+            else:
+                label = evidence.locator
+            locator = f" ({escape(label)})" if label else ""
             self._console.print(f"  - {escape(evidence.quote)}{locator}")
 
     def _ask_keep(self) -> bool:

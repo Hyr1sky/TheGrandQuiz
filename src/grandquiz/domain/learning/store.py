@@ -11,13 +11,28 @@
 即可替换实现（兑现走骨架台账 #2 的"替换不改调用方"）。
 """
 
+import hashlib
 import json
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from grandquiz.domain.learning.document import build_document_snapshot
+from grandquiz.domain.learning.citations import (
+    GroundingError,
+    ground_items,
+    validate_exact_evidence,
+)
+from grandquiz.domain.learning.document import DocumentSnapshot, build_document_snapshot
+from grandquiz.domain.learning.document_search import (
+    DocumentSearchHit,
+    compile_fts_query,
+    fts_projection,
+)
 from grandquiz.domain.learning.models import (
     DocumentNode,
+    Evidence,
+    EvidenceAuditEntry,
+    EvidenceLocator,
     KnowledgeItem,
     LearningResource,
     ResourceRevision,
@@ -41,6 +56,8 @@ class Store(Protocol):
     def get_resource(self, resource_id: str) -> LearningResource | None: ...
     def set_resource_status(self, resource_id: str, status: ResourceStatus) -> None: ...
     def add_items(self, items: list[KnowledgeItem]) -> None: ...
+    def evidence_for_item(self, item_id: str) -> list[Evidence]: ...
+    def unresolved_evidence(self) -> list[EvidenceAuditEntry]: ...
     def replace_snapshot(self, resource: LearningResource, items: list[KnowledgeItem]) -> None: ...
     def current_revision(self, resource_id: str) -> ResourceRevision | None: ...
     def get_revision(self, revision_id: str) -> ResourceRevision | None: ...
@@ -48,6 +65,9 @@ class Store(Protocol):
     def document_nodes(
         self, resource_id: str, *, revision_id: str | None = None
     ) -> list[DocumentNode]: ...
+    def search_document_nodes(
+        self, query: str, *, resource_ids: list[str] | None, limit: int
+    ) -> list[DocumentSearchHit]: ...
     def items_for_resource(self, resource_id: str) -> list[KnowledgeItem]: ...
     def all_items(self) -> list[KnowledgeItem]: ...
     def resource_topics(self) -> list[tuple[str, str]]: ...
@@ -83,10 +103,26 @@ class LearningStore:
         for item in items:
             self._items[item.item_id] = item
 
+    def evidence_for_item(self, item_id: str) -> list[Evidence]:
+        """按 Reader 原始顺序返回 item 的证据；item 不存在时返回空列表。"""
+        item = self._items.get(item_id)
+        return [] if item is None else list(item.evidence)
+
+    def unresolved_evidence(self) -> list[EvidenceAuditEntry]:
+        """稳定列出仍无精确 locator 的 evidence，供迁移审计。"""
+        return [
+            EvidenceAuditEntry(item_id=item.item_id, ordinal=ordinal, quote=evidence.quote)
+            for item in self.all_items()
+            for ordinal, evidence in enumerate(item.evidence)
+            if not isinstance(evidence.locator, EvidenceLocator)
+        ]
+
     def replace_snapshot(self, resource: LearningResource, items: list[KnowledgeItem]) -> None:
         """原子替换资源的获批知识快照；空列表表示获批清空。"""
         _validate_snapshot(resource, items)
         document = build_document_snapshot(resource)
+        if document is not None and items:
+            validate_exact_evidence(document, items)
         resources = dict(self._resources)
         revisions = dict(self._revisions)
         nodes = dict(self._nodes)
@@ -134,6 +170,43 @@ class LearningStore:
             key=lambda node: (node.ordinal, node.node_id),
         )
 
+    def search_document_nodes(
+        self, query: str, *, resource_ids: list[str] | None, limit: int
+    ) -> list[DocumentSearchHit]:
+        """内存版确定性词面检索；SQLite 版使用 FTS5/BM25。"""
+        needle = query.casefold().strip()
+        hits: list[DocumentSearchHit] = []
+        selected = None if resource_ids is None else set(resource_ids)
+        for resource_id in sorted(self._resources):
+            if selected is not None and resource_id not in selected:
+                continue
+            revision = self.current_revision(resource_id)
+            if revision is None:
+                continue
+            for node in self.document_nodes(resource_id):
+                body = revision.raw_content[node.start_offset : node.end_offset]
+                haystack = "\n".join(
+                    part
+                    for part in (node.title, node.section_path, node.summary, body)
+                    if part is not None
+                ).casefold()
+                count = haystack.count(needle)
+                if count == 0:
+                    continue
+                hits.append(
+                    DocumentSearchHit(
+                        resource_id=resource_id,
+                        revision_id=revision.revision_id,
+                        node_id=node.node_id,
+                        kind=node.kind,
+                        section_path=node.section_path,
+                        title=node.title,
+                        excerpt=_match_excerpt(body, needle),
+                        score=float(-count),
+                    )
+                )
+        return sorted(hits, key=lambda hit: (hit.score, hit.resource_id, hit.node_id))[:limit]
+
     def items_for_resource(self, resource_id: str) -> list[KnowledgeItem]:
         """某资源下已入库的 item，**按 item_id 升序**（与 SQLite 版一致的确定性顺序契约）。"""
         matched = [item for item in self._items.values() if item.resource_id == resource_id]
@@ -171,6 +244,8 @@ class SqliteLearningStore:
         self._db = database_from(db_path)
         self._conn = self._db.connection
         self._backfill_legacy_revisions()
+        self._backfill_legacy_evidence()
+        self._backfill_document_search_index()
 
     # --- resources ---------------------------------------------------------
     def add_resource(self, resource: LearningResource) -> None:
@@ -231,33 +306,15 @@ class SqliteLearningStore:
     # --- items -------------------------------------------------------------
     def add_items(self, items: list[KnowledgeItem]) -> None:
         """按 ``item_id`` 逐个入库（``INSERT OR REPLACE``）。evidence 存稳定序 JSON。"""
-        for item in items:
-            data = item.model_dump()
-            evidence_json = json.dumps(data["evidence"], sort_keys=True, ensure_ascii=False)
-            self._conn.execute(
-                "INSERT INTO knowledge_items "
-                "(item_id, resource_id, concept, summary, evidence, confidence, concept_key) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(item_id) DO UPDATE SET "
-                "resource_id=excluded.resource_id, concept=excluded.concept, "
-                "summary=excluded.summary, evidence=excluded.evidence, "
-                "confidence=excluded.confidence, concept_key=excluded.concept_key",
-                (
-                    item.item_id,
-                    item.resource_id,
-                    item.concept,
-                    item.summary,
-                    evidence_json,
-                    item.confidence,
-                    item.concept_key,
-                ),
-            )
+        self._upsert_items(items)
         self._db.commit()
 
     def replace_snapshot(self, resource: LearningResource, items: list[KnowledgeItem]) -> None:
         """在一个事务中 upsert revision，并删除本次获批快照之外的旧 item。"""
         _validate_snapshot(resource, items)
         document = build_document_snapshot(resource)
+        if document is not None and items:
+            validate_exact_evidence(document, items)
         previous = self.get_resource(resource.resource_id)
         previous_revision_id = previous.current_revision_id if previous is not None else None
         with self._db.transaction():
@@ -272,6 +329,7 @@ class SqliteLearningStore:
                     "UPDATE resources SET current_revision_id = ? WHERE resource_id = ?",
                     (document.revision.revision_id, resource.resource_id),
                 )
+                self._replace_document_search_index(resource.resource_id, document)
             self._upsert_items(items)
             item_ids = [item.item_id for item in items]
             if item_ids:
@@ -374,6 +432,56 @@ class SqliteLearningStore:
                     item.concept_key,
                 ),
             )
+            self._replace_evidence_rows(item)
+
+    def _replace_evidence_rows(self, item: KnowledgeItem) -> None:
+        self._conn.execute("DELETE FROM knowledge_item_evidence WHERE item_id = ?", (item.item_id,))
+        for ordinal, evidence in enumerate(item.evidence):
+            locator = evidence.locator
+            exact = locator if isinstance(locator, EvidenceLocator) else None
+            legacy_path = locator if isinstance(locator, str) else None
+            self._conn.execute(
+                "INSERT INTO knowledge_item_evidence "
+                "(item_id, ordinal, quote, quote_hash, revision_id, node_id, section_path, "
+                "start_offset, end_offset, page_start, page_end, block_id, resolved) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    item.item_id,
+                    ordinal,
+                    evidence.quote,
+                    hashlib.sha256(evidence.quote.encode("utf-8")).hexdigest(),
+                    exact.revision_id if exact is not None else None,
+                    exact.node_id if exact is not None else None,
+                    exact.section_path if exact is not None else legacy_path,
+                    exact.start_offset if exact is not None else None,
+                    exact.end_offset if exact is not None else None,
+                    exact.page_start if exact is not None else None,
+                    exact.page_end if exact is not None else None,
+                    exact.block_id if exact is not None else None,
+                    int(exact is not None),
+                ),
+            )
+
+    def evidence_for_item(self, item_id: str) -> list[Evidence]:
+        """从规范化 evidence 表按原始顺序恢复精确引用。"""
+        rows = self._conn.execute(
+            "SELECT quote, quote_hash, revision_id, node_id, section_path, start_offset, "
+            "end_offset, page_start, page_end, block_id, resolved "
+            "FROM knowledge_item_evidence WHERE item_id = ? ORDER BY ordinal",
+            (item_id,),
+        ).fetchall()
+        return [_row_to_evidence(row) for row in rows]
+
+    def unresolved_evidence(self) -> list[EvidenceAuditEntry]:
+        """按 item/ordinal 稳定返回旧迁移中无法确定性定位的 evidence。"""
+        rows = self._conn.execute(
+            "SELECT item_id, ordinal, quote FROM knowledge_item_evidence "
+            "WHERE resolved = 0 ORDER BY item_id, ordinal"
+        ).fetchall()
+        return [
+            EvidenceAuditEntry(item_id=str(row[0]), ordinal=int(row[1]), quote=str(row[2]))
+            for row in rows
+        ]
 
     def items_for_resource(self, resource_id: str) -> list[KnowledgeItem]:
         """某资源下已入库的 item，按 ``item_id`` 升序（含资源内序号，确定性且稳定）。"""
@@ -442,6 +550,45 @@ class SqliteLearningStore:
         )
         return [_row_to_document_node(row) for row in cursor.fetchall()]
 
+    def search_document_nodes(
+        self, query: str, *, resource_ids: list[str] | None, limit: int
+    ) -> list[DocumentSearchHit]:
+        fts_query = compile_fts_query(query)
+        if not fts_query:
+            return []
+        scope_sql = ""
+        parameters: list[object] = [fts_query]
+        if resource_ids is not None:
+            placeholders = ", ".join("?" for _ in resource_ids)
+            scope_sql = f" AND f.resource_id IN ({placeholders})"
+            parameters.extend(resource_ids)
+        parameters.append(limit)
+        rows = self._conn.execute(
+            "SELECT f.resource_id, f.revision_id, f.node_id, n.kind, n.section_path, "
+            "n.title, rr.raw_content, n.start_offset, n.end_offset, "
+            "bm25(document_nodes_fts, 0.0, 0.0, 0.0, 8.0, 4.0, 2.0, 1.0) AS score "
+            "FROM document_nodes_fts AS f "
+            "JOIN document_nodes AS n ON n.node_id = f.node_id "
+            "JOIN resource_revisions AS rr ON rr.revision_id = f.revision_id "
+            "JOIN resources AS r ON r.resource_id = f.resource_id "
+            "WHERE document_nodes_fts MATCH ? AND f.revision_id = r.current_revision_id"
+            f"{scope_sql} ORDER BY score, f.resource_id, f.node_id LIMIT ?",
+            tuple(parameters),
+        ).fetchall()
+        return [
+            DocumentSearchHit(
+                resource_id=str(row[0]),
+                revision_id=str(row[1]),
+                node_id=str(row[2]),
+                kind=str(row[3]),
+                section_path=str(row[4]),
+                title=None if row[5] is None else str(row[5]),
+                excerpt=_match_excerpt(str(row[6])[int(row[7]) : int(row[8])], query.casefold()),
+                score=float(row[9]),
+            )
+            for row in rows
+        ]
+
     def _backfill_legacy_revisions(self) -> None:
         rows = self._conn.execute(
             "SELECT resource_id, url, raw_content, content_hash, trusted, status, topic "
@@ -471,6 +618,72 @@ class SqliteLearningStore:
                     (document.revision.revision_id, resource.resource_id),
                 )
 
+    def _backfill_legacy_evidence(self) -> None:
+        """把旧 JSON evidence 确定性锚定；无法唯一定位的行保留为 unresolved。"""
+        rows = self._conn.execute(
+            "SELECT ki.item_id, ki.resource_id, ki.concept, ki.summary, ki.evidence, "
+            "ki.confidence, ki.concept_key "
+            "FROM knowledge_items AS ki "
+            "WHERE NOT EXISTS ("
+            "SELECT 1 FROM knowledge_item_evidence AS kie WHERE kie.item_id = ki.item_id"
+            ") ORDER BY ki.item_id"
+        ).fetchall()
+        for row in rows:
+            item = _row_to_item(row)
+            revision = self.current_revision(item.resource_id)
+            candidate = item
+            if revision is not None:
+                snapshot = DocumentSnapshot(
+                    revision=revision,
+                    nodes=tuple(
+                        self.document_nodes(item.resource_id, revision_id=revision.revision_id)
+                    ),
+                )
+                with suppress(GroundingError):
+                    candidate = ground_items(snapshot, [item])[0]
+            with self._db.transaction():
+                self._upsert_items([candidate])
+
+    def _backfill_document_search_index(self) -> None:
+        """schema 升级或重开时从 current revisions 确定性重建 FTS 派生投影。"""
+        resource_ids = [
+            str(row[0])
+            for row in self._conn.execute(
+                "SELECT resource_id FROM resources WHERE current_revision_id IS NOT NULL "
+                "ORDER BY resource_id"
+            ).fetchall()
+        ]
+        with self._db.transaction():
+            self._conn.execute("DELETE FROM document_nodes_fts")
+            for resource_id in resource_ids:
+                revision = self.current_revision(resource_id)
+                if revision is None:  # pragma: no cover - SQL predicate + FK invariant
+                    continue
+                document = DocumentSnapshot(
+                    revision=revision,
+                    nodes=tuple(self.document_nodes(resource_id, revision_id=revision.revision_id)),
+                )
+                self._replace_document_search_index(resource_id, document)
+
+    def _replace_document_search_index(self, resource_id: str, document: DocumentSnapshot) -> None:
+        self._conn.execute("DELETE FROM document_nodes_fts WHERE resource_id = ?", (resource_id,))
+        content = document.revision.raw_content
+        for node in document.nodes:
+            self._conn.execute(
+                "INSERT INTO document_nodes_fts "
+                "(node_id, revision_id, resource_id, title, section_path, summary, body) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    node.node_id,
+                    document.revision.revision_id,
+                    resource_id,
+                    fts_projection(node.title or ""),
+                    fts_projection(node.section_path),
+                    fts_projection(node.summary or ""),
+                    fts_projection(content[node.start_offset : node.end_offset]),
+                ),
+            )
+
     def close(self) -> None:
         """关闭底层连接（跨会话验收：关闭后用同一 db_path 重开，数据仍在）。"""
         self._db.close()
@@ -489,6 +702,25 @@ def _row_to_item(row: Any) -> KnowledgeItem:
             "concept_key": row[6],
         }
     )
+
+
+def _row_to_evidence(row: Any) -> Evidence:
+    quote = str(row[0])
+    if bool(row[10]):
+        locator: EvidenceLocator | str | None = EvidenceLocator(
+            revision_id=str(row[2]),
+            node_id=str(row[3]),
+            section_path=str(row[4]),
+            start_offset=int(row[5]),
+            end_offset=int(row[6]),
+            page_start=None if row[7] is None else int(row[7]),
+            page_end=None if row[8] is None else int(row[8]),
+            block_id=None if row[9] is None else str(row[9]),
+            quote_hash=str(row[1]),
+        )
+    else:
+        locator = None if row[4] is None else str(row[4])
+    return Evidence(quote=quote, locator=locator)
 
 
 def _row_to_revision(row: Any) -> ResourceRevision:
@@ -529,3 +761,14 @@ def _validate_snapshot(resource: LearningResource, items: list[KnowledgeItem]) -
         raise ValueError(
             f"快照含不属于资源 {resource.resource_id} 的 KnowledgeItem：{', '.join(mismatched)}"
         )
+
+
+def _match_excerpt(body: str, needle: str, *, radius: int = 80) -> str:
+    index = body.casefold().find(needle)
+    if index < 0:
+        return body[: radius * 2]
+    start = max(0, index - radius)
+    end = min(len(body), index + len(needle) + radius)
+    prefix = "…" if start else ""
+    suffix = "…" if end < len(body) else ""
+    return f"{prefix}{body[start:end]}{suffix}"

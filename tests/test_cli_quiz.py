@@ -57,7 +57,25 @@ class _ReaderProvider:
     async def complete(
         self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
     ) -> Completion:
-        return Completion(text=_READER_JSON, usage=Usage(prompt_tokens=7, completion_tokens=3))
+        request = json.loads(
+            next(message.content for message in messages if message.role == "user")
+        )
+        node = request["untrusted_document_nodes"][0]
+        quote = _QUOTE if _QUOTE in node["content"] else node["content"].strip()[:8]
+        start = node["content"].index(quote)
+        output = json.loads(_READER_JSON)
+        output["candidates"][0]["evidence"] = [
+            {
+                "node_key": node["node_key"],
+                "start_offset": start,
+                "end_offset": start + len(quote),
+                "quote": quote,
+            }
+        ]
+        return Completion(
+            text=json.dumps(output, ensure_ascii=False),
+            usage=Usage(prompt_tokens=7, completion_tokens=3),
+        )
 
 
 class _McProvider:

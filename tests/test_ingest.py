@@ -33,23 +33,40 @@ _MODELS: dict[Role, str] = {"basic": "deepseek-x", "enrich": "qwen-x"}
 
 _INGEST_STARTED = "ingest.started"
 _INGEST_ENDED = "ingest.ended"
+_CONTENT = "React hooks 深读材料：闭包、变量提升、事件循环。"
+
+
+def _node_evidence(quote: str) -> dict[str, object]:
+    start = _CONTENT.index(quote)
+    return {
+        "node_key": "n000001",
+        "start_offset": start,
+        "end_offset": start + len(quote),
+        "quote": quote,
+    }
+
 
 # 三个候选；审批只保留其中两个（闭包 / 事件循环），丢弃"变量提升"。
 _READER_JSON = json.dumps(
     {
         "topic": "React Hooks 与 JS 运行时",
         "candidates": [
-            {"concept": "闭包", "summary": "s1", "evidence": [{"quote": "q1"}], "confidence": 0.9},
+            {
+                "concept": "闭包",
+                "summary": "s1",
+                "evidence": [_node_evidence("闭包")],
+                "confidence": 0.9,
+            },
             {
                 "concept": "变量提升",
                 "summary": "s2",
-                "evidence": [{"quote": "q2"}],
+                "evidence": [_node_evidence("变量提升")],
                 "confidence": 0.8,
             },
             {
                 "concept": "事件循环",
                 "summary": "s3",
-                "evidence": [{"quote": "q3"}],
+                "evidence": [_node_evidence("事件循环")],
                 "confidence": 0.7,
             },
         ],
@@ -68,7 +85,28 @@ class _FixedProvider:
         self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
     ) -> Completion:
         self.calls += 1
-        return Completion(text=self.text, usage=Usage(prompt_tokens=7, completion_tokens=3))
+        output = json.loads(self.text)
+        payload = json.loads(
+            next(message.content for message in messages if message.role == "user")
+        )
+        nodes = payload.get("untrusted_document_nodes", [])
+        for candidate in output.get("candidates", []):
+            for evidence in candidate.get("evidence", []):
+                quote = evidence.get("quote", "")
+                source = next((node for node in nodes if quote in node["content"]), None)
+                if source is not None:
+                    start = source["content"].index(quote)
+                    evidence.update(
+                        {
+                            "node_key": source["node_key"],
+                            "start_offset": start,
+                            "end_offset": start + len(quote),
+                        }
+                    )
+        return Completion(
+            text=json.dumps(output, ensure_ascii=False),
+            usage=Usage(prompt_tokens=7, completion_tokens=3),
+        )
 
 
 def _keep_two(item: KnowledgeItem) -> bool:
@@ -81,7 +119,7 @@ async def test_happy_path_only_approved_items_enter_store() -> None:
 
     result = await ingest_resource(
         _URL,
-        source=lambda _url: "React hooks 深读材料",
+        source=lambda _url: _CONTENT,
         provider=_FixedProvider(_READER_JSON),
         store=store,
         approval=ScriptedApprovalGate(keep=_keep_two),
@@ -96,9 +134,12 @@ async def test_happy_path_only_approved_items_enter_store() -> None:
         LearningEvent.RESOURCE_CREATED,
         LearningEvent.RESOURCE_READ,
         LearningEvent.DOCUMENT_PARSED,
+        LearningEvent.READER_BATCH_STARTED,
         EventType.HOOK_INVOKED,
         EventType.MODEL_STARTED,
         EventType.MODEL_ENDED,
+        LearningEvent.READER_BATCH_ENDED,
+        LearningEvent.CITATION_VALIDATED,
         LearningEvent.ITEMS_EXTRACTED,
         APPROVAL_REQUESTED,
         APPROVAL_DECIDED,
@@ -122,7 +163,7 @@ async def test_happy_path_only_approved_items_enter_store() -> None:
     resource = store.get_resource(result.resource_id)
     assert resource is not None
     assert resource.status == "read"
-    assert resource.raw_content == "React hooks 深读材料"
+    assert resource.raw_content == _CONTENT
     assert resource.content_hash is not None
     assert resource.trusted is False
     # GKB-S3：Reader 抽出的资源级 topic 落库到 resources.topic（深读成功才产）。
@@ -138,12 +179,14 @@ async def test_happy_path_only_approved_items_enter_store() -> None:
     }
     committed = next(e for e in events if e.type == LearningEvent.REVISION_COMMITTED)
     assert committed.payload["revision_id"] == revision.revision_id
+    assert all(item.evidence[0].locator is not None for item in result.items)
 
     # span 树：ingest 为根，Reader 的 model span 挂其下；领域事件是点事件（不进树）。
     roots = trace.span_tree("run")
     assert len(roots) == 1
     assert roots[0].type == "ingest"
-    assert [c.type for c in roots[0].children] == ["model"]
+    assert [c.type for c in roots[0].children] == ["learning.reader_batch"]
+    assert [c.type for c in roots[0].children[0].children] == ["model"]
     # 点事件（span_id=None，被 build_span_tree 跳过、不进树），单独断言其 parent 链。
     ingest_root = roots[0].span_id
     for etype in (
@@ -200,6 +243,32 @@ async def test_fetch_failure_marks_resource_failed_and_produces_no_ghost_items()
     trace.close()
 
 
+async def test_unlocatable_reader_quote_fails_closed_with_public_fingerprint_event() -> None:
+    emitter, events, trace = _harness()
+    invalid = json.loads(_READER_JSON)
+    invalid["candidates"][0]["evidence"] = [{"quote": "材料中不存在的引文"}]
+
+    result = await ingest_resource(
+        _URL,
+        source=lambda _url: _CONTENT,
+        provider=_FixedProvider(json.dumps(invalid, ensure_ascii=False)),
+        store=LearningStore(),
+        approval=ScriptedApprovalGate(keep=_keep_two),
+        emitter=emitter,
+        max_bytes=4096,
+        allowed_domains=_ALLOWED,
+    )
+
+    assert result.status == "failed"
+    rejected = next(event for event in events if event.type == LearningEvent.CITATION_REJECTED)
+    assert rejected.payload["classification"] == "evidence_schema"
+    assert len(rejected.payload["quote_fingerprint"]) == 64
+    assert "材料中不存在的引文" not in json.dumps(rejected.payload, ensure_ascii=False)
+    assert LearningEvent.CITATION_VALIDATED not in {event.type for event in events}
+    assert LearningEvent.REVISION_COMMITTED not in {event.type for event in events}
+    trace.close()
+
+
 async def test_failed_refresh_preserves_previous_approved_snapshot() -> None:
     emitter, _events, trace = _harness()
     store = LearningStore()
@@ -241,7 +310,7 @@ async def test_approval_exception_preserves_previous_approved_snapshot() -> None
     with pytest.raises(RuntimeError, match="用户取消审批"):
         await ingest_resource(
             _URL,
-            source=lambda _url: "更新后的材料",
+            source=lambda _url: f"更新后的材料。{_CONTENT}",
             provider=_FixedProvider(_READER_JSON),
             store=store,
             approval=_CancelledApproval(),
@@ -260,7 +329,7 @@ async def test_approval_exception_preserves_previous_approved_snapshot() -> None
 async def _seed_approved_snapshot(store: LearningStore, emitter: EventEmitter) -> str:
     result = await ingest_resource(
         _URL,
-        source=lambda _url: "原始材料",
+        source=lambda _url: f"原始材料。{_CONTENT}",
         provider=_FixedProvider(_READER_JSON),
         store=store,
         approval=ScriptedApprovalGate(keep=_keep_two),
@@ -274,7 +343,7 @@ async def _seed_approved_snapshot(store: LearningStore, emitter: EventEmitter) -
 async def _run_once(provider: Provider, emitter: EventEmitter) -> None:
     await ingest_resource(
         _URL,
-        source=lambda _url: "React hooks 深读材料",
+        source=lambda _url: _CONTENT,
         provider=provider,
         store=LearningStore(),
         approval=ScriptedApprovalGate(keep=_keep_two),
@@ -369,8 +438,9 @@ async def test_provider_exception_propagates_and_closes_ingest_span() -> None:
     assert len(roots) == 1
     assert roots[0].type == "ingest"
     assert roots[0].end_ts is not None
-    assert [c.type for c in roots[0].children] == ["model"]
+    assert [c.type for c in roots[0].children] == ["learning.reader_batch"]
     assert roots[0].children[0].end_ts is not None
+    assert [c.type for c in roots[0].children[0].children] == ["model"]
     # 无幽灵 item：该资源 0 个 item。
     created = next(e for e in events if e.type == LearningEvent.RESOURCE_CREATED)
     assert store.items_for_resource(created.payload["resource_id"]) == []

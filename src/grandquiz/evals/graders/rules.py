@@ -102,13 +102,24 @@ def grade_case1(sr: SolveResult) -> list[str]:
         )
         _check(failures, resource.content_hash is not None, "资源缺 content_hash")
         _check(failures, resource.trusted is False, "抓取内容不应标记为可信")
-    # span 树（family 4）：ingest 为根，Reader 的 model span 挂其下；点事件挂 ingest 根、不进树。
+    # span 树（family 4）：ingest → 自然节点批次 → Reader model；点事件挂 ingest 根。
     _check(failures, len(sr.spans) == 1, f"应只有 1 个根 span，实为 {len(sr.spans)}")
     if sr.spans:
         root = sr.spans[0]
         _check(failures, root.type == "ingest", f"根 span 应为 ingest，实为 {root.type}")
         child_types = [c.type for c in root.children]
-        _check(failures, child_types == ["model"], f"子 span 应为 [model]，实为 {child_types}")
+        _check(
+            failures,
+            child_types == ["learning.reader_batch"],
+            f"子 span 应为 [learning.reader_batch]，实为 {child_types}",
+        )
+        if root.children:
+            model_types = [child.type for child in root.children[0].children]
+            _check(
+                failures,
+                model_types == ["model"],
+                f"批次子 span 应为 [model]，实为 {model_types}",
+            )
         for etype in (
             LearningEvent.RESOURCE_CREATED,
             LearningEvent.RESOURCE_READ,

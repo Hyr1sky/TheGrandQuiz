@@ -95,7 +95,24 @@ class _ReactScriptProvider:
                 usage=Usage(prompt_tokens=7, completion_tokens=3),
             )
         if "深读器" in system:  # Reader 深读槽
-            return Completion(text=_READER_JSON, usage=Usage(prompt_tokens=9, completion_tokens=4))
+            request = json.loads(
+                next(message.content for message in messages if message.role == "user")
+            )
+            node = request["untrusted_document_nodes"][0]
+            start = node["content"].index(_QUOTE)
+            output = json.loads(_READER_JSON)
+            output["candidates"][0]["evidence"] = [
+                {
+                    "node_key": node["node_key"],
+                    "start_offset": start,
+                    "end_offset": start + len(_QUOTE),
+                    "quote": _QUOTE,
+                }
+            ]
+            return Completion(
+                text=json.dumps(output, ensure_ascii=False),
+                usage=Usage(prompt_tokens=9, completion_tokens=4),
+            )
         if "判卷官" in system:  # 判卷槽（本剧本走 MC 判卷、不打此槽，留作完备）
             return Completion(
                 text=json.dumps({"verdict": "对", "cited_evidence": [_QUOTE]}, ensure_ascii=False),

@@ -18,6 +18,7 @@ from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.models import (
     DocumentNode,
     Evidence,
+    EvidenceLocator,
     KnowledgeItem,
     LearningResource,
     ResourceRevision,
@@ -336,6 +337,17 @@ def test_model_field_sets_are_pinned() -> None:
     # import 守卫挡不住 `created_at: float = 0.0`（不 import datetime 的时间戳字段）。
     # 钉死字段集合才是决策 2 的直接守卫：偷加/漏删字段在此失败，逼一次自觉的 schema 变更。
     assert set(Evidence.model_fields) == {"quote", "locator"}
+    assert set(EvidenceLocator.model_fields) == {
+        "revision_id",
+        "node_id",
+        "section_path",
+        "start_offset",
+        "end_offset",
+        "quote_hash",
+        "page_start",
+        "page_end",
+        "block_id",
+    }
     assert set(KnowledgeItem.model_fields) == {
         "item_id",
         "resource_id",
@@ -412,6 +424,10 @@ def test_learning_event_constants_are_namespaced() -> None:
     for value in (
         LearningEvent.RESOURCE_CREATED,
         LearningEvent.DOCUMENT_PARSED,
+        LearningEvent.READER_BATCH_STARTED,
+        LearningEvent.READER_BATCH_ENDED,
+        LearningEvent.CITATION_VALIDATED,
+        LearningEvent.CITATION_REJECTED,
         LearningEvent.REVISION_COMMITTED,
         LearningEvent.RESOURCE_FETCH_FAILED,
         LearningEvent.ITEMS_EXTRACTED,

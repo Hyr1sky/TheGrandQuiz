@@ -112,21 +112,48 @@ ITEM_DATA: list[tuple[str, str]] = [
 QUOTES = {quote for _concept, quote in ITEM_DATA}
 
 # ingest 用 Reader 固定输出：三个候选，审批只放行其中两个（闭包 / 事件循环）。
+INGEST_RAW_CONTENT = "React hooks 深读材料：q1、q2、q3"
 READER_JSON = json.dumps(
     {
         "topic": "JavaScript 核心机制",
         "candidates": [
-            {"concept": "闭包", "summary": "s1", "evidence": [{"quote": "q1"}], "confidence": 0.9},
+            {
+                "concept": "闭包",
+                "summary": "s1",
+                "evidence": [
+                    {
+                        "node_key": "n000001",
+                        "start_offset": INGEST_RAW_CONTENT.index("q1"),
+                        "end_offset": INGEST_RAW_CONTENT.index("q1") + 2,
+                        "quote": "q1",
+                    }
+                ],
+                "confidence": 0.9,
+            },
             {
                 "concept": "变量提升",
                 "summary": "s2",
-                "evidence": [{"quote": "q2"}],
+                "evidence": [
+                    {
+                        "node_key": "n000001",
+                        "start_offset": INGEST_RAW_CONTENT.index("q2"),
+                        "end_offset": INGEST_RAW_CONTENT.index("q2") + 2,
+                        "quote": "q2",
+                    }
+                ],
                 "confidence": 0.8,
             },
             {
                 "concept": "事件循环",
                 "summary": "s3",
-                "evidence": [{"quote": "q3"}],
+                "evidence": [
+                    {
+                        "node_key": "n000001",
+                        "start_offset": INGEST_RAW_CONTENT.index("q3"),
+                        "end_offset": INGEST_RAW_CONTENT.index("q3") + 2,
+                        "quote": "q3",
+                    }
+                ],
                 "confidence": 0.7,
             },
         ],
@@ -135,7 +162,6 @@ READER_JSON = json.dumps(
 )
 INGEST_APPROVED_CONCEPTS = ["闭包", "事件循环"]
 INGEST_CANDIDATE_COUNT = 3
-INGEST_RAW_CONTENT = "React hooks 深读材料"
 
 
 # --- 假 provider（canned JSON，镜像两测试文件）------------------------------------------------
