@@ -1,6 +1,6 @@
 # SH-S9 — 真实 KnowledgeItem 审批门
 
-Status: implementation-done / HITL terminal pending
+Status: done
 Type: HITL
 
 ## Parent
@@ -22,7 +22,7 @@ CLI 审批；持久 suspend/resume 作为后续独立竖切，不再声称现有
 - [x] 文档诚实区分已交付阻塞审批与未交付 suspend/resume
 - [x] 五门全绿
 - [x] 真机交互 cancel：30 个候选首项输入 `q`，trace 闭合且生产知识表保持零行
-- [ ] 真机交互 keep / reject 后写入生产 DB
+- [x] 真机交互 keep / reject：三份材料分别保留 20/27、21/21、47/49，生产 DB 原子写入 88 项
 
 ## Blocked by
 

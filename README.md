@@ -15,8 +15,8 @@ runner / tools / hooks / context / recovery / trace）+ `providers`（OpenAI 兼
 [稳定性加固](.scratch/stability-hardening/PRD.md) 的 S1-S9 与长文 Reader 预算分块已实现：资源身份 /
 原子快照、scope 三态、流式抓取、Replay 指纹、原子学习状态、durable trace、完整请求预算、直答难度
 演化与真实 CLI 审批均已有测试。真实模型已重录受影响 cassette，并新增“连续直答正确 3→4 档→高档继续出题”的
-难度激活回放；静态四门全绿，全量 pytest 为 `721 passed`。生产 DB 已备份并迁移到 schema v8；真实
-材料审批重建与考核闭环完成后再进入 Web Acquisition。
+难度激活回放；静态四门全绿，全量 pytest 为 `721 passed`。生产 DB 已备份、迁移到 schema v8，并由
+三份真实材料审批重建为 88 个 KnowledgeItem；完成一次真实考核闭环后再进入 Web Acquisition。
 
 ## 文档
 

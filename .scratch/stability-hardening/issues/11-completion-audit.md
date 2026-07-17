@@ -14,13 +14,13 @@ Type: HITL
 
 ## Acceptance criteria
 
-- [ ] S1-S9 与真机暴露的 S11 每条 acceptance criterion 有直接证据，不以“未发现问题”代替证明
+- [x] S1-S9 与真机暴露的 S11 每条 acceptance criterion 有直接证据，不以“未发现问题”代替证明
 - [ ] learning DB 备份可打开，新库从真实材料重建并完成考核闭环
 - [x] 全部受影响 cassette 已重录或明确废弃，无旧工具契约假绿
 - [x] Ruff、format、Pyright、import-linter、全量 pytest 全绿
 - [ ] 全部 eval 与关键真机 trace 通过，成本 / token /错误信息完整
-- [ ] README、CONTEXT、architecture、ADR、PRD、issue、skeleton ledger 状态一致
-- [ ] 残余风险和明确 Out of Scope 形成最终报告
+- [x] README、CONTEXT、architecture、ADR、PRD、issue、skeleton ledger 状态一致
+- [x] 残余风险和明确 Out of Scope 形成最终报告
 
 ## Blocked by
 
@@ -41,7 +41,7 @@ Type: HITL
 
 | Slice | Evidence | State |
 | --- | --- | --- |
-| S1 | stable local locator / item fingerprint tests; Dict/SQLite snapshot parity; FK cascade; migration 0007 | implementation done |
+| S1 | stable local locator / item fingerprint tests; Dict/SQLite snapshot parity; FK cascade; migration 0007; real backup/rebuild | done |
 | S2 | discriminated `QuizScope`; unresolved/empty scope and tool validation tests; real case14 replay | done |
 | S3 | async stream tests prove decompressed byte cutoff stops later reads; SSRF/redirect/error taxonomy tests | done |
 | S4 | v2 tool contract fingerprint tests + real assessment/case14 cassette re-recording | done |
@@ -49,8 +49,8 @@ Type: HITL
 | S6 | durable processor failure propagation + best-effort observer isolation; CLI false-success regression test | done |
 | S7 | full messages/tools request budget tests; tool-loop growth rejection; asked-history cap/context priority tests | done |
 | S8 | unified evolution tests + real three-round 3→4 difficulty activation replay | done |
-| S9 | `CliApprovalGate` full preview/select/reject/cancel tests; requested/decided events; production composition no keep-all | implementation done; terminal HITL pending |
-| S11 | Reader deterministic 16k map/reduce under unchanged 32k Provider gate; real Agentic-RL 3-span cancel trace | implementation done; keep/reject write pending |
+| S9 | `CliApprovalGate` tests + real cancel and 20/27, 21/21, 47/49 keep/reject traces | done |
+| S11 | Reader deterministic 16k map/reduce under unchanged 32k Provider gate; 3 real long-resource writes | done |
 
 Static gates are green:
 
@@ -81,15 +81,24 @@ Pytest currently collects 721 tests: `721 passed`. No cassette was forged or man
 - Agentic-RL 首次真机重建暴露 Reader 单请求 `47,556 > 32,000`；SH-S11 修复后真实 3 分块均成功，
   trace `58c017af44f241778c86545069ef4d0f` 在取消审批后以 `ingest.ended(ok=false)` 闭合，资源、item、
   memory、asked、difficulty 仍全部为 0。
+- 用户批准具体筛选方案后，生产重建 trace 全部 `ingest.ended(ok=true)`：
+  - Agentic-RL `1a93870dfed045089ab74988841c5393`：3 个 model span / 40,546 tokens，保留 20/27；
+  - Agent Communication Protocols `0d1cc92618d8490d808aa17f146681ef`：2 个 span / 32,875 tokens，
+    保留 21/21；
+  - Hook As Reference `6e6a91e9342a4086a2df1686be9c3824`：4 个 span / 63,000 tokens，剔除两条
+    跨片段同名重复，保留 47/49。
+- 生产库最终为 schema v8、`quick_check=ok`、`foreign_key_check` 为空，3 resources / 88 items；三份
+  `content_hash` 与迁移前原文一致，资源内无同名 concept、无空 evidence、无孤儿外键。
 
 ### Remaining HITL
 
-Agentic-RL 的 30 个候选已完成 cancel 验收；下一次 HITL 清单拟保留 23 个正文知识，剔除重复 PPO 与文末
-6 个“思考题”误抽候选。获批后继续重建其余两份材料，再从新库完成一次真实 quiz 闭环。
+仅剩从新库完成一次真实 quiz：该步骤会把获批 KnowledgeItem 的摘要 / 证据发给 `.env` 模型用于出题与
+判卷，需用户单独授权并回答一道题；完成后才勾选“新库重建并完成考核闭环”与“关键真机 trace”。
 
 ### Residual scope
 
 - Durable approval/answer suspend-resume with persisted pending state remains a skeleton item, not part of the delivered
   blocking CLI adapter.
 - Article extraction quality, `web_search`, browser fallback and MCP adapters remain in the separate Web Acquisition PRD.
-- The stability PRD must not be marked done until the real DB rebuild and terminal approval evidence pass.
+- Reader 分块可能让同名概念或文末练习题跨片重复；当前由真实审批门剔除，不在本次暗改 ADR-0007 身份。
+- The stability PRD must not be marked done until the real quiz trace passes.

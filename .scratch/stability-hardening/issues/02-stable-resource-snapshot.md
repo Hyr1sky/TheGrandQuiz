@@ -1,6 +1,6 @@
 # SH-S1 — 稳定资源身份与原子知识快照
 
-Status: implementation-done / HITL rebuild pending
+Status: done
 Type: HITL
 
 ## Parent
@@ -21,7 +21,7 @@ Type: HITL
 - [x] 重 ingest fetch / Reader / 审批前失败时旧获批快照保持可用
 - [x] resource、item、关联账外键与 upsert 不会因 delete-then-insert 误清保留状态
 - [x] Dict / SQLite 对快照替换结果 parity；迁移幂等
-- [ ] 清理真实 learning DB 前完成带日期备份并验证可打开；真实材料可重建
+- [x] 清理真实 learning DB 前完成带日期备份并验证可打开；3 份真实材料重建为 88 个 item
 - [x] 五门全绿，受影响 cassette 清单明确
 
 ## Blocked by

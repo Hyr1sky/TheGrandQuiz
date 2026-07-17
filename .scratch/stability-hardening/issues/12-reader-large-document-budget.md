@@ -1,6 +1,6 @@
 # SH-S11 — 长文 Reader 预算内分块
 
-Status: implementation-done / HITL write pending
+Status: done
 Type: bugfix
 
 ## Parent
@@ -23,7 +23,7 @@ Type: bugfix
 - [x] 32k Provider fail-closed 门保持原值，Reader 单片预算 16k，二者职责分离
 - [x] Ruff、format、Pyright、import-linter、全量 pytest 全绿（`721 passed`）
 - [x] 真实 Agentic-RL 深读产生 3 对成功 model span 和 30 个候选；取消审批后生产库仍为零行
-- [ ] keep/reject 后写入生产 DB，并完成其余两份真实材料重建
+- [x] keep/reject 后写入生产 DB，并完成三份真实材料重建（3 个资源 / 88 个 item）
 
 ## Residual risk
 
