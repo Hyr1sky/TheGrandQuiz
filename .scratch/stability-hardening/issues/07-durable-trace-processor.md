@@ -1,6 +1,6 @@
 # SH-S6 — Durable Trace 失败语义
 
-Status: ready-for-agent
+Status: implementation-done
 Type: AFK
 
 ## Parent
@@ -14,11 +14,11 @@ Type: AFK
 
 ## Acceptance criteria
 
-- [ ] durable processor 与 best-effort observer 有不同且明确的失败契约
-- [ ] CLI printer 失败仍被隔离，不影响 TraceStore 和业务
-- [ ] TraceStore 注入写失败时 turn 不报告成功，用户不收到误导 trace 位置
-- [ ] 失败本身可被上层观察且不递归触发无限事件发布
-- [ ] 正常事件顺序、span 配对与 processor 扇出不回归
+- [x] durable processor 与 best-effort observer 有不同且明确的失败契约
+- [x] CLI printer 失败仍被隔离，不影响 TraceStore 和业务
+- [x] TraceStore 注入写失败时 turn 不报告成功，用户不收到误导 trace 位置
+- [x] 失败本身可被上层观察且不递归触发无限事件发布
+- [x] 正常事件顺序、span 配对与 processor 扇出不回归
 - [ ] 五门全绿
 
 ## Blocked by

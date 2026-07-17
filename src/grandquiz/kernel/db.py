@@ -5,7 +5,7 @@
 """
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -20,7 +20,7 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
 
 
 @contextmanager
-def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+def transaction(conn: sqlite3.Connection) -> Generator[sqlite3.Connection]:
     """在最外层调用处提交或回滚；同连接嵌套调用复用现有事务。"""
     if conn.in_transaction:
         yield conn

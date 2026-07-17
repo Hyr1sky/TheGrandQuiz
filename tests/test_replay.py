@@ -14,7 +14,7 @@ from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import EventEmitter, EventSink
 from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.trace import Span, TraceStore
-from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.base import Completion, Message, Role, ToolSpec, Usage
 from grandquiz.providers.replay import (
     Cassette,
     RecordingProvider,
@@ -139,3 +139,41 @@ async def test_replay_miss_on_unknown_key() -> None:
     replay = ReplayProvider(Cassette(), _MODELS)
     with pytest.raises(ReplayMiss):
         await replay.complete([Message(role="user", content="never recorded")], role="basic")
+
+
+def _tool(name: str, *, description: str = "工具", field_type: str = "string") -> ToolSpec:
+    return ToolSpec(
+        name=name,
+        description=description,
+        parameters={
+            "type": "object",
+            "properties": {"value": {"type": field_type}},
+        },
+    )
+
+
+def test_replay_key_normalizes_tool_order_but_tracks_contract_changes() -> None:
+    messages = [Message(role="user", content="same")]
+    first = _tool("alpha")
+    second = _tool("beta")
+    baseline = replay_key(messages, "basic", "model", tools=[first, second])
+
+    assert baseline == replay_key(messages, "basic", "model", tools=[second, first])
+    assert baseline != replay_key(
+        messages, "basic", "model", tools=[_tool("alpha", description="新说明"), second]
+    )
+    assert baseline != replay_key(
+        messages, "basic", "model", tools=[_tool("alpha", field_type="integer"), second]
+    )
+    assert baseline != replay_key(messages, "basic", "model", tools=[first])
+
+
+async def test_replay_misses_when_recorded_tool_contract_changes() -> None:
+    messages = [Message(role="user", content="same")]
+    cassette = Cassette()
+    recording = RecordingProvider(_CountingProvider(), cassette, _MODELS)
+    await recording.complete(messages, tools=[_tool("alpha")])
+
+    replay = ReplayProvider(cassette, _MODELS)
+    with pytest.raises(ReplayMiss):
+        await replay.complete(messages, tools=[_tool("alpha", description="changed")])

@@ -169,9 +169,7 @@ def test_matches_dict_store_on_shared_scenario() -> None:
 
 def test_knowledge_item_round_trip_field_by_field() -> None:
     store = _sqlite()
-    store.add_resource(
-        LearningResource(resource_id="res123", url="https://example.com/res123")
-    )
+    store.add_resource(LearningResource(resource_id="res123", url="https://example.com/res123"))
     item = KnowledgeItem.create(
         resource_id="res123",
         concept="闭包捕获变量而非值",

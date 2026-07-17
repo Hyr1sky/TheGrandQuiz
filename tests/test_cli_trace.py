@@ -12,8 +12,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import pytest
 from rich.console import Console
 
+from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.models import (
     Evidence,
@@ -23,7 +25,7 @@ from grandquiz.domain.learning.models import (
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.interfaces.cli.app import run_ingest, run_quiz
-from grandquiz.kernel.events import EventType
+from grandquiz.kernel.events import DurableProcessorError, EventType
 from grandquiz.kernel.trace import TraceStore, build_span_tree
 from grandquiz.providers.base import Completion, Message, Role, Usage
 
@@ -128,6 +130,7 @@ async def test_run_ingest_persists_trace_to_independent_db_and_prints_trace_id(
         material_path=material,
         db_path=db,
         provider=_ReaderProvider(),
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
         console=console,
         trace_db_path=trace_db,
     )
@@ -212,6 +215,7 @@ async def test_default_trace_db_is_separate_file_not_learning_db(tmp_path: Path)
         material_path=material,
         db_path=db,
         provider=_ReaderProvider(),
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
         console=console,
         # 关键：不传 trace_db_path，走默认派生（db.parent/trace.db）
     )
@@ -232,3 +236,30 @@ async def test_default_trace_db_is_separate_file_not_learning_db(tmp_path: Path)
     finally:
         conn.close()
     assert "events" not in tables, f"trace 不应灌进 learning.db；learning 库表：{tables}"
+
+
+async def test_trace_write_failure_prevents_success_and_trace_location_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    material = tmp_path / "material.txt"
+    material.write_text("闭包材料", encoding="utf-8")
+    console = Console(record=True, width=100)
+
+    def fail_trace(_self: TraceStore, _event: object) -> None:
+        raise sqlite3.OperationalError("disk full")
+
+    monkeypatch.setattr(TraceStore, "on_event", fail_trace)
+    with pytest.raises(DurableProcessorError, match="durable event processor failed"):
+        await run_ingest(
+            title="React",
+            material_path=material,
+            db_path=tmp_path / "learning.db",
+            provider=_ReaderProvider(),
+            approval=ScriptedApprovalGate(keep=lambda _item: True),
+            console=console,
+            trace_db_path=tmp_path / "trace.db",
+        )
+
+    output = console.export_text()
+    assert "已入库" not in output
+    assert "本次会话 trace" not in output

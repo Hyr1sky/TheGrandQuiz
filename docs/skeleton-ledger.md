@@ -23,7 +23,7 @@ PRD 里的 **Out of Scope**（资源自动发现 / 向量库 / Web 前端 / 跨�
 |---|---|---|---|---|---|---|
 | 1 | Learning Memory | 进程内 dict（薄弱概念 + 三态 + 连对计数 + 判决历史） | SQLite 支持的 Memory 抽象（复用纯函数状态机 `apply_verdict`） | **M7** | 跨会话薄弱点持久，重启后仍薄弱优先出题 | ✅ `memory.py` 的 `SqliteLearningMemory`（`Memory` 协议 + `LearningMemory` dict 内存实现并存） |
 | 2 | KnowledgeItem / Resource 存储 | 进程内 dict | SQLite（复用 kernel 参数化 `migrate` + `domain/learning/migrations/0001_learning.sql`） | **M7** | 入库 item 重启后仍在、仍可锚定出题 | ✅ `store.py` 的 `SqliteLearningStore`（`Store` 协议 + `LearningStore` dict 内存实现并存） |
-| 3 | 审批门 | M3.1 已落 `ApprovalGate` 协议 + `ScriptedApprovalGate`（发 `approval.requested` 事件 + 脚本化决策）；CLI 阻塞 `prompt` 交互实现仍是后续 human 步骤 | 可挂起 / 可恢复 turn：凭 token 从待决状态恢复，跨 SSE / HTTP | **TBD**（随 `interfaces/api` 或专门加固；**接口形状第一天就按 suspend/resume 定**，故替换不改调用方） | 关掉 CLI 重开、凭 token 恢复同一次待审批会话 | ⬜ |
+| 3 | 审批门 | `ScriptedApprovalGate` + 已交付 `CliApprovalGate`（逐项展示 / 筛选 / 取消，发 `approval.requested/decided`）；当前协议仍是同步返回 | 可挂起 / 可恢复 turn：持久待决状态，凭 token 跨 SSE / HTTP 恢复 | **TBD**（随 `interfaces/api` 或专门加固；届时需显式扩展同步协议，不能声称无接口变化） | ~~CLI 逐项审批~~（✅ 已达）；关掉 CLI 重开、凭 token 恢复同一次审批（仍缺） | ⬜ |
 | 4 | Reader subagent 执行器 | M3.1 内联调用（隔离上下文 + pydantic 校验 + ModelRetry 已是真的） | `kernel/subagent.py` 通用执行器 | 出现**第二个** subagent 时再抽（无独立 M，YAGNI） | 第二个 subagent 复用同一执行器、零重复 | ⬜ |
 | 5 | prompt 版本号 | ~~`MODEL_STARTED` 里手填 `prompt_version`~~ | prompt 模板独立存放（`prompts/*.md`）+ 内容 hash 版本号，trace 记版本号 | **✅ 已完成** | trace 能按 prompt 版本归因 eval 回归 | ✅ `domain/learning/prompts.py` + `prompts/reader_extract.md`（版本=内容 hash，Reader 加载） |
 | 6 | Responder（作答输入原语） | M3.2 落 `Responder` 协议 + `ScriptedResponder`；交互 CLI 落地后已加 `InteractiveResponder`（questionary 逐题问，见下节）——**交互形态已到**，仍缺"可挂起 / 可恢复"（凭 token 续答）一段 | 可挂起 / 可恢复的作答 turn（凭 token 恢复，跨 SSE / HTTP，与审批门同形） | **TBD**（随 `interfaces/api` 加固；**接口形状第一天按 `Responder` 协议定**，替换不改 `assess_once` 调用方） | ~~CLI 里逐题作答~~（✅ 已达）；关掉重开可凭 token 续答（仍缺） | ⬜ |
@@ -116,7 +116,7 @@ SQLite 持久化，兑现两条验收信号（跨会话薄弱点持久 / 入库 
 - 新增 `interfaces/cli/InteractiveResponder`（questionary：`options` 非空 → `select` 单选，否则
   `text` 自由输入；均用 `.ask_async()`，取消 → `KeyboardInterrupt` 由 quiz 命令捕获优雅退出）。
 - 新增 argparse 子命令路由（`interfaces/cli/app.py`，`grandquiz` 脚本入口指向它）：`ingest`
-  （读本地材料 → 真 Reader 深读 → keep-all 审批 → 入 SQLite）与 `quiz`（逐题交互考核，持久 SQLite，
+  （读本地材料 → 真 Reader 深读 → 逐项人工审批 → 入 SQLite）与 `quiz`（逐题交互考核，持久 SQLite，
   薄弱点跨会话留存）。`QuizEventPrinter` 订阅事件流做 Rich 呈现——**CLI 是事件脊柱的消费者**。
 
 **仍留后续（故 #6 状态保持 ⬜、SKELETON 标记保留）**：可挂起 / 可恢复的作答 turn（凭 token 续答、

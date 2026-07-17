@@ -10,8 +10,8 @@
 
 ID 派生约定（工厂在构造点保证确定性，调用方拿不到手写随机 id）：
 ``resource_id = derive_id(locator)``（locator-addressed，同一规范 locator 全局唯一，ADR-0007）；
-``item_id = derive_id(resource_id, item_fingerprint)``，其中 fingerprint 来自规范化概念名 + 稳定排序的
-evidence 引文。Reader 重排不改变 KnowledgeItem 身份。
+``item_id = derive_id(resource_id, item_fingerprint)``，其中 fingerprint 来自规范化概念名与
+稳定排序的 evidence 引文。Reader 重排不改变 KnowledgeItem 身份。
 """
 
 import hashlib

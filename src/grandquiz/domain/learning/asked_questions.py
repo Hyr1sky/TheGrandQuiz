@@ -17,10 +17,11 @@
 按协议编程、可无改动替换实现。
 """
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Protocol
 
-from grandquiz.domain.learning.persistence import DatabaseSource, database_from
+from grandquiz.domain.learning.persistence import DatabaseSource, LearningDatabase, database_from
 
 _LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -33,7 +34,7 @@ class AskedQuestionsLedger(Protocol):
     ``verdict_history``，这份记忆只增不减（决策一致：历史证据不该被事后篡改）。
     """
 
-    def asked_before(self, item_id: str) -> list[str]: ...
+    def asked_before(self, item_id: str, *, limit: int | None = None) -> list[str]: ...
     def record_asked(self, item_id: str, question: str) -> None: ...
 
 
@@ -43,13 +44,24 @@ class DictAskedQuestionsLedger:
     def __init__(self) -> None:
         self._asked: dict[str, list[str]] = {}
 
-    def asked_before(self, item_id: str) -> list[str]:
+    def asked_before(self, item_id: str, *, limit: int | None = None) -> list[str]:
         """读某 item 已问过的题目文本；未问过 → 空列表。只读投影。"""
-        return list(self._asked.get(item_id, []))
+        questions = self._asked.get(item_id, [])
+        if limit is None:
+            return list(questions)
+        return list(questions[-limit:]) if limit > 0 else []
 
     def record_asked(self, item_id: str, question: str) -> None:
         """追加一条新问过的题目文本（后写追加，不覆盖）。"""
         self._asked.setdefault(item_id, []).append(question)
+
+    def _snapshot_state(self) -> object:
+        return deepcopy(self._asked)
+
+    def _restore_state(self, snapshot: object) -> None:
+        if not isinstance(snapshot, dict):
+            raise TypeError("AskedQuestions snapshot 必须是 dict")
+        self._asked = snapshot  # type: ignore[assignment]
 
 
 class SqliteAskedQuestionsLedger:
@@ -65,11 +77,26 @@ class SqliteAskedQuestionsLedger:
         self._db = database_from(db_path)
         self._conn = self._db.connection
 
-    def asked_before(self, item_id: str) -> list[str]:
-        rows = self._conn.execute(
-            "SELECT question FROM asked_questions WHERE item_id = ? ORDER BY seq",
-            (item_id,),
-        ).fetchall()
+    @property
+    def _learning_database(self) -> LearningDatabase:
+        return self._db
+
+    def asked_before(self, item_id: str, *, limit: int | None = None) -> list[str]:
+        if limit is not None and limit <= 0:
+            return []
+        if limit is None:
+            rows = self._conn.execute(
+                "SELECT question FROM asked_questions WHERE item_id = ? ORDER BY seq",
+                (item_id,),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT question FROM ("
+                "SELECT seq, question FROM asked_questions WHERE item_id = ? "
+                "ORDER BY seq DESC LIMIT ?"
+                ") ORDER BY seq",
+                (item_id, limit),
+            ).fetchall()
         return [str(row[0]) for row in rows]
 
     def record_asked(self, item_id: str, question: str) -> None:
@@ -77,7 +104,7 @@ class SqliteAskedQuestionsLedger:
             "INSERT INTO asked_questions (item_id, question) VALUES (?, ?)",
             (item_id, question),
         )
-        self._conn.commit()
+        self._db.commit()
 
     def close(self) -> None:
         """关闭底层连接（跨会话验收：关闭后用同一 db_path 重开，已问过的题仍在）。"""

@@ -1,6 +1,6 @@
 # SH-S1 — 稳定资源身份与原子知识快照
 
-Status: ready-for-agent
+Status: implementation-done / HITL rebuild pending
 Type: HITL
 
 ## Parent
@@ -15,12 +15,12 @@ Type: HITL
 
 ## Acceptance criteria
 
-- [ ] 不同目录同名文件得到不同 resource_id，同一路径重 ingest 保持同一 resource_id
-- [ ] Reader 候选重排不改变同一概念证据的 item_id，重复概念指纹触发重试
-- [ ] 重 ingest 候选减少后旧尾项与其薄弱账、已问题目、难度全部删除
-- [ ] 重 ingest fetch / Reader / 审批前失败时旧获批快照保持可用
-- [ ] resource、item、关联账外键与 upsert 不会因 delete-then-insert 误清保留状态
-- [ ] Dict / SQLite 对快照替换结果 parity；迁移幂等
+- [x] 不同目录同名文件得到不同 resource_id，同一路径重 ingest 保持同一 resource_id
+- [x] Reader 候选重排不改变同一概念证据的 item_id，重复概念指纹触发重试
+- [x] 重 ingest 候选减少后旧尾项与其薄弱账、已问题目、难度全部删除
+- [x] 重 ingest fetch / Reader / 审批前失败时旧获批快照保持可用
+- [x] resource、item、关联账外键与 upsert 不会因 delete-then-insert 误清保留状态
+- [x] Dict / SQLite 对快照替换结果 parity；迁移幂等
 - [ ] 清理真实 learning DB 前完成带日期备份并验证可打开；真实材料可重建
 - [ ] 五门全绿，受影响 cassette 清单明确
 

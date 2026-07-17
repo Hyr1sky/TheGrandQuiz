@@ -43,7 +43,7 @@ from grandquiz.domain.learning.tools.start_quiz_tool import (
 )
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
-from grandquiz.kernel.tools import ToolContext, ToolRegistry
+from grandquiz.kernel.tools import ModelRetry, ToolContext, ToolRegistry
 from grandquiz.providers.base import Completion, Message, Role, Usage
 from grandquiz.providers.replay import Cassette, RecordingProvider, ReplayProvider
 
@@ -89,6 +89,12 @@ def _ctx(emitter: EventEmitter) -> ToolContext:
     """造一个带 TOOL_CALL 根 span 的执行上下文（start_quiz 把内部 assess_once span 挂到它之下）。"""
     span = emitter.new_span_id()
     return ToolContext(emitter=emitter, parent_span_id=span)
+
+
+async def _dispatch_quiz(
+    registry: ToolRegistry, arguments: Mapping[str, Any], *, ctx: ToolContext
+) -> str:
+    return await registry.dispatch("start_quiz", {"scope": {"mode": "all"}, **arguments}, ctx=ctx)
 
 
 class _McProvider:
@@ -249,7 +255,7 @@ async def test_start_quiz_mc_wrong_records_weak_and_gives_followup() -> None:
     )
     emitter, events = _emitter_with_events()
 
-    raw = await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+    raw = await _dispatch_quiz(registry, {"count": 1}, ctx=_ctx(emitter))
     result = StartQuizResult.model_validate_json(raw)
 
     assert result.status == "completed"
@@ -289,7 +295,7 @@ async def test_start_quiz_mc_correct_no_weak_no_followup() -> None:
     emitter, events = _emitter_with_events()
 
     result = StartQuizResult.model_validate_json(
-        await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+        await _dispatch_quiz(registry, {"count": 1}, ctx=_ctx(emitter))
     )
 
     assert result.rounds[0].verdict == "对"
@@ -316,7 +322,7 @@ async def test_mc_verbatim_option_grades_correct() -> None:
     )
     emitter, _ = _emitter_with_events()
     result = StartQuizResult.model_validate_json(
-        await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+        await _dispatch_quiz(registry, {"count": 1}, ctx=_ctx(emitter))
     )
     assert result.rounds[0].verdict == "对"  # 逐字选项 → 确定性判卷命中
 
@@ -336,7 +342,7 @@ async def test_mc_prefixed_correct_option_grades_wrong() -> None:
     )
     emitter, _ = _emitter_with_events()
     result = StartQuizResult.model_validate_json(
-        await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+        await _dispatch_quiz(registry, {"count": 1}, ctx=_ctx(emitter))
     )
     assert result.rounds[0].verdict == "错"  # 前缀毁掉逐字命中——正是选择器要杜绝的
 
@@ -362,7 +368,7 @@ async def test_start_quiz_runs_count_rounds() -> None:
     emitter, events = _emitter_with_events()
 
     result = StartQuizResult.model_validate_json(
-        await registry.dispatch("start_quiz", {"count": 2}, ctx=_ctx(emitter))
+        await _dispatch_quiz(registry, {"count": 2}, ctx=_ctx(emitter))
     )
 
     assert result.asked == 2
@@ -399,7 +405,7 @@ async def test_start_quiz_focus_weak_targets_weak_concept() -> None:
     emitter, _ = _emitter_with_events()
 
     result = StartQuizResult.model_validate_json(
-        await registry.dispatch("start_quiz", {"count": 1, "focus": "weak"}, ctx=_ctx(emitter))
+        await _dispatch_quiz(registry, {"count": 1, "focus": "weak"}, ctx=_ctx(emitter))
     )
 
     assert result.rounds[0].item_id == ids[0]  # focus=weak 锁定薄弱 闭包（!= mixed 会选的 装饰器）
@@ -425,7 +431,7 @@ async def test_start_quiz_empty_kb_refused() -> None:
     emitter, _ = _emitter_with_events()
 
     result = StartQuizResult.model_validate_json(
-        await registry.dispatch("start_quiz", {"count": 3}, ctx=_ctx(emitter))
+        await _dispatch_quiz(registry, {"count": 3}, ctx=_ctx(emitter))
     )
 
     assert result.status == "refused"
@@ -457,7 +463,7 @@ async def test_start_quiz_recalls_items_from_global_kb() -> None:
     emitter, _ = _emitter_with_events()
 
     result = StartQuizResult.model_validate_json(
-        await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+        await _dispatch_quiz(registry, {"count": 1}, ctx=_ctx(emitter))
     )
 
     assert result.status == "completed"  # 全局读 → 非空库
@@ -477,7 +483,7 @@ async def test_start_quiz_scope_honors_resource_ids() -> None:
     store = LearningStore()
     a_ids = _seed_store(store, ["闭包", "变量提升"], url="file://local/a")
     b_ids = _seed_store(store, ["事件循环"], url="file://local/b")
-    res_a = a_ids[0].rsplit("#", 1)[0]
+    res_a = LearningResource.create(url="file://local/a").resource_id
     provider = _McProvider()
     registry = ToolRegistry()
     _register(
@@ -490,8 +496,10 @@ async def test_start_quiz_scope_honors_resource_ids() -> None:
     emitter, _ = _emitter_with_events()
 
     result = StartQuizResult.model_validate_json(
-        await registry.dispatch(
-            "start_quiz", {"count": 3, "resource_ids": [res_a]}, ctx=_ctx(emitter)
+        await _dispatch_quiz(
+            registry,
+            {"count": 3, "scope": {"mode": "selected", "resource_ids": [res_a]}},
+            ctx=_ctx(emitter),
         )
     )
 
@@ -517,8 +525,13 @@ async def test_start_quiz_empty_scope_refused() -> None:
     emitter, events = _emitter_with_events()
 
     result = StartQuizResult.model_validate_json(
-        await registry.dispatch(
-            "start_quiz", {"count": 3, "resource_ids": ["幽灵资源"]}, ctx=_ctx(emitter)
+        await _dispatch_quiz(
+            registry,
+            {
+                "count": 3,
+                "scope": {"mode": "selected", "resource_ids": ["幽灵资源"]},
+            },
+            ctx=_ctx(emitter),
         )
     )
 
@@ -527,6 +540,57 @@ async def test_start_quiz_empty_scope_refused() -> None:
     assert provider.calls == 0  # 空 scope 在选题前拒答，绝不调 LLM
     refused = _payload_of(events, "learning.assessment_refused")
     assert refused["reason"] == "empty_scope"
+
+
+async def test_start_quiz_unresolved_scope_refuses_without_llm_call() -> None:
+    store = LearningStore()
+    _seed_store(store, ["闭包"])
+    provider = _McProvider()
+    registry = ToolRegistry()
+    _register(
+        registry,
+        store=store,
+        memory=LearningMemory(),
+        provider=provider,
+        responder=ScriptedResponder(answer=_MC_CORRECT),
+    )
+    emitter, events = _emitter_with_events()
+
+    result = StartQuizResult.model_validate_json(
+        await _dispatch_quiz(
+            registry,
+            {"scope": {"mode": "unresolved", "requested_label": "不存在的文章"}},
+            ctx=_ctx(emitter),
+        )
+    )
+
+    assert result.status == "refused"
+    assert provider.calls == 0
+    refused = _payload_of(events, "learning.assessment_refused")
+    assert refused == {"reason": "unresolved_scope", "requested_label": "不存在的文章"}
+
+
+async def test_start_quiz_scope_is_required_and_selected_cannot_be_empty() -> None:
+    store = LearningStore()
+    _seed_store(store, ["闭包"])
+    registry = ToolRegistry()
+    _register(
+        registry,
+        store=store,
+        memory=LearningMemory(),
+        provider=_McProvider(),
+        responder=ScriptedResponder(answer=_MC_CORRECT),
+    )
+    emitter, _events = _emitter_with_events()
+
+    with pytest.raises(ModelRetry, match="scope"):
+        await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+    with pytest.raises(ModelRetry, match="resource_ids"):
+        await registry.dispatch(
+            "start_quiz",
+            {"scope": {"mode": "selected", "resource_ids": []}},
+            ctx=_ctx(emitter),
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -553,9 +617,7 @@ async def test_start_quiz_question_type_intent_overrides_routing() -> None:
     emitter, events = _emitter_with_events()
 
     result = StartQuizResult.model_validate_json(
-        await registry.dispatch(
-            "start_quiz", {"count": 1, "question_type": "简答"}, ctx=_ctx(emitter)
-        )
+        await _dispatch_quiz(registry, {"count": 1, "question_type": "简答"}, ctx=_ctx(emitter))
     )
 
     assert result.status == "completed"
@@ -587,7 +649,7 @@ async def test_start_quiz_passes_language_preference() -> None:
     )
     emitter, _ = _emitter_with_events()
 
-    await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+    await _dispatch_quiz(registry, {"count": 1}, ctx=_ctx(emitter))
 
     # 出题槽的 system 提示确以偏好语言（英文）替换了 {{LANGUAGE}} 哨兵（透传到 assess_once）。
     # 精确锚定替换点 "请用 <语言> 提问"——模板正文另含字面"英文原词"，故只查裸"英文"会假通过。
@@ -620,7 +682,7 @@ async def test_start_quiz_record_then_replay_is_identical(tmp_path: Path) -> Non
             quiz_seed=42,
         )
         emitter, events = _emitter_with_events()
-        raw = await registry.dispatch("start_quiz", {"count": 1}, ctx=_ctx(emitter))
+        raw = await _dispatch_quiz(registry, {"count": 1}, ctx=_ctx(emitter))
         return StartQuizResult.model_validate_json(raw), events
 
     # Pass 1：录制——inner 真跑，出题 + 判卷两 LLM 槽进 cassette。
@@ -788,7 +850,7 @@ async def test_start_quiz_segments_schedule_per_position_types() -> None:
         {"count": 2, "question_type": "简答"},
     ]
     result = StartQuizResult.model_validate_json(
-        await registry.dispatch("start_quiz", {"segments": segs}, ctx=_ctx(emitter))
+        await _dispatch_quiz(registry, {"segments": segs}, ctx=_ctx(emitter))
     )
 
     assert result.status == "completed"
@@ -813,8 +875,8 @@ async def test_start_quiz_segment_unknown_intent_falls_back_soft() -> None:
     emitter, events = _emitter_with_events()
 
     result = StartQuizResult.model_validate_json(
-        await registry.dispatch(
-            "start_quiz",
+        await _dispatch_quiz(
+            registry,
             {"segments": [{"count": 2, "question_type": "念咒题"}]},
             ctx=_ctx(emitter),
         )

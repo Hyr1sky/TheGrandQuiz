@@ -5,7 +5,7 @@ LLM 只在 Reader 的"深读"一个槽被调用。每步都在**同一条事件�
 
     ingest（根 span）
     └── model（Reader 的 model span，挂 ingest 下）
-    · resource_created / resource_read / items_extracted / approval.requested /
+    · resource_created / resource_read / items_extracted / approval.requested / approval.decided /
       resource_approved / item_created … 皆 parent=ingest span 的点事件（无 span，不进树）
 
 失败分两类：
@@ -16,14 +16,14 @@ LLM 只在 Reader 的"深读"一个槽被调用。每步都在**同一条事件�
 未获批候选绝不进 store（eval case 1，审批门返回子集 + 本编排只入库获批者共同保证）。
 """
 
-from collections.abc import Callable, Collection
+from collections.abc import Collection
 from typing import Literal
 
 from pydantic import BaseModel
 
 from grandquiz.domain.learning.approval import ApprovalGate
 from grandquiz.domain.learning.events import LearningEvent
-from grandquiz.domain.learning.ingest.fetch import FetchError, fetch_resource
+from grandquiz.domain.learning.ingest.fetch import FetchError, FetchSource, fetch_resource
 from grandquiz.domain.learning.ingest.reader import (
     UNTRUSTED_READ_HOOK,
     Reader,
@@ -52,7 +52,7 @@ class IngestResult(BaseModel):
 async def ingest_resource(
     url: str,
     *,
-    source: Callable[[str], str],
+    source: FetchSource,
     provider: Provider,
     store: Store,
     approval: ApprovalGate,
@@ -98,7 +98,7 @@ async def ingest_resource(
 
         # c. fetch（守卫：域名 / 大小 / 源异常）。领域失败 → fail()（eval case 7）。
         try:
-            content, content_hash = fetch_resource(
+            fetched = await fetch_resource(
                 url, source=source, max_bytes=max_bytes, allowed_domains=allowed_domains
             )
         except FetchError as exc:
@@ -106,6 +106,8 @@ async def ingest_resource(
 
         # d. 回填 staged 内容 + hash，status=read，trusted=False；RESOURCE_READ 让
         #    成功侧状态跃迁也上脊柱（对称于 RESOURCE_FETCH_FAILED，兑现"回放=事件流回放"）。
+        content = fetched.content
+        content_hash = fetched.content_hash
         resource = resource.model_copy(
             update={
                 "raw_content": content,
@@ -156,7 +158,7 @@ async def ingest_resource(
             },
         )
 
-        # f. 审批门：内部先发 approval.requested，再返回获批子集。
+        # f. 审批门：内部发 requested/decided 两个事件，再返回获批子集。
         approved = approval.request_approval(
             candidates, emitter=emitter, parent_span_id=ingest_span
         )

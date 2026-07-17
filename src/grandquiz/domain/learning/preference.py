@@ -122,7 +122,7 @@ class SqlitePreferenceMemory:
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value, confidence=excluded.confidence",
             (key, value, confidence),
         )
-        self._conn.commit()
+        self._db.commit()
 
     def get_preference(self, key: str) -> Preference | None:
         """读某键的偏好；未设置 → None。只读投影。"""

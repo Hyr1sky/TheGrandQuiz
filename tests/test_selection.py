@@ -229,7 +229,7 @@ def test_weak_focus_ghost_weak_falls_back() -> None:
 
 
 def _multi_resource_items() -> list[KnowledgeItem]:
-    # 跨两个资源的 item，按 item_id 升序排列（resA#000/001、resB#000/001）——scope 过滤须保此序。
+    # 跨两个资源的 item；scope 过滤须保输入顺序，不依赖具体 ID 编码。
     def _mk(resource_id: str, index: int, concept: str) -> KnowledgeItem:
         return KnowledgeItem.create(
             resource_id=resource_id,
@@ -257,7 +257,7 @@ def test_apply_scope_single_resource_filters_exact_id() -> None:
     # 非 None → 只留 resource_id 精确命中的 item（exact-id，无模糊匹配）。
     items = _multi_resource_items()
     scoped = apply_scope(items, ["resA"])
-    assert [it.item_id for it in scoped] == ["resA#000", "resA#001"]
+    assert scoped == [it for it in items if it.resource_id == "resA"]
 
 
 def test_apply_scope_multi_resource_selects_both() -> None:
@@ -272,7 +272,7 @@ def test_apply_scope_preserves_input_order_ignoring_resource_ids_order() -> None
     # 否则破 rng.choice 下标稳定 → replay 对不齐）。传 [resB, resA] 仍得升序 resA…resB。
     items = _multi_resource_items()
     scoped = apply_scope(items, ["resB", "resA"])
-    assert [it.item_id for it in scoped] == ["resA#000", "resA#001", "resB#000", "resB#001"]
+    assert scoped == items
 
 
 def test_apply_scope_no_hit_returns_empty() -> None:
@@ -291,4 +291,4 @@ def test_apply_scope_duplicate_resource_ids_no_duplicate_items() -> None:
     # scope 里重复 id 不产生重复 item（set 成员判定），保序不变。
     items = _multi_resource_items()
     scoped = apply_scope(items, ["resA", "resA"])
-    assert [it.item_id for it in scoped] == ["resA#000", "resA#001"]
+    assert scoped == [it for it in items if it.resource_id == "resA"]

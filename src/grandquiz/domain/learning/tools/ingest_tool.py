@@ -2,13 +2,14 @@
 ``Tool``。
 """
 
-from collections.abc import Callable, Collection
+from collections.abc import Collection
 from typing import Literal
 
 from pydantic import BaseModel
 
 from grandquiz.domain.learning.approval import ApprovalGate
 from grandquiz.domain.learning.ingest import ingest_resource
+from grandquiz.domain.learning.ingest.fetch import FetchSource
 from grandquiz.domain.learning.store import Store
 from grandquiz.domain.learning.tools._scoped_emitter import ScopedEmitter
 from grandquiz.kernel.events import EventEmitter
@@ -35,7 +36,7 @@ class _IngestParams(BaseModel):
 
 def make_ingest_tool(
     *,
-    source: Callable[[str], str],
+    source: FetchSource,
     provider: Provider,
     store: Store,
     approval: ApprovalGate,

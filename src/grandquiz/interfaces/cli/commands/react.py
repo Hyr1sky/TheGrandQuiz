@@ -18,12 +18,14 @@ from pathlib import Path
 from rich.console import Console
 from rich.markup import escape
 
+from grandquiz.domain.learning.approval import ApprovalGate
 from grandquiz.domain.learning.preference import (
     QUESTION_LANGUAGE_KEY,
     detect_language,
     record_inferred_preference,
 )
 from grandquiz.domain.learning.responder import Responder
+from grandquiz.interfaces.cli.approval import CliApprovalGate
 from grandquiz.interfaces.cli.commands import _print_trace_location
 from grandquiz.interfaces.cli.composition import (
     _ensure_parent,
@@ -49,6 +51,7 @@ async def run_react(
     materials_dir: Path,
     provider: Provider,
     responder: Responder,
+    approval: ApprovalGate,
     console: Console,
     user_messages: Iterable[str],
     seed: int,
@@ -61,7 +64,7 @@ async def run_react(
     （ADR-0005），会话操作的是持久全局 KB 单池、不绑标题。
 
     组装（经 ``composition.build_react_runner``）：``provider`` + ``ToolRegistry``（注入真依赖：
-    SQLite store/memory/preferences + 文件式 fetch 源 + keep-all 审批门 + 注入的 ``responder`` +
+    SQLite store/memory/preferences + 文件式 fetch 源 + 注入的审批门 / ``responder`` +
     ``quiz_seed=seed``）+ **ContextBuilder 分区装配**（M5）：system 前言区（版本化 ReAct 系统提示，
     ``load_prompt`` 读 name@digest，进 trace）+ 学情注入分区（``learner_context_provider`` 闭包，
     每回合 build 现取最新薄弱点 + 偏好 → agent 不调工具即知学情、更聪明编排）。**一个 ``Runner``
@@ -95,6 +98,7 @@ async def run_react(
             preferences=preferences,
             asked_questions=asked_questions,
             difficulty=difficulty,
+            approval=approval,
             materials_dir=materials_dir,
             responder=responder,
             seed=seed,
@@ -183,6 +187,7 @@ async def _run_react_cli(*, title: str | None, db_path: Path, materials_dir: Pat
             materials_dir=materials_dir,
             provider=provider,
             responder=InteractiveResponder(),  # start_quiz 逐题作答：questionary 选择器 / 文本输入
+            approval=CliApprovalGate(console=console),
             console=console,
             user_messages=_stdin_messages(),
             seed=int(time.time()),  # CLI 非 replay：可变种子（每次会话不同选题次序）

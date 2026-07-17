@@ -21,6 +21,12 @@ from typing import Any
 import pytest
 
 from grandquiz.domain.learning.assessment.engine import AssessmentResult, assess_once
+from grandquiz.domain.learning.assessment.scope import (
+    ALL_SCOPE,
+    QuizScope,
+    SelectedScope,
+    UnresolvedScope,
+)
 from grandquiz.domain.learning.assessment.selection import Focus, select_target
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import LearningMemory
@@ -111,7 +117,7 @@ def _stocked_store() -> tuple[LearningStore, list[str]]:
             evidence=[Evidence(quote=quote)],
             confidence=0.9,
         )
-        for index, (concept, quote) in enumerate(_ITEM_DATA)
+        for concept, quote in _ITEM_DATA
     ]
     store.add_items(items)
     return store, [item.item_id for item in items]
@@ -125,7 +131,7 @@ async def _assess(
     reason: str = "",
     answer: str = "我的作答",
     focus: Focus = "mixed",
-    resource_ids: list[str] | None = None,
+    scope: QuizScope = ALL_SCOPE,
     question_type: str | None = None,
     rng_seed: int = _SEED,
 ) -> tuple[AssessmentResult, list[AgentEvent]]:
@@ -134,7 +140,7 @@ async def _assess(
     ``verdict`` 供开放 / 追问的 LLM 判卷槽；``answer`` 供选择题的确定性判卷（选 ``_MC_CORRECT`` /
     ``_MC_WRONG`` 定对错）与作为作答文本。``focus`` 透传选题聚焦（R1-S7）：复考薄弱概念的用例传
     ``"weak"`` 显式锁定薄弱集（默认 ``mixed`` 覆盖优先会先考未考过的新概念，不锁薄弱）。
-    ``resource_ids`` 透传目录式 scope（GKB-S4）；``question_type`` 透传用户显式题型意图短语
+    ``scope`` 透传 fail-closed 三态；``question_type`` 透传用户显式题型意图短语
     （GKB-S5，ADR-0006）；``rng_seed`` 供 scope-honor 用例跨多 seed 取样。
     """
     emitter, events, trace = _harness()
@@ -146,7 +152,7 @@ async def _assess(
         emitter=emitter,
         rng=new_rng(rng_seed),
         focus=focus,
-        resource_ids=resource_ids,
+        scope=scope,
         question_type=question_type,
     )
     trace.close()
@@ -682,7 +688,7 @@ def _two_resource_store() -> tuple[LearningStore, str, str, list[str], list[str]
             evidence=[Evidence(quote=quote)],
             confidence=0.9,
         )
-        for index, (concept, quote) in enumerate(_RES_A_DATA)
+        for concept, quote in _RES_A_DATA
     ]
     b_items = [
         KnowledgeItem.create(
@@ -692,7 +698,7 @@ def _two_resource_store() -> tuple[LearningStore, str, str, list[str], list[str]
             evidence=[Evidence(quote=quote)],
             confidence=0.9,
         )
-        for index, (concept, quote) in enumerate(_RES_B_DATA)
+        for concept, quote in _RES_B_DATA
     ]
     store.add_items(a_items)
     store.add_items(b_items)
@@ -725,7 +731,7 @@ async def test_scope_honored_all_questions_from_scoped_resource() -> None:
             store,
             LearningMemory(),  # 每轮 fresh → 稳定路由到 MC
             answer=_MC_CORRECT,
-            resource_ids=[res_a],
+            scope=SelectedScope(resource_ids=[res_a]),
             rng_seed=seed,
         )
         started = next(e for e in events if e.type == _ASSESSMENT_STARTED)
@@ -743,7 +749,11 @@ async def test_scope_single_item_resource_always_targets_it() -> None:
     store, _res_a, res_b, _a_ids, b_ids = _two_resource_store()
     for seed in range(15):
         result, events = await _assess(
-            store, LearningMemory(), answer=_MC_CORRECT, resource_ids=[res_b], rng_seed=seed
+            store,
+            LearningMemory(),
+            answer=_MC_CORRECT,
+            scope=SelectedScope(resource_ids=[res_b]),
+            rng_seed=seed,
         )
         asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
         assert asked.payload["item_id"] == b_ids[0]
@@ -756,7 +766,11 @@ async def test_multi_resource_scope_covers_both() -> None:
     asked_items: set[str] = set()
     for seed in range(30):
         _result, events = await _assess(
-            store, LearningMemory(), answer=_MC_CORRECT, resource_ids=[res_a, res_b], rng_seed=seed
+            store,
+            LearningMemory(),
+            answer=_MC_CORRECT,
+            scope=SelectedScope(resource_ids=[res_a, res_b]),
+            rng_seed=seed,
         )
         started = next(e for e in events if e.type == _ASSESSMENT_STARTED)
         assert started.payload["candidate_pool_size"] == 3
@@ -781,7 +795,7 @@ async def test_empty_scope_refuses_without_calling_any_llm() -> None:
         memory=memory,
         emitter=emitter,
         rng=new_rng(_SEED),
-        resource_ids=["不在库里的幽灵资源"],
+        scope=SelectedScope(resource_ids=["不在库里的幽灵资源"]),
     )
     trace.close()
 
@@ -814,12 +828,47 @@ async def test_empty_scope_distinct_from_empty_kb_reason() -> None:
         memory=LearningMemory(),
         emitter=emitter,
         rng=new_rng(_SEED),
-        resource_ids=["任意 id"],  # 非 None → empty_scope 胜出
+        scope=SelectedScope(resource_ids=["任意 id"]),
     )
     trace.close()
     assert result.status == "refused"
     refused = next(e for e in events if e.type == LearningEvent.ASSESSMENT_REFUSED)
     assert refused.payload["reason"] == "empty_scope"
+
+
+async def test_unresolved_scope_refuses_before_candidate_read_and_llm_call() -> None:
+    emitter, events, trace = _harness()
+    provider = _AssessProvider(verdict="对")
+
+    class _ReadForbiddenStore(LearningStore):
+        def all_items(self) -> list[KnowledgeItem]:
+            raise AssertionError("unresolved scope 不应读取候选池")
+
+    result = await assess_once(
+        store=_ReadForbiddenStore(),
+        provider=provider,
+        responder=ScriptedResponder(answer=_MC_CORRECT),
+        memory=LearningMemory(),
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        scope=UnresolvedScope(requested_label="不存在的分布式系统文章"),
+    )
+    trace.close()
+
+    assert result.status == "refused"
+    assert provider.calls == 0
+    assert [event.type for event in events] == [
+        _ASSESSMENT_STARTED,
+        LearningEvent.ASSESSMENT_REFUSED,
+        _ASSESSMENT_ENDED,
+    ]
+    assert events[0].payload == {
+        "mode": "unresolved",
+        "resource_ids": None,
+        "candidate_pool_size": 0,
+        "requested_label": "不存在的分布式系统文章",
+    }
+    assert events[1].payload["reason"] == "unresolved_scope"
 
 
 # --------------------------------------------------------------------------- #

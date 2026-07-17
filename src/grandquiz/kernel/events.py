@@ -77,6 +77,18 @@ class Processor(Protocol):
     def on_event(self, event: AgentEvent) -> None: ...
 
 
+class DurableProcessorError(RuntimeError):
+    """承重事件处理器写入失败；上层必须把当前 turn 视为失败。"""
+
+    def __init__(self, event: AgentEvent, processor: Processor, cause: Exception) -> None:
+        self.event = event
+        self.processor = processor
+        self.cause = cause
+        super().__init__(
+            f"durable event processor failed on {event.type} (seq={event.seq}): {cause!r}"
+        )
+
+
 class EventSink:
     """扇出登记处——脊柱，订阅者挂在这里。订阅者：CLI 打印器 / TraceStore / eval 事件收集。
 
@@ -90,16 +102,27 @@ class EventSink:
 
     def __init__(self) -> None:
         self._observers: list[Observer] = []
+        self._durable_processors: list[Processor] = []
 
     def subscribe(self, observer: Observer) -> None:
         """注册一个只读订阅者回调（向后兼容路径）。异常隔离对它同样生效。"""
         self._observers.append(observer)
 
     def register(self, processor: Processor) -> None:
-        """注册一个富 ``Processor``——等价于订阅其 ``on_event``（异常隔离同样生效）。"""
+        """注册 best-effort 富 ``Processor``；异常与普通 observer 一样隔离。"""
         self._observers.append(processor.on_event)
 
+    def register_durable(self, processor: Processor) -> None:
+        """注册承重处理器；失败会阻断 publish 并以结构化异常向上冒泡。"""
+        self._durable_processors.append(processor)
+
     def publish(self, event: AgentEvent) -> None:
+        for processor in self._durable_processors:
+            try:
+                processor.on_event(event)
+            except Exception as exc:
+                # 不在事件脊柱内部再 emit ERROR，避免持久层失败递归发布自身失败。
+                raise DurableProcessorError(event, processor, exc) from exc
         for observer in self._observers:
             try:
                 observer(event)

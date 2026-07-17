@@ -57,7 +57,7 @@ def _stocked_store() -> LearningStore:
                 evidence=[Evidence(quote=quote)],
                 confidence=0.9,
             )
-            for index, (concept, summary, quote) in enumerate(_ITEMS)
+            for concept, summary, quote in _ITEMS
         ]
     )
     return store

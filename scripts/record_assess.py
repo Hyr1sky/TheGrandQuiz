@@ -52,13 +52,12 @@ async def main() -> None:
         [
             KnowledgeItem.create(
                 resource_id=resource.resource_id,
-                index=index,
                 concept=concept,
                 summary=summary,
                 evidence=[Evidence(quote=quote)],
                 confidence=0.9,
             )
-            for index, (concept, summary, quote) in enumerate(_ITEMS)
+            for concept, summary, quote in _ITEMS
         ]
     )
 

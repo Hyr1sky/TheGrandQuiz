@@ -14,6 +14,7 @@ expected_events:
   - model.ended
   - learning.items_extracted
   - approval.requested
+  - approval.decided
   - learning.resource_approved
   - learning.item_created
   - learning.item_created

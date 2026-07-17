@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from rich.console import Console
 
+from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.models import (
@@ -222,6 +223,7 @@ async def test_run_ingest_reads_material_and_persists_items(tmp_path: Path) -> N
         material_path=material,
         db_path=db,
         provider=_ReaderProvider(),
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
         console=console,
     )
 
@@ -251,6 +253,7 @@ async def test_run_ingest_keeps_same_named_files_from_different_directories(
         material_path=first,
         db_path=db,
         provider=_ReaderProvider(),
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
         console=console,
     )
     second_result = await run_ingest(
@@ -258,6 +261,7 @@ async def test_run_ingest_keeps_same_named_files_from_different_directories(
         material_path=second,
         db_path=db,
         provider=_ReaderProvider(),
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
         console=console,
     )
 

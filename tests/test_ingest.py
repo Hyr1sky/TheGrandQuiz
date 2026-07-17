@@ -12,7 +12,11 @@ from typing import Any
 
 import pytest
 
-from grandquiz.domain.learning.approval import APPROVAL_REQUESTED, ScriptedApprovalGate
+from grandquiz.domain.learning.approval import (
+    APPROVAL_DECIDED,
+    APPROVAL_REQUESTED,
+    ScriptedApprovalGate,
+)
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.ingest import ingest_resource
 from grandquiz.domain.learning.models import KnowledgeItem
@@ -96,6 +100,7 @@ async def test_happy_path_only_approved_items_enter_store() -> None:
         EventType.MODEL_ENDED,
         LearningEvent.ITEMS_EXTRACTED,
         APPROVAL_REQUESTED,
+        APPROVAL_DECIDED,
         LearningEvent.RESOURCE_APPROVED,
         LearningEvent.ITEM_CREATED,
         LearningEvent.ITEM_CREATED,
@@ -214,7 +219,9 @@ async def test_approval_exception_preserves_previous_approved_snapshot() -> None
     previous_items = store.items_for_resource(resource_id)
 
     class _CancelledApproval:
-        def request_approval(self, candidates: list[KnowledgeItem], **_: object) -> list[KnowledgeItem]:
+        def request_approval(
+            self, candidates: list[KnowledgeItem], **_: object
+        ) -> list[KnowledgeItem]:
             raise RuntimeError("用户取消审批")
 
     with pytest.raises(RuntimeError, match="用户取消审批"):

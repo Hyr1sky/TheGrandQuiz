@@ -5,11 +5,12 @@ DNS 解析结果（测试主机名 → 可控 IP），使 SSRF 检查的行为�
 """
 
 import socket
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 
 import httpx
 import pytest
 
+from grandquiz.domain.learning.ingest.fetch import FetchError
 from grandquiz.domain.learning.ingest.web_fetch import create_http_source, extract_text_from_html
 
 _PUBLIC_IP_A = "93.184.216.34"  # 任意真实公网地址——只关心 is_global 判定
@@ -20,6 +21,21 @@ _LOOPBACK_IP = "127.0.0.1"
 _LINK_LOCAL_IP = "169.254.169.254"  # 云平台 metadata 端点，经典 SSRF 目标
 
 _AddrInfo = tuple[socket.AddressFamily, socket.SocketKind, int, str, tuple[str, int]]
+
+
+class _CountingStream(httpx.AsyncByteStream):
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = chunks
+        self.consumed = 0
+        self.closed = False
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        for chunk in self._chunks:
+            self.consumed += 1
+            yield chunk
+
+    async def aclose(self) -> None:
+        self.closed = True
 
 
 def _fake_getaddrinfo(dns_map: dict[str, str]) -> Callable[..., list[_AddrInfo]]:
@@ -43,7 +59,7 @@ def _fake_getaddrinfo(dns_map: dict[str, str]) -> Callable[..., list[_AddrInfo]]
         ("metadata.test", _LINK_LOCAL_IP),
     ],
 )
-def test_source_rejects_non_global_hosts(
+async def test_source_rejects_non_global_hosts(
     monkeypatch: pytest.MonkeyPatch, hostname: str, ip: str
 ) -> None:
     monkeypatch.setattr(
@@ -51,33 +67,36 @@ def test_source_rejects_non_global_hosts(
         _fake_getaddrinfo({hostname: ip}),
     )
     source = create_http_source(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
-    with pytest.raises(ValueError, match="SSRF"):
-        source(f"http://{hostname}/page")
+    with pytest.raises(FetchError) as captured:
+        await source.fetch(f"http://{hostname}/page", max_bytes=1024)
+    assert captured.value.reason == "ssrf"
 
 
-def test_source_rejects_dns_resolution_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_source_rejects_dns_resolution_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo", _fake_getaddrinfo({})
     )
     source = create_http_source(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
-    with pytest.raises(ValueError, match="SSRF"):
-        source("http://nowhere.test/page")
+    with pytest.raises(FetchError) as captured:
+        await source.fetch("http://nowhere.test/page", max_bytes=1024)
+    assert captured.value.reason == "ssrf"
 
 
-def test_source_rejects_non_http_scheme(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_source_rejects_non_http_scheme(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
         _fake_getaddrinfo({"public.test": _PUBLIC_IP_A}),
     )
     source = create_http_source(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
-    with pytest.raises(ValueError, match="http"):
-        source("ftp://public.test/page")
+    with pytest.raises(FetchError) as captured:
+        await source.fetch("ftp://public.test/page", max_bytes=1024)
+    assert captured.value.reason == "invalid_url"
 
 
 # --- 正常抓取 + 逐跳重定向重验证 --------------------------------------------------------
 
 
-def test_source_fetches_plain_text_successfully(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_source_fetches_plain_text_successfully(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
         _fake_getaddrinfo({"public.test": _PUBLIC_IP_A}),
@@ -87,10 +106,40 @@ def test_source_fetches_plain_text_successfully(monkeypatch: pytest.MonkeyPatch)
         return httpx.Response(200, headers={"content-type": "text/plain"}, text="hello world")
 
     source = create_http_source(transport=httpx.MockTransport(handler))
-    assert source("http://public.test/page") == "hello world"
+    result = await source.fetch("http://public.test/page", max_bytes=1024)
+    assert result.content == "hello world"
+    assert result.final_url == "http://public.test/page"
+    assert result.content_type == "text/plain"
 
 
-def test_source_follows_redirect_and_revalidates_each_hop(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_source_stops_stream_immediately_after_decompressed_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
+        _fake_getaddrinfo({"public.test": _PUBLIC_IP_A}),
+    )
+    stream = _CountingStream([b"abcd", b"efgh", b"ijkl", b"mnop"])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/plain"},
+            stream=stream,
+        )
+
+    source = create_http_source(transport=httpx.MockTransport(handler))
+    with pytest.raises(FetchError) as captured:
+        await source.fetch("http://public.test/big", max_bytes=5)
+
+    assert getattr(captured.value, "reason", None) == "too_large"
+    assert stream.consumed == 2  # 读到首次越界即停，后两块从未消费
+    assert stream.closed is True
+
+
+async def test_source_follows_redirect_and_revalidates_each_hop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # 两跳都是公网主机——证明重定向目标主机（不只是最初的 host）也被 SSRF 检查覆盖到。
     monkeypatch.setattr(
         "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
@@ -103,10 +152,12 @@ def test_source_follows_redirect_and_revalidates_each_hop(monkeypatch: pytest.Mo
         return httpx.Response(200, headers={"content-type": "text/plain"}, text="landed page")
 
     source = create_http_source(transport=httpx.MockTransport(handler))
-    assert source("http://start.test/enter") == "landed page"
+    result = await source.fetch("http://start.test/enter", max_bytes=1024)
+    assert result.content == "landed page"
+    assert result.final_url == "http://final.test/landed"
 
 
-def test_source_rejects_redirect_to_private_host(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_source_rejects_redirect_to_private_host(monkeypatch: pytest.MonkeyPatch) -> None:
     # 公网首跳、私网第二跳——经典 redirect-based SSRF：必须在第二跳就被拒，而非放行到底。
     monkeypatch.setattr(
         "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
@@ -119,11 +170,12 @@ def test_source_rejects_redirect_to_private_host(monkeypatch: pytest.MonkeyPatch
         return httpx.Response(200, text="should never be reached")
 
     source = create_http_source(transport=httpx.MockTransport(handler))
-    with pytest.raises(ValueError, match="SSRF"):
-        source("http://start.test/enter")
+    with pytest.raises(FetchError) as captured:
+        await source.fetch("http://start.test/enter", max_bytes=1024)
+    assert captured.value.reason == "ssrf"
 
 
-def test_source_rejects_too_many_redirects(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_source_rejects_too_many_redirects(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
         _fake_getaddrinfo({"loop.test": _PUBLIC_IP_A}),
@@ -133,14 +185,15 @@ def test_source_rejects_too_many_redirects(monkeypatch: pytest.MonkeyPatch) -> N
         return httpx.Response(302, headers={"location": "http://loop.test/again"})
 
     source = create_http_source(transport=httpx.MockTransport(handler))
-    with pytest.raises(ValueError, match="重定向"):
-        source("http://loop.test/start")
+    with pytest.raises(FetchError) as captured:
+        await source.fetch("http://loop.test/start", max_bytes=1024)
+    assert captured.value.reason == "redirect_limit"
 
 
 # --- content-type 过滤 + HTML 提取 -------------------------------------------------------
 
 
-def test_source_rejects_unsupported_content_type(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_source_rejects_unsupported_content_type(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
         _fake_getaddrinfo({"public.test": _PUBLIC_IP_A}),
@@ -150,11 +203,12 @@ def test_source_rejects_unsupported_content_type(monkeypatch: pytest.MonkeyPatch
         return httpx.Response(200, headers={"content-type": "application/pdf"}, content=b"%PDF")
 
     source = create_http_source(transport=httpx.MockTransport(handler))
-    with pytest.raises(ValueError, match="内容类型"):
-        source("http://public.test/file.pdf")
+    with pytest.raises(FetchError) as captured:
+        await source.fetch("http://public.test/file.pdf", max_bytes=1024)
+    assert captured.value.reason == "unsupported_content_type"
 
 
-def test_source_extracts_text_from_html(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_source_extracts_text_from_html(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "grandquiz.domain.learning.ingest.web_fetch.socket.getaddrinfo",
         _fake_getaddrinfo({"public.test": _PUBLIC_IP_A}),
@@ -168,7 +222,7 @@ def test_source_extracts_text_from_html(monkeypatch: pytest.MonkeyPatch) -> None
         return httpx.Response(200, headers={"content-type": "text/html; charset=utf-8"}, text=html)
 
     source = create_http_source(transport=httpx.MockTransport(handler))
-    text = source("http://public.test/article")
+    text = (await source.fetch("http://public.test/article", max_bytes=4096)).content
     assert "闭包捕获变量而非值" in text
     assert "alert(1)" not in text  # script 内容被剔除
     assert "color:red" not in text  # style 内容被剔除

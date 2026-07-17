@@ -50,22 +50,27 @@ from grandquiz.domain.learning.assessment.routing import (
     resolve_question_type,
     route_question_type,
 )
+from grandquiz.domain.learning.assessment.scope import (
+    ALL_SCOPE,
+    AllScope,
+    QuizScope,
+    SelectedScope,
+    UnresolvedScope,
+)
 from grandquiz.domain.learning.assessment.selection import Focus, apply_scope, select_target
 from grandquiz.domain.learning.difficulty import (
     DEFAULT_TIER,
     DifficultyLedger,
-    MasterySignals,
     difficulty_prompt_hint,
     distractor_quality_floor,
-    next_tier,
     target_option_count,
-    tier_change_reason,
 )
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY, PreferenceMemory
 from grandquiz.domain.learning.responder import Responder
+from grandquiz.domain.learning.state import LearningStateWriter
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.clock import Rng
 from grandquiz.kernel.events import EventEmitter
@@ -77,6 +82,7 @@ _ASSESSMENT_ENDED = "assessment.ended"
 
 # verdict 属"勉强 / 错"→ 该 item 记为薄弱（代码记账，非 LLM 产）+ 触发后置追问（给正解）。
 _WEAK_VERDICTS: frozenset[VerdictLabel] = frozenset({"勉强", "错"})
+_MAX_ASKED_QUESTIONS_PER_ITEM = 20
 
 # 选择题出题重试头寸（SE-S5b 兜底，2026-07-15 dogfood 洞察）：judge 验收闸门开启（高档，
 # quality_floor 非 None）时，"出题→judge→不达标重生成"会吃掉重试预算——dogfood 里一道 tier4 题
@@ -145,7 +151,7 @@ async def assess_once(
     asked_questions: AskedQuestionsLedger | None = None,
     focus: Focus = "mixed",
     preferences: PreferenceMemory | None = None,
-    resource_ids: list[str] | None = None,
+    scope: QuizScope = ALL_SCOPE,
     question_type: str | None = None,
     difficulty: DifficultyLedger | None = None,
 ) -> AssessmentResult:
@@ -215,18 +221,42 @@ async def assess_once(
     #    先读全库候选池（全局 KB，非 task 局部——修 #2 跨会话丢知识），再按 scope 收窄（apply_scope，
     #    resource_ids=None → 恒等全库）。ASSESSMENT_STARTED payload 带**有效 resource_ids + 命中数**
     #    （candidate_pool_size = scope 后池大小 = 命中数；判别力字段，供 trace/eval 断言选了哪库）。
-    items = apply_scope(store.all_items(), resource_ids)
+    resource_ids = scope.resource_ids if isinstance(scope, SelectedScope) else None
+    items = (
+        [] if isinstance(scope, UnresolvedScope) else apply_scope(store.all_items(), resource_ids)
+    )
     assessment_span = emitter.new_span_id()
+    scope_payload: dict[str, Any] = {
+        "mode": scope.mode,
+        "resource_ids": resource_ids,
+        "candidate_pool_size": len(items),
+    }
+    if isinstance(scope, UnresolvedScope):
+        scope_payload["requested_label"] = scope.requested_label
     emitter.emit(
         _ASSESSMENT_STARTED,
         span_id=assessment_span,
-        payload={"candidate_pool_size": len(items), "resource_ids": resource_ids},
+        payload=scope_payload,
     )
     try:
+        if isinstance(scope, UnresolvedScope):
+            reason = "unresolved_scope"
+            emitter.emit(
+                LearningEvent.ASSESSMENT_REFUSED,
+                parent_span_id=assessment_span,
+                payload={"reason": reason, "requested_label": scope.requested_label},
+            )
+            emitter.emit(
+                _ASSESSMENT_ENDED,
+                span_id=assessment_span,
+                payload={"ok": True, "status": "refused", "reason": reason},
+            )
+            return AssessmentResult(status="refused")
+
         # b. 空库 / 空 scope 拒答：不调任何 LLM，优雅返回 refused。两支——None scope 且全库空 →
         #    empty_kb（eval case 2，逐字节不动）；非 None scope 过滤后空 → empty_scope（在选题前）。
         if not items:
-            reason = "empty_kb" if resource_ids is None else "empty_scope"
+            reason = "empty_kb" if isinstance(scope, AllScope) else "empty_scope"
             emitter.emit(
                 LearningEvent.ASSESSMENT_REFUSED,
                 parent_span_id=assessment_span,
@@ -262,9 +292,13 @@ async def assess_once(
         #    向后兼容；只接一边也行——两条防线互补，见函数 docstring）。
         asked_before: list[str] = []
         if recently_asked is not None:
-            asked_before += recently_asked.get(target.item_id, [])
+            recent = recently_asked.get(target.item_id, [])
+            asked_before += recent[-_MAX_ASKED_QUESTIONS_PER_ITEM:]
         if asked_questions is not None:
-            asked_before += asked_questions.asked_before(target.item_id)
+            asked_before += asked_questions.asked_before(
+                target.item_id, limit=_MAX_ASKED_QUESTIONS_PER_ITEM
+            )
+        asked_before = asked_before[-_MAX_ASKED_QUESTIONS_PER_ITEM:]
         mc: MultipleChoiceQuestion | None = None
         if effective == "选择题":
             # SE-S5a 选择题硬杠杆①：难度**只在概念离开默认档后**才落到题面——接了难度台账
@@ -346,16 +380,13 @@ async def assess_once(
             asked_payload["options"] = list(mc.options)
         # 接住返回的 AgentEvent（带注入 Clock 的 .ts）——SE-S3 决策 B：本轮答题耗时近似 =
         # (ANSWER_JUDGED.ts − QUESTION_ASKED.ts)。接住返回值不改变发射行为、零副作用（replay 下
-        # ManualClock 使其确定、生产 SystemClock 下是真实墙上时间——都对），只在销账时才被读。
+        # ManualClock 使其确定、生产 SystemClock 下是真实墙上时间——都对）；耗时只被销账证据读取。
         q_event = emitter.emit(
             LearningEvent.QUESTION_ASKED, parent_span_id=assessment_span, payload=asked_payload
         )
-        # 记账：把本轮已出的题追加进会话内 + 跨会话"已问过"台账（各自独立），供后续复考该 item
-        # 时去重（代码记账）。
+        # 会话内去重可立即更新；持久已问题目与判决状态在下方同一事务提交。
         if recently_asked is not None:
             recently_asked.setdefault(target.item_id, []).append(question_text)
-        if asked_questions is not None:
-            asked_questions.record_asked(target.item_id, question_text)
 
         # f. 作答（注入的 responder，async）。选择题把 options 透传给 responder，开放 / 追问传 None
         #    （ScriptedResponder 忽略 options）。
@@ -402,14 +433,18 @@ async def assess_once(
             },
         )
 
-        # i. 代码记三态账（LLM 判卷、代码记账）：写 Learning Memory 并把转移上脊柱。
-        #    三态转移 / 连对销账全在 memory 的纯代码里；这里只把结果发成 CONCEPT_STATE_CHANGED
-        #    （在 ANSWER_JUDGED 之后、assessment.ended 之前）。
-        #    SE-S3 决策 A：销账那刻被删的"观察中"记录里的 verdict_history 长度即销账轮数——记录随
-        #    record_verdict 即被删、事后无法回读，故须在 record_verdict **之前**读快照。gated 在
-        #    difficulty is not None：默认路径连这次读都不做（真正零开销、字节等价改动前）。
-        before_record = memory.record_of(target.item_id) if difficulty is not None else None
-        transition = memory.record_verdict(target.item_id, verdict_label)
+        # i. 持久状态原子提交：已问题目、Learning Memory 与 Difficulty 要么全成、要么全回滚。
+        committed = LearningStateWriter(
+            memory=memory,
+            asked_questions=asked_questions,
+            difficulty=difficulty,
+        ).commit_judgement(
+            item_id=target.item_id,
+            question=question_text,
+            verdict=verdict_label,
+            elapsed_ms=round((j_event.ts - q_event.ts) * 1000),
+        )
+        transition = committed.transition
         emitter.emit(
             LearningEvent.CONCEPT_STATE_CHANGED,
             parent_span_id=assessment_span,
@@ -421,38 +456,19 @@ async def assess_once(
             },
         )
 
-        # i-bis. 难度自适应（SE-S3）：**仅在销账那一刻**据三路信号跨档（信号 1 只在此刻可得）。
-        #    销账路径上 before_record 必非 None（那是被删的"观察中"记录）。三路信号：
-        #    · 销账轮数 = len(转移前 verdict_history)（决策 A：无 +1——最快销账 错→对→对 被删记录的
-        #      history=["错","对"] 长度 2，正是 SE-S2 QUICK_DISCHARGE_ROUNDS 校准口径）；
-        #    · had_struggle = 是否掉过"勉强"（**只认"勉强"、不认"错"**——认"错"会因销账必先入薄弱而
-        #      恒 True 退化）；
-        #    · elapsed_ms = (ANSWER_JUDGED.ts − QUESTION_ASKED.ts)×1000 取整（决策 B）。
-        #    只有真跨档（new != current）才写台账 + 发 DIFFICULTY_TIER_CHANGED（照
-        #    CONCEPT_STATE_CHANGED 的"无转移不发"先例）。难度落到出题从 SE-S5a 起（选择题分支据档
-        #    算目标选项数下传出题，见上方 e 步）；此处仍只管"改档 + 透明展示"，两者解耦。
-        #    销账必判"对"、故与下方"勉强 / 错"才触发的 FOLLOWUP_GIVEN 互斥，两块先后无可观察交错。
-        if difficulty is not None and transition.to_state == "销账" and before_record is not None:
-            signals = MasterySignals(
-                rounds_to_discharge=len(before_record.verdict_history),
-                elapsed_ms=round((j_event.ts - q_event.ts) * 1000),
-                had_struggle="勉强" in before_record.verdict_history,
+        if committed.difficulty_change is not None:
+            change = committed.difficulty_change
+            emitter.emit(
+                LearningEvent.DIFFICULTY_TIER_CHANGED,
+                parent_span_id=assessment_span,
+                payload={
+                    "item_id": target.item_id,
+                    "concept": target.concept,
+                    "from_tier": change.from_tier,
+                    "to_tier": change.to_tier,
+                    "reason": change.reason,
+                },
             )
-            current_tier = difficulty.tier_of(target.item_id)
-            new_tier = next_tier(current_tier, signals)
-            if new_tier != current_tier:
-                difficulty.set_tier(target.item_id, new_tier)
-                emitter.emit(
-                    LearningEvent.DIFFICULTY_TIER_CHANGED,
-                    parent_span_id=assessment_span,
-                    payload={
-                        "item_id": target.item_id,
-                        "concept": target.concept,
-                        "from_tier": current_tier,
-                        "to_tier": new_tier,
-                        "reason": tier_change_reason(current_tier, new_tier, signals),
-                    },
-                )
 
         # j. 后置追问：判"勉强 / 错"→ 给正解（确定性代码，从被考 item 的 summary + evidence
         #    组文本），发 FOLLOWUP_GIVEN（在 CONCEPT_STATE_CHANGED 之后、assessment.ended 之前）。

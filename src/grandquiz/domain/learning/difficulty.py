@@ -2,8 +2,8 @@
 
 自进化第一阶段给每个 KnowledgeItem 一个**离散 5 档难度**（PRD 决策 1 硬约束：不做连续分数——
 沿 ``CONTEXT.md``「薄弱概念」`_Avoid_: 掌握度分数` 与「判决」`_Avoid_: 评分、分数`，全仓库用
-三态状态机 / 三值判决而非连续分，难度不能成为第一个例外）。本模块只含**可独立单测的确定性单元**，
-此刻没有生产消费者：
+三态状态机 / 三值判决而非连续分，难度不能成为第一个例外）。本模块集中放置可独立单测的
+确定性单元：
 
 - **SE-S1 难度台账**：``DifficultyLedger`` 协议 + Dict / Sqlite 两实现，锚定 ``item_id`` 存档位。
   独立于 Learning Memory 薄弱台账（决策 2）——薄弱台账"销账即删行"，难度生命周期却是"只要考过
@@ -11,6 +11,8 @@
   销账丢失。协议形状照 ``asked_questions.py`` 的 Protocol + Dict + Sqlite 三段式。
 - **SE-S2 跨档规则**：``next_tier`` 纯函数据三路信号（销账轮数 / 答题耗时 / 判决分布）裁决该概念
   升 / 降 / 维持一档。照 ``memory.py`` 的 ``apply_verdict``——无 I/O、不发事件、不碰随机 / 时钟。
+- **SH-S8 统一演化**：``evolve_difficulty`` 同时消费直答、重置与销账证据；未追踪概念连续答对两次
+  升一档，错 / 勉强清空直答 streak，销账继续复用三路信号。
 - **SE-S5a 选择题选项数杠杆**：``target_option_count`` 纯函数把难度档映射到选择题目标选项数
   （档越高、干扰项越多、越难靠排除法蒙对），是"让难度落到题面"的第一条腿。同样确定性、无 I/O
   （被 ``assess_once`` 的选择题分支读、下传出题请求）。
@@ -19,13 +21,14 @@ determinism 纪律：难度表无时间戳列（``seq`` 排序）；``next_tier`
 import time / datetime / uuid。
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
 from grandquiz.domain.learning.judge import DistractorLabel
-from grandquiz.domain.learning.persistence import DatabaseSource, database_from
+from grandquiz.domain.learning.persistence import DatabaseSource, LearningDatabase, database_from
 
 _LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -36,6 +39,7 @@ _MIN_TIER: DifficultyTier = 1
 _MAX_TIER: DifficultyTier = 5
 # 5 档正中的标准档：从没考过、无任何信号的概念的确定起点（tier_of 未记录时的兜底值）。
 DEFAULT_TIER: DifficultyTier = 3
+DIRECT_CORRECTS_TO_PROMOTE = 2
 
 # 档梯，供 next_tier 的钳制与 DB 读回的 int→Literal 收敛（索引 tuple[DifficultyTier, ...]
 # 返回的元素类型即 DifficultyTier，免 cast）。
@@ -48,7 +52,7 @@ _TIER_LADDER: tuple[DifficultyTier, ...] = (1, 2, 3, 4, 5)
 
 
 class DifficultyLedger(Protocol):
-    """难度台账的结构化契约（后续 S3 写、S5/S6 读的形参类型）。
+    """难度台账的结构化契约（考核提交写，出题难度杠杆读）。
 
     ``tier_of``：读某 item 当前难度档；**从没记录过 → 返回默认档 ``DEFAULT_TIER``（不抛、不
     None）**，因为难度需要一个确定的起点档，缺省不是错误状态。
@@ -58,21 +62,102 @@ class DifficultyLedger(Protocol):
 
     def tier_of(self, item_id: str) -> DifficultyTier: ...
     def set_tier(self, item_id: str, tier: DifficultyTier) -> None: ...
+    def progress_of(self, item_id: str) -> "DifficultyProgress": ...
+    def set_progress(self, item_id: str, progress: "DifficultyProgress") -> None: ...
+
+
+@dataclass(frozen=True)
+class DifficultyProgress:
+    tier: DifficultyTier = DEFAULT_TIER
+    correct_streak: int = 0
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.correct_streak < DIRECT_CORRECTS_TO_PROMOTE:
+            raise ValueError(
+                f"correct_streak 必须在 0..{DIRECT_CORRECTS_TO_PROMOTE - 1}，"
+                f"实为 {self.correct_streak}"
+            )
+
+
+@dataclass(frozen=True)
+class DirectCorrectEvidence:
+    pass
+
+
+@dataclass(frozen=True)
+class ResetEvidence:
+    pass
+
+
+@dataclass(frozen=True)
+class DischargeEvidence:
+    signals: "MasterySignals"
+
+
+DifficultyEvidence = DirectCorrectEvidence | ResetEvidence | DischargeEvidence
+
+
+def evolve_difficulty(
+    current: DifficultyProgress, evidence: DifficultyEvidence
+) -> DifficultyProgress:
+    """据一次已判定证据演化难度进度；无 I/O、每次至多跨一档。"""
+    if isinstance(evidence, DirectCorrectEvidence):
+        streak = current.correct_streak + 1
+        if streak < DIRECT_CORRECTS_TO_PROMOTE:
+            return DifficultyProgress(tier=current.tier, correct_streak=streak)
+        promoted = _TIER_LADDER[min(len(_TIER_LADDER) - 1, current.tier - _MIN_TIER + 1)]
+        return DifficultyProgress(tier=promoted, correct_streak=0)
+    if isinstance(evidence, ResetEvidence):
+        return DifficultyProgress(tier=current.tier, correct_streak=0)
+    return DifficultyProgress(
+        tier=next_tier(current.tier, evidence.signals),
+        correct_streak=0,
+    )
+
+
+def difficulty_evolution_reason(
+    before: DifficultyProgress,
+    after: DifficultyProgress,
+    evidence: DifficultyEvidence,
+) -> str:
+    """解释一次真跨档；与 ``evolve_difficulty`` 消费同一证据。"""
+    if isinstance(evidence, DirectCorrectEvidence):
+        return f"连续答对 {DIRECT_CORRECTS_TO_PROMOTE} 次——上调难度"
+    if isinstance(evidence, DischargeEvidence):
+        return tier_change_reason(before.tier, after.tier, evidence.signals)
+    raise ValueError("重置证据不会产生难度跨档")
 
 
 class DictDifficultyLedger:
     """进程内难度台账（dict[item_id -> tier]），测试 / 快速用的内存实现、无 I/O。"""
 
     def __init__(self) -> None:
-        self._tiers: dict[str, DifficultyTier] = {}
+        self._progress: dict[str, DifficultyProgress] = {}
 
     def tier_of(self, item_id: str) -> DifficultyTier:
         """读某 item 当前难度档；未记录过 → 默认档兜底。"""
-        return self._tiers.get(item_id, DEFAULT_TIER)
+        return self.progress_of(item_id).tier
 
     def set_tier(self, item_id: str, tier: DifficultyTier) -> None:
         """幂等写覆盖某 item 的难度档（后写胜出）。"""
-        self._tiers[item_id] = tier
+        current = self.progress_of(item_id)
+        self._progress[item_id] = DifficultyProgress(
+            tier=tier, correct_streak=current.correct_streak
+        )
+
+    def progress_of(self, item_id: str) -> DifficultyProgress:
+        return self._progress.get(item_id, DifficultyProgress())
+
+    def set_progress(self, item_id: str, progress: DifficultyProgress) -> None:
+        self._progress[item_id] = progress
+
+    def _snapshot_state(self) -> object:
+        return dict(self._progress)
+
+    def _restore_state(self, snapshot: object) -> None:
+        if not isinstance(snapshot, dict):
+            raise TypeError("Difficulty snapshot 必须是 dict")
+        self._progress = snapshot  # type: ignore[assignment]
 
 
 class SqliteDifficultyLedger:
@@ -89,22 +174,36 @@ class SqliteDifficultyLedger:
         self._db = database_from(db_path)
         self._conn = self._db.connection
 
+    @property
+    def _learning_database(self) -> LearningDatabase:
+        return self._db
+
     def tier_of(self, item_id: str) -> DifficultyTier:
+        return self.progress_of(item_id).tier
+
+    def progress_of(self, item_id: str) -> DifficultyProgress:
         row = self._conn.execute(
-            "SELECT tier FROM difficulty WHERE item_id = ?",
+            "SELECT tier, correct_streak FROM difficulty WHERE item_id = ?",
             (item_id,),
         ).fetchone()
         if row is None:
-            return DEFAULT_TIER
-        return _coerce_tier(int(row[0]))
+            return DifficultyProgress()
+        return DifficultyProgress(tier=_coerce_tier(int(row[0])), correct_streak=int(row[1]))
 
     def set_tier(self, item_id: str, tier: DifficultyTier) -> None:
-        self._conn.execute(
-            "INSERT INTO difficulty (item_id, tier) VALUES (?, ?) "
-            "ON CONFLICT(item_id) DO UPDATE SET tier=excluded.tier",
-            (item_id, tier),
+        current = self.progress_of(item_id)
+        self.set_progress(
+            item_id, DifficultyProgress(tier=tier, correct_streak=current.correct_streak)
         )
-        self._conn.commit()
+
+    def set_progress(self, item_id: str, progress: DifficultyProgress) -> None:
+        self._conn.execute(
+            "INSERT INTO difficulty (item_id, tier, correct_streak) VALUES (?, ?, ?) "
+            "ON CONFLICT(item_id) DO UPDATE SET tier=excluded.tier, "
+            "correct_streak=excluded.correct_streak",
+            (item_id, progress.tier, progress.correct_streak),
+        )
+        self._db.commit()
 
     def close(self) -> None:
         """关闭底层连接（跨会话验收：关闭后用同一 db_path 重开，档位仍在、不重置回默认）。"""

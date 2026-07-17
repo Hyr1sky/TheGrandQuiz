@@ -35,9 +35,7 @@ class Store(Protocol):
     def get_resource(self, resource_id: str) -> LearningResource | None: ...
     def set_resource_status(self, resource_id: str, status: ResourceStatus) -> None: ...
     def add_items(self, items: list[KnowledgeItem]) -> None: ...
-    def replace_snapshot(
-        self, resource: LearningResource, items: list[KnowledgeItem]
-    ) -> None: ...
+    def replace_snapshot(self, resource: LearningResource, items: list[KnowledgeItem]) -> None: ...
     def items_for_resource(self, resource_id: str) -> list[KnowledgeItem]: ...
     def all_items(self) -> list[KnowledgeItem]: ...
     def resource_topics(self) -> list[tuple[str, str]]: ...
@@ -143,7 +141,7 @@ class SqliteLearningStore:
                 resource.topic,
             ),
         )
-        self._conn.commit()
+        self._db.commit()
 
     def get_resource(self, resource_id: str) -> LearningResource | None:
         row = self._conn.execute(
@@ -196,7 +194,7 @@ class SqliteLearningStore:
                     item.concept_key,
                 ),
             )
-        self._conn.commit()
+        self._db.commit()
 
     def replace_snapshot(self, resource: LearningResource, items: list[KnowledgeItem]) -> None:
         """在一个事务中 upsert revision，并删除本次获批快照之外的旧 item。"""

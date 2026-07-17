@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 from rich.console import Console
 
+from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.ingest.fetch import FetchError
 from grandquiz.domain.learning.memory import SqliteLearningMemory
@@ -111,7 +112,11 @@ class _ReactScriptProvider:
         if "入库" in last_user:
             call = ToolCall(id="c1", name="ingest", arguments={"url": _MATERIAL_URL})
         else:  # "考我一题" → 触发受控考核子流程（逐题一问一答在 start_quiz 内部跑，LLM 不进循环）
-            call = ToolCall(id="c2", name="start_quiz", arguments={"count": 1})
+            call = ToolCall(
+                id="c2",
+                name="start_quiz",
+                arguments={"count": 1, "scope": {"mode": "all"}},
+            )
         return Completion(
             text="", tool_calls=[call], usage=Usage(prompt_tokens=4, completion_tokens=1)
         )
@@ -134,6 +139,7 @@ async def _drive_react(
         materials_dir=materials_dir,
         provider=provider,
         responder=ScriptedResponder(answer=_MC_WRONG),
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
         console=console,
         user_messages=_SESSION,
         seed=42,
@@ -421,7 +427,10 @@ class _ScopeTypeScriptProvider:
             name="start_quiz",
             arguments={
                 "count": 1,
-                "resource_ids": [self._resource_id],
+                "scope": {
+                    "mode": "selected",
+                    "resource_ids": [self._resource_id],
+                },
                 "question_type": "简答",
             },
         )
@@ -444,7 +453,7 @@ def _seed_two_resources(db_path: Path) -> tuple[str, list[str], list[str]]:
             evidence=[Evidence(quote=_QUOTE)],
             confidence=0.9,
         )
-        for i, concept in enumerate(["闭包", "作用域"])
+        for concept in ["闭包", "作用域"]
     ]
     res_b = LearningResource.create(url="file://local/b.md")
     b_items = [
@@ -482,6 +491,7 @@ async def test_react_scope_and_question_type_honored_end_to_end(tmp_path: Path) 
         materials_dir=tmp_path,
         provider=provider,
         responder=ScriptedResponder(answer="我的作答"),
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
         console=console,
         user_messages=["考闭包那份材料的简答题"],
         seed=42,
@@ -543,6 +553,7 @@ async def test_react_session_survives_crashing_turn(tmp_path: Path) -> None:
         materials_dir=materials,
         provider=provider,
         responder=ScriptedResponder(answer=_MC_WRONG),
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
         console=console,
         user_messages=["让你崩一下", "正常问一句"],
         seed=42,
@@ -606,6 +617,7 @@ async def test_react_injects_learner_context_into_system(tmp_path: Path) -> None
         materials_dir=tmp_path,
         provider=provider,
         responder=ScriptedResponder(answer=_MC_WRONG),
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
         console=Console(record=True, width=100),
         user_messages=["我哪里薄弱"],
         seed=42,
@@ -631,6 +643,7 @@ async def test_react_infers_question_language_preference_from_user_message(tmp_p
         materials_dir=tmp_path,
         provider=provider,
         responder=ScriptedResponder(answer=_MC_WRONG),
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
         console=Console(record=True, width=100),
         user_messages=["Please tell me which concepts I am weak at"],
         seed=42,
@@ -656,6 +669,7 @@ async def test_react_short_message_does_not_touch_language_preference(tmp_path: 
         materials_dir=tmp_path,
         provider=provider,
         responder=ScriptedResponder(answer=_MC_WRONG),
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
         console=Console(record=True, width=100),
         user_messages=["好的"],
         seed=42,

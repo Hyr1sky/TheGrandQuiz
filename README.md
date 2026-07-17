@@ -6,14 +6,16 @@
 
 ## 项目状态
 
-🟢 MVP 竖切已跑通（2026-07-16）：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel`（事件脊柱 /
+🟡 稳定性加固收口中（2026-07-17）：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel`（事件脊柱 /
 runner / tools / hooks / context / recovery / trace）+ `providers`（OpenAI 兼容 + Record/Replay）+
 `domain/learning`（考核竖切：喂材料 → 深读入库 → 出题 → 判卷 → 薄弱记账）+ `cli`（`ingest` / `quiz` /
 `react` / `report` / `trace` 子命令）+ `evals`（Tier-1 规则 harness）。**最小 ReAct 对话核 + 全局知识库**
 已落地：`grandquiz react` 可真机跑——自然语言在持久全局库里选材料、定题型、按薄弱点考核。上下文预算 /
-滚动摘要、真实网络抓取、跨会话题目去重与自适应难度第一阶段也已完成；五门（ruff / format /
-import-linter / pyright / pytest）全绿。当前进入[稳定性加固](.scratch/stability-hardening/PRD.md)：先修资源
-身份、scope 误回退、流式抓取和 Replay 指纹，再推进新的 Web 获取 / 搜索与 MCP 能力。
+滚动摘要、真实网络抓取、跨会话题目去重与自适应难度第一阶段也已完成。当前
+[稳定性加固](.scratch/stability-hardening/PRD.md) 的 S1-S9 代码实现已收口：资源身份 / 原子快照、scope
+三态、流式抓取、Replay 指纹、原子学习状态、durable trace、完整请求预算、直答难度演化与真实 CLI
+审批均已有测试。静态四门全绿；全量 pytest 为 `714 passed / 4 failed`，4 个失败均由两份待真机重录的
+cassette 直接或派生触发。真实 DB 重建、cassette 重录与终端验收完成后再进入 Web Acquisition。
 
 ## 文档
 
@@ -44,5 +46,5 @@ CI 在每次 push / PR 上跑 lint + format + typecheck + test，全绿才能合
 
 - **分层守卫**：`kernel/` 禁止 import `domain/`（已由 import-linter 在 CI 强制，第 5 道门）
 - **提交规范**：conventional commits；issue 驱动开发，每个 issue 对应一个独立可验收的 PR
-- **决策记录**：架构级决策写入 `docs/adr/`（现 6 篇），领域术语沉淀在 [CONTEXT.md](CONTEXT.md)
+- **决策记录**：架构级决策写入 `docs/adr/`（现 7 篇），领域术语沉淀在 [CONTEXT.md](CONTEXT.md)
 - **密钥纪律**：凭证只走 `.env`（已 gitignore），任何 key 不进 git 历史

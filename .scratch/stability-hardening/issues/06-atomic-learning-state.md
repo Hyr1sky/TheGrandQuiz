@@ -1,6 +1,6 @@
 # SH-S5 — 判决与学习状态原子提交
 
-Status: ready-for-agent
+Status: implementation-done
 Type: AFK
 
 ## Parent
@@ -14,12 +14,12 @@ Type: AFK
 
 ## Acceptance criteria
 
-- [ ] 一次判决的相关领域写入共享同一事务语义
-- [ ] 任一写入注入失败后所有状态回滚，重试仍能读取原 verdict history
-- [ ] 领域事件只描述已提交状态；回滚路径不发成功状态转移
-- [ ] Dict / SQLite 对成功、回滚和重试结果 parity
-- [ ] 复用 SH-S1 transaction seam，不新增第二套事务 helper
-- [ ] 多连接或调用顺序不再是调用方必须知道的 interface 细节
+- [x] 一次判决的相关领域写入共享同一事务语义
+- [x] 任一写入注入失败后所有状态回滚，重试仍能读取原 verdict history
+- [x] 领域事件只描述已提交状态；回滚路径不发成功状态转移
+- [x] Dict / SQLite 对成功、回滚和重试结果 parity
+- [x] 复用 SH-S1 transaction seam，不新增第二套事务 helper
+- [x] 多连接或调用顺序不再是调用方必须知道的 interface 细节
 - [ ] 五门全绿
 
 ## Blocked by

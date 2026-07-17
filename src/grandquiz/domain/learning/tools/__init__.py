@@ -29,12 +29,13 @@ task。三个工具各自的结果 / 参数类型（``IngestToolResult``、``Sta
 导入，本包顶层只公开这一个组装入口。
 """
 
-from collections.abc import Callable, Collection
+from collections.abc import Collection
 from typing import Literal
 
 from grandquiz.domain.learning.approval import ApprovalGate
 from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
 from grandquiz.domain.learning.difficulty import DifficultyLedger
+from grandquiz.domain.learning.ingest.fetch import FetchSource
 from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.preference import PreferenceMemory
 from grandquiz.domain.learning.responder import Responder
@@ -51,7 +52,7 @@ __all__ = ["register_learning_tools"]
 def register_learning_tools(
     registry: ToolRegistry,
     *,
-    source: Callable[[str], str],
+    source: FetchSource,
     provider: Provider,
     store: Store,
     approval: ApprovalGate,

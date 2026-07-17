@@ -1,6 +1,6 @@
 # PRD：稳定性加固（文档权威基线 + P1/P2 完整性修复）
 
-Status: active（2026-07-16 启动；S0-S10 拆分与 ADR-0007 已由用户确认）
+Status: HITL closing（2026-07-17：S1-S9 代码完成；待真实 DB、两份 cassette、CLI 真机验收）
 Triage: ready-for-agent
 
 ## Problem Statement
@@ -13,7 +13,7 @@ TheGrandQuiz 已从考核竖切推进到可真机使用的 ReAct + 全局 KB + �
 3. 网页大小限制发生在完整响应进内存之后，无法真正限制资源消耗。
 4. Replay 指纹忽略工具契约，工具 schema / description 改动后 eval 可能继续命中旧 cassette 而假绿。
 5. 多份领域账本独立提交、TraceStore 与展示 observer 共用失败语义、工具循环出站上下文不受总预算约束。
-6. 自进化“一路答对也升档”和真实审批门仍未兑现；状态文档又落后于当前实现。
+6. 自进化“一路答对也升档”和真实审批门在审计时未兑现；现已实现，仍需真机验收收口。
 
 这些问题必须先于新一轮自进化能力扩展解决。否则新增状态会继续建立在不稳定的 KnowledgeItem 身份和
 不完整的 Replay 证明上。
@@ -62,7 +62,8 @@ Replay 能识别当前执行契约、trace 失败不会静默伪装成功，且�
 
 - 每个 issue 是一个可独立验收的竖切；确定性核心先写失败测试。
 - 每个竖切同步更新相关权威文档，不把文档治理推迟到所有代码完成之后。
-- 五门固定为 Ruff、format check、Pyright、import-linter、pytest；当前测试基线为 `682 passed`。
+- 五门固定为 Ruff、format check、Pyright、import-linter、pytest；实现后当前基线为静态四门全绿、
+  `714 passed / 4 failed`，pytest 失败均由两份待真录 cassette 直接或派生触发。
 
 ## Proposed Vertical Slices
 
@@ -71,28 +72,28 @@ Replay 能识别当前执行契约、trace 失败不会静默伪装成功，且�
 1. **SH-S0 文档权威基线**（AFK，done 2026-07-16）
    - 对齐 README、architecture、Context Compression PRD、自进化 PRD 与 skeleton ledger 的事实状态。
    - 发布本 PRD 与已确认 issue；不改未拍板的领域决策。
-2. **SH-S1 资源身份 + 原子快照替换**（HITL，blocked by: S0）
+2. **SH-S1 资源身份 + 原子快照替换**（实现完成，HITL 重建待验收）
    - 修同名本地文件碰撞；定义重 ingest 的稳定身份、旧 item 清理与关联账 reconciliation。
    - 先审议 ADR-0007；允许备份后清库切换 schema。预研确认 S1 的快照提交与 S5 必须复用同一个
      transaction seam，S1 不得落一次性私有事务 helper。
-3. **SH-S2 显式 scope 解析失败拒答**（AFK，blocked by: S0）
+3. **SH-S2 显式 scope 解析失败拒答**（实现完成）
    - 区分“用户没指定范围”和“指定了但没解析成功”，后者零出题、零 provider 调用。
-4. **SH-S3 异步流式 Web Fetch**（AFK，blocked by: S0）
+4. **SH-S3 异步流式 Web Fetch**（实现完成）
    - 流式限制解压后字节数；保留 SSRF、逐跳重定向、超时与内容类型守卫。
    - 落结构化获取结果，为独立 Web Acquisition PRD 提供稳定 seam。
-5. **SH-S4 Replay 执行指纹**（HITL，blocked by: S0）
+5. **SH-S4 Replay 执行指纹**（实现完成，HITL cassette 待重录）
    - 把 tool specs 等执行契约纳入指纹；旧 cassette 明确失效；fake 回放先绿。
    - 真实 cassette 重录作为本 issue 的 HITL 收口。
-6. **SH-S5 学习状态原子提交**（AFK，blocked by: S1）
+6. **SH-S5 学习状态原子提交**（实现完成）
    - 复用 S1 已建立的 transaction seam，让一次判决的 Learning Memory、Difficulty、AskedQuestions
      相关状态共享事务语义；不另建第二套事务模块。
-7. **SH-S6 Durable Trace 失败语义**（AFK，blocked by: S0）
+7. **SH-S6 Durable Trace 失败语义**（实现完成）
    - 区分 durable processor 与 best-effort observer；trace 写失败不得静默报告成功。
-8. **SH-S7 完整出站上下文预算**（AFK，blocked by: S4）
+8. **SH-S7 完整出站上下文预算**（实现完成）
    - 预算覆盖 tool specs、循环追加消息、工具结果和持久题目历史。
-9. **SH-S8 一路答对的难度演化**（AFK，blocked by: S5）
+9. **SH-S8 一路答对的难度演化**（实现完成，HITL cassette 待重录）
    - 补齐自进化 User Story 12，并增加难度激活真实 cassette 验收。
-10. **SH-S9 真实审批门**（HITL，blocked by: S1）
+10. **SH-S9 真实审批门**（实现完成，HITL 终端验收待执行）
     - 先交付 CLI 可筛选候选的真实行为；suspend/resume 作为独立后续竖切，不伪装成已完成。
 11. **SH-S10 全量收口与完成审计**（HITL，blocked by: S1-S9）
     - 五门、全部 eval、cassette、清库重建 dogfood；更新所有权威文档与残余风险报告。

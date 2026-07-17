@@ -1,25 +1,65 @@
 """审批门原语——展示候选预览、返回获批子集（未获批的候选绝不入库，eval case 1）。
 
-# SKELETON: 阻塞 CLI 交互形态见 docs/skeleton-ledger.md #3（正式=可恢复 turn）
+# SKELETON: 持久 suspend/resume 待决状态见 docs/skeleton-ledger.md #3
 
-接口形状第一天就按 suspend/resume 定：``request_approval`` 先发 ``approval.requested`` 事件
-（含候选预览），再据决策返回保留子集——把它换成真正的挂起 / 恢复时，ingest 调用方不变。
-``approval.requested`` 是 **kernel 级通用事件类型串**，kernel 不认识它（故不在 kernel 加常量，
-仅在本 domain 模块留一个命名常量避免手抖拼错）。
+当前协议是同步批决策：Scripted adapter 供测试，CLI adapter 阻塞询问；两者都发
+``approval.requested`` + ``approval.decided``。真正跨进程的 suspend/resume 仍需持久待决状态与恢复
+token，不能把当前同步返回值冒充成已实现。审批事件是通用类型串，kernel 只做泛型分发。
 """
 
 from collections.abc import Callable
-from typing import Protocol
+from typing import Literal, Protocol
 
 from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.kernel.events import EventEmitter
 
 # kernel 不认识的通用审批事件类型串（见模块 docstring）。
 APPROVAL_REQUESTED = "approval.requested"
+APPROVAL_DECIDED = "approval.decided"
+ApprovalOutcome = Literal["approved", "rejected_all", "cancelled"]
+
+
+class ApprovalCancelled(RuntimeError):
+    """用户取消审批；调用方不得用候选覆盖已有知识快照。"""
+
+
+def emit_approval_requested(
+    candidates: list[KnowledgeItem],
+    *,
+    emitter: EventEmitter,
+    parent_span_id: str | None,
+) -> None:
+    """发最小审批预览，不把摘要、证据等额外内容写进 trace。"""
+    emitter.emit(
+        APPROVAL_REQUESTED,
+        parent_span_id=parent_span_id,
+        payload={"candidates": [{"item_id": c.item_id, "concept": c.concept} for c in candidates]},
+    )
+
+
+def emit_approval_decided(
+    candidates: list[KnowledgeItem],
+    approved: list[KnowledgeItem],
+    *,
+    outcome: ApprovalOutcome,
+    emitter: EventEmitter,
+    parent_span_id: str | None,
+) -> None:
+    """把审批结果投影到事件脊柱；只记录身份与计数。"""
+    emitter.emit(
+        APPROVAL_DECIDED,
+        parent_span_id=parent_span_id,
+        payload={
+            "outcome": outcome,
+            "candidate_count": len(candidates),
+            "approved_count": len(approved),
+            "approved_item_ids": [item.item_id for item in approved],
+        },
+    )
 
 
 class ApprovalGate(Protocol):
-    """审批门协议：给一批候选，返回获批子集。实现须先发 ``approval.requested`` 事件。"""
+    """同步审批协议：发 requested/decided 事件并返回获批子集。"""
 
     def request_approval(
         self,
@@ -33,7 +73,7 @@ class ApprovalGate(Protocol):
 class ScriptedApprovalGate:
     """确定性审批门——注入 ``keep`` 谓词或 ``keep_ids`` 集合供测试脚本化决策。
 
-    真实交互（阻塞 CLI / 可恢复 turn）是后续步骤；本类只提供协议的确定性实现。
+    真实阻塞 CLI 交互由 ``interfaces.cli.approval.CliApprovalGate`` 提供；本类只服务确定性测试。
     两者都提供时 ``keep_ids`` 优先。
     """
 
@@ -55,15 +95,16 @@ class ScriptedApprovalGate:
         emitter: EventEmitter,
         parent_span_id: str | None,
     ) -> list[KnowledgeItem]:
-        # 先发 approval.requested 点事件（parent=ingest span），payload 含候选预览。
-        emitter.emit(
-            APPROVAL_REQUESTED,
+        emit_approval_requested(candidates, emitter=emitter, parent_span_id=parent_span_id)
+        approved = [c for c in candidates if self._should_keep(c)]
+        emit_approval_decided(
+            candidates,
+            approved,
+            outcome="approved" if approved else "rejected_all",
+            emitter=emitter,
             parent_span_id=parent_span_id,
-            payload={
-                "candidates": [{"item_id": c.item_id, "concept": c.concept} for c in candidates]
-            },
         )
-        return [c for c in candidates if self._should_keep(c)]
+        return approved
 
     def _should_keep(self, item: KnowledgeItem) -> bool:
         if self._keep_ids is not None:

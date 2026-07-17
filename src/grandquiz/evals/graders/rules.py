@@ -78,7 +78,7 @@ def grade_case1(sr: SolveResult) -> list[str]:
     stored = [i.concept for i in sr.store.items_for_resource(result.resource_id)]
     _check(
         failures,
-        stored == INGEST_APPROVED_CONCEPTS,
+        set(stored) == set(INGEST_APPROVED_CONCEPTS),
         f"入库概念应为 {INGEST_APPROVED_CONCEPTS}（仅获批），实为 {stored}",
     )
     _check(failures, len(result.items) == 2, f"result.items 应为 2 个，实为 {len(result.items)}")

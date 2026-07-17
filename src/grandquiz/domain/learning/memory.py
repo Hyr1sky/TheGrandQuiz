@@ -27,13 +27,14 @@ ADR-0004："LLM 判卷，代码记账"——状态转移是**确定性纯代码*
 """
 
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from grandquiz.domain.learning.assessment.grading import VerdictLabel
-from grandquiz.domain.learning.persistence import DatabaseSource, database_from
+from grandquiz.domain.learning.persistence import DatabaseSource, LearningDatabase, database_from
 
 _LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -189,6 +190,14 @@ class LearningMemory:
         """某 item 的完整记录（含 verdict_history）；不在记忆 → None。只读投影。"""
         return self._records.get(item_id)
 
+    def _snapshot_state(self) -> object:
+        return deepcopy(self._records)
+
+    def _restore_state(self, snapshot: object) -> None:
+        if not isinstance(snapshot, dict):
+            raise TypeError("LearningMemory snapshot 必须是 dict")
+        self._records = snapshot  # type: ignore[assignment]
+
 
 class SqliteLearningMemory:
     """薄弱概念的 SQLite 持久化台账（M7 正式实现，满足 ``Memory`` 协议）。
@@ -205,6 +214,10 @@ class SqliteLearningMemory:
         self._db = database_from(db_path)
         self._conn = self._db.connection
 
+    @property
+    def _learning_database(self) -> LearningDatabase:
+        return self._db
+
     def record_verdict(self, item_id: str, verdict: VerdictLabel) -> Transition:
         """按 ``verdict`` 更新 ``item_id`` 的记录并返回转移信息（销账 = ``DELETE`` 行）。"""
         before = self._read_record(item_id)
@@ -212,7 +225,7 @@ class SqliteLearningMemory:
         after = apply_verdict(before, verdict, item_id=item_id)
         if after is None:
             self._conn.execute("DELETE FROM learning_memory WHERE item_id = ?", (item_id,))
-            self._conn.commit()
+            self._db.commit()
             if before is not None:
                 # 此前追踪、现已移除 → 销账（唯一路径：观察中 + 对）。透出触发销账的连对数（=2）。
                 return Transition(
@@ -280,4 +293,4 @@ class SqliteLearningMemory:
             "verdict_history=excluded.verdict_history",
             (record.item_id, record.state, record.consecutive_correct, history_json),
         )
-        self._conn.commit()
+        self._db.commit()

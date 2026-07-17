@@ -230,7 +230,7 @@ async def test_react_ingest_returns_structured_result() -> None:
     reply = await runner.run_agent_turn("请 ingest 这份材料")
     assert reply == "已完成 ingest"
     # 工具确实入库两个概念
-    assert [it.concept for it in store.all_items()] == _EXPECTED_CONCEPTS
+    assert {it.concept for it in store.all_items()} == set(_EXPECTED_CONCEPTS)
 
 
 async def test_react_ingest_spans_nest_under_tool_call_and_messages_are_isolated() -> None:

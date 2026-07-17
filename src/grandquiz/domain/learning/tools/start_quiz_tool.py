@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
 from grandquiz.domain.learning.assessment.engine import AssessmentResult, assess_once
 from grandquiz.domain.learning.assessment.grading import VerdictLabel
+from grandquiz.domain.learning.assessment.scope import QuizScope
 from grandquiz.domain.learning.assessment.selection import Focus
 from grandquiz.domain.learning.difficulty import DifficultyLedger
 from grandquiz.domain.learning.memory import Memory
@@ -147,9 +148,8 @@ class StartQuizResult(BaseModel):
 class _StartQuizParams(BaseModel):
     count: int = 1  # 本次考核出题数（默认 1；handler 夹到 [1, _MAX_QUIZ_COUNT]）
     focus: Focus = "mixed"  # 选题聚焦：mixed 覆盖优先（默认）/ new 只考没考过的 / weak 复习薄弱
-    # 目录式 scope（GKB-S4）：按 exact resource_id 收窄考哪些材料；None（默认）= 全库。LLM 从目录
-    # 清单认出用户意图对应的 resource_id 填入（命中不了 → 拿不到 id → 别填，assess_once 诚实拒答）。
-    resource_ids: list[str] | None = None
+    # fail-closed 三态，必填：未点材料=all；成功匹配=selected；点名但未匹配=unresolved。
+    scope: QuizScope
     # 用户显式题型意图短语（GKB-S5，修 #1 错题型；ADR-0006）：LLM 只抽用户原话里的题型意图
     # （"简答"/"选择题"/"追问"…），代码用冻结同义表映射到既有三题型、显式意图胜过记忆状态自适应
     # 路由；None（默认）= 不指定 → 按薄弱状态自适应路由。别自造题型、别把"简答"填成"选择题"。
@@ -257,7 +257,7 @@ def make_start_quiz_tool(
                     asked_questions=asked_questions,
                     focus=params.focus,
                     preferences=preferences,
-                    resource_ids=params.resource_ids,
+                    scope=params.scope,
                     question_type=intent,
                     difficulty=difficulty,
                 )
@@ -293,10 +293,10 @@ def make_start_quiz_tool(
             "从全库发起一次考核：出 count 道题（默认 1）逐题问用户并判卷，返回考了几题 / "
             "每题判决 / 暴露的薄弱点小结。你只触发它、转述小结——"
             "不要复述题目、不要自行判卷、不要编题。\n"
-            "据用户意图填可选旋钮（都不填 = 全库、按掌握状态自适应出题）：\n"
-            "· resource_ids（考哪份材料）：从上文【学情】里的库存材料清单认出用户点名的主题对应的 "
-            "exact resource_id 填入（可多选）——语义匹配是你的活（'代理通信协议' 认到 ACP 那条）；"
-            "认不出对应材料 / 用户没点具体材料 → 别填，宁可诚实拒答也不考错库。\n"
+            "scope 必填且只能三选一：用户没点材料填 {'mode':'all'}；"
+            "点名且从【学情】库存清单匹配成功"
+            "填 {'mode':'selected','resource_ids':['exact-id']}；点名但无法匹配填 "
+            "{'mode':'unresolved','requested_label':'用户原话'}，绝不能用 all 扩大范围。\n"
             "· question_type（整批一种题型）：只抽用户原话里的题型意图短语（如 '简答' / '选择题' / "
             "'追问'）原样填入，由代码映射到题型；用户没点题型 → 别填。"
             "别自造题型、别把 '简答' 填成 '选择题'。该 question_type 作用于本次全部 count 道题。\n"
@@ -309,8 +309,8 @@ def make_start_quiz_tool(
             "· focus（选题聚焦，非题型）：mixed=覆盖优先（默认，先考没考过的），new=只考没考过的"
             "（用户说'考其他的 / 换一批'），weak=复习薄弱（用户说'复习 / 考薄弱'）。\n"
             "工具输入示例——用户'考代理通信协议的简答题'（清单里该主题的 resource_id 记作 r-acp）："
-            '{"resource_ids": ["r-acp"], "question_type": "简答"}；'
-            "用户'随便考我一道'：{}（都不填 = 全库自动路由）；"
+            '{"scope":{"mode":"selected","resource_ids":["r-acp"]},"question_type":"简答"}；'
+            "用户'随便考我一道'：{'scope':{'mode':'all'}}；"
             "用户'先 3 道选择再 2 道简答' → 一次调用填 segments："
             '{"segments": [{"count": 3, "question_type": "选择题"}, '
             '{"count": 2, "question_type": "简答"}]}。'

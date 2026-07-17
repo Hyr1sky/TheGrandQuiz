@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.markup import escape
 
 from grandquiz.domain.learning.assessment.engine import assess_once
+from grandquiz.domain.learning.assessment.scope import ALL_SCOPE
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY
 from grandquiz.domain.learning.responder import Responder
@@ -16,6 +17,7 @@ from grandquiz.interfaces.cli.commands import _print_trace_location
 from grandquiz.interfaces.cli.composition import (
     _ensure_parent,
     _resolve_trace_db,
+    budget_provider,
     build_event_backbone,
     build_learning_stores,
 )
@@ -65,6 +67,7 @@ async def run_quiz(
     是脊柱投影、非业务耦合）。会话结束打印 ``trace_id`` + 库位置。
     """
     _ensure_parent(db_path)
+    provider = budget_provider(provider)
     store, memory, preferences, asked_questions, difficulty = build_learning_stores(db_path)
     if prefer_lang is not None:
         # 显式设置出题语言偏好（confidence 恒 1.0），跨会话留存、后续覆盖 task 默认语言。
@@ -106,6 +109,7 @@ async def run_quiz(
                         asked_questions=asked_questions,
                         preferences=preferences,
                         difficulty=difficulty,
+                        scope=ALL_SCOPE,
                     )
                 except Exception as exc:
                     # 统一裁决：assess_once 按契约原样冒泡一切异常（保 eval / replay——不吞

@@ -1,8 +1,8 @@
 """Record / Replay Provider——把 LLM 响应按键落盘，回放时直接命中。
 
 回放是"事件流回放"的一个特例：LLM 这个外部 I/O 被录进 cassette，回放不触网、不烧 token。
-键 = ``sha256(messages)`` + ``role`` + resolved model id——**必须含 role 与 model_id**，否则
-basic=deepseek 与 enrich=qwen 的相同 messages 会撞键、串错模型响应，毁掉"完全确定"。
+键覆盖 messages、role、resolved model id 与规范化工具契约。任何会影响模型决策的公开执行契约
+变化都必须让旧 cassette 大声失效，不能回放出一个“看起来绿”的旧决策。
 """
 
 import hashlib
@@ -33,8 +33,41 @@ class ReplayMiss(Exception):
     error_class = ErrorClass.FATAL
 
 
-def replay_key(messages: Sequence[Message], role: Role, model_id: str) -> str:
-    """按 messages + role + resolved model id 算稳定键。
+_FINGERPRINT_VERSION = 2
+
+
+def _normalized_tools(tools: Sequence[ToolSpec] | None) -> list[dict[str, Any]]:
+    return sorted(
+        (
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters,
+            }
+            for tool in tools or ()
+        ),
+        key=lambda tool: str(tool["name"]),
+    )
+
+
+def tool_contract_hash(tools: Sequence[ToolSpec] | None) -> str:
+    canonical = json.dumps(
+        _normalized_tools(tools),
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def replay_key(
+    messages: Sequence[Message],
+    role: Role,
+    model_id: str,
+    *,
+    tools: Sequence[ToolSpec] | None = None,
+) -> str:
+    """按完整公开执行信封算稳定键；工具声明顺序不影响结果。
 
     messages 走确定性 JSON（``sort_keys`` + 紧凑分隔符）；role / model_id 拼进被 hash 的原文，
     保证不同角色 / 模型即使 messages 相同也不撞键。
@@ -43,14 +76,31 @@ def replay_key(messages: Sequence[Message], role: Role, model_id: str) -> str:
     None，被排除后其序列化与加 tool 字段前逐字节一致——既有 on-disk cassette（键是旧 schema 算的）
     在 tool-calling 落地后仍命中，不失效。
     """
-    messages_json = json.dumps(
-        [m.model_dump(exclude_none=True) for m in messages],
+    # 纯文本路径没有新增执行参数，继续使用 v1 key，避免无意义重录 Reader/判卷等 cassette。
+    # 一旦存在工具契约即切到 v2 信封；工具增删/说明/schema 变化都会 miss。
+    if not tools:
+        messages_json = json.dumps(
+            [message.model_dump(exclude_none=True) for message in messages],
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        raw = f"{messages_json}\x00{role}\x00{model_id}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    envelope = json.dumps(
+        {
+            "fingerprint_version": _FINGERPRINT_VERSION,
+            "messages": [m.model_dump(exclude_none=True) for m in messages],
+            "model": model_id,
+            "role": role,
+            "tools": _normalized_tools(tools),
+        },
         sort_keys=True,
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    raw = f"{messages_json}\x00{role}\x00{model_id}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return hashlib.sha256(envelope.encode("utf-8")).hexdigest()
 
 
 class Cassette:
@@ -83,10 +133,20 @@ class Cassette:
         )
         return Completion(text=str(entry["text"]), tool_calls=tool_calls, usage=Usage(**usage_data))
 
-    def put(self, key: str, completion: Completion, *, role: Role, model_id: str) -> None:
+    def put(
+        self,
+        key: str,
+        completion: Completion,
+        *,
+        role: Role,
+        model_id: str,
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> None:
         entry: dict[str, Any] = {
+            "fingerprint_version": _FINGERPRINT_VERSION,
             "role": role,
             "model": model_id,
+            "tool_contract_hash": tool_contract_hash(tools),
             "text": completion.text,
             "usage": completion.usage.model_dump(),
         }
@@ -114,11 +174,9 @@ class RecordingProvider:
         tools: Sequence[ToolSpec] | None = None,
     ) -> Completion:
         model_id = self._model_for_role[role]
-        # tools 不进 replay_key（一条轨迹里 registry 固定、同 messages 同 tools）——保既有 golden
-        # cassette 命中不变；但录制时须把 tools 透传给 inner，否则真 provider 又收不到工具。
-        key = replay_key(messages, role, model_id)
+        key = replay_key(messages, role, model_id, tools=tools)
         completion = await self._inner.complete(messages, role=role, tools=tools)
-        self._cassette.put(key, completion, role=role, model_id=model_id)
+        self._cassette.put(key, completion, role=role, model_id=model_id, tools=tools)
         return completion
 
 
@@ -136,9 +194,8 @@ class ReplayProvider:
         role: Role = "basic",
         tools: Sequence[ToolSpec] | None = None,
     ) -> Completion:
-        # tools 只影响录制阶段真 provider 收到什么；回放只按 replay_key 查 cassette，故忽略 tools。
         model_id = self._model_for_role[role]
-        key = replay_key(messages, role, model_id)
+        key = replay_key(messages, role, model_id, tools=tools)
         completion = self._cassette.get(key)
         if completion is None:
             raise ReplayMiss(

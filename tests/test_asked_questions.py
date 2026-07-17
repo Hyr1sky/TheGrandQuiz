@@ -14,6 +14,28 @@ from grandquiz.domain.learning.asked_questions import (
     DictAskedQuestionsLedger,
     SqliteAskedQuestionsLedger,
 )
+from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
+from grandquiz.domain.learning.persistence import LearningDatabase
+from grandquiz.domain.learning.store import SqliteLearningStore
+
+
+def _sqlite_with_items(db_path: str | Path, *item_ids: str) -> SqliteAskedQuestionsLedger:
+    database = LearningDatabase(db_path)
+    resource = LearningResource(resource_id="test-resource", url="file://local/test")
+    items = [
+        KnowledgeItem(
+            item_id=item_id,
+            resource_id=resource.resource_id,
+            concept=item_id,
+            summary="摘要",
+            evidence=[Evidence(quote=f"{item_id} 证据")],
+            confidence=0.8,
+        )
+        for item_id in item_ids
+    ]
+    SqliteLearningStore(database).replace_snapshot(resource, items)
+    return SqliteAskedQuestionsLedger(database)
+
 
 # --- 基本读写 -----------------------------------------------------------------------
 
@@ -50,12 +72,25 @@ def test_different_items_do_not_cross_contaminate() -> None:
 def test_dict_sqlite_parity() -> None:
     ops = [("item-1", "问题A"), ("item-2", "问题B"), ("item-1", "问题C")]
     dict_ledger: AskedQuestionsLedger = DictAskedQuestionsLedger()
-    sqlite_ledger: AskedQuestionsLedger = SqliteAskedQuestionsLedger(":memory:")
+    sqlite_ledger: AskedQuestionsLedger = _sqlite_with_items(":memory:", "item-1", "item-2")
     for item_id, question in ops:
         dict_ledger.record_asked(item_id, question)
         sqlite_ledger.record_asked(item_id, question)
     for item_id in ("item-1", "item-2", "item-missing"):
         assert dict_ledger.asked_before(item_id) == sqlite_ledger.asked_before(item_id)
+
+
+def test_limit_keeps_most_recent_questions_with_dict_sqlite_parity() -> None:
+    dict_ledger: AskedQuestionsLedger = DictAskedQuestionsLedger()
+    sqlite_ledger: AskedQuestionsLedger = _sqlite_with_items(":memory:", "item-1")
+    for index in range(30):
+        question = f"问题 {index}"
+        dict_ledger.record_asked("item-1", question)
+        sqlite_ledger.record_asked("item-1", question)
+
+    expected = [f"问题 {index}" for index in range(10, 30)]
+    assert dict_ledger.asked_before("item-1", limit=20) == expected
+    assert sqlite_ledger.asked_before("item-1", limit=20) == expected
 
 
 # --- 跨会话留存（#8 的核心验收信号）----------------------------------------------------
@@ -64,7 +99,7 @@ def test_dict_sqlite_parity() -> None:
 def test_asked_questions_survive_close_and_reopen(tmp_path: Path) -> None:
     db = tmp_path / "learning.db"
 
-    ledger1 = SqliteAskedQuestionsLedger(db)
+    ledger1 = _sqlite_with_items(db, "item-1")
     ledger1.record_asked("item-1", "什么是闭包？")
     ledger1.close()
     del ledger1
@@ -78,7 +113,7 @@ def test_asked_questions_keep_accumulating_across_sessions(tmp_path: Path) -> No
     # 模拟"今天问了一题、关掉 CLI、明天再开一个新会话又问了一题"——两条都该留着，不是后者覆盖前者。
     db = tmp_path / "learning.db"
 
-    ledger1 = SqliteAskedQuestionsLedger(db)
+    ledger1 = _sqlite_with_items(db, "item-1")
     ledger1.record_asked("item-1", "第一天问的题")
     ledger1.close()
 

@@ -10,7 +10,13 @@ import logging
 import pytest
 
 from grandquiz.kernel.clock import ManualClock
-from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
+from grandquiz.kernel.events import (
+    AgentEvent,
+    DurableProcessorError,
+    EventEmitter,
+    EventSink,
+    EventType,
+)
 
 
 class _BoomProcessor:
@@ -56,6 +62,32 @@ def test_processor_exception_is_isolated_from_other_processors() -> None:
         EventType.TURN_STARTED,
         EventType.TURN_ENDED,
     ]
+
+
+def test_durable_processor_failure_propagates_without_notifying_ui_observers() -> None:
+    sink = EventSink()
+    sink.register_durable(_BoomProcessor())
+    rendered: list[AgentEvent] = []
+    sink.subscribe(rendered.append)
+    emitter = EventEmitter(sink, ManualClock(), trace_id="t")
+
+    with pytest.raises(DurableProcessorError) as captured:
+        emitter.emit(EventType.TURN_STARTED)
+
+    assert captured.value.event.type == EventType.TURN_STARTED
+    assert rendered == []
+
+
+def test_best_effort_ui_failure_does_not_undo_durable_processing() -> None:
+    sink = EventSink()
+    durable = _CollectingProcessor()
+    sink.register_durable(durable)
+    sink.subscribe(_boom_observer)
+    emitter = EventEmitter(sink, ManualClock(), trace_id="t")
+
+    event = emitter.emit(EventType.TURN_STARTED)
+
+    assert durable.events == [event]
 
 
 def test_subscribe_callable_is_also_isolated() -> None:

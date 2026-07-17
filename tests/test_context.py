@@ -205,6 +205,21 @@ def test_render_weak_concepts_sorted_deterministically() -> None:
     assert positions == sorted(positions)
 
 
+def test_render_learner_context_prioritizes_weak_over_observing_and_catalog() -> None:
+    store = LearningStore()
+    memory = LearningMemory()
+    weak_id = _seed_item(store, "真正薄弱", 0)
+    observing_id = _seed_item(store, "观察中概念", 1)
+    memory.record_verdict(weak_id, "错")
+    memory.record_verdict(observing_id, "错")
+    memory.record_verdict(observing_id, "对")
+    _seed_resource_with_topic(store, "https://example.com/catalog", "库存主题")
+
+    text = render_learner_context(store=store, memory=memory, preferences=DictPreferenceMemory())
+
+    assert text.index("真正薄弱") < text.index("观察中概念") < text.index("库存主题")
+
+
 def _seed_resource_with_topic(store: LearningStore, url: str, topic: str) -> str:
     resource = LearningResource.create(url=url).model_copy(update={"topic": topic})
     store.add_resource(resource)

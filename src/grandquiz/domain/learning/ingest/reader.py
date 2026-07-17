@@ -236,8 +236,9 @@ class Reader:
                 )
             except ValidationError as exc:
                 # 空 evidence / 空串 quote·concept·summary 被硬约束挡下 → 重试或拒绝
+                summary = _stable_error_summary(exc)
                 raise ModelRetry(
-                    f"候选 {candidate.concept!r} 无法构造 KnowledgeItem：{_stable_error_summary(exc)}"
+                    f"候选 {candidate.concept!r} 无法构造 KnowledgeItem：{summary}"
                 ) from exc
             if item.item_id in seen_ids:
                 raise ModelRetry(f"候选存在重复概念指纹：{candidate.concept!r}")

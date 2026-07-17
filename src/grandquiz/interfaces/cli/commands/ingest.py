@@ -1,4 +1,4 @@
-"""``grandquiz ingest``——读本地材料 → 真 Reader 深读 → 审批（MVP keep-all）→ 入 SQLite。"""
+"""``grandquiz ingest``——读本地材料 → 真 Reader 深读 → 人工审批 → 入 SQLite。"""
 
 import uuid
 from pathlib import Path
@@ -6,16 +6,18 @@ from urllib.parse import quote
 
 from rich.console import Console
 
-from grandquiz.domain.learning.approval import ScriptedApprovalGate
+from grandquiz.domain.learning.approval import ApprovalCancelled, ApprovalGate
 from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
 from grandquiz.domain.learning.models import derive_id
 from grandquiz.domain.learning.store import SqliteLearningStore
+from grandquiz.interfaces.cli.approval import CliApprovalGate
 from grandquiz.interfaces.cli.commands import _print_trace_location
 from grandquiz.interfaces.cli.composition import (
     _DEFAULT_MAX_BYTES,
     _LOCAL_HOST,
     _ensure_parent,
     _resolve_trace_db,
+    budget_provider,
     build_event_backbone,
 )
 from grandquiz.kernel.trace import TraceStore
@@ -37,10 +39,11 @@ async def run_ingest(
     material_path: Path,
     db_path: Path,
     provider: Provider,
+    approval: ApprovalGate,
     console: Console,
     trace_db_path: Path | None = None,
 ) -> IngestResult:
-    """读本地材料 → 真 Reader 深读 → 审批（MVP keep-all）→ 入 SQLite。返回 ``IngestResult``。
+    """读本地材料 → 真 Reader 深读 → 注入的审批门 → 入 SQLite。返回 ``IngestResult``。
 
     ``source`` 注入文件内容、``url`` 用本地占位（域名白名单只放行 ``_LOCAL_HOST``）；``provider`` /
     ``console`` 作参数注入以便测试用假件驱动。``max_bytes`` 取内容实际字节与默认上限的较大者
@@ -52,6 +55,7 @@ async def run_ingest(
     会话结束打印 ``trace_id`` + 库位置。
     """
     content = material_path.read_text(encoding="utf-8")
+    provider = budget_provider(provider)
     _ensure_parent(db_path)
     resolved_trace_db = _resolve_trace_db(db_path, trace_db_path)
     _ensure_parent(resolved_trace_db)
@@ -66,7 +70,7 @@ async def run_ingest(
             source=lambda _url: content,
             provider=provider,
             store=store,
-            approval=ScriptedApprovalGate(keep=lambda _item: True),
+            approval=approval,
             emitter=emitter,
             max_bytes=max(_DEFAULT_MAX_BYTES, len(content.encode("utf-8")) + 1),
             allowed_domains={_LOCAL_HOST},
@@ -93,14 +97,19 @@ def _print_ingest_result(console: Console, title: str, result: IngestResult) -> 
 
 
 async def _run_ingest_cli(*, title: str, material_path: Path, db_path: Path) -> None:
+    console = Console()
     provider = OpenAICompatProvider.from_env()
     try:
-        await run_ingest(
-            title=title,
-            material_path=material_path,
-            db_path=db_path,
-            provider=provider,
-            console=Console(),
-        )
+        try:
+            await run_ingest(
+                title=title,
+                material_path=material_path,
+                db_path=db_path,
+                provider=provider,
+                approval=CliApprovalGate(console=console),
+                console=console,
+            )
+        except ApprovalCancelled:
+            console.print("[yellow]审批已取消，知识快照未变更。[/]")
     finally:
         await provider.aclose()

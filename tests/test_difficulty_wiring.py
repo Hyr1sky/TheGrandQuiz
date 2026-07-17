@@ -30,6 +30,7 @@ from grandquiz.domain.learning.difficulty import (
 )
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import LearningMemory
+from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.evals.harness import (
     MC_WRONG,
@@ -261,6 +262,16 @@ def test_build_learning_stores_returns_five_persistent_pieces(tmp_path: Path) ->
     try:
         # 第五件是难度台账：新 item 读到默认档（跨会话留存的空态起点）。
         assert difficulty.tier_of("item-x") == DEFAULT_TIER
+        resource = LearningResource(resource_id="test-resource", url="file://local/test")
+        item = KnowledgeItem(
+            item_id="item-x",
+            resource_id=resource.resource_id,
+            concept="测试概念",
+            summary="摘要",
+            evidence=[Evidence(quote="证据")],
+            confidence=0.8,
+        )
+        store.replace_snapshot(resource, [item])
         difficulty.set_tier("item-x", 5)
         assert difficulty.tier_of("item-x") == 5
     finally:

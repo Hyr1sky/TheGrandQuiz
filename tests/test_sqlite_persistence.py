@@ -56,7 +56,7 @@ def test_items_and_weak_points_survive_close_and_reopen(tmp_path: Path) -> None:
 
     # item 仍在、逐字段一致、仍可经全库读锚定出题（全局 KB，ADR-0005）。
     reloaded = store2.all_items()
-    assert reloaded == items
+    assert reloaded == sorted(items, key=lambda item: item.item_id)
     assert store2.get_resource(resource.resource_id) == resource
 
     # 薄弱点仍在、状态 / 连对 / 判决历史正确（"重启后仍薄弱优先出题"的地基）。

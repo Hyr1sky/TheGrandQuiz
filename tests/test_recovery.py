@@ -48,7 +48,7 @@ def test_classify_question_and_grading_are_degraded() -> None:
 
 
 def test_classify_fetch_and_reader_are_resource_unreadable() -> None:
-    assert classify(FetchError("x")) is ErrorClass.RESOURCE_UNREADABLE
+    assert classify(FetchError("source_failure", "x")) is ErrorClass.RESOURCE_UNREADABLE
     assert classify(ReaderError("x")) is ErrorClass.RESOURCE_UNREADABLE
 
 
@@ -82,7 +82,7 @@ def test_resource_unreadable_propagates() -> None:
     # RESOURCE_UNREADABLE 非 DEGRADED → 走默认 propagate（ingest 已在内部各自降级；
     # 此处只保证 policy 不把它当"本轮可跳过"静默吞）。
     policy, _ = _policy_with_collector()
-    assert policy.decide(FetchError("域名不在白名单")) is Decision.PROPAGATE
+    assert policy.decide(FetchError("domain_not_allowed", "域名不在白名单")) is Decision.PROPAGATE
 
 
 def test_decide_is_deterministic() -> None:

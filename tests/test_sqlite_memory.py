@@ -15,13 +15,31 @@ from pydantic import ValidationError
 
 from grandquiz.domain.learning.assessment.grading import VerdictLabel
 from grandquiz.domain.learning.memory import LearningMemory, SqliteLearningMemory
+from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
+from grandquiz.domain.learning.persistence import LearningDatabase
+from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.kernel.db import connect
 
 _ITEM = "res#000"
 
 
-def _sqlite() -> SqliteLearningMemory:
-    return SqliteLearningMemory(":memory:")
+def _sqlite(*item_ids: str) -> SqliteLearningMemory:
+    database = LearningDatabase(":memory:")
+    resource = LearningResource(resource_id="test-resource", url="file://local/test")
+    ids = item_ids or (_ITEM, "a", "b", "c", "x", "y")
+    items = [
+        KnowledgeItem(
+            item_id=item_id,
+            resource_id=resource.resource_id,
+            concept=item_id,
+            summary="摘要",
+            evidence=[Evidence(quote=f"{item_id} 证据")],
+            confidence=0.8,
+        )
+        for item_id in ids
+    ]
+    SqliteLearningStore(database).replace_snapshot(resource, items)
+    return SqliteLearningMemory(database)
 
 
 def test_record_wrong_makes_concept_weak() -> None:
@@ -147,7 +165,18 @@ def test_dirty_row_violating_invariant_is_rejected_on_read(tmp_path: Path) -> No
     # 反序列化脏行（薄弱却 cc=1）时，ConceptRecord 的不变量 model_validator 在构造点即失败，
     # 而非被 apply_verdict 静默错误销账。用真实文件 db，另开一条裸连接注入非法行再读。
     db = tmp_path / "learning.db"
-    mem = SqliteLearningMemory(db)  # 建表 + 迁移
+    database = LearningDatabase(db)
+    resource = LearningResource(resource_id="test-resource", url="file://local/test")
+    item = KnowledgeItem(
+        item_id=_ITEM,
+        resource_id=resource.resource_id,
+        concept="闭包",
+        summary="摘要",
+        evidence=[Evidence(quote="证据")],
+        confidence=0.8,
+    )
+    SqliteLearningStore(database).replace_snapshot(resource, [item])
+    mem = SqliteLearningMemory(database)
     raw = connect(db)
     raw.execute(
         "INSERT INTO learning_memory (item_id, state, consecutive_correct, verdict_history) "

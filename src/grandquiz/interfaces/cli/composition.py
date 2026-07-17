@@ -11,15 +11,22 @@ FastAPI handler）都能调同一套工厂拿到**逐字等价**的对象图（�
 编排既有的 try/finally 收尾），本层不隐藏 close 语义。
 """
 
+import asyncio
+import hashlib
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from urllib.parse import urlparse
 
-from grandquiz.domain.learning.approval import ScriptedApprovalGate
+from grandquiz.domain.learning.approval import ApprovalGate
 from grandquiz.domain.learning.asked_questions import SqliteAskedQuestionsLedger
 from grandquiz.domain.learning.context import learner_context_provider
 from grandquiz.domain.learning.difficulty import SqliteDifficultyLedger
-from grandquiz.domain.learning.ingest.fetch import ALLOW_ANY_DOMAIN, FetchError
+from grandquiz.domain.learning.ingest.fetch import (
+    ALLOW_ANY_DOMAIN,
+    FetchError,
+    FetchResult,
+    FetchSource,
+)
 from grandquiz.domain.learning.ingest.web_fetch import create_http_source
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.persistence import LearningDatabase
@@ -42,6 +49,7 @@ from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import ToolRegistry
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Provider
+from grandquiz.providers.budget import BudgetedProvider
 
 # 供 CLI 命令模块 / 未来 Web 通道复用的装配面（列入 __all__ = 视为包内公开，尽管带下划线前缀）。
 __all__ = [
@@ -51,11 +59,13 @@ __all__ = [
     "_HISTORY_MAX_TURNS",
     "_LOCAL_HOST",
     "_MEMORY_PARTITION_BUDGET",
+    "_PROVIDER_REQUEST_BUDGET",
     "_SYSTEM_PARTITION_BUDGET",
     "_TOTAL_BUDGET",
     "_ensure_parent",
     "_file_source",
     "_resolve_trace_db",
+    "budget_provider",
     "build_event_backbone",
     "build_learning_stores",
     "build_react_runner",
@@ -84,6 +94,7 @@ _DEFAULT_ROUNDS = 5
 _SYSTEM_PARTITION_BUDGET = 4_000
 _MEMORY_PARTITION_BUDGET = 6_000
 _TOTAL_BUDGET = 20_000
+_PROVIDER_REQUEST_BUDGET = 32_000
 # 历史滑动窗口：保最近 5 轮原样（先滑窗，PRD 排序里的老轮摘要留下一程真 Summarizer 接入时换）。
 _HISTORY_MAX_TURNS = 5
 
@@ -105,6 +116,17 @@ def _resolve_trace_db(db_path: Path, trace_db_path: Path | None) -> Path:
     return resolved
 
 
+def budget_provider(provider: Provider) -> Provider:
+    """为所有生产 Provider 调用套同一完整请求硬预算。"""
+    if isinstance(provider, BudgetedProvider):
+        return provider
+    return BudgetedProvider(
+        inner=provider,
+        counter=HeuristicTokenCounter(),
+        ceiling=_PROVIDER_REQUEST_BUDGET,
+    )
+
+
 def _file_source(materials_dir: Path) -> Callable[[str], str]:
     """建**文件式** fetch 源（复用现有 ingest 那套读本地材料，非 httpx——真远程抓取仍缓办）。
 
@@ -124,13 +146,13 @@ def _file_source(materials_dir: Path) -> Callable[[str], str]:
         relative = urlparse(url).path.lstrip("/")
         target = (base / relative).resolve()
         if not target.is_relative_to(base):
-            raise FetchError(f"文件 {relative} 不在材料目录 {base} 内")
+            raise FetchError("source_failure", f"文件 {relative} 不在材料目录 {base} 内")
         return target.read_text(encoding="utf-8")
 
     return source
 
 
-def _web_and_file_source(materials_dir: Path) -> Callable[[str], str]:
+def _web_and_file_source(materials_dir: Path) -> FetchSource:
     """派发式抓取源：``file://local/<相对路径>`` 走本地材料读取；``http(s)://`` 走真实网络
     抓取（``web_fetch.create_http_source``，含 SSRF 防护 + 逐跳重定向重验证）。两条路径合成
     一个 ``source`` 可调用体统一注入 ``fetch_resource``——它不关心 url 是本地文件还是真实
@@ -140,12 +162,25 @@ def _web_and_file_source(materials_dir: Path) -> Callable[[str], str]:
     file_source = _file_source(materials_dir)
     http_source = create_http_source()
 
-    def source(url: str) -> str:
-        if urlparse(url).scheme in ("http", "https"):
-            return http_source(url)
-        return file_source(url)
+    class _RoutingSource:
+        async def fetch(self, url: str, *, max_bytes: int) -> FetchResult:
+            if urlparse(url).scheme in ("http", "https"):
+                return await http_source.fetch(url, max_bytes=max_bytes)
+            content = await asyncio.to_thread(file_source, url)
+            encoded = content.encode("utf-8")
+            if len(encoded) > max_bytes:
+                raise FetchError(
+                    "too_large", f"内容超过大小上限：{len(encoded)} > {max_bytes} 字节"
+                )
+            return FetchResult(
+                requested_url=url,
+                final_url=url,
+                content=content,
+                content_type="text/plain",
+                content_hash=hashlib.sha256(encoded).hexdigest(),
+            )
 
-    return source
+    return _RoutingSource()
 
 
 def build_learning_stores(
@@ -193,7 +228,7 @@ def build_event_backbone(
     for subscriber in subscribers:
         sink.subscribe(subscriber)  # type: ignore[arg-type]
     trace_store = TraceStore(trace_db_path)
-    sink.register(trace_store)  # 消费者即 processor：真机事件流落独立 trace 库
+    sink.register_durable(trace_store)  # trace 是承重投影，写失败必须令当前 turn 失败
     emitter = EventEmitter(sink, SystemClock(), trace_id=trace_id)
     return emitter, trace_store
 
@@ -207,6 +242,7 @@ def build_react_runner(
     preferences: SqlitePreferenceMemory,
     asked_questions: SqliteAskedQuestionsLedger,
     difficulty: SqliteDifficultyLedger,
+    approval: ApprovalGate,
     materials_dir: Path,
     responder: Responder,
     seed: int,
@@ -216,8 +252,8 @@ def build_react_runner(
 
     逐字复刻 ``run_react`` 内的装配：``ToolRegistry`` 经 ``register_learning_tools`` 注入真依赖
     （SQLite store/memory/preferences + 派发式 fetch 源——``file://local/<名>`` 走本地材料、
-    ``http(s)://`` 走真实网络抓取（``web_fetch.create_http_source``，含 SSRF 防护）+ keep-all
-    审批门 + 注入的 ``responder`` + ``quiz_seed=seed``）；域名白名单相应放开为
+    ``http(s)://`` 走真实网络抓取（``web_fetch.create_http_source``，含 SSRF 防护）+ 注入的
+    审批门 / ``responder`` + ``quiz_seed=seed``）；域名白名单相应放开为
     ``ALLOW_ANY_DOMAIN``（个人工具"粘贴任意文章 URL"场景下预先登记域名不现实，真正的安全边界
     在 ``web_fetch`` 的 SSRF 检查，不在域名预批）；``load_prompt`` 读版本化 react 系统提示；
     ``ContextBuilder`` 装 system 前言区 + 学情注入分区（``learner_context_provider`` 闭包，每
@@ -232,13 +268,14 @@ def build_react_runner(
     短会话（远低于 ``_HISTORY_MAX_TURNS`` 轮）不触发折叠，``build()`` 逐字节等价此前（cassette /
     既有测试不受影响）。
     """
+    provider = budget_provider(provider)
     registry = ToolRegistry()
     register_learning_tools(
         registry,
         source=_web_and_file_source(materials_dir),
         provider=provider,
         store=store,
-        approval=ScriptedApprovalGate(keep=lambda _item: True),  # MVP keep-all（同 run_ingest）
+        approval=approval,
         memory=memory,
         max_bytes=_DEFAULT_MAX_BYTES,
         allowed_domains=ALLOW_ANY_DOMAIN,

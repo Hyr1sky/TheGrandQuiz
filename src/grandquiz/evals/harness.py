@@ -32,6 +32,7 @@ import yaml
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.assessment.engine import AssessmentResult, assess_once
 from grandquiz.domain.learning.assessment.grading import VerdictLabel
+from grandquiz.domain.learning.assessment.scope import ALL_SCOPE, QuizScope, SelectedScope
 from grandquiz.domain.learning.assessment.selection import Focus, apply_scope, select_target
 from grandquiz.domain.learning.context import learner_context_provider
 from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
@@ -317,7 +318,7 @@ def build_stocked_store() -> tuple[LearningStore, list[str]]:
             evidence=[Evidence(quote=quote)],
             confidence=0.9,
         )
-        for index, (concept, quote) in enumerate(ITEM_DATA)
+        for concept, quote in ITEM_DATA
     ]
     store.add_items(items)
     return store, [item.item_id for item in items]
@@ -359,7 +360,7 @@ def build_multi_resource_store() -> tuple[LearningStore, dict[str, str], list[st
                 evidence=[Evidence(quote=quote)],
                 confidence=0.9,
             )
-            for index, (concept, quote) in enumerate(ITEM_DATA_B)
+            for concept, quote in ITEM_DATA_B
         ]
     )
     all_item_ids = [item.item_id for item in store.all_items()]
@@ -565,6 +566,7 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
     preferences: PreferenceMemory = DictPreferenceMemory()
     preferences.set_preference(QUESTION_LANGUAGE_KEY, case.language)
     resource_ids: list[str] | None = None
+    scope: QuizScope = ALL_SCOPE
     if case.stocked:
         if case.fixture == "multi":
             store, fixture_resources, item_ids = build_multi_resource_store()
@@ -577,6 +579,7 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
         resource_ids = (
             [fixture_resources.get(tok, tok) for tok in case.scope] if case.scope else None
         )
+        scope = SelectedScope(resource_ids=resource_ids) if resource_ids is not None else ALL_SCOPE
         # 与生产 assess_once 同源：候选池 = 全库经 apply_scope 收窄（None → 恒等全库），natural
         # 基线亦按 scope 后的池算（scope 用例的对照基线与生产一致；None scope 下 == 全库、既有
         # 用例不变）。空命中（empty_scope）→ 不选题（选题在拒答分支后，此处置 None）。
@@ -588,6 +591,7 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
             natural=natural,
             items=list(all_items),
             resource_ids=resource_ids,
+            scope=scope,
         )
         weak_target: str | None = None
         for pv in case.preset:  # 经真实 record_verdict 建前置状态（状态机不重写）
@@ -629,7 +633,7 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
             recently_asked=recently_asked,
             focus=case.focus,
             preferences=preferences,
-            resource_ids=resource_ids,
+            scope=scope,
             question_type=case.question_type,
         )
         all_spans.extend(trace.span_tree("run"))

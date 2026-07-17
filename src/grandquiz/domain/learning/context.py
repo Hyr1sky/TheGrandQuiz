@@ -38,15 +38,15 @@ def render_learner_context(*, store: Store, memory: Memory, preferences: Prefere
     读（``store.all_items()``，全局 KB——``LearningTask`` 已消解，无 task 分区，ADR-0005）。
     """
     sections: list[str] = []
-    catalog = _render_catalog(store)
-    if catalog:
-        sections.append(catalog)
     weak = _render_weak(store, memory)
     if weak:
         sections.append(weak)
     prefs = _render_preferences(preferences)
     if prefs:
         sections.append(prefs)
+    catalog = _render_catalog(store)
+    if catalog:
+        sections.append(catalog)
     if not sections:
         return ""
     return "\n".join([_HEADER, *sections])
@@ -89,7 +89,11 @@ def _render_weak(store: Store, memory: Memory) -> str:
         return ""
     concept_by_id = {item.item_id: item.concept for item in store.all_items()}
     parts: list[str] = []
-    for item_id in sorted(weak_ids):
+    ordered_ids = sorted(
+        weak_ids,
+        key=lambda item_id: (0 if memory.state_of(item_id) == "薄弱" else 1, item_id),
+    )
+    for item_id in ordered_ids:
         concept = concept_by_id.get(item_id, item_id)
         state = memory.state_of(item_id)
         parts.append(f"{concept}（{state}）" if state is not None else concept)

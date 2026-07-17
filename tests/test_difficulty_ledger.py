@@ -18,6 +18,28 @@ from grandquiz.domain.learning.difficulty import (
     DifficultyTier,
     SqliteDifficultyLedger,
 )
+from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
+from grandquiz.domain.learning.persistence import LearningDatabase
+from grandquiz.domain.learning.store import SqliteLearningStore
+
+
+def _sqlite_with_items(db_path: str | Path, *item_ids: str) -> SqliteDifficultyLedger:
+    database = LearningDatabase(db_path)
+    resource = LearningResource(resource_id="test-resource", url="file://local/test")
+    items = [
+        KnowledgeItem(
+            item_id=item_id,
+            resource_id=resource.resource_id,
+            concept=item_id,
+            summary="摘要",
+            evidence=[Evidence(quote=f"{item_id} 证据")],
+            confidence=0.8,
+        )
+        for item_id in item_ids
+    ]
+    SqliteLearningStore(database).replace_snapshot(resource, items)
+    return SqliteDifficultyLedger(database)
+
 
 # --- 默认档兜底 ---------------------------------------------------------------------
 
@@ -33,7 +55,7 @@ def test_tier_of_returns_default_when_never_recorded_dict() -> None:
 
 
 def test_tier_of_returns_default_when_never_recorded_sqlite() -> None:
-    ledger = SqliteDifficultyLedger(":memory:")
+    ledger = _sqlite_with_items(":memory:")
     assert ledger.tier_of("item-1") == DEFAULT_TIER
     ledger.close()
 
@@ -55,7 +77,7 @@ def test_set_tier_is_idempotent_overwrite_dict() -> None:
 
 
 def test_set_tier_is_idempotent_overwrite_sqlite() -> None:
-    ledger = SqliteDifficultyLedger(":memory:")
+    ledger = _sqlite_with_items(":memory:", "item-1")
     ledger.set_tier("item-1", 4)
     ledger.set_tier("item-1", 2)
     assert ledger.tier_of("item-1") == 2
@@ -77,7 +99,7 @@ def test_dict_sqlite_parity() -> None:
     # 含覆盖（item-1 先 4 后 5）与从未记录（item-missing → 默认档）。
     ops: list[tuple[str, DifficultyTier]] = [("item-1", 4), ("item-2", 1), ("item-1", 5)]
     dict_ledger: DifficultyLedger = DictDifficultyLedger()
-    sqlite_ledger: DifficultyLedger = SqliteDifficultyLedger(":memory:")
+    sqlite_ledger: DifficultyLedger = _sqlite_with_items(":memory:", "item-1", "item-2")
     for item_id, tier in ops:
         dict_ledger.set_tier(item_id, tier)
         sqlite_ledger.set_tier(item_id, tier)
@@ -91,7 +113,7 @@ def test_dict_sqlite_parity() -> None:
 def test_tier_survives_close_and_reopen(tmp_path: Path) -> None:
     db = tmp_path / "learning.db"
 
-    ledger1 = SqliteDifficultyLedger(db)
+    ledger1 = _sqlite_with_items(db, "item-1")
     ledger1.set_tier("item-1", 4)
     ledger1.close()
     del ledger1
@@ -105,7 +127,7 @@ def test_overwrite_survives_across_sessions(tmp_path: Path) -> None:
     # 第一天升到 4，第二天新会话降到 2——留存的是最新值（覆盖语义跨会话成立）。
     db = tmp_path / "learning.db"
 
-    ledger1 = SqliteDifficultyLedger(db)
+    ledger1 = _sqlite_with_items(db, "item-1")
     ledger1.set_tier("item-1", 4)
     ledger1.close()
 

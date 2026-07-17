@@ -72,6 +72,11 @@ def test_migrate_0004_clean_slate_clears_knowledge_and_weak() -> None:
     conn = connect(":memory:")
     migrate(conn, _LEARNING_MIGRATIONS)  # 全量 → 最新版本
     conn.execute(
+        "INSERT INTO resources "
+        "(resource_id, url, raw_content, content_hash, trusted, status, topic) "
+        "VALUES ('r', 'file://local/r', NULL, NULL, 0, 'read', NULL)"
+    )
+    conn.execute(
         "INSERT INTO knowledge_items "
         "(item_id, resource_id, concept, summary, evidence, confidence, concept_key) "
         "VALUES ('r#000', 'r', 'c', 's', '[]', 0.9, NULL)"

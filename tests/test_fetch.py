@@ -13,9 +13,9 @@ from grandquiz.domain.learning.ingest.fetch import FetchError, fetch_resource
 _ALLOWED = {"example.com", "docs.python.org"}
 
 
-def test_rejects_domain_not_in_allowlist() -> None:
+async def test_rejects_domain_not_in_allowlist() -> None:
     with pytest.raises(FetchError):
-        fetch_resource(
+        await fetch_resource(
             "https://evil.test/page",
             source=lambda _url: "内容",
             max_bytes=1024,
@@ -23,10 +23,10 @@ def test_rejects_domain_not_in_allowlist() -> None:
         )
 
 
-def test_rejects_content_over_max_bytes() -> None:
+async def test_rejects_content_over_max_bytes() -> None:
     # 5 个中文字符 = 15 UTF-8 字节 > max_bytes=10 → 拒绝（按字节数而非字符数计）。
     with pytest.raises(FetchError):
-        fetch_resource(
+        await fetch_resource(
             "https://example.com/big",
             source=lambda _url: "一二三四五",
             max_bytes=10,
@@ -34,12 +34,12 @@ def test_rejects_content_over_max_bytes() -> None:
         )
 
 
-def test_wraps_source_exception_as_fetch_error() -> None:
+async def test_wraps_source_exception_as_fetch_error() -> None:
     def _boom(_url: str) -> str:
         raise RuntimeError("网络超时")  # 模拟抓取失败
 
     with pytest.raises(FetchError):
-        fetch_resource(
+        await fetch_resource(
             "https://example.com/x",
             source=_boom,
             max_bytes=1024,
@@ -47,25 +47,26 @@ def test_wraps_source_exception_as_fetch_error() -> None:
         )
 
 
-def test_happy_path_returns_content_and_correct_hash() -> None:
+async def test_happy_path_returns_content_and_correct_hash() -> None:
     content = "闭包捕获的是变量而非值"
-    got_content, got_hash = fetch_resource(
+    result = await fetch_resource(
         "https://example.com/article",
         source=lambda _url: content,
         max_bytes=1024,
         allowed_domains=_ALLOWED,
     )
-    assert got_content == content
-    assert got_hash == hashlib.sha256(content.encode("utf-8")).hexdigest()
+    assert result.content == content
+    assert result.content_hash == hashlib.sha256(content.encode("utf-8")).hexdigest()
+    assert result.requested_url == result.final_url == "https://example.com/article"
 
 
-def test_content_exactly_at_max_bytes_is_allowed() -> None:
+async def test_content_exactly_at_max_bytes_is_allowed() -> None:
     # 边界：正好等于上限不拒绝（只有严格超过才拒）。
     payload = "abcde"  # 5 ASCII 字节
-    got, _ = fetch_resource(
+    result = await fetch_resource(
         "https://example.com/edge",
         source=lambda _url: payload,
         max_bytes=5,
         allowed_domains=_ALLOWED,
     )
-    assert got == payload
+    assert result.content == payload
