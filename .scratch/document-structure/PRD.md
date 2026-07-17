@@ -1,6 +1,6 @@
 # PRD：修订化文档树、精确溯源与渐进式 Agentic Search
 
-Status: in-progress（DS-S1 done；DS-S2–S4 code-complete / ready-for-human；DS-S5 deferred, eval-gated）
+Status: in-progress（DS-S1–S2 done；DS-S3–S4 replay-complete / ready-for-human dogfood；DS-S5 deferred, eval-gated）
 Triage: ready-for-human
 Decision: [ADR-0008](../../docs/adr/0008-revisioned-document-tree-and-grounded-knowledge-graph.md)
 
@@ -167,11 +167,11 @@ related、contradicts 关系。跨资源 CanonicalConcept 与 Learning Memory �
 
 1. **DS-S1 ResourceRevision + DocumentNode 当前快照**（AFK，done 2026-07-17）
    - 确定性 parser、revision/tree schema、迁移回填、原子 current 切换和 store parity。
-2. **DS-S2 精确 Evidence 与可解析 citation**（code-complete 2026-07-17，真实回放待收口）
+2. **DS-S2 精确 Evidence 与可解析 citation**（done 2026-07-17）
    - evidence 正规化、locator 校验、旧 quote 回填审计、Reader node-local 输出和引用展示。
-3. **DS-S3 Reader 节点化覆盖型深读**（code-complete 2026-07-17，真实 Reader cassette 待重录）
+3. **DS-S3 Reader 节点化覆盖型深读**（replay-complete 2026-07-17，真实筛选/citation dogfood 待执行）
    - 用自然节点批次替换临时 token chunk，保持预算、重试、审批、快照原子性和真实 cassette。
-4. **DS-S4 FTS5 + 渐进式 Agentic Search**（code-complete 2026-07-17，真实 ReAct cassette 待重录）
+4. **DS-S4 FTS5 + 渐进式 Agentic Search**（replay-complete 2026-07-17，开放搜索 dogfood 待执行）
    - 大纲、搜索、展开、读取工具，严格 scope、预算、trace 与检索 eval。
 5. **DS-S5 KnowledgeRelation eval 门控实验**（HITL，暂缓）
    - 类型化语义边、provenance、前置知识/多跳对照 eval；由证据决定保留，不推进全局概念归并。
@@ -182,10 +182,12 @@ related、contradicts 关系。跨资源 CanonicalConcept 与 Learning Memory �
 - 生产 `learning.db` 已在 SHA256 可核对备份后从 schema v9 迁移到 v11。3 resources / 88 items /
   3 revisions / 1551 nodes、Learning Memory、Asked Questions 与 Difficulty 均无差异；135 条旧 evidence
   确定性回填为 83 resolved / 52 unresolved，FTS 有 1551 current-only rows，完整性检查通过。
-- 全量 pytest 当前为 `759 passed / 4 failed`。只有两个独立根因：Reader prompt 的节点定位契约使旧
-  `reader_extract` cassette 失效；新增搜索工具及 system prompt 使 ReAct case14 cassette 失效。另两项是
-  case14 的 eval/report 级联红灯。两份 cassette 必须经 `.env` 真实模型重录，禁止手工改写。
-- DS-S5 暂不建表、不抽关系、不接生产消费路径。先完成上述真实重录和至少一次 dogfood；再预注册基线、
+- Reader 与 ReAct case14 已经 `.env` 真实模型重录，禁止手工改写的 Replay 执行指纹现已更新。真录暴露模型能
+  稳定返回 node/start/quote、但不能可靠计算 `end_offset`；代码仅在 quote 从声明起点逐字匹配时，以 Python
+  字符长度确定性规范化右边界，不做模糊搜索或位置迁移。静态四门全绿，全量 pytest 为 `764 passed`。
+- Reader 同一材料旧/新基线已冻结：105/105 个可考节点 exactly-once 覆盖，12 个候选、0 重复，单次真实请求
+  8715 prompt tokens，低于 32k Provider 门。case14 真录只调用一次 `start_quiz(count=3, question_type=选择题)`。
+- DS-S5 暂不建表、不抽关系、不接生产消费路径。先完成至少一次真实筛选/citation 与开放搜索 dogfood；再预注册基线、
   数据集、相关性/grounding/token/latency 指标，交由 HITL 决定是否启动可删除实验。
 
 ## Out of Scope

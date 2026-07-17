@@ -14,6 +14,19 @@
     "completion_tokens": 1946,
     "coverage": "full material in one budgeted request"
   },
-  "document_node_reader": null,
-  "decision": "pending real node-aware cassette"
+  "document_node_reader": {
+    "cassette_key_prefix": "450757106e9c",
+    "model": "deepseek-v4-flash",
+    "model_calls": 1,
+    "document_nodes": 147,
+    "assessable_nodes": 105,
+    "covered_assessable_nodes": 105,
+    "candidates": 12,
+    "evidence": 12,
+    "duplicate_candidate_fingerprints": 0,
+    "prompt_tokens": 8715,
+    "completion_tokens": 9417,
+    "coverage": "105 assessable DocumentNodes exactly once in one budgeted batch"
+  },
+  "decision": "pass: full node coverage, duplicate count unchanged at 0, and request below the 32k provider gate"
 }

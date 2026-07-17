@@ -1,6 +1,6 @@
 # DS-S3 — Reader 节点化覆盖型深读
 
-Status: ready-for-human（code complete；真实 Reader cassette / dogfood 待执行）
+Status: ready-for-human（真实 Reader cassette 已完成；生产筛选/citation dogfood 待执行）
 Type: AFK
 
 ## Parent
@@ -31,8 +31,8 @@ KnowledgeItem 必须经过 DS-S2 的精确 evidence 校验，再进入现有 kee
 - [x] keep/reject/cancel 分别证明获批 snapshot、筛选后 snapshot、旧 current snapshot 的正确结果
 - [x] 任一批次、approval 或 transaction 失败后，旧 current revision/tree/items/evidence 与 FTS 可见状态不变
 - [x] trace 可重建 traversal 顺序、批次 node ids、预算估算、model token、retry、审批决定和最终 revision commit
-- [ ] 对同一长文比较旧临时 chunk 基线与节点批次：正文覆盖不下降、重复候选不增加、无请求超过 Provider 门
-- [ ] fake provider 全覆盖；使用 `.env` 真实模型重录受影响 Reader cassette，不能手工伪造请求 key 或输出
+- [x] 对同一长文比较旧临时 chunk 基线与节点批次：正文覆盖不下降、重复候选不增加、无请求超过 Provider 门
+- [x] fake provider 全覆盖；使用 `.env` 真实模型重录受影响 Reader cassette，不能手工伪造请求 key 或输出
 - [ ] 至少一份真实长文完成 ingest → 筛选 → current revision/tree/item/evidence 写入，并从 citation 返回原文
 - [ ] 五门与全部 eval 全绿；真实 trace 记录 token/成本和节点批次，不以提高预算掩盖超限
 
@@ -48,8 +48,11 @@ KnowledgeItem 必须经过 DS-S2 的精确 evidence 校验，再进入现有 kee
 - fake provider 已证明正文覆盖与预算不变量；“真实候选重复率不增加”必须和旧真录基线在同一长文上比较，
   不再用确定性去重代码间接代替模型层证据，故对应验收项恢复为未完成。
 - 旧真录的非敏感指标已冻结在 `../evals/reader-node-baseline.json`（材料 SHA256、调用/候选/重复/token）；
-  新 cassette 录制后补同一材料的 node 指标与结论，不保存额外原文副本。
+  新真录为 105/105 个可考节点 exactly-once 覆盖、12 个候选、0 重复、8715 prompt tokens，低于 32k 门。
+- 真录发现模型会精确选择 node/start/quote、却普遍算错右边界；回归测试先复现后，Reader 改为仅在 quote 从声明
+  start 逐字匹配时确定性计算 end。错误 node/start/quote 仍重试并 fail closed，不引入模糊定位。
 - 真实长文 ingest → HITL 筛选 → citation dogfood 尚未执行，故 issue 保持 `ready-for-human` 而非 done。
+- 静态四门、全部 eval 与全量 pytest `764 passed`；持久化真实 trace 仍由上述 dogfood 验收补齐。
 
 ## Blocked by
 

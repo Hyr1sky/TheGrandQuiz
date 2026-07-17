@@ -2,7 +2,7 @@
 
 > 记录日期：2026-07-17
 > 范围：ADR-0008 / `.scratch/document-structure/` 的 DS-S1–S4；DS-S5 仅做门控决策。
-> 当前边界：代码、确定性测试与生产 schema v11 迁移已完成；两份真实模型 cassette 待授权重录，故尚未五门全绿。
+> 当前边界：代码、生产 schema v11 迁移与两份真实模型 cassette 已完成，五门全绿；生产筛选/citation 与开放搜索 dogfood 待用户在独立终端执行。
 
 ## 1. 为什么做这轮改造
 
@@ -99,7 +99,7 @@ DocumentNode 只表达作者组织原文的结构；KnowledgeItem 仍是考核�
 对备份做双向差分后，resource、item 身份字段、Learning Memory、Asked Questions 与 Difficulty 均为 0 差异。
 迁移全程未调用 LLM。
 
-## 7. 测试与当前红灯
+## 7. 测试与真实回放收口
 
 确定性覆盖新增了：parser/store migration、历史 citation、quote/hash 篡改、重复/缺失/跨节点 evidence、Reader
 节点 exactly-once 与预算、未知 node/越界/改写 quote 重试、current-only FTS、严格 scope、稳定排序、事务回滚、
@@ -111,15 +111,21 @@ DocumentNode 只表达作者组织原文的结构；KnowledgeItem 仍是考核�
 - Ruff format check：绿
 - Pyright strict：绿
 - import-linter：绿，`kernel` 仍不 import `domain`
-- pytest：`759 passed / 4 failed`
+- pytest：`764 passed`
 
-4 个失败只有两个独立根因：
+两份受影响 cassette 均由 `.env` 配置的真实模型重录，没有手工改写 request key 或输出：
 
-1. `reader_extract.cassette.json` 仍是旧的自由 quote 输出契约，无法命中新 node-local prompt/request key。
-2. ReAct case14 的 cassette 未包含新增工具 schema，且 system prompt hash 已变化。
+1. Reader 同一材料的 105 个可考 DocumentNode 全部 exactly-once 进入一个预算内批次；产出 12 个候选、12 条
+   精确 evidence、0 重复，实际为 8715 prompt / 9417 completion tokens，低于 32k Provider 门。旧临时 chunk
+   基线为 16 候选、0 重复，因此正文覆盖与重复率不退化。
+2. 真录首次暴露 `deepseek-v4-flash` 能稳定返回正确 node/start/quote，但 70 条 evidence 中只有 7 条右边界算术正确。
+   Reader 现仅在 quote 从声明 start 逐字匹配时，用 Python Unicode 字符长度规范化 end；不搜索其他位置。错误
+   node、越界 start、改写 quote 仍有界重试并 fail closed，新增回归测试锁定该真实模式。
+3. ReAct case14 真录只调用一次 `start_quiz`，参数为 `scope=all`、`count=3`、`question_type=选择题`；五次模型
+   调用总计 9866 prompt / 645 completion tokens。原四个 Replay/eval/report 红灯全部转绿。
 
-另外两个失败分别是 case14 的聚合 eval 与 report 级联。它们是正确的 fail-closed ReplayMiss，不应通过手工编辑
-cassette、放宽执行指纹或吞异常变绿。
+Reader 纯回放额外断言 batch node ids 与获批 revision 的全部可考节点完全相等、无重复，且 model span 数与
+cassette 调用数一致。最终 Ruff check、Ruff format check、Pyright strict、import-linter 和 `764` 项 pytest 全绿。
 
 ## 8. DS-S5 决策与后续 HITL
 
@@ -128,10 +134,8 @@ KnowledgeRelation 暂缓，不建表、不抽边、不接生产选题/查询。�
 
 继续步骤：
 
-1. 经明确外发授权，用 `.env` 配置的真实模型重录 Reader 与 ReAct case14 两份 cassette。
-2. 跑五门与全部 eval，确认 Replay 执行指纹、node-local evidence 与新工具调用稳定。
-3. 在单独终端 dogfood 一次真实长文 ingest/筛选/citation，以及一次开放搜索；需要复盘时直接读取 `trace.db`。
-4. 只有上述基线稳定后，预注册 DS-S5 数据集、无关系基线、相关性/grounding/token/latency 指标和最低收益阈值，
+1. 在单独终端 dogfood 一次真实长文 ingest/筛选/citation，以及一次开放搜索；需要复盘时直接读取 `trace.db`。
+2. 只有上述基线稳定后，预注册 DS-S5 数据集、无关系基线、相关性/grounding/token/latency 指标和最低收益阈值，
    再由 HITL 决定“保留 / 修改 / 删除”实验能力。
 
 这轮没有改变 KnowledgeItem 或 Learning Memory 身份语义，也没有引入 CanonicalConcept、same-as 自动归并、
@@ -152,4 +156,4 @@ KnowledgeRelation 暂缓，不建表、不抽边、不接生产选题/查询。�
 - ReAct 的 read-before-cite、quote mismatch 与 unresolved item citation 都发结构化 `citation_rejected`；事件不保存
   原 quote，只在 node quote 拒绝时保存 SHA256 fingerprint。
 
-这些补强没有改变两份真实 cassette 的外部阻塞，也没有扩大 DS-S5 范围。
+这些补强与真实 cassette 已完成收口，没有扩大 DS-S5 范围；剩余工作是产品 dogfood，不再是自动测试红灯。

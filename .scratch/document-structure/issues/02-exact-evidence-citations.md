@@ -1,6 +1,6 @@
 # DS-S2 — 精确 Evidence 与可解析 citation
 
-Status: ready-for-human（code complete；真实 Reader cassette 待 DS-S3 重录）
+Status: done（真实 Reader cassette 已重录；精确 locator 回放通过）
 Type: AFK
 
 ## Parent
@@ -35,7 +35,7 @@ fail closed，不能获批写入。
 - [x] property/generative tests 覆盖 Unicode、规范化空白、重复 quote、跨节点 quote、边界 offset 和篡改 quote hash
 - [x] citation 校验/拒绝事件进入 trace，包含 revision/node、失败分类和可公开 fingerprint，不泄漏本地绝对路径
 - [x] fake provider 测试覆盖有效、多 evidence、未知 node、越界 span、改写 quote 的结构化重试/失败路径
-- [ ] 五门全绿；需要变化的 Reader cassette 明确列入 DS-S3 真录清单，不手工重写 cassette
+- [x] 五门全绿；需要变化的 Reader cassette 明确列入 DS-S3 真录清单，不手工重写 cassette
 
 ## Completion evidence（2026-07-17）
 
@@ -45,8 +45,9 @@ fail closed，不能获批写入。
   即整体回滚。
 - 生产库回填 135 条 evidence：83 resolved / 52 unresolved；88 个 item 全部保留，学习状态无差异。
 - 完成性审计补充确定性生成用例：Unicode/组合字符、自然节点首尾边界、空白规范化后保存精确原文、重叠
-  quote 歧义、跨节点与 hash 篡改；尚欠的唯一验收门是 DS-S3 真实 Reader cassette。
-- 当前静态四门绿、全量 pytest `759 passed / 4 failed`。
+  quote 歧义、跨节点与 hash 篡改。
+- `.env` 真实 Reader cassette 已按 DocumentNode 契约重录；12 个 item 的 locator 经纯回放逐字校验，静态四门
+  与全量 pytest `764 passed`。
 
 ## Blocked by
 

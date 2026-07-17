@@ -1,6 +1,6 @@
 # DS-S4 — FTS5 + 渐进式 Agentic Search
 
-Status: ready-for-human（code complete；ReAct cassette / dogfood 待执行）
+Status: ready-for-human（真实 ReAct cassette 已完成；开放搜索 dogfood 待执行）
 Type: AFK
 
 ## Parent
@@ -33,8 +33,8 @@ LLM 只决定开放问题中“下一步看哪一节”，Document Structure mod
 - [x] 规则 eval 覆盖大纲导航、精确词、同名章节、跨资源同概念、selected/unresolved scope、无证据拒答和预算耗尽
 - [x] capstone eval 证明 Agent 不读取全文也能通过“大纲/搜索 → 章节 → 正文”找到目标引文并返回可解析路径
 - [x] quiz 既有 scope、选题、判卷、Learning Memory 与 Difficulty 行为无回归；kernel 仍不 import domain
-- [ ] tool schema 进入 Replay 执行指纹，所有受影响 ReAct cassette 由真实模型重录或明确废弃
-- [ ] 五门、全量 pytest、全部 Tier-1 eval 与 Agentic Search capstone 全绿
+- [x] tool schema 进入 Replay 执行指纹，所有受影响 ReAct cassette 由真实模型重录或明确废弃
+- [x] 五门、全量 pytest、全部 Tier-1 eval 与 Agentic Search capstone 全绿
 
 ## Completion evidence（2026-07-17）
 
@@ -45,7 +45,8 @@ LLM 只决定开放问题中“下一步看哪一节”，Document Structure mod
 - capstone 在长文中读取少于 10% 正文找到精确 quote；生产 FTS 1551 rows，全部指向 current revision。
 - 完成性审计补充同名章节稳定 tie-break，并让 outline/search/expand 的标题、路径、excerpt 显式携带 untrusted
   标记；成功/拒绝读取事件记录累计预算，node/item citation 拒绝记录结构化分类与安全 fingerprint。
-- 新工具 schema 与 system prompt 正确使 case14 旧 cassette 失效；真实重录前不能勾选 Replay/五门验收。
+- case14 已用真实模型重录；模型只调用一次 `start_quiz`，参数为 all scope、3 道选择题。目标回放、全部 Tier-1
+  eval、HTML report、静态四门与全量 pytest `764 passed`。
 
 ## Blocked by
 
