@@ -43,6 +43,8 @@ KnowledgeItem 必须经过 DS-S2 的精确 evidence 校验，再进入现有 kee
 - 模型只看批内稳定 node key 和 node-local offset；代码转换为全局 locator，并对 unknown node、越界、改写
   quote 做有界重试后 fail closed。`reader_batch` span 包住嵌套 model spans。
 - fake provider 与原子 ingest 测试已覆盖；旧 Reader cassette 因契约正确变更而 ReplayMiss，必须真实重录。
+- 完成性审计新增一个 KnowledgeItem 跨两个自然节点的多 evidence 公共路径测试，证明 evidence 顺序与两个
+  revision-global locator 都由 Reader node-local 输出确定性解析。
 - 真实长文 ingest → HITL 筛选 → citation dogfood 尚未执行，故 issue 保持 `ready-for-human` 而非 done。
 
 ## Blocked by

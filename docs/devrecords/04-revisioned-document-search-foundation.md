@@ -111,7 +111,7 @@ DocumentNode 只表达作者组织原文的结构；KnowledgeItem 仍是考核�
 - Ruff format check：绿
 - Pyright strict：绿
 - import-linter：绿，`kernel` 仍不 import `domain`
-- pytest：`750 passed / 4 failed`
+- pytest：`759 passed / 4 failed`
 
 4 个失败只有两个独立根因：
 
@@ -136,3 +136,20 @@ KnowledgeRelation 暂缓，不建表、不抽边、不接生产选题/查询。�
 
 这轮没有改变 KnowledgeItem 或 Learning Memory 身份语义，也没有引入 CanonicalConcept、same-as 自动归并、
 向量库或图数据库。
+
+## 9. 完成性反证审计补强
+
+提交后的逐条 PRD 审计没有把“已有测试通过”直接当成完成证据，而是补出了以下边界：
+
+- Grounding 接受模型等价的 Unicode 空白序列，但最终 Evidence 始终保存 revision 中的逐字 quote、source span 与
+  hash；重叠出现的 quote 仍判 ambiguous，不会因普通正则非重叠扫描而误认唯一。
+- 确定性生成测试覆盖 CJK、emoji、组合字符、阿拉伯文，以及自然正文节点的首尾可见边界。
+- 一个 Reader KnowledgeItem 可按模型给定顺序保留两个自然节点的 evidence，并分别解析全局 locator。
+- 故障注入到最后的 evidence INSERT 阶段，证明已暂存的新 revision/tree/item/FTS 会整体回滚到旧快照。
+- FTS 对重复标题、同分正文使用稳定 node_id tie-break；只有标点/emoji、没有可检索词的 query 在 domain 边界拒绝。
+- outline/search/expand 的标题、路径和 excerpt 与正文一样显式标记 untrusted；成功和耗尽的读取事件都记录
+  `budget_used/budget_limit`，拒绝事件另记 requested 数量。
+- ReAct 的 read-before-cite、quote mismatch 与 unresolved item citation 都发结构化 `citation_rejected`；事件不保存
+  原 quote，只在 node quote 拒绝时保存 SHA256 fingerprint。
+
+这些补强没有改变两份真实 cassette 的外部阻塞，也没有扩大 DS-S5 范围。

@@ -43,6 +43,8 @@ LLM 只决定开放问题中“下一步看哪一节”，Document Structure mod
 - Document Structure 深模块与六个 ReAct 工具提供 outline/search/expand/read/item citation/node citation；selected
   scope 严格解析，跨工具按 trace 累计读取预算，node citation 强制 read-before-cite。
 - capstone 在长文中读取少于 10% 正文找到精确 quote；生产 FTS 1551 rows，全部指向 current revision。
+- 完成性审计补充同名章节稳定 tie-break，并让 outline/search/expand 的标题、路径、excerpt 显式携带 untrusted
+  标记；成功/拒绝读取事件记录累计预算，node/item citation 拒绝记录结构化分类与安全 fingerprint。
 - 新工具 schema 与 system prompt 正确使 case14 旧 cassette 失效；真实重录前不能勾选 Replay/五门验收。
 
 ## Blocked by

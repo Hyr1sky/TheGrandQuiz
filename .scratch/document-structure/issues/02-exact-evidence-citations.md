@@ -32,7 +32,7 @@ fail closed，不能获批写入。
 - [x] 当前旧 quote 唯一匹配时确定性回填 node/span；多处匹配或未命中时标为 unresolved 并进入审计报告
 - [x] 旧 unresolved evidence 不让现有 KnowledgeItem 从考核池消失；新 Reader 候选 locator 未解析则不可提交
 - [x] backfill 可重入，重复运行不改变已解析 locator、item_id、学习状态或审计计数
-- [ ] property/generative tests 覆盖 Unicode、规范化空白、重复 quote、跨节点 quote、边界 offset 和篡改 quote hash
+- [x] property/generative tests 覆盖 Unicode、规范化空白、重复 quote、跨节点 quote、边界 offset 和篡改 quote hash
 - [x] citation 校验/拒绝事件进入 trace，包含 revision/node、失败分类和可公开 fingerprint，不泄漏本地绝对路径
 - [x] fake provider 测试覆盖有效、多 evidence、未知 node、越界 span、改写 quote 的结构化重试/失败路径
 - [ ] 五门全绿；需要变化的 Reader cassette 明确列入 DS-S3 真录清单，不手工重写 cassette
@@ -44,7 +44,9 @@ fail closed，不能获批写入。
 - `citations.py` 统一执行 grounding、篡改检测、历史 revision 解析与稳定 renderer；新 snapshot 任一证据失败
   即整体回滚。
 - 生产库回填 135 条 evidence：83 resolved / 52 unresolved；88 个 item 全部保留，学习状态无差异。
-- 尚欠的唯一验收门是 DS-S3 真实 Reader cassette；当前静态四门绿、全量 pytest `750 passed / 4 failed`。
+- 完成性审计补充确定性生成用例：Unicode/组合字符、自然节点首尾边界、空白规范化后保存精确原文、重叠
+  quote 歧义、跨节点与 hash 篡改；尚欠的唯一验收门是 DS-S3 真实 Reader cassette。
+- 当前静态四门绿、全量 pytest `759 passed / 4 failed`。
 
 ## Blocked by
 

@@ -182,7 +182,7 @@ related、contradicts 关系。跨资源 CanonicalConcept 与 Learning Memory �
 - 生产 `learning.db` 已在 SHA256 可核对备份后从 schema v9 迁移到 v11。3 resources / 88 items /
   3 revisions / 1551 nodes、Learning Memory、Asked Questions 与 Difficulty 均无差异；135 条旧 evidence
   确定性回填为 83 resolved / 52 unresolved，FTS 有 1551 current-only rows，完整性检查通过。
-- 全量 pytest 当前为 `750 passed / 4 failed`。只有两个独立根因：Reader prompt 的节点定位契约使旧
+- 全量 pytest 当前为 `759 passed / 4 failed`。只有两个独立根因：Reader prompt 的节点定位契约使旧
   `reader_extract` cassette 失效；新增搜索工具及 system prompt 使 ReAct case14 cassette 失效。另两项是
   case14 的 eval/report 级联红灯。两份 cassette 必须经 `.env` 真实模型重录，禁止手工改写。
 - DS-S5 暂不建表、不抽关系、不接生产消费路径。先完成上述真实重录和至少一次 dogfood；再预注册基线、
