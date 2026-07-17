@@ -11,17 +11,18 @@ from pathlib import Path
 from typing import cast
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
+from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.ingest import ingest_resource
 from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock
-from grandquiz.kernel.events import EventEmitter, EventSink
+from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Role
 from grandquiz.providers.replay import Cassette, ReplayProvider
 
 _MATERIAL = Path("tests/materials/eval_paper.txt")
 _CASSETTE = Path("tests/fixtures/reader_extract.cassette.json")
-_EXPECTED_ITEMS = 16  # golden：改 prompt / 材料并重录后同步更新此数（GKB-S3 加 topic 后重录 15→16）
+_EXPECTED_ITEMS = 12  # golden：改 prompt / 材料并真实重录后同步更新
 
 
 def _keep_all(_item: KnowledgeItem) -> bool:
@@ -35,7 +36,10 @@ async def test_recorded_ingest_replays_deterministically_without_live_calls() ->
     model_for_role = cast("dict[Role, str]", {e["role"]: e["model"] for e in raw.values()})
     replay = ReplayProvider(Cassette.load(_CASSETTE), model_for_role)
     store = LearningStore()
-    emitter = EventEmitter(EventSink(), ManualClock(), trace_id="replay")
+    events: list[AgentEvent] = []
+    sink = EventSink()
+    sink.subscribe(events.append)
+    emitter = EventEmitter(sink, ManualClock(), trace_id="replay")
 
     result = await ingest_resource(
         "https://example.com/sample",
@@ -50,6 +54,16 @@ async def test_recorded_ingest_replays_deterministically_without_live_calls() ->
 
     assert result.status == "read"
     assert len(result.items) == _EXPECTED_ITEMS
+    batch_events = [event for event in events if event.type == LearningEvent.READER_BATCH_STARTED]
+    seen_node_ids = [node_id for event in batch_events for node_id in event.payload["node_ids"]]
+    assessable_node_ids = [
+        node.node_id
+        for node in store.document_nodes(result.resource_id)
+        if node.kind not in {"document", "section"}
+    ]
+    assert seen_node_ids == assessable_node_ids
+    assert len(seen_node_ids) == len(set(seen_node_ids))
+    assert sum(event.type == EventType.MODEL_STARTED for event in events) == len(raw)
     # 每个入库 item 都 grounded：概念 / 摘要非空、至少一条非空证据引文
     for item in result.items:
         assert item.concept and item.summary

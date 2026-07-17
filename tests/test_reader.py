@@ -625,6 +625,72 @@ class _NodeLocalProvider:
         )
 
 
+class _WrongEndOffsetProvider:
+    """模拟真实模型：node/start/quote 正确，但把 quote 长度算错。"""
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        payload = json.loads(
+            next(message.content for message in messages if message.role == "user")
+        )
+        node = payload["untrusted_document_nodes"][0]
+        quote = "Agent evals are not just answer checks."
+        start = node["content"].index(quote)
+        return Completion(
+            text=json.dumps(
+                {
+                    "topic": "Agent Evaluation",
+                    "candidates": [
+                        {
+                            "concept": "Agent Eval",
+                            "summary": "真实模型可能无法可靠计算右边界",
+                            "evidence": [
+                                {
+                                    "node_key": node["node_key"],
+                                    "start_offset": start,
+                                    "end_offset": start + 7,
+                                    "quote": quote,
+                                }
+                            ],
+                            "confidence": 0.9,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            usage=Usage(),
+        )
+
+
+async def test_document_reader_canonicalizes_end_offset_from_exact_quote() -> None:
+    content = "Agent evals are not just answer checks. They inspect outcomes."
+    resource = LearningResource.create(url="https://example.com/end-offset").model_copy(
+        update={
+            "raw_content": content,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+            "status": "read",
+        }
+    )
+    document = build_document_snapshot(resource)
+    assert document is not None
+    emitter, _ = _emitter()
+
+    result = await _reader().read_document(
+        resource,
+        document,
+        provider=_WrongEndOffsetProvider(),
+        emitter=emitter,
+        parent_span_id="ig",
+    )
+
+    evidence = result.items[0].evidence[0]
+    locator = evidence.locator
+    assert isinstance(locator, EvidenceLocator)
+    assert content[locator.start_offset : locator.end_offset] == evidence.quote
+    assert locator.end_offset == locator.start_offset + len(evidence.quote)
+
+
 async def test_document_reader_converts_node_local_span_to_exact_revision_locator() -> None:
     content = "# React\n\n闭包证据。\n"
     resource = LearningResource.create(url="https://example.com/node-reader").model_copy(
@@ -848,8 +914,8 @@ class _InvalidNodeEvidenceProvider:
         (
             {
                 "node_key": "n000001",
-                "start_offset": 0,
-                "end_offset": 999,
+                "start_offset": 999,
+                "end_offset": 1_000,
                 "quote": "证据",
             },
             "span_out_of_bounds",

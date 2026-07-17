@@ -424,21 +424,26 @@ class Reader:
                         proposed.model_dump(),
                         f"evidence 引用了本批不存在的 node_key：{proposed.node_key}",
                     )
-                if proposed.end_offset > len(source.content):
+                if proposed.start_offset >= len(source.content):
                     raise EvidenceModelRetry(
                         "span_out_of_bounds",
                         proposed.model_dump(),
-                        f"evidence span 超出节点边界：{proposed.node_key}",
+                        f"evidence 起点超出节点边界：{proposed.node_key}",
                     )
-                quote = source.content[proposed.start_offset : proposed.end_offset]
+                # 真实模型能稳定选对 node、quote 与左边界，却不能可靠做 Unicode
+                # 字符计数。右边界属于可由已验证输入确定性派生的数据：只要 quote
+                # 确实从声明的 start 开始，就用 Python 字符长度规范化 end；绝不在
+                # 节点内模糊搜索或把 quote 静默挪到另一个位置。
+                canonical_end = proposed.start_offset + len(proposed.quote)
+                quote = source.content[proposed.start_offset : canonical_end]
                 if quote != proposed.quote:
                     raise EvidenceModelRetry(
                         "quote_mismatch",
                         proposed.model_dump(),
-                        f"evidence quote 与节点 source span 不一致：{proposed.node_key}",
+                        f"evidence quote 不从声明的节点起点开始：{proposed.node_key}",
                     )
                 global_start = source.node.start_offset + proposed.start_offset
-                global_end = source.node.start_offset + proposed.end_offset
+                global_end = source.node.start_offset + canonical_end
                 evidence.append(
                     Evidence(
                         quote=quote,
