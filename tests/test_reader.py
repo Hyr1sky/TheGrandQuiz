@@ -663,6 +663,43 @@ class _WrongEndOffsetProvider:
         )
 
 
+class _WrongStartOffsetProvider:
+    """复现真机 Reader：quote 唯一且逐字正确，但把 Unicode 左边界报成 0。"""
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        payload = json.loads(
+            next(message.content for message in messages if message.role == "user")
+        )
+        node = payload["untrusted_document_nodes"][0]
+        quote = "如果记忆需求是明确、可结构化的信息，Markdown 更合适。"
+        return Completion(
+            text=json.dumps(
+                {
+                    "topic": "Agent 记忆",
+                    "candidates": [
+                        {
+                            "concept": "Markdown 记忆边界",
+                            "summary": "Markdown 适合明确、可结构化的记忆。",
+                            "evidence": [
+                                {
+                                    "node_key": node["node_key"],
+                                    "start_offset": 0,
+                                    "end_offset": len(quote),
+                                    "quote": quote,
+                                }
+                            ],
+                            "confidence": 0.9,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            usage=Usage(),
+        )
+
+
 async def test_document_reader_canonicalizes_end_offset_from_exact_quote() -> None:
     content = "Agent evals are not just answer checks. They inspect outcomes."
     resource = LearningResource.create(url="https://example.com/end-offset").model_copy(
@@ -689,6 +726,61 @@ async def test_document_reader_canonicalizes_end_offset_from_exact_quote() -> No
     assert isinstance(locator, EvidenceLocator)
     assert content[locator.start_offset : locator.end_offset] == evidence.quote
     assert locator.end_offset == locator.start_offset + len(evidence.quote)
+
+
+async def test_document_reader_canonicalizes_wrong_start_for_unique_exact_quote() -> None:
+    content = "反过来，如果记忆需求是明确、可结构化的信息，Markdown 更合适。\n"
+    quote = "如果记忆需求是明确、可结构化的信息，Markdown 更合适。"
+    resource = LearningResource.create(url="https://example.com/start-offset").model_copy(
+        update={
+            "raw_content": content,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+            "status": "read",
+        }
+    )
+    document = build_document_snapshot(resource)
+    assert document is not None
+    emitter, _ = _emitter()
+
+    result = await _reader(max_attempts=1).read_document(
+        resource,
+        document,
+        provider=_WrongStartOffsetProvider(),
+        emitter=emitter,
+        parent_span_id="ig",
+    )
+
+    evidence = result.items[0].evidence[0]
+    locator = evidence.locator
+    assert isinstance(locator, EvidenceLocator)
+    assert locator.start_offset == content.index(quote)
+    assert content[locator.start_offset : locator.end_offset] == quote
+
+
+async def test_document_reader_rejects_wrong_start_for_repeated_exact_quote() -> None:
+    quote = "如果记忆需求是明确、可结构化的信息，Markdown 更合适。"
+    content = f"前缀：{quote}重复：{quote}\n"
+    resource = LearningResource.create(url="https://example.com/ambiguous-start").model_copy(
+        update={
+            "raw_content": content,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+            "status": "read",
+        }
+    )
+    document = build_document_snapshot(resource)
+    assert document is not None
+    emitter, _ = _emitter()
+
+    with pytest.raises(ReaderEvidenceError) as error:
+        await _reader(max_attempts=1).read_document(
+            resource,
+            document,
+            provider=_WrongStartOffsetProvider(),
+            emitter=emitter,
+            parent_span_id="ig",
+        )
+
+    assert error.value.classification == "quote_mismatch"
 
 
 async def test_document_reader_converts_node_local_span_to_exact_revision_locator() -> None:

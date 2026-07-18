@@ -430,19 +430,26 @@ class Reader:
                         proposed.model_dump(),
                         f"evidence 起点超出节点边界：{proposed.node_key}",
                     )
-                # 真实模型能稳定选对 node、quote 与左边界，却不能可靠做 Unicode
-                # 字符计数。右边界属于可由已验证输入确定性派生的数据：只要 quote
-                # 确实从声明的 start 开始，就用 Python 字符长度规范化 end；绝不在
-                # 节点内模糊搜索或把 quote 静默挪到另一个位置。
-                canonical_end = proposed.start_offset + len(proposed.quote)
-                quote = source.content[proposed.start_offset : canonical_end]
+                # 真实模型不能可靠做 Unicode 字符计数。node 与逐字 quote 已足以让
+                # 代码确定性派生 locator：优先采用声明的左边界；若不匹配，只在 quote
+                # 于声明节点内唯一逐字出现时规范化左边界。零匹配或多匹配仍 fail closed，
+                # 不做模糊搜索；右边界始终由 Python 字符长度派生。
+                canonical_start = proposed.start_offset
+                canonical_end = canonical_start + len(proposed.quote)
+                quote = source.content[canonical_start:canonical_end]
                 if quote != proposed.quote:
-                    raise EvidenceModelRetry(
-                        "quote_mismatch",
-                        proposed.model_dump(),
-                        f"evidence quote 不从声明的节点起点开始：{proposed.node_key}",
-                    )
-                global_start = source.node.start_offset + proposed.start_offset
+                    exact_start = source.content.find(proposed.quote)
+                    repeated_start = source.content.find(proposed.quote, exact_start + 1)
+                    if exact_start < 0 or repeated_start >= 0:
+                        raise EvidenceModelRetry(
+                            "quote_mismatch",
+                            proposed.model_dump(),
+                            f"evidence quote 无法唯一定位到声明节点：{proposed.node_key}",
+                        )
+                    canonical_start = exact_start
+                    canonical_end = canonical_start + len(proposed.quote)
+                    quote = proposed.quote
+                global_start = source.node.start_offset + canonical_start
                 global_end = source.node.start_offset + canonical_end
                 evidence.append(
                     Evidence(
