@@ -1,0 +1,50 @@
+{
+  "908386502759e4eee1890fe901b808d35824dc1ea09666a787b40cc2e396a2f1": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "{\n  \"answer\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\",\n  \"citations\": [\n    {\n      \"node_key\": \"n0\",\n      \"quote\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    }\n  ]\n}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 142,
+      "prompt_tokens": 323,
+      "total_tokens": 465
+    }
+  },
+  "a1167801d80291defa78730d16ee33626ddc47aaa11107bb36772830671b51be": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "根据 **Agent Runtime** 材料中的说明：\n\n> **AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。**\n\n**原文出处：**\n- **材料：** Agent Runtime（resource_id: `c60d8d1ae0187823`）\n- **章节路径：** Agent Runtime > **事件信封**\n- **原文引用位置：** 第 759–801 字符区间\n\n简而言之，事件总线中的消息被设计为 **AgentEvent** 结构——它包裹了事件类型（type）、元数据以及一个不透明的 payload（数据正文），这种\"外层包装、内装内容\"的结构就是它被称为\"信封\"的原因。",
+    "tool_contract_hash": "7a3891d56fdaf3f556b79f99a1a26a28a128c618f8ee99efc25cacec46ef9794",
+    "usage": {
+      "completion_tokens": 193,
+      "prompt_tokens": 4962,
+      "total_tokens": 5155
+    }
+  },
+  "b678298b4cd99647ed16721264124a210bfdd454d7e727133a0864935a72c3dc": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "",
+    "tool_calls": [
+      {
+        "arguments": {
+          "query": "事件总线 信封",
+          "resource_ids": [
+            "c60d8d1ae0187823"
+          ]
+        },
+        "id": "call_00_Xx81FAOQkCJHvCMbdx7F8712",
+        "name": "answer_from_documents"
+      }
+    ],
+    "tool_contract_hash": "7a3891d56fdaf3f556b79f99a1a26a28a128c618f8ee99efc25cacec46ef9794",
+    "usage": {
+      "completion_tokens": 161,
+      "prompt_tokens": 4501,
+      "total_tokens": 4662
+    }
+  }
+}

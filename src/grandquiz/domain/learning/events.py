@@ -29,6 +29,8 @@ class LearningEvent:
     DOCUMENT_SEARCH_REJECTED = "learning.document_search_rejected"
     DOCUMENT_NODE_EXPANDED = "learning.document_node_expanded"
     DOCUMENT_NODE_READ = "learning.document_node_read"
+    GROUNDED_ANSWER_STARTED = "learning.grounded_answer.started"
+    GROUNDED_ANSWER_ENDED = "learning.grounded_answer.ended"
     CITATION_RESOLVED = "learning.citation_resolved"
     CITATION_VALIDATED = (
         "learning.citation_validated"  # 候选 evidence 已逐条锚定 revision/node/span

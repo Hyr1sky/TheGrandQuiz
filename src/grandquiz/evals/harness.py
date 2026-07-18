@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import html
 import json
 from collections.abc import Mapping, Sequence
@@ -98,6 +99,20 @@ SEED = 42
 ASSESS_URL = "https://example.com/react"
 INGEST_URL = "https://example.com/react-hooks"
 ALLOWED_DOMAINS = {"example.com"}
+GROUNDED_REACT_URL = "https://example.com/agent-runtime-grounded"
+GROUNDED_REACT_QUOTE = "AgentEvent 是包含 type、元数据和不透明 payload 的事件信封"
+GROUNDED_REACT_CONTENT = (
+    "# Agent Runtime\n\n"
+    + "".join(
+        f"## 运行时背景 {index}\n\n"
+        f"这是用于检验渐进读取的第 {index} 段背景说明，不包含目标答案。\n\n"
+        for index in range(16)
+    )
+    + "## 确定性 workflow\n\n核心考核由代码控制状态转移。\n\n"
+    "## 事件信封\n\n"
+    f"{GROUNDED_REACT_QUOTE}。trace、hook、流式输出与 eval replay 复用同一条事件流。\n\n"
+    "## 恢复\n\n错误本身也是一种 AgentEvent。\n"
+)
 
 # 选择题固定选项（正确项恒在下标 0）——responder 注入其一即可确定性判对 / 判错。
 MC_CORRECT = "正确选项"
@@ -350,6 +365,21 @@ def build_stocked_store() -> tuple[LearningStore, list[str]]:
     return store, [item.item_id for item in items]
 
 
+def build_grounded_react_store() -> tuple[LearningStore, str]:
+    """为自然材料问答 ReAct eval 建一个有 current revision/tree/FTS 行为的合成资源。"""
+    store = LearningStore()
+    resource = LearningResource.create(url=GROUNDED_REACT_URL).model_copy(
+        update={
+            "raw_content": GROUNDED_REACT_CONTENT,
+            "content_hash": hashlib.sha256(GROUNDED_REACT_CONTENT.encode()).hexdigest(),
+            "status": "read",
+            "topic": "Agent Runtime",
+        }
+    )
+    store.replace_snapshot(resource, [])
+    return store, resource.resource_id
+
+
 # 资源 B 的固定 item（topic / 概念与资源 A 互不重叠）——供多资源夹具。**这些 item 在新用例里从不被
 # 选中出题**（scope-honor 只考 A、empty_scope 不出题），故其证据无需进 ``QUOTES`` / 假 provider：
 # B 的存在只为证明 scope 精确过滤（排除 B）与 empty_scope 的"非空库"前提。
@@ -464,6 +494,7 @@ class Case:
     # provider 演会失去测试意义。answer 复用给 start_quiz 内部逐题作答的 ScriptedResponder。
     user_messages: list[str] = field(default_factory=_empty_strs)
     cassette: str | None = None
+    react_fixture: Literal["quiz", "grounded"] = "quiz"
 
 
 def _parse_case(raw: Any) -> Case:
@@ -504,6 +535,10 @@ def _parse_case(raw: Any) -> Case:
             question_type=question_type,
         )
     if str(raw["kind"]) == "react":
+        raw_fixture = str(setup.get("fixture", "quiz"))
+        react_fixture: Literal["quiz", "grounded"] = (
+            "grounded" if raw_fixture == "grounded" else "quiz"
+        )
         return Case(
             id=case_id,
             kind="react",
@@ -511,6 +546,7 @@ def _parse_case(raw: Any) -> Case:
             answer=str(setup.get("answer", "我的作答")),
             user_messages=[str(m) for m in setup.get("user_messages", [])],
             cassette=str(setup["cassette"]),
+            react_fixture=react_fixture,
         )
     src: Literal["ok", "boom"] = "boom" if str(setup.get("source", "ok")) == "boom" else "ok"
     return Case(
@@ -742,7 +778,11 @@ async def _solve_react(case: Case, provider_override: Provider | None) -> SolveR
     ``ReplayProvider``——react 用例**没有**"canned JSON 假件"这个选项：ReAct 决策本身就是被测行为，
     假 provider 会把它演成恒定正确、测不出真实模型是否偷懒编造。
     """
-    store, _ = build_stocked_store()
+    if case.react_fixture == "grounded":
+        store, grounded_resource_id = build_grounded_react_store()
+    else:
+        store, _ = build_stocked_store()
+        grounded_resource_id = None
     memory = LearningMemory()
     preferences: PreferenceMemory = DictPreferenceMemory()
     registry = ToolRegistry()
@@ -798,7 +838,12 @@ async def _solve_react(case: Case, provider_override: Provider | None) -> SolveR
         memory=memory,
         calls=0,
         roles=[],
-        context={},
+        context={
+            "resource_id": grounded_resource_id,
+            "full_document_chars": (
+                len(GROUNDED_REACT_CONTENT) if grounded_resource_id is not None else 0
+            ),
+        },
     )
 
 

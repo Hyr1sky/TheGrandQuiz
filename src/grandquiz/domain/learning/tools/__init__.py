@@ -41,6 +41,7 @@ from grandquiz.domain.learning.preference import PreferenceMemory
 from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import Store
 from grandquiz.domain.learning.tools.document_search_tools import make_document_search_tools
+from grandquiz.domain.learning.tools.grounded_answer_tool import make_grounded_answer_tool
 from grandquiz.domain.learning.tools.ingest_tool import make_ingest_tool
 from grandquiz.domain.learning.tools.query_weak_tool import make_query_weak_concepts_tool
 from grandquiz.domain.learning.tools.start_quiz_tool import make_start_quiz_tool
@@ -89,6 +90,7 @@ def register_learning_tools(
         )
     )
     registry.register(make_query_weak_concepts_tool(store=store, memory=memory))
+    registry.register(make_grounded_answer_tool(store=store, provider=provider))
     for tool in make_document_search_tools(store=store):
         registry.register(tool)
     if responder is not None:

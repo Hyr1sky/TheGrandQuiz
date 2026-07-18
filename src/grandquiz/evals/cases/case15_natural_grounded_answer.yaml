@@ -1,0 +1,25 @@
+# eval case 15：用户只用自然语言询问材料，不点名任何工具；真实模型必须调用一次高层 grounded
+# workflow，在 exact selected scope 中完成 search → bounded read → exact citation，并守住调用/token/读取门。
+id: case15
+kind: react
+setup:
+  fixture: grounded
+  user_messages:
+    - 根据库存里的 Agent Runtime 材料，事件总线为什么被称为信封？请给出原文出处。
+  cassette: eval_case15_natural_grounded_answer.cassette.json
+expected_events:
+  - agent_turn.started
+  - model.started
+  - model.ended
+  - tool_call.started
+  - learning.grounded_answer.started
+  - learning.document_nodes_searched
+  - learning.document_node_read
+  - model.started
+  - model.ended
+  - learning.citation_resolved
+  - learning.grounded_answer.ended
+  - tool_call.ended
+  - model.started
+  - model.ended
+  - agent_turn.ended

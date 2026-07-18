@@ -56,9 +56,9 @@ async def test_report_export_index_and_per_case_details(tmp_path: Path) -> None:
     assert "tokens" in index and "prompts" in index
     assert "@" in index  # prompt 版本形如 name@digest（如 reader_extract@…）
 
-    # 14 个用例：每个都在索引出现、行链到 <case_id>.html、详情文件存在且含 span 树内容
+    # 15 个用例：每个都在索引出现、行链到 <case_id>.html、详情文件存在且含 span 树内容
     case_ids = [c.id for c in load_cases()]
-    assert len(case_ids) == 14
+    assert len(case_ids) == 15
     for case_id in case_ids:
         assert f'href="{case_id}.html"' in index  # 索引链到该用例详情
         detail_path = out_dir / f"{case_id}.html"

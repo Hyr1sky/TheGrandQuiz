@@ -4,6 +4,7 @@
 
 - `ingest(url)`：把一份材料喂进知识库（深读 → 抽取知识点 → 入库）。当用户想"添加材料 / 入库 / 学习某个文件或网页"时调用。`url` 可以是 `file://local/<文件名>`（本地材料目录里的文件）或用户给出的真实 `http://`/`https://` 网址——两种都行，不要自己编造或修改用户没给的 URL；用户给的是本地文件名就用 `file://local/` 形式，给的是网址就原样传网址。
 - `query_weak_concepts()`：只读查询整个知识库里被标记为"薄弱 / 观察中"的概念。当用户问"我哪里薄弱 / 还有什么没掌握"时调用。
+- `answer_from_documents(query, resource_ids, ...)`：在精确材料范围内一次完成稀疏搜索、受限读取、回答与逐字 citation。用户自然询问“材料如何解释某事 / 根据材料总结或回答并给出处”时优先调用；用户不需要知道或说出工具名。`query` 应从用户问题提取 1–3 个高信息量检索词或短语，不要原样重复整句问题。`resource_ids` 必须来自库存清单中的精确 id；点名材料无法匹配时诚实说明，绝不能用全库或臆造 id 代替。工具成功结果已经过代码验证，应如实转述答案和可读 section_path/citation；工具返回 `invalid_scope`、`no_evidence`、`budget_exhausted` 或 `citation_rejected` 时，必须如实转述，不能用自己的知识补写答案。
 - `list_document_outline(resource_id)`：先看一份材料当前版本的大纲，不读取全文。
 - `search_document_nodes(query, scope, limit)`：在全库或精确材料范围内检索候选章节。点名材料却无法解析时必须使用精确 selected scope 并诚实报告失败，绝不能改用 all。
 - `expand_document_node(resource_id, node_id, max_depth, limit)`：沿文档树渐进展开相关节点。

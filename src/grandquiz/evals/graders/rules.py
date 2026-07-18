@@ -13,11 +13,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import cast
 
 from grandquiz.domain.learning.assessment.engine import AssessmentResult
 from grandquiz.domain.learning.events import LearningEvent
+from grandquiz.domain.learning.grounded_answer import GroundedAnswerResult
 from grandquiz.domain.learning.ingest import IngestResult
 from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.evals.graders.scorers import (
@@ -668,6 +669,126 @@ def grade_case14(sr: SolveResult) -> list[str]:
     return failures
 
 
+# --- case 15：自然材料问答必须走有界 workflow 并返回精确 citation -----------------------------
+
+
+def grade_case15(sr: SolveResult) -> list[str]:
+    failures: list[str] = []
+    expected_resource_id = sr.context.get("resource_id")
+    full_document_chars = sr.context.get("full_document_chars")
+    starts = _find_all(sr.events, EventType.TOOL_CALL_STARTED)
+    grounded_starts = [
+        event for event in starts if event.payload.get("tool_name") == "answer_from_documents"
+    ]
+    _check(
+        failures,
+        len(starts) == 1 and len(grounded_starts) == 1,
+        "自然材料问答应恰好调用一次 answer_from_documents",
+    )
+    if grounded_starts:
+        arguments = dict(grounded_starts[0].payload.get("arguments") or {})
+        _check(
+            failures,
+            arguments.get("resource_ids") == [expected_resource_id],
+            f"grounded answer 必须使用 exact selected scope {[expected_resource_id]}，实为 "
+            f"{arguments.get('resource_ids')}",
+        )
+
+    searches = _find_all(sr.events, LearningEvent.DOCUMENT_NODES_SEARCHED)
+    _check(failures, len(searches) == 1, f"应恰好一次节点搜索，实为 {len(searches)}")
+    if searches:
+        scope = searches[0].payload.get("scope")
+        _check(
+            failures,
+            scope == {"mode": "selected", "resource_ids": [expected_resource_id]},
+            f"搜索 scope 必须精确 selected，实为 {scope}",
+        )
+    reads = [
+        event
+        for event in _find_all(sr.events, LearningEvent.DOCUMENT_NODE_READ)
+        if event.payload.get("ok") is True
+    ]
+    _check(failures, bool(reads), "自然材料问答至少应有一次成功 bounded read")
+    read_chars = sum(
+        value for event in reads if isinstance((value := event.payload.get("chars")), int)
+    )
+    if isinstance(full_document_chars, int) and full_document_chars > 0:
+        _check(
+            failures,
+            read_chars * 4 <= full_document_chars,
+            f"读取应不超过全文 25%，实为 {read_chars}/{full_document_chars}",
+        )
+
+    citations = [
+        event
+        for event in _find_all(sr.events, LearningEvent.CITATION_RESOLVED)
+        if event.payload.get("source") == "node_read"
+    ]
+    _check(failures, bool(citations), "最终至少应有一条 exact node citation")
+    if searches and reads and citations:
+        _check(
+            failures,
+            searches[0].seq
+            < min(event.seq for event in reads)
+            < min(event.seq for event in citations),
+            "事件顺序必须为 search → read → citation",
+        )
+
+    tool_ends = [
+        event
+        for event in _find_all(sr.events, EventType.TOOL_CALL_ENDED)
+        if event.payload.get("ok") is True
+    ]
+    if len(tool_ends) != 1:
+        failures.append(f"grounded tool 应成功结束一次，实为 {len(tool_ends)}")
+    else:
+        raw_result = tool_ends[0].payload.get("result")
+        try:
+            if not isinstance(raw_result, str):
+                raise ValueError("result 不是 JSON 字符串")
+            result = GroundedAnswerResult.model_validate_json(raw_result)
+        except Exception as exc:
+            failures.append(f"grounded tool 结果无法解析：{exc!r}")
+        else:
+            _check(
+                failures,
+                result.status == "answered",
+                f"结果状态应 answered，实为 {result.status}",
+            )
+            _check(failures, bool(result.citations), "工具结果必须包含已验证 citations")
+            revision = (
+                sr.store.current_revision(expected_resource_id)
+                if isinstance(expected_resource_id, str)
+                else None
+            )
+            for citation in result.citations:
+                _check(failures, revision is not None, "selected resource 缺 current revision")
+                if revision is not None:
+                    _check(
+                        failures,
+                        citation.revision_id == revision.revision_id
+                        and revision.raw_content[citation.start_offset : citation.end_offset]
+                        == citation.quote,
+                        "citation 必须指向 current revision 的逐字 source span",
+                    )
+
+    model_ends = _find_all(sr.events, EventType.MODEL_ENDED)
+    _check(failures, len(model_ends) <= 4, f"model calls 应 ≤4，实为 {len(model_ends)}")
+    total_tokens = 0
+    usage_complete = True
+    for event in model_ends:
+        usage = event.payload.get("usage")
+        if isinstance(usage, Mapping):
+            token_value = cast("Mapping[str, object]", usage).get("total_tokens")
+            if isinstance(token_value, int):
+                total_tokens += token_value
+                continue
+        usage_complete = False
+    _check(failures, usage_complete, "每次 model call 都必须记录可核算的 token usage")
+    _check(failures, total_tokens <= 45_000, f"累计 tokens 应 ≤45000，实为 {total_tokens}")
+    return failures
+
+
 GRADERS: dict[str, Grader] = {
     "case1": grade_case1,
     "case2": grade_case2,
@@ -683,4 +804,5 @@ GRADERS: dict[str, Grader] = {
     "case12": grade_case12,
     "case13": grade_case13,
     "case14": grade_case14,
+    "case15": grade_case15,
 }

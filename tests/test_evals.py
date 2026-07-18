@@ -9,7 +9,7 @@ import pytest
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.store import LearningStore
-from grandquiz.evals.graders.rules import grade_case14
+from grandquiz.evals.graders.rules import grade_case14, grade_case15
 from grandquiz.evals.graders.scorers import language_consistency, no_duplicate
 from grandquiz.evals.harness import Case, SolveResult, load_cases, run_all, run_case, solve
 from grandquiz.kernel.events import AgentEvent, EventType
@@ -21,9 +21,9 @@ _MODELS: dict[Role, str] = {"basic": "deepseek-x", "enrich": "qwen-x"}
 
 async def test_all_cases_pass() -> None:
     reports = await run_all()
-    # 10（8 + 语言一致性 / 无重复）+ 3 GKB-S7（scope-honor / empty_scope / 题型 honor）+ 1 react
-    # 层（case14，R2 首个：大批量出题不能编造）。
-    assert len(reports) == 14
+    # 10（8 + 语言一致性 / 无重复）+ 3 GKB-S7 + 2 个 react 层用例
+    # （批量考核、自然 grounded answer）。
+    assert len(reports) == 15
     failing = {r.case_id: r.failures for r in reports if not r.passed}
     assert failing == {}, f"有用例未通过：{failing}"
 
@@ -161,6 +161,38 @@ def test_grade_case14_catches_count_mismatch() -> None:
     ]
     failures = grade_case14(_fake_solve_result(events))
     assert failures
+
+
+def test_grade_case15_rejects_natural_answer_without_grounded_tool() -> None:
+    result = _fake_solve_result(
+        [
+            _event(0, "agent_turn.started", {}),
+            _event(1, EventType.MODEL_STARTED, {}),
+            _event(
+                2,
+                EventType.MODEL_ENDED,
+                {
+                    "output": "节点 abc 说明事件是信封。",
+                    "usage": {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120},
+                },
+            ),
+            _event(3, "agent_turn.ended", {}),
+        ]
+    )
+    result.case = Case(
+        id="case15",
+        kind="react",
+        expected_events=[],
+        user_messages=["根据材料解释事件信封并给出出处"],
+        cassette="x",
+        react_fixture="grounded",
+    )
+    result.context = {"resource_id": "r1", "full_document_chars": 1000}
+
+    failures = grade_case15(result)
+
+    assert failures
+    assert any("answer_from_documents" in failure for failure in failures)
 
 
 def test_grade_case14_passes_when_tool_call_matches_real_rounds() -> None:
