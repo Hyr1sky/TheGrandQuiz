@@ -139,6 +139,30 @@ class _ReactScriptProvider:
         )
 
 
+class _EightToolsThenFinalProvider:
+    """复现 DS-S4 真机深链：8 轮工具后，第 9 次模型调用才产出 final。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        self.calls += 1
+        if self.calls <= 8:
+            return Completion(
+                text="",
+                tool_calls=[
+                    ToolCall(
+                        id=f"weak-{self.calls}",
+                        name="query_weak_concepts",
+                        arguments={},
+                    )
+                ],
+            )
+        return Completion(text="长工具链已正常收敛。")
+
+
 _SESSION = ["请把材料入库", "考我一题"]
 
 
@@ -358,6 +382,37 @@ async def test_react_session_ingest_then_quiz_then_judge(tmp_path: Path) -> None
     )
     # 会话结束打印了 trace_id。
     assert trace_id in console.export_text()
+
+
+async def test_react_default_leaves_finalization_room_after_eight_tool_iterations(
+    tmp_path: Path,
+) -> None:
+    """CLI 的 DS-S4 深链不能在最后一个成功工具结果后立刻触发 max_iterations。"""
+    console = Console(record=True, width=100)
+    provider = _EightToolsThenFinalProvider()
+
+    trace_id = await run_react(
+        db_path=tmp_path / "learning.db",
+        materials_dir=tmp_path,
+        provider=provider,
+        responder=ScriptedResponder(answer="unused"),
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
+        console=console,
+        user_messages=["执行一条较深的文档检索链"],
+        seed=42,
+        trace_db_path=tmp_path / "trace.db",
+    )
+
+    assert provider.calls == 9
+    assert "长工具链已正常收敛。" in console.export_text()
+    trace_store = TraceStore(tmp_path / "trace.db")
+    try:
+        events = trace_store.events(trace_id)
+    finally:
+        trace_store.close()
+    assert [
+        event.payload["ok"] for event in events if event.type == EventType.AGENT_TURN_ENDED
+    ] == [True]
 
 
 async def test_react_session_zero_token_replay(tmp_path: Path) -> None:

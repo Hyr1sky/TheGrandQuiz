@@ -72,6 +72,18 @@ class EvidenceNotReadError(ValueError):
     classification = "evidence_not_read"
 
 
+class NodeCitationValidationError(CitationResolutionError):
+    """本轮 node citation 的模型参数可修正，回灌后允许 LLM 改 span/quote 重试。
+
+    与历史 ``Evidence`` 解析失败刻意分开：后者继续使用未标记的
+    ``CitationResolutionError``，由 RecoveryPolicy 默认判为 FATAL，避免把持久化引用损坏
+    静默降级。这里只覆盖已经通过 read-before-cite 门后，模型自报的 node-local span/quote
+    不一致或越界；它们属于受 max_iterations 约束的工具参数修正。
+    """
+
+    error_class = ErrorClass.DEGRADED
+
+
 class DocumentSearchHit(BaseModel):
     resource_id: str
     revision_id: str
@@ -89,6 +101,8 @@ class NodeReadResult(BaseModel):
     revision_id: str
     node_id: str
     section_path: str
+    node_start_offset: int = Field(ge=0)
+    node_end_offset: int = Field(ge=0)
     start_offset: int = Field(ge=0)
     end_offset: int = Field(ge=0)
     content: str
@@ -222,6 +236,8 @@ class DocumentSearch:
             revision_id=revision.revision_id,
             node_id=node.node_id,
             section_path=node.section_path,
+            node_start_offset=start,
+            node_end_offset=end,
             start_offset=node.start_offset + start,
             end_offset=node.start_offset + end,
             content=node_content[start:end],
@@ -241,13 +257,14 @@ class DocumentSearch:
         budget_key: str,
         context_chars: int = 240,
     ) -> ResolvedCitation:
-        """把本 turn 已读取区间内的 node-local span 铸为可解析 citation。"""
+        """把本 turn 已读取区间内唯一可验证的 local/global span 铸为 citation。
+
+        ``read_document_node`` 同时返回 node-local 与 revision-global 坐标。真实模型可能把
+        任一套坐标回传给 ``resolve_node_citation``，这里把两种解释都转换成 node-local
+        候选；只有恰好一个候选被本 turn 的 read 覆盖且逐字等于 quote 才接受。零命中或
+        两种解释都命中时继续 fail closed，不凭数值范围猜坐标系。
+        """
         revision = self._require_current_resources([resource_id])[0]
-        if not any(
-            read_node_id == node_id and read_start <= start < end <= read_end
-            for read_node_id, read_start, read_end in self._read_ranges.get(budget_key, [])
-        ):
-            raise EvidenceNotReadError("citation span 尚未由本 turn 的 read_document_node 读取")
         node = next(
             (
                 candidate
@@ -259,22 +276,81 @@ class DocumentSearch:
         if node is None:
             raise ScopeResolutionError([f"{resource_id}:{node_id}"])
         node_content = revision.raw_content[node.start_offset : node.end_offset]
-        if not (0 <= start < end <= len(node_content)):
-            raise CitationResolutionError("span_out_of_bounds", "citation span 超出节点边界")
-        actual_quote = node_content[start:end]
-        if actual_quote != quote:
-            raise CitationResolutionError(
-                "quote_mismatch",
-                "citation quote 与已读取 source span 不一致",
+        candidate_spans = list(
+            dict.fromkeys(
+                [
+                    (start, end),
+                    (start - node.start_offset, end - node.start_offset),
+                ]
             )
+        )
+        in_bounds = [
+            (candidate_start, candidate_end)
+            for candidate_start, candidate_end in candidate_spans
+            if 0 <= candidate_start < candidate_end <= len(node_content)
+        ]
+        read_ranges = self._read_ranges.get(budget_key, [])
+        covered = [
+            (candidate_start, candidate_end)
+            for candidate_start, candidate_end in in_bounds
+            if any(
+                read_node_id == node_id
+                and read_start <= candidate_start < candidate_end <= read_end
+                for read_node_id, read_start, read_end in read_ranges
+            )
+        ]
+        exact = [
+            (candidate_start, candidate_end)
+            for candidate_start, candidate_end in covered
+            if node_content[candidate_start:candidate_end] == quote
+        ]
+        if len(exact) > 1:
+            raise NodeCitationValidationError(
+                "offset_basis_ambiguous",
+                "citation 的 node-local / revision-global 坐标解释均可成立",
+            )
+        if exact:
+            canonical_start, canonical_end = exact[0]
+        else:
+            # 模型的 Unicode / Markdown 字符计数不可靠，但 node + 本 turn 已读范围 +
+            # 唯一逐字 quote 足以确定性派生 span。只在已读窗口内逐字查找，不搜索未披露
+            # 正文、不做空白归一化或相似匹配；重叠 read 的同一 span 用 set 去重。
+            read_quote_spans: set[tuple[int, int]] = set()
+            if quote:
+                for read_node_id, read_start, read_end in read_ranges:
+                    if read_node_id != node_id:
+                        continue
+                    search_from = read_start
+                    while search_from < read_end:
+                        found = node_content.find(quote, search_from, read_end)
+                        if found < 0:
+                            break
+                        found_end = found + len(quote)
+                        if found_end <= read_end:
+                            read_quote_spans.add((found, found_end))
+                        search_from = found + 1
+            if len(read_quote_spans) > 1:
+                raise NodeCitationValidationError(
+                    "quote_ambiguous_in_read",
+                    "citation quote 在本 turn 已读原文中逐字出现多处",
+                )
+            if read_quote_spans:
+                canonical_start, canonical_end = next(iter(read_quote_spans))
+            elif not covered:
+                raise EvidenceNotReadError("citation span 尚未由本 turn 的 read_document_node 读取")
+            else:
+                raise NodeCitationValidationError(
+                    "quote_mismatch",
+                    "citation quote 与已读取 source span 不一致",
+                )
         evidence = Evidence(
             quote=quote,
             locator=EvidenceLocator(
                 revision_id=revision.revision_id,
                 node_id=node.node_id,
                 section_path=node.section_path,
-                start_offset=node.start_offset + start,
-                end_offset=node.start_offset + end,
+                start_offset=node.start_offset + canonical_start,
+                end_offset=node.start_offset + canonical_end,
                 quote_hash=hashlib.sha256(quote.encode("utf-8")).hexdigest(),
             ),
         )

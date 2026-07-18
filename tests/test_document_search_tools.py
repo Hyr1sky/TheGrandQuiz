@@ -1,6 +1,7 @@
 """DS-S4 受控 ReAct 工具：渐进读取、严格 scope、trace 与精确 citation。"""
 
 import hashlib
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -19,8 +20,10 @@ from grandquiz.domain.learning.tools.document_search_tools import (
     make_document_search_tools,
 )
 from grandquiz.kernel.clock import ManualClock
-from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
+from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
+from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import ToolContext, ToolRegistry
+from grandquiz.providers.base import Completion, Message, Role, ToolCall
 
 
 def _stock(store: SqliteLearningStore) -> tuple[LearningResource, KnowledgeItem]:
@@ -249,6 +252,251 @@ async def test_read_quote_mismatch_emits_structured_citation_rejection(tmp_path:
     ]
     assert events[-1].payload["classification"] == "quote_mismatch"
     assert "quote" not in events[-1].payload
+    store.close()
+
+
+async def test_node_citation_accepts_read_result_revision_global_offsets(tmp_path: Path) -> None:
+    """真机模型会复用 read 返回的 global span；resolver 必须无歧义地规范化到 node-local。"""
+    store = SqliteLearningStore(tmp_path / "learning.db")
+    resource, _ = _stock(store)
+    registry = _registry(store)
+    context, _ = _context()
+    node = next(
+        candidate
+        for candidate in store.document_nodes(resource.resource_id)
+        if candidate.kind == "paragraph"
+    )
+    read = DocumentReadResult.model_validate_json(
+        await registry.dispatch(
+            "read_document_node",
+            {"resource_id": resource.resource_id, "node_id": node.node_id, "max_chars": 30},
+            ctx=context,
+        )
+    )
+    local_start = read.content.index("trace")
+    global_start = read.start_offset + local_start
+
+    citation = NodeCitationToolResult.model_validate_json(
+        await registry.dispatch(
+            "resolve_node_citation",
+            {
+                "resource_id": resource.resource_id,
+                "node_id": node.node_id,
+                "start": global_start,
+                "end": global_start + len("trace"),
+                "quote": "trace",
+            },
+            ctx=context,
+        )
+    )
+
+    assert read.node_start_offset == 0
+    assert read.node_end_offset == len(read.content)
+    assert citation.start_offset == global_start
+    assert citation.quote == "trace"
+    store.close()
+
+
+async def test_node_citation_derives_span_from_unique_exact_quote_in_read_range(
+    tmp_path: Path,
+) -> None:
+    """模型不可靠的字符算术可由已读范围内唯一逐字 quote 确定性替代。"""
+    store = SqliteLearningStore(tmp_path / "learning.db")
+    resource, _ = _stock(store)
+    registry = _registry(store)
+    context, _ = _context()
+    node = next(
+        candidate
+        for candidate in store.document_nodes(resource.resource_id)
+        if candidate.kind == "paragraph"
+    )
+    read = DocumentReadResult.model_validate_json(
+        await registry.dispatch(
+            "read_document_node",
+            {"resource_id": resource.resource_id, "node_id": node.node_id, "max_chars": 30},
+            ctx=context,
+        )
+    )
+
+    citation = NodeCitationToolResult.model_validate_json(
+        await registry.dispatch(
+            "resolve_node_citation",
+            {
+                "resource_id": resource.resource_id,
+                "node_id": node.node_id,
+                "start": 0,
+                "end": 1,
+                "quote": "trace",
+            },
+            ctx=context,
+        )
+    )
+
+    assert citation.start_offset == read.start_offset + read.content.index("trace")
+    assert citation.end_offset == citation.start_offset + len("trace")
+    store.close()
+
+
+async def test_node_citation_rejects_ambiguous_exact_quote_in_read_range(tmp_path: Path) -> None:
+    """唯一性是自动派生 span 的硬门；重复逐字 quote 不猜位置。"""
+    store = SqliteLearningStore(tmp_path / "learning.db")
+    content = "# Runtime\n\ntrace 左，trace 右。\n"
+    resource = LearningResource.create(url="https://example.com/repeated-trace").model_copy(
+        update={
+            "raw_content": content,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+            "status": "read",
+            "topic": "Runtime",
+        }
+    )
+    store.replace_snapshot(resource, [])
+    registry = _registry(store)
+    context, events = _context()
+    node = next(
+        candidate
+        for candidate in store.document_nodes(resource.resource_id)
+        if candidate.kind == "paragraph"
+    )
+    await registry.dispatch(
+        "read_document_node",
+        {"resource_id": resource.resource_id, "node_id": node.node_id, "max_chars": 30},
+        ctx=context,
+    )
+
+    with pytest.raises(ValueError, match="多处"):
+        await registry.dispatch(
+            "resolve_node_citation",
+            {
+                "resource_id": resource.resource_id,
+                "node_id": node.node_id,
+                "start": 0,
+                "end": 1,
+                "quote": "trace",
+            },
+            ctx=context,
+        )
+
+    assert events[-1].type == LearningEvent.CITATION_REJECTED
+    assert events[-1].payload["classification"] == "quote_ambiguous_in_read"
+    store.close()
+
+
+class _WrongThenCorrectNodeCitationProvider:
+    """复现真机：首次 citation quote/span 不一致，收到工具错误后改参重试。"""
+
+    def __init__(self, *, resource_id: str, node_id: str, start: int) -> None:
+        self.resource_id = resource_id
+        self.node_id = node_id
+        self.start = start
+        self.calls = 0
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        self.calls += 1
+        if self.calls == 1:
+            return Completion(
+                text="",
+                tool_calls=[
+                    ToolCall(
+                        id="read",
+                        name="read_document_node",
+                        arguments={
+                            "resource_id": self.resource_id,
+                            "node_id": self.node_id,
+                            "start": 0,
+                            "max_chars": 30,
+                        },
+                    )
+                ],
+            )
+        if self.calls == 2:
+            return Completion(
+                text="",
+                tool_calls=[
+                    ToolCall(
+                        id="bad-cite",
+                        name="resolve_node_citation",
+                        arguments={
+                            "resource_id": self.resource_id,
+                            "node_id": self.node_id,
+                            "start": self.start,
+                            "end": self.start + len("trace"),
+                            "quote": "tracz",
+                        },
+                    )
+                ],
+            )
+        if self.calls == 3:
+            tool_results = [message for message in messages if message.role == "tool"]
+            assert tool_results[-1].content.startswith("tool error:")
+            return Completion(
+                text="",
+                tool_calls=[
+                    ToolCall(
+                        id="good-cite",
+                        name="resolve_node_citation",
+                        arguments={
+                            "resource_id": self.resource_id,
+                            "node_id": self.node_id,
+                            "start": self.start,
+                            "end": self.start + len("trace"),
+                            "quote": "trace",
+                        },
+                    )
+                ],
+            )
+        return Completion(text="已按修正后的逐字区间返回引用。")
+
+
+async def test_node_citation_mismatch_is_fed_back_and_model_can_retry(tmp_path: Path) -> None:
+    """handler 的可修正参数错误必须走 M6 回灌，不能把整个 ReAct turn 判成 FATAL。"""
+    store = SqliteLearningStore(tmp_path / "learning.db")
+    resource, _ = _stock(store)
+    node = next(
+        candidate
+        for candidate in store.document_nodes(resource.resource_id)
+        if candidate.kind == "paragraph"
+    )
+    revision = store.current_revision(resource.resource_id)
+    assert revision is not None
+    node_content = revision.raw_content[node.start_offset : node.end_offset]
+    start = node_content.index("trace")
+    provider = _WrongThenCorrectNodeCitationProvider(
+        resource_id=resource.resource_id,
+        node_id=node.node_id,
+        start=start,
+    )
+    events: list[AgentEvent] = []
+    sink = EventSink()
+    sink.subscribe(events.append)
+    emitter = EventEmitter(sink, ManualClock(), trace_id="citation-retry")
+    runner = Runner(
+        provider=provider,
+        emitter=emitter,
+        tools=_registry(store),
+        max_iterations=6,
+    )
+
+    reply = await runner.run_agent_turn("读取原文并给出精确引用")
+
+    assert reply == "已按修正后的逐字区间返回引用。"
+    decisions = [event for event in events if event.type == EventType.RECOVERY_DECIDED]
+    assert len(decisions) == 1
+    assert decisions[0].payload == {
+        "error": "NodeCitationValidationError('citation quote 与已读取 source span 不一致')",
+        "error_class": "degraded",
+        "decision": "skip",
+    }
+    assert [
+        event.payload["classification"]
+        for event in events
+        if event.type == LearningEvent.CITATION_REJECTED
+    ] == ["quote_mismatch"]
+    assert len([event for event in events if event.type == LearningEvent.CITATION_RESOLVED]) == 1
+    assert [
+        event.payload["ok"] for event in events if event.type == EventType.AGENT_TURN_ENDED
+    ] == [True]
     store.close()
 
 

@@ -43,6 +43,12 @@ from grandquiz.providers.llm import OpenAICompatProvider
 
 __all__ = ["_run_react_cli", "run_react"]
 
+# DS-S4 的合法开放查询可能需要 search → outline/expand → 多个 bounded read →
+# citation 参数回灌修正 → final。真机已出现第 8 次模型调用成功铸出 citation、却没有第 9 次
+# finalization 机会的路径。提高 CLI 编排上限不放宽正文读取或总上下文预算；两者仍分别由
+# DocumentSearch.turn_read_budget 与 ContextBuilder.total_budget 强制。Runner 通用默认保持 8。
+_DEFAULT_REACT_MAX_ITERATIONS = 12
+
 
 async def run_react(
     *,
@@ -56,7 +62,7 @@ async def run_react(
     user_messages: Iterable[str],
     seed: int,
     trace_db_path: Path | None = None,
-    max_iterations: int = 8,
+    max_iterations: int = _DEFAULT_REACT_MAX_ITERATIONS,
 ) -> str:
     """真机 ReAct 会话循环：逐条用户消息跑一次 ``run_agent_turn``，多回合共享同一 agent / 会话态。
 
