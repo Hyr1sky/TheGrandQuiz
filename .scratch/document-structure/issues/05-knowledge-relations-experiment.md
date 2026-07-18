@@ -1,6 +1,6 @@
 # DS-S5 — KnowledgeRelation eval 门控实验
 
-Status: deferred（eval-gated；DS-S1–S4 真实回放已完成，等待 dogfood）
+Status: wontfix（2026-07-18 gate closed；本 PRD 不启动，未来独立产品证据可重开）
 Type: HITL
 
 ## Parent
@@ -26,6 +26,17 @@ section 父子关系当作知识关系。HITL 只用于审核真实边样本和�
 基线与语义图变量混在一起。启动本实验前必须先完成 dogfood，并锁定真实材料样本、无关系基线、相关性/
 grounding/token/latency 指标、最低收益阈值和 HITL 抽样方法。未达到门槛时默认删除实验路径，KnowledgeItem
 与 Learning Memory 身份语义不变。
+
+## Final gate decision（2026-07-18）
+
+DS-S3/4 的生产 dogfood 已通过：真实问题仅靠 selected FTS search、3 次 bounded read 与 2 条 exact node citation
+完成，读取正文 13.33%，没有出现 prerequisite-aware selection 或多跳知识关系才能解决的缺口。该 turn 为处理深层
+工具链已累计 132403 model tokens；在没有预注册关系数据集、无关系基线、最低相关性/grounding 增益阈值与 HITL
+precision 样本前增加关系抽取，会扩大成本和变量，却不能证明产品收益。
+
+因此按本 issue 原定 gate 的默认分支关闭实验：不建 relation schema、不抽边、不接选题/查询消费路径，也不创建
+CanonicalConcept 或迁移 Learning Memory。这里的 `wontfix` 仅表示本 PRD 不行动，不否定未来能力；只有出现独立、
+可复现的 prerequisite 或 multi-hop 产品失败，并先预注册对照 eval 后，才以新 PRD 重开。
 
 ## Acceptance criteria
 

@@ -2,7 +2,7 @@
 
 > 记录日期：2026-07-18
 > 范围：ADR-0008 / `.scratch/document-structure/` 的 DS-S1–S4；DS-S5 仅做门控决策。
-> 当前边界：代码、生产 schema v11 迁移与两份真实模型 cassette 已完成，五门全绿；生产 ingest/人工筛选已通过 trace 审计，开放搜索与最终 node citation dogfood 待用户在独立终端执行。
+> 当前边界：DS-S1–S4 代码、生产 schema v11 迁移、真实模型 cassette、生产 ingest/人工筛选与开放搜索/node citation dogfood 已全部通过；DS-S5 经 eval gate 关闭。
 
 ## 1. 为什么做这轮改造
 
@@ -202,3 +202,31 @@ node-read citation 等证据；命令前后 `learning.db` 与 `trace.db` 的 mti
 Memory 更新链仍正常；但模型两次都调用 `start_quiz`，没有搜索、节点读取或 `source=node_read` citation 事件。
 因此这不是 DS-S4 的失败实现，而是尚未触发目标交互：下一次 dogfood 要明确要求只在该材料内查一个原文问题、
 读取相关节点并返回可回溯引用。DS-S4 与最终 citation 验收完成前，PRD 保持 in-progress，DS-S5 继续关闭。
+
+## 12. 生产 Agentic Search 完成与真机恢复加固（2026-07-18）
+
+对同一 current revision 连续运行真实开放查询后，失败 trace 依次暴露了四个仅靠合成 capstone 没发现的边界：
+
+1. node citation 的 quote/span 参数错误使用通用 `CitationResolutionError`，被 M6 默认判为 FATAL，整个 turn 跳过；
+2. read 工具返回 revision-global offset，而 resolver 只接受 node-local offset，坐标契约含混；
+3. 模型能选择正确 node 与逐字 quote，但不能可靠计算 Markdown 表格和 Unicode 的字符位置；
+4. 深链在第 8 次模型调用成功铸出 citation 后，没有第 9 次 finalization 机会。
+
+修复保持证据门与架构边界不变：历史 Evidence/citation 损坏仍为 FATAL；只有本 turn 可改参的
+`NodeCitationValidationError` 走 DEGRADED 回灌。read 结果显式给出 node-local 与 revision-global 两套坐标；resolver
+接受两套解释，但必须被本 turn read 覆盖且逐字 quote 唯一成立。若模型 offset 仍错，只在已读窗口内唯一逐字出现
+时由代码派生 span；零匹配、多匹配、改写 quote 继续 fail closed，不读取未披露正文、不做相似匹配。CLI ReAct
+迭代上限由 8 调为 12；Runner 通用默认、12k read budget 与 ContextBuilder 总硬门均未放宽。
+
+最终生产 trace `46b91c61c1c24ebabc94be97db31bb16` 正常回答用户，并与 ingest trace
+`2515ec1af79a4a0a9860993b4a35beb9` 联合通过 `grandquiz audit-doc`：
+
+- selected scope 只含 resource `6128cc2fa1b9e850`；
+- 1 次稀疏 search、3 次成功 read、2 条 `source=node_read` citation；
+- citation 指向 current revision `a37bdcb799210246`，read-before-cite 与逐字 span 全部成立；
+- 累计读取 2762/20721 字符（13.33%），预算使用 2762/12000；
+- 单次最大 prompt 15340 tokens，完整 turn 11 次模型调用累计 132403 tokens，均如实留在 trace。
+
+五门最终结果为 Ruff check/format、Pyright strict、import-linter 全绿，pytest `775 passed`。DS-S1–S4 至此完成。
+DS-S5 没有获得“关系能力优于当前树 + FTS 基线”的证据，按预定 gate 不建表、不抽边、不接消费代码；未来只有在
+出现可复现的 prerequisite/multi-hop 产品失败，并预注册对照指标后才另立 PRD。

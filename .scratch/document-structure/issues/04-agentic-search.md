@@ -1,6 +1,6 @@
 # DS-S4 — FTS5 + 渐进式 Agentic Search
 
-Status: ready-for-human（真实 ReAct cassette 已完成；开放搜索 dogfood 待执行）
+Status: done（2026-07-18；真实 ReAct replay + 生产 selected search/read/node-citation dogfood 通过）
 Type: AFK
 
 ## Parent
@@ -35,7 +35,7 @@ LLM 只决定开放问题中“下一步看哪一节”，Document Structure mod
 - [x] quiz 既有 scope、选题、判卷、Learning Memory 与 Difficulty 行为无回归；kernel 仍不 import domain
 - [x] tool schema 进入 Replay 执行指纹，所有受影响 ReAct cassette 由真实模型重录或明确废弃
 - [x] 五门、全量 pytest、全部 Tier-1 eval 与 Agentic Search capstone 全绿
-- [ ] 至少一次对生产 current revision 的开放搜索 dogfood 完成渐进读取并返回可解析 citation，真实 trace 证明未倾倒全文
+- [x] 至少一次对生产 current revision 的开放搜索 dogfood 完成渐进读取并返回可解析 citation，真实 trace 证明未倾倒全文
 
 ## Completion evidence（2026-07-17）
 
@@ -57,6 +57,21 @@ LLM 只决定开放问题中“下一步看哪一节”，Document Structure mod
   `learning.citation_resolved(source=node_read)`；`audit-doc` 的 search leg 因 search/read/node-citation 均为 0 而失败。
 - 这证明普通 KB 考核路径正常，但不能替代本 issue 的开放 Agentic Search 验收。下一次应明确要求“只查指定材料，
   搜索某个原文问题，读取相关节点并给出可回溯引用”，再以新 trace id 联合审计。
+
+## Production completion evidence（2026-07-18）
+
+- 最终 trace `46b91c61c1c24ebabc94be97db31bb16` 正常产出用户回答，并由 `audit-doc` 与生产
+  `learning.db` 联合核验为 `passed=true`：1 次 selected search、3 次成功 bounded read、2 条
+  `learning.citation_resolved(source=node_read)`，顺序满足 search → covering read → citation。
+- selected scope 恰好为 `6128cc2fa1b9e850`；citation 指向 current revision `a37bdcb799210246` 和 node
+  `8848ac957b736804`，span/quote 可逐字解析。累计读取 2762/20721 字符（13.33%），最高预算使用
+  2762/12000，没有倾倒全文或扩大 scope。
+- 真机失败 trace 先后暴露并锁定四个边界：node citation 参数错误误判 FATAL、read 返回 global 而 resolver 只认
+  local、模型不能可靠计算 Markdown/Unicode span、8 次模型迭代后缺 finalization 机会。对应修复仅将本轮
+  `NodeCitationValidationError` 标为 DEGRADED；历史 citation 损坏仍 FATAL；resolver 同时接受可唯一验证的
+  local/global span，并只在已读窗口内唯一逐字 quote 时派生位置；CLI 上限 12，read/context 硬预算不变。
+- 回归覆盖错误回灌后自愈、global span、唯一 quote 自动定位、重复 quote fail closed 与 8-tool + final 深链；
+  静态四门、全部 eval 与全量 pytest `775 passed`。
 
 ## Dogfood evidence protocol
 

@@ -17,11 +17,12 @@ hooks/context/clock/recovery/trace/db）+ `providers/`（OpenAI 兼容 + Record/
 [修订化文档结构](.scratch/document-structure/PRD.md) DS-S1–S4 代码也已落地：不可变 revision/tree、精确
 Evidence、自然节点 Reader、FTS5 与有界 Agentic Search。生产 DB 已备份并迁移到 schema v11；新增真实材料后现为
 4 resources / 122 items / 4 revisions / 1723 nodes / 1723 FTS rows / 169 evidence（117 resolved / 52 unresolved）。
-Reader 与 ReAct case14 已用真实模型重录；静态四门全绿，全量 pytest 当前为 `770 passed`。Reader 真实基线为
+Reader 与 ReAct case14 已用真实模型重录；静态四门全绿，全量 pytest 当前为 `775 passed`。Reader 真实基线为
 105/105 个可考节点 exactly-once 覆盖、12 个候选、0 重复、单次请求 8715 prompt tokens。DS-S3 的生产 ingest/
 人工筛选已由 trace `2515ec1af79a4a0a9860993b4a35beb9` 通过只读审计（141 个可考节点、2 批、34 条 exact
-evidence）；DS-S4 开放搜索/read-before-cite dogfood 尚未发生，普通 `start_quiz` trace 不能替代。完成前不把
-整个文档结构 PRD 标为 done。DS-S5 KnowledgeRelation 继续关闭，等待搜索 dogfood 证据后再决定是否实验。
+evidence）。DS-S4 生产 trace `46b91c61c1c24ebabc94be97db31bb16` 也已通过 selected search → 3 次 bounded
+read → 2 条 node citation 联合审计，只读 2762/20721 字符（13.33%）；文档结构 PRD 的 DS-S1–S4 现已 done。
+DS-S5 KnowledgeRelation 因没有关系增益证据而按 eval gate 关闭，本轮不建 schema/抽边/消费路径。
 设计权威仍在 `docs/` 与 `CONTEXT.md`。
 **动手写代码前按序读**：
 

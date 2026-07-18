@@ -1,7 +1,7 @@
 # PRD：修订化文档树、精确溯源与渐进式 Agentic Search
 
-Status: in-progress（DS-S1–S2 done；DS-S3 production-ingest-verified；DS-S4 ready-for-human dogfood；DS-S5 deferred, eval-gated）
-Triage: ready-for-human
+Status: done（2026-07-18：DS-S1–S4 代码、迁移、真实回放、生产 ingest/筛选/开放搜索/citation 与五门全部通过；DS-S5 按 eval gate 不启动）
+Triage: ready-for-human（仅归档复核；无待实现 issue）
 Decision: [ADR-0008](../../docs/adr/0008-revisioned-document-tree-and-grounded-knowledge-graph.md)
 
 ## Problem Statement
@@ -169,11 +169,11 @@ related、contradicts 关系。跨资源 CanonicalConcept 与 Learning Memory �
    - 确定性 parser、revision/tree schema、迁移回填、原子 current 切换和 store parity。
 2. **DS-S2 精确 Evidence 与可解析 citation**（done 2026-07-17）
    - evidence 正规化、locator 校验、旧 quote 回填审计、Reader node-local 输出和引用展示。
-3. **DS-S3 Reader 节点化覆盖型深读**（production-ingest-verified 2026-07-18，最终 citation 与 DS-S4 联合验收）
+3. **DS-S3 Reader 节点化覆盖型深读**（done 2026-07-18）
    - 用自然节点批次替换临时 token chunk，保持预算、重试、审批、快照原子性和真实 cassette。
-4. **DS-S4 FTS5 + 渐进式 Agentic Search**（replay-complete 2026-07-17，开放搜索 dogfood 待执行）
+4. **DS-S4 FTS5 + 渐进式 Agentic Search**（done 2026-07-18）
    - 大纲、搜索、展开、读取工具，严格 scope、预算、trace 与检索 eval。
-5. **DS-S5 KnowledgeRelation eval 门控实验**（HITL，暂缓）
+5. **DS-S5 KnowledgeRelation eval 门控实验**（wontfix for this PRD；未来新证据可重开）
    - 类型化语义边、provenance、前置知识/多跳对照 eval；由证据决定保留，不推进全局概念归并。
 
 ## Implementation checkpoint（2026-07-18）
@@ -199,6 +199,15 @@ related、contradicts 关系。跨资源 CanonicalConcept 与 Learning Memory �
   `start_quiz`，没有 document search/read/node citation 事件；因此 DS-S4 仍待一次明确要求查原文并引用的 dogfood。
 - 真机还暴露模型会给出节点内唯一逐字 quote、但误报 Unicode 左边界。Reader 现在只在 quote 于声明节点内唯一
   出现时确定性规范化 start/end；零匹配或多匹配继续 fail closed。静态四门与全量 pytest `770 passed`。
+- 生产 Agentic Search trace `46b91c61c1c24ebabc94be97db31bb16` 通过联合 `audit-doc`：selected scope 只含
+  resource `6128cc2fa1b9e850`，1 次 search、3 次成功 read、2 条 `source=node_read` citation；累计读取
+  2762/20721 字符（13.33%），budget 2762/12000，citation 指向 current revision `a37bdcb799210246`。
+- 真机依次暴露 citation 参数错误被误判 FATAL、local/global offset 契约含混、唯一逐字 quote 的字符算术不稳、
+  8 次迭代后无 finalization 机会。修复保持历史 citation 损坏为 FATAL；仅本轮模型参数走 DEGRADED 回灌；read
+  显式返回两套坐标；resolver 仅在已读窗口内唯一逐字匹配时派生 span；CLI 上限调为 12，但 12k read 与总上下文
+  预算不变。静态四门与全量 pytest `775 passed`。
+- DS-S5 gate 最终关闭：现有真实问题已由文档树/FTS/有界读取/精确引用解决，没有 prerequisite 或多跳关系的产品
+  缺口，也没有预注册的关系增益数据；本轮不创建 relation schema、派生边或消费代码，未来出现独立证据时另立 PRD。
 
 ## Out of Scope
 

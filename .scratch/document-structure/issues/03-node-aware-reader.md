@@ -1,6 +1,6 @@
 # DS-S3 — Reader 节点化覆盖型深读
 
-Status: ready-for-human（生产 ingest/人工筛选已通过审计；最终 citation 与 DS-S4 联合验收）
+Status: done（2026-07-18；生产 ingest/人工筛选与最终 citation 联合审计通过）
 Type: AFK
 
 ## Parent
@@ -33,7 +33,7 @@ KnowledgeItem 必须经过 DS-S2 的精确 evidence 校验，再进入现有 kee
 - [x] trace 可重建 traversal 顺序、批次 node ids、预算估算、model token、retry、审批决定和最终 revision commit
 - [x] 对同一长文比较旧临时 chunk 基线与节点批次：正文覆盖不下降、重复候选不增加、无请求超过 Provider 门
 - [x] fake provider 全覆盖；使用 `.env` 真实模型重录受影响 Reader cassette，不能手工伪造请求 key 或输出
-- [ ] 至少一份真实长文完成 ingest → 筛选 → current revision/tree/item/evidence 写入，并从 citation 返回原文
+- [x] 至少一份真实长文完成 ingest → 筛选 → current revision/tree/item/evidence 写入，并从 citation 返回原文
 - [x] 五门与全部 eval 全绿；真实 trace 记录 token/成本和节点批次，不以提高预算掩盖超限
 
 ## Completion evidence（2026-07-17）
@@ -67,8 +67,8 @@ KnowledgeItem 必须经过 DS-S2 的精确 evidence 校验，再进入现有 kee
   current snapshot 的 34 条 evidence 均能逐字解析回声明 node/span。
 - 真实模型曾因唯一逐字 quote 的 Unicode 左边界误报触发 `quote_mismatch`。修复仅在声明节点内唯一逐字出现时
   由代码规范化 start/end；零匹配或多匹配仍 fail closed。新增唯一/重复 quote 回归，五门与 `770 passed` 全绿。
-- 最终用户可见 node citation 尚未在开放搜索中触发；它与 DS-S4 的 selected search → bounded read → node citation
-  使用同一次后续 dogfood 联合验收，因此本 issue 仍不标 done。
+- 最终用户可见 node citation 已由 DS-S4 trace `46b91c61c1c24ebabc94be97db31bb16` 联合验收：返回明确
+  revision、section_path、全局 span、逐字 quote 与有界上下文；`audit-doc` ingest/search 两 leg 均通过。
 
 ## Dogfood evidence protocol
 
