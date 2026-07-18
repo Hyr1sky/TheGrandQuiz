@@ -52,7 +52,8 @@ KnowledgeItem 必须经过 DS-S2 的精确 evidence 校验，再进入现有 kee
 - 真录发现模型会精确选择 node/start/quote、却普遍算错右边界；回归测试先复现后，Reader 改为仅在 quote 从声明
   start 逐字匹配时确定性计算 end。错误 node/start/quote 仍重试并 fail closed，不引入模糊定位。
 - 真实长文 ingest → HITL 筛选 → citation dogfood 尚未执行，故 issue 保持 `ready-for-human` 而非 done。
-- 静态四门、全部 eval 与全量 pytest `764 passed`；持久化真实 trace 仍由上述 dogfood 验收补齐。
+- 静态四门、全部 eval 与全量 pytest `768 passed`；持久化真实 trace 仍由上述 dogfood 验收补齐。
+- `approval.decided.decision_source` 明确区分 `human_cli` 与 `scripted`；只读 auditor 会拒绝测试/录制脚本审批。
 
 ## Dogfood evidence protocol
 
@@ -65,8 +66,8 @@ KnowledgeItem 必须经过 DS-S2 的精确 evidence 校验，再进入现有 kee
   `learning.citation_validated`、`approval.requested/decided` 和 `learning.revision_committed`；成功提交事件不得早于审批。
 - 所有 batch 的 `node_ids` 按顺序合并后，恰好等于 committed revision 的全部非 document/section 正文节点，且无重复。
 - 每批 `estimated_tokens <= token_budget`；每次 Reader `model.ended` 都有真实 usage，完整请求未超过 32k Provider 门。
-- `approval.decided` 的保留/剔除数量与 committed KnowledgeItem 数一致；DB 的 current revision、tree、items、evidence
-  可见，任一获批 evidence 都能逐字解析回声明 node/span。
+- `approval.decided.decision_source=human_cli`，其保留/剔除数量与 committed KnowledgeItem 数一致；DB 的 current
+  revision、tree、items、evidence 可见，任一获批 evidence 都能逐字解析回声明 node/span。
 - 至少从一个获批 item 的 citation 返回 revision、section_path、精确位置、quote 与有界原文上下文。
 
 终端入口：
@@ -75,6 +76,17 @@ KnowledgeItem 必须经过 DS-S2 的精确 evidence 校验，再进入现有 kee
 .venv/bin/dotenv run -- .venv/bin/grandquiz ingest \
   --task "文档结构 dogfood" --db ~/.grandquiz/learning.db /path/to/authorized-long-document.md
 ```
+
+记下终端打印的 ingest trace id；完成 DS-S4 的搜索后用同一生产库运行联合只读验收：
+
+```bash
+.venv/bin/grandquiz audit-doc \
+  --db ~/.grandquiz/learning.db \
+  --ingest-trace <ingest-trace-id> \
+  --search-trace <search-trace-id>
+```
+
+命令输出逐项 JSON checks；任一证据缺失或矛盾时退出码非零，不写 learning/trace DB。
 
 ## Blocked by
 

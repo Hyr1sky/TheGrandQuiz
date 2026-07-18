@@ -4,7 +4,7 @@
 - 日期：2026-07-17
 
 > 实施状态（2026-07-17）：DS-S1–S4 代码、生产 schema v11 迁移与两份真实 cassette 已完成，静态四门和
-> `764` 项 pytest 全绿；生产筛选/citation 与开放搜索 dogfood 待执行。DS-S5 KnowledgeRelation 仍按本 ADR 的
+> `768` 项 pytest 全绿；生产筛选/citation 与开放搜索 dogfood 待执行。DS-S5 KnowledgeRelation 仍按本 ADR 的
 > eval 门控原则关闭，未创建关系 schema 或生产消费路径。
 
 ## 背景

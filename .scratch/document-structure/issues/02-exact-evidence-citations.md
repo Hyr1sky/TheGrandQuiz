@@ -47,7 +47,7 @@ fail closed，不能获批写入。
 - 完成性审计补充确定性生成用例：Unicode/组合字符、自然节点首尾边界、空白规范化后保存精确原文、重叠
   quote 歧义、跨节点与 hash 篡改。
 - `.env` 真实 Reader cassette 已按 DocumentNode 契约重录；12 个 item 的 locator 经纯回放逐字校验，静态四门
-  与全量 pytest `764 passed`。
+  与全量 pytest `768 passed`。
 
 ## Blocked by
 

@@ -111,7 +111,7 @@ DocumentNode 只表达作者组织原文的结构；KnowledgeItem 仍是考核�
 - Ruff format check：绿
 - Pyright strict：绿
 - import-linter：绿，`kernel` 仍不 import `domain`
-- pytest：`764 passed`
+- pytest：`768 passed`
 
 两份受影响 cassette 均由 `.env` 配置的真实模型重录，没有手工改写 request key 或输出：
 
@@ -125,7 +125,7 @@ DocumentNode 只表达作者组织原文的结构；KnowledgeItem 仍是考核�
    调用总计 9866 prompt / 645 completion tokens。原四个 Replay/eval/report 红灯全部转绿。
 
 Reader 纯回放额外断言 batch node ids 与获批 revision 的全部可考节点完全相等、无重复，且 model span 数与
-cassette 调用数一致。最终 Ruff check、Ruff format check、Pyright strict、import-linter 和 `764` 项 pytest 全绿。
+cassette 调用数一致。最终 Ruff check、Ruff format check、Pyright strict、import-linter 和 `768` 项 pytest 全绿。
 
 ## 8. DS-S5 决策与后续 HITL
 
@@ -157,3 +157,24 @@ KnowledgeRelation 暂缓，不建表、不抽边、不接生产选题/查询。�
   原 quote，只在 node quote 拒绝时保存 SHA256 fingerprint。
 
 这些补强与真实 cassette 已完成收口，没有扩大 DS-S5 范围；剩余工作是产品 dogfood，不再是自动测试红灯。
+
+## 10. Dogfood 证据自动审计
+
+完成性审计发现原 `approval.decided` 只记录结果，无法区分真实 CLI 人工筛选与 `ScriptedApprovalGate`；仅凭旧 trace
+不能证明 HITL。事件现增加 `decision_source=human_cli|scripted`，保持事件信封与 kernel 领域无关，auditor 明确拒绝
+scripted 审批。
+
+新增 `grandquiz audit-doc` 只读命令，以 ingest/search 两个 trace id 交叉核对 `trace.db` 与 `learning.db`：
+
+- DS-S3：必需事件和提交顺序、Reader batch span 配对、可考节点 exactly-once、估算/真实 token 门、human CLI
+  审批计数、current revision/item 数与全部 exact evidence。
+- DS-S4：selected exact scope、search → successful bounded read → `source=node_read` citation 顺序、read 覆盖 citation
+  span、budget used/limit、current revision/node 解析和累计读取比例（默认不超过全文 25%）。
+- 报告为逐项 JSON，任一 check 失败即整体失败并返回非零退出码；命令以 SQLite read-only URI 开库，不迁移、不写数据。
+
+集成测试通过正式 `run_ingest`、`CliApprovalGate`、SQLite Store、Document Search tools 与 TraceStore 生成生产形状
+证据；反证覆盖 scripted approval、用 item citation 冒充 Agentic Search、读取比例超门。真实 dogfood 尚未发生，
+因此该工具强化的是“如何证明完成”，没有把合成 trace 冒充产品验收。
+
+对生产库现有旧 ingest/search trace 实跑得到 `passed=false`，明确列出缺少 document/batch/human approval/
+node-read citation 等证据；命令前后 `learning.db` 与 `trace.db` 的 mtime/size 完全不变，验证只读边界。

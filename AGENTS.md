@@ -18,7 +18,7 @@ hooks/context/clock/recovery/trace/db）+ `providers/`（OpenAI 兼容 + Record/
 Evidence、自然节点 Reader、FTS5 与有界 Agentic Search。生产 DB 已备份并迁移到 schema v11；三份真实材料的
 88 个 KnowledgeItem、学习状态与 item 身份无损保留，形成 3 revisions / 1551 nodes / 1551 FTS rows；135 条
 evidence 确定性回填为 83 resolved / 52 unresolved。Reader 与 ReAct case14 已用真实模型重录；静态四门全绿，
-全量 pytest 当前为 `764 passed`。Reader 真实基线为 105/105 个可考节点 exactly-once 覆盖、12 个候选、0 重复，
+全量 pytest 当前为 `768 passed`。Reader 真实基线为 105/105 个可考节点 exactly-once 覆盖、12 个候选、0 重复，
 单次请求 8715 prompt tokens。DS-S3 的生产筛选/citation 与 DS-S4 开放搜索 dogfood 仍待用户在独立终端执行；
 完成前不把整个文档结构 PRD 标为 done。DS-S5 KnowledgeRelation 继续关闭，等待 dogfood 证据后再决定是否实验。
 设计权威仍在 `docs/` 与 `CONTEXT.md`。
@@ -43,6 +43,7 @@ uv run ruff check .                          # lint（CI 不带 --fix）
 uv run ruff format .                         # 格式化（CI 用 --check）
 uv run pyright                               # 类型检查（strict 模式）
 uv run pre-commit install                    # 安装提交钩子（ruff + pyright）
+.venv/bin/grandquiz audit-doc --help         # 只读核验 DS-S3/4 dogfood trace + DB
 ```
 
 CI（`.github/workflows/ci.yml`）在 push / PR 上跑 lint + format check + typecheck + test，全绿才能合并。

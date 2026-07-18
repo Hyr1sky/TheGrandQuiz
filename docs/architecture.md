@@ -116,7 +116,7 @@ ingest Reader 按树的自然节点确定性覆盖材料，保留核心 workflow
 citation 解析、自然节点覆盖型 Reader，以及 current-only FTS5 / 大纲 / 搜索 / 展开 / 有界读取 / read-before-cite
 工具。revision/tree/items/evidence/FTS 共享原子提交；显式资源 scope 解析失败时零读取并 fail closed。parser、
 Reader 批次、搜索、读取和 citation 事件全部进入同一事件脊柱，kernel 仍保持领域无关。生产库已无损迁移到
-schema v11；两份受 prompt/tool schema 影响的真实 cassette 已重录，静态四门和 `764` 项 pytest 全绿。生产
+schema v11；两份受 prompt/tool schema 影响的真实 cassette 已重录，静态四门和 `768` 项 pytest 全绿。生产
 筛选/citation 与开放搜索 dogfood 仍是把 DS-S3–S4 从工程完成推进到产品验收的最后一步。
 
 ### 记忆系统

@@ -184,9 +184,11 @@ related、contradicts 关系。跨资源 CanonicalConcept 与 Learning Memory �
   确定性回填为 83 resolved / 52 unresolved，FTS 有 1551 current-only rows，完整性检查通过。
 - Reader 与 ReAct case14 已经 `.env` 真实模型重录，禁止手工改写的 Replay 执行指纹现已更新。真录暴露模型能
   稳定返回 node/start/quote、但不能可靠计算 `end_offset`；代码仅在 quote 从声明起点逐字匹配时，以 Python
-  字符长度确定性规范化右边界，不做模糊搜索或位置迁移。静态四门全绿，全量 pytest 为 `764 passed`。
+  字符长度确定性规范化右边界，不做模糊搜索或位置迁移。静态四门全绿，全量 pytest 为 `768 passed`。
 - Reader 同一材料旧/新基线已冻结：105/105 个可考节点 exactly-once 覆盖，12 个候选、0 重复，单次真实请求
   8715 prompt tokens，低于 32k Provider 门。case14 真录只调用一次 `start_quiz(count=3, question_type=选择题)`。
+- 新增只读 `grandquiz audit-doc`：交叉核对 learning/trace 两库，只有真实 `human_cli` 审批、Reader batch
+  exactly-once、预算/usage、current exact evidence，以及 selected search → bounded read → node citation 全部成立才通过。
 - DS-S5 暂不建表、不抽关系、不接生产消费路径。先完成至少一次真实筛选/citation 与开放搜索 dogfood；再预注册基线、
   数据集、相关性/grounding/token/latency 指标，交由 HITL 决定是否启动可删除实验。
 
