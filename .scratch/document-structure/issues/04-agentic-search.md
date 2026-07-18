@@ -35,6 +35,7 @@ LLM 只决定开放问题中“下一步看哪一节”，Document Structure mod
 - [x] quiz 既有 scope、选题、判卷、Learning Memory 与 Difficulty 行为无回归；kernel 仍不 import domain
 - [x] tool schema 进入 Replay 执行指纹，所有受影响 ReAct cassette 由真实模型重录或明确废弃
 - [x] 五门、全量 pytest、全部 Tier-1 eval 与 Agentic Search capstone 全绿
+- [ ] 至少一次对生产 current revision 的开放搜索 dogfood 完成渐进读取并返回可解析 citation，真实 trace 证明未倾倒全文
 
 ## Completion evidence（2026-07-17）
 
@@ -47,6 +48,25 @@ LLM 只决定开放问题中“下一步看哪一节”，Document Structure mod
   标记；成功/拒绝读取事件记录累计预算，node/item citation 拒绝记录结构化分类与安全 fingerprint。
 - case14 已用真实模型重录；模型只调用一次 `start_quiz`，参数为 all scope、3 道选择题。目标回放、全部 Tier-1
   eval、HTML report、静态四门与全量 pytest `764 passed`。
+
+## Dogfood evidence protocol
+
+在 DS-S3 dogfood 已提交的 current revision 上启动真实 `grandquiz react`，让 Agent 回答一个必须查材料原文的问题，
+并明确要求给出可回溯 citation。完成后从 `trace.db` 核对并把结果写回本 issue：
+
+- trace 至少包含 `learning.document_outline_viewed` 或 `learning.document_nodes_searched`，随后包含
+  `learning.document_node_read` 和 `learning.citation_resolved`；citation 事件必须是 `source=node_read`，且此前已有
+  覆盖该 span 的成功 read，不能用既有 KnowledgeItem citation 代替 Agentic Search 证据。
+- 搜索 scope 与用户请求一致；若指定材料，resource id 必须 exact match，不能出现 unresolved scope 后退回全库。
+- 读取事件的 `budget_used <= budget_limit`，读取字符数显著小于 revision 全文；不得把搜索 excerpt 当已读 citation。
+- 最终 citation 的 revision/node/span/quote 可在 `learning.db` 逐字解析，且指向当时的 current revision。
+
+终端入口：
+
+```bash
+.venv/bin/dotenv run -- .venv/bin/grandquiz react \
+  --db ~/.grandquiz/learning.db --materials-dir /path/to/materials
+```
 
 ## Blocked by
 

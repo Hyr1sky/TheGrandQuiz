@@ -54,6 +54,28 @@ KnowledgeItem 必须经过 DS-S2 的精确 evidence 校验，再进入现有 kee
 - 真实长文 ingest → HITL 筛选 → citation dogfood 尚未执行，故 issue 保持 `ready-for-human` 而非 done。
 - 静态四门、全部 eval 与全量 pytest `764 passed`；持久化真实 trace 仍由上述 dogfood 验收补齐。
 
+## Dogfood evidence protocol
+
+在独立终端对一份已授权长文执行真实 `grandquiz ingest`，由用户在审批界面实际保留/剔除候选；禁止用
+`ScriptedApprovalGate(keep-all)` 代替。验收只记录材料 SHA256、trace id 与聚合指标，不额外复制原文。
+
+完成后从 `learning.db` / `trace.db` 核对并把结果写回本 issue：
+
+- trace 同时含 `learning.document_parsed`、配对的 `learning.reader_batch.started/ended`、
+  `learning.citation_validated`、`approval.requested/decided` 和 `learning.revision_committed`；成功提交事件不得早于审批。
+- 所有 batch 的 `node_ids` 按顺序合并后，恰好等于 committed revision 的全部非 document/section 正文节点，且无重复。
+- 每批 `estimated_tokens <= token_budget`；每次 Reader `model.ended` 都有真实 usage，完整请求未超过 32k Provider 门。
+- `approval.decided` 的保留/剔除数量与 committed KnowledgeItem 数一致；DB 的 current revision、tree、items、evidence
+  可见，任一获批 evidence 都能逐字解析回声明 node/span。
+- 至少从一个获批 item 的 citation 返回 revision、section_path、精确位置、quote 与有界原文上下文。
+
+终端入口：
+
+```bash
+.venv/bin/dotenv run -- .venv/bin/grandquiz ingest \
+  --task "文档结构 dogfood" --db ~/.grandquiz/learning.db /path/to/authorized-long-document.md
+```
+
 ## Blocked by
 
 - [DS-S2](02-exact-evidence-citations.md)
