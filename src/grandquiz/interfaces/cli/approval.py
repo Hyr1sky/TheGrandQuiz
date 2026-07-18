@@ -42,6 +42,7 @@ class CliApprovalGate:
                 candidates,
                 [],
                 outcome="cancelled",
+                decision_source="human_cli",
                 emitter=emitter,
                 parent_span_id=parent_span_id,
             )
@@ -52,6 +53,7 @@ class CliApprovalGate:
             candidates,
             approved,
             outcome=outcome,
+            decision_source="human_cli",
             emitter=emitter,
             parent_span_id=parent_span_id,
         )

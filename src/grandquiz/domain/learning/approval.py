@@ -17,6 +17,7 @@ from grandquiz.kernel.events import EventEmitter
 APPROVAL_REQUESTED = "approval.requested"
 APPROVAL_DECIDED = "approval.decided"
 ApprovalOutcome = Literal["approved", "rejected_all", "cancelled"]
+ApprovalDecisionSource = Literal["scripted", "human_cli"]
 
 
 class ApprovalCancelled(RuntimeError):
@@ -42,6 +43,7 @@ def emit_approval_decided(
     approved: list[KnowledgeItem],
     *,
     outcome: ApprovalOutcome,
+    decision_source: ApprovalDecisionSource,
     emitter: EventEmitter,
     parent_span_id: str | None,
 ) -> None:
@@ -51,6 +53,7 @@ def emit_approval_decided(
         parent_span_id=parent_span_id,
         payload={
             "outcome": outcome,
+            "decision_source": decision_source,
             "candidate_count": len(candidates),
             "approved_count": len(approved),
             "approved_item_ids": [item.item_id for item in approved],
@@ -101,6 +104,7 @@ class ScriptedApprovalGate:
             candidates,
             approved,
             outcome="approved" if approved else "rejected_all",
+            decision_source="scripted",
             emitter=emitter,
             parent_span_id=parent_span_id,
         )

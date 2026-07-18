@@ -159,6 +159,8 @@ async def test_happy_path_only_approved_items_enter_store() -> None:
     # 审批预览事件确实含全部 3 个候选（审批发生在入库前）。
     extracted = next(e for e in events if e.type == LearningEvent.ITEMS_EXTRACTED)
     assert len(extracted.payload["candidates"]) == 3
+    decided = next(e for e in events if e.type == APPROVAL_DECIDED)
+    assert decided.payload["decision_source"] == "scripted"
     # 资源持久化了原始内容 + hash、status=read、仍不可信。
     resource = store.get_resource(result.resource_id)
     assert resource is not None

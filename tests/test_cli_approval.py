@@ -59,6 +59,7 @@ def test_cli_approval_displays_full_preview_and_keeps_selected_items() -> None:
     assert [event.type for event in events] == [APPROVAL_REQUESTED, APPROVAL_DECIDED]
     assert events[-1].payload == {
         "outcome": "approved",
+        "decision_source": "human_cli",
         "candidate_count": 2,
         "approved_count": 1,
         "approved_item_ids": ["item-1"],
@@ -92,6 +93,7 @@ def test_cli_approval_cancel_emits_decision_and_raises() -> None:
     assert events[-1].type == APPROVAL_DECIDED
     assert events[-1].payload == {
         "outcome": "cancelled",
+        "decision_source": "human_cli",
         "candidate_count": 1,
         "approved_count": 0,
         "approved_item_ids": [],

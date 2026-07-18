@@ -21,6 +21,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # 各命令的公开编排（re-export，见 __all__）+ 私有 CLI handler（main 分发调用）。
+from grandquiz.interfaces.cli.commands.audit import run_document_dogfood_audit_cli
 from grandquiz.interfaces.cli.commands.ingest import _run_ingest_cli, run_ingest
 from grandquiz.interfaces.cli.commands.quiz import _run_quiz_cli, run_quiz
 from grandquiz.interfaces.cli.commands.react import _run_react_cli, run_react
@@ -92,6 +93,20 @@ def _build_parser() -> argparse.ArgumentParser:
         "--out", type=Path, default=None, help="输出 HTML 文件（默认 trace-<id>.html）"
     )
 
+    p_audit = sub.add_parser("audit-doc", help="只读核验文档结构 dogfood 的 trace/DB 证据")
+    p_audit.add_argument("--ingest-trace", required=True, help="真实 HITL ingest 的 trace_id")
+    p_audit.add_argument("--search-trace", required=True, help="开放搜索/citation 的 trace_id")
+    p_audit.add_argument("--db", type=Path, default=_DEFAULT_DB, help="SQLite learning 库路径")
+    p_audit.add_argument(
+        "--trace-db", type=Path, default=None, help="独立 trace 库路径（默认同目录 trace.db）"
+    )
+    p_audit.add_argument(
+        "--max-read-fraction",
+        type=float,
+        default=0.25,
+        help="允许读取的 revision 正文比例上限（默认 0.25）",
+    )
+
     return parser
 
 
@@ -133,6 +148,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             db_path=args.db,
             trace_db_path=args.trace_db,
             out_path=args.out,
+        )
+    elif args.command == "audit-doc":
+        run_document_dogfood_audit_cli(
+            db_path=args.db,
+            trace_db_path=args.trace_db,
+            ingest_trace_id=args.ingest_trace,
+            search_trace_id=args.search_trace,
+            max_read_fraction=args.max_read_fraction,
         )
     else:
         parser.print_help()
