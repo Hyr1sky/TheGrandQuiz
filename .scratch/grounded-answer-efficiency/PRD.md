@@ -1,7 +1,7 @@
 # PRD：自然材料问答与 Agentic Search 成本收口
 
-Status: approved（2026-07-19；进入 AFK 实施）
-Triage: ready-for-agent
+Status: implementation complete（2026-07-19；真实 Replay 与五门通过，待生产材料 dogfood）
+Triage: ready-for-human
 Decision: 延伸 [ADR-0008](../../docs/adr/0008-revisioned-document-tree-and-grounded-knowledge-graph.md)，不重开 DS-S5
 
 ## Problem Statement
@@ -147,6 +147,18 @@ citation；用户必须知道并暗示底层工具链，产品能力才可靠出
 - 用高层问答 workflow 替代核心 quiz workflow、Reader ingest 或全部开放 ReAct 原子工具。
 - 通用对话历史压缩器；仅在组合 workflow 经真实 trace 仍不能达标时另立 issue。
 - 新 Web UI、语音入口或独立 ask CLI 命令。模块直接调用契约为这些入口留出空间，但本 PRD 不交付界面。
+
+## Implementation Checkpoint（2026-07-19）
+
+- `GroundedDocumentAnswer` 深模块、直接调用入口与 `answer_from_documents` ReAct 工具已交付；没有 schema migration，
+  既有六个原子文档工具继续保留。
+- 新 case15 用不含工具名的自然问题真实录制：1 个高层工具、3 次模型调用、10,282 tokens、最大 prompt 4,962，
+  1 次相关 leaf read、1 条 current exact citation；规则门验证读取不超过全文 25%。
+- 相对自然问题旧基线 8 model / 10 tool / 82,581 tokens / 0 citation，累计 tokens 下降约 87.5%，同时修复
+  grounding；因此不实施通用工具历史压缩器。
+- case14 因 prompt/tool schema 指纹变化由真实模型重录，仍只调用一次 `start_quiz(count=3)`；没有手改 cassette。
+- Ruff check/format、Pyright、import-linter 与全量 pytest `784 passed`。DS-S5 继续关闭。
+- GAS-S1–S3 已完成；GAS-S4 只剩用户独立终端的一次生产 current revision 自然问答 dogfood，完成前本 PRD 不标 done。
 
 ## Further Notes
 
