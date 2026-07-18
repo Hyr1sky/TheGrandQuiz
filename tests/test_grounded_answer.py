@@ -71,6 +71,35 @@ class _NoEvidenceProvider:
         )
 
 
+class _AmbiguousQuoteProvider:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        self.calls += 1
+        return Completion(
+            text=json.dumps(
+                {
+                    "answer": "事件出现了。",
+                    "citations": [{"node_key": "n0", "quote": "事件"}],
+                },
+                ensure_ascii=False,
+            ),
+            usage=Usage(prompt_tokens=80, completion_tokens=20),
+        )
+
+
+class _AlwaysOverBudgetCounter:
+    def count(self, text: str) -> int:
+        return 10_000
+
+
 async def test_grounded_answer_reads_only_candidates_and_returns_exact_citation(
     tmp_path: Path,
 ) -> None:
@@ -220,4 +249,78 @@ async def test_grounded_answer_returns_no_evidence_without_retrying_or_citing(
     assert LearningEvent.CITATION_REJECTED not in [event.type for event in events]
     assert events[-1].type == LearningEvent.GROUNDED_ANSWER_ENDED
     assert events[-1].parent_span_id == "tool-call"
+    store.close()
+
+
+async def test_grounded_answer_stops_before_model_when_prompt_budget_is_exhausted(
+    tmp_path: Path,
+) -> None:
+    content = "# Runtime\n\n## Events\n\n事件是信封。\n"
+    resource = LearningResource.create(url="https://example.com/prompt-budget").model_copy(
+        update={
+            "raw_content": content,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+            "status": "read",
+            "topic": "Runtime",
+        }
+    )
+    store = SqliteLearningStore(tmp_path / "learning.db")
+    store.replace_snapshot(resource, [])
+    provider = _GroundedAnswerProvider()
+    emitter = EventEmitter(EventSink(), ManualClock(), trace_id="prompt-budget")
+
+    result = await GroundedDocumentAnswer(
+        store=store,
+        provider=provider,
+        token_counter=_AlwaysOverBudgetCounter(),
+    ).answer(
+        GroundedAnswerRequest(
+            query="事件 信封",
+            resource_ids=[resource.resource_id],
+            max_prompt_tokens=256,
+        ),
+        emitter=emitter,
+    )
+
+    assert result.status == "budget_exhausted"
+    assert result.citations == []
+    assert result.metrics.model_calls == 0
+    assert result.metrics.max_prompt_tokens == 10_000
+    assert provider.calls == 0
+    store.close()
+
+
+async def test_grounded_answer_rejects_quote_repeated_in_the_read_window(tmp_path: Path) -> None:
+    content = "# Runtime\n\n## Events\n\n事件驱动 trace，事件也驱动 hook。\n"
+    resource = LearningResource.create(url="https://example.com/ambiguous-quote").model_copy(
+        update={
+            "raw_content": content,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+            "status": "read",
+            "topic": "Runtime",
+        }
+    )
+    store = SqliteLearningStore(tmp_path / "learning.db")
+    store.replace_snapshot(resource, [])
+    provider = _AmbiguousQuoteProvider()
+    events: list[AgentEvent] = []
+    sink = EventSink()
+    sink.subscribe(events.append)
+    emitter = EventEmitter(sink, ManualClock(), trace_id="ambiguous-quote")
+
+    result = await GroundedDocumentAnswer(store=store, provider=provider).answer(
+        GroundedAnswerRequest(
+            query="事件",
+            resource_ids=[resource.resource_id],
+            max_attempts=1,
+        ),
+        emitter=emitter,
+    )
+
+    assert result.status == "citation_rejected"
+    assert result.citations == []
+    assert result.metrics.model_calls == 1
+    assert provider.calls == 1
+    rejected = next(event for event in events if event.type == LearningEvent.CITATION_REJECTED)
+    assert rejected.payload["classification"] == "structured_answer_invalid"
     store.close()
