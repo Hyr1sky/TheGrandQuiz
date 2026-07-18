@@ -49,6 +49,15 @@ LLM 只决定开放问题中“下一步看哪一节”，Document Structure mod
 - case14 已用真实模型重录；模型只调用一次 `start_quiz`，参数为 all scope、3 道选择题。目标回放、全部 Tier-1
   eval、HTML report、静态四门与全量 pytest `768 passed`。
 
+## First production attempt（2026-07-18）
+
+- ReAct trace `f0eb5eb637244375b9fb44cb68544d02` 记录了用户真实问答：2 次 `start_quiz`，共 5 道题，题目、判卷、
+  concept state 和 follow-up 事件完整持久化。
+- 该会话没有 `learning.document_nodes_searched`、成功 `learning.document_node_read` 或
+  `learning.citation_resolved(source=node_read)`；`audit-doc` 的 search leg 因 search/read/node-citation 均为 0 而失败。
+- 这证明普通 KB 考核路径正常，但不能替代本 issue 的开放 Agentic Search 验收。下一次应明确要求“只查指定材料，
+  搜索某个原文问题，读取相关节点并给出可回溯引用”，再以新 trace id 联合审计。
+
 ## Dogfood evidence protocol
 
 在 DS-S3 dogfood 已提交的 current revision 上启动真实 `grandquiz react`，让 Agent 回答一个必须查材料原文的问题，

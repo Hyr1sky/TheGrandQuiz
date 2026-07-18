@@ -1,8 +1,8 @@
 # 修订化文档树与精确检索基座开发记录
 
-> 记录日期：2026-07-17
+> 记录日期：2026-07-18
 > 范围：ADR-0008 / `.scratch/document-structure/` 的 DS-S1–S4；DS-S5 仅做门控决策。
-> 当前边界：代码、生产 schema v11 迁移与两份真实模型 cassette 已完成，五门全绿；生产筛选/citation 与开放搜索 dogfood 待用户在独立终端执行。
+> 当前边界：代码、生产 schema v11 迁移与两份真实模型 cassette 已完成，五门全绿；生产 ingest/人工筛选已通过 trace 审计，开放搜索与最终 node citation dogfood 待用户在独立终端执行。
 
 ## 1. 为什么做这轮改造
 
@@ -178,3 +178,27 @@ scripted 审批。
 
 对生产库现有旧 ingest/search trace 实跑得到 `passed=false`，明确列出缺少 document/batch/human approval/
 node-read citation 等证据；命令前后 `learning.db` 与 `trace.db` 的 mtime/size 完全不变，验证只读边界。
+
+## 11. 首次生产 dogfood 与 Unicode locator 收口（2026-07-18）
+
+用户对授权的 `agent-memory.md` 执行了真实 CLI ingest，并在审批界面完成筛选。命令未显式指定 trace DB，因此
+本轮记录实际写入 `~/.grandquiz/trace.db`；仓库 `localtemp/trace.db` 最后修改于 2026-07-15，不含本轮事件。
+
+只读审计 ingest trace `2515ec1af79a4a0a9860993b4a35beb9` 得到：
+
+- resource `6128cc2fa1b9e850` / current revision `a37bdcb799210246`；
+- 172 个结构节点中的 141 个可考节点 exactly-once 覆盖，2 个 Reader 批次分别含 96 / 45 节点；
+- 批次估算 13920 / 6736 tokens，真实 prompt usage 11154 / 5776，均低于既有预算门；
+- 34 个候选经 `human_cli` 全部保留，34 条 current evidence 均逐字解析回 revision/node/span；
+- grounding → approval → commit 顺序、批次 span 配对与生产 current snapshot 全部通过。
+
+真机第一次尝试曾因模型给出正确、唯一的逐字 quote，却把 Unicode 左边界报错而以 `quote_mismatch` 失败。Reader
+现把 node + 唯一逐字 quote 视为足够的确定性 locator 输入：声明 start 不匹配时，只在该 quote 于声明节点内恰好
+出现一次才重算 start/end；零匹配或多匹配仍重试并 fail closed，不使用相似度或跨节点搜索。唯一/重复 quote 的
+回归测试已加入，提交为 `2d34cbd fix(learning): canonicalize unique reader quote offsets`；静态四门与全量 pytest
+`770 passed`。
+
+随后 ReAct trace `f0eb5eb637244375b9fb44cb68544d02` 确实完成了 2 轮、5 道题，证明题目、判卷、Learning
+Memory 更新链仍正常；但模型两次都调用 `start_quiz`，没有搜索、节点读取或 `source=node_read` citation 事件。
+因此这不是 DS-S4 的失败实现，而是尚未触发目标交互：下一次 dogfood 要明确要求只在该材料内查一个原文问题、
+读取相关节点并返回可回溯引用。DS-S4 与最终 citation 验收完成前，PRD 保持 in-progress，DS-S5 继续关闭。

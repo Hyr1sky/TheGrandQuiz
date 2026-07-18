@@ -1,6 +1,6 @@
 # DS-S3 — Reader 节点化覆盖型深读
 
-Status: ready-for-human（真实 Reader cassette 已完成；生产筛选/citation dogfood 待执行）
+Status: ready-for-human（生产 ingest/人工筛选已通过审计；最终 citation 与 DS-S4 联合验收）
 Type: AFK
 
 ## Parent
@@ -34,7 +34,7 @@ KnowledgeItem 必须经过 DS-S2 的精确 evidence 校验，再进入现有 kee
 - [x] 对同一长文比较旧临时 chunk 基线与节点批次：正文覆盖不下降、重复候选不增加、无请求超过 Provider 门
 - [x] fake provider 全覆盖；使用 `.env` 真实模型重录受影响 Reader cassette，不能手工伪造请求 key 或输出
 - [ ] 至少一份真实长文完成 ingest → 筛选 → current revision/tree/item/evidence 写入，并从 citation 返回原文
-- [ ] 五门与全部 eval 全绿；真实 trace 记录 token/成本和节点批次，不以提高预算掩盖超限
+- [x] 五门与全部 eval 全绿；真实 trace 记录 token/成本和节点批次，不以提高预算掩盖超限
 
 ## Completion evidence（2026-07-17）
 
@@ -54,6 +54,21 @@ KnowledgeItem 必须经过 DS-S2 的精确 evidence 校验，再进入现有 kee
 - 真实长文 ingest → HITL 筛选 → citation dogfood 尚未执行，故 issue 保持 `ready-for-human` 而非 done。
 - 静态四门、全部 eval 与全量 pytest `768 passed`；持久化真实 trace 仍由上述 dogfood 验收补齐。
 - `approval.decided.decision_source` 明确区分 `human_cli` 与 `scripted`；只读 auditor 会拒绝测试/录制脚本审批。
+
+## Production ingest evidence（2026-07-18）
+
+- 用户对授权材料执行真实 `grandquiz ingest` 并在 CLI 完成人工审批；实际 trace 位于默认
+  `~/.grandquiz/trace.db`，不是最后修改于 2026-07-15 的 `localtemp/trace.db`。
+- ingest trace `2515ec1af79a4a0a9860993b4a35beb9`、resource `6128cc2fa1b9e850`、current revision
+  `a37bdcb799210246` 经 `grandquiz audit-doc` 的 ingest leg 全部通过。
+- revision 含 172 个结构节点，其中 141 个可考正文节点 exactly-once 分入 2 个闭合批次（96 + 45）；估算分别为
+  13920 / 6736 tokens，均低于 16000 Reader 批次门。真实 prompt usage 分别为 11154 / 5776，低于 32k Provider 门。
+- Reader 产出并经 `human_cli` 审批保留 34 个 item；`learning.citation_validated` 先于审批与 revision commit，DB
+  current snapshot 的 34 条 evidence 均能逐字解析回声明 node/span。
+- 真实模型曾因唯一逐字 quote 的 Unicode 左边界误报触发 `quote_mismatch`。修复仅在声明节点内唯一逐字出现时
+  由代码规范化 start/end；零匹配或多匹配仍 fail closed。新增唯一/重复 quote 回归，五门与 `770 passed` 全绿。
+- 最终用户可见 node citation 尚未在开放搜索中触发；它与 DS-S4 的 selected search → bounded read → node citation
+  使用同一次后续 dogfood 联合验收，因此本 issue 仍不标 done。
 
 ## Dogfood evidence protocol
 

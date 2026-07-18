@@ -1,6 +1,6 @@
 # PRD：修订化文档树、精确溯源与渐进式 Agentic Search
 
-Status: in-progress（DS-S1–S2 done；DS-S3–S4 replay-complete / ready-for-human dogfood；DS-S5 deferred, eval-gated）
+Status: in-progress（DS-S1–S2 done；DS-S3 production-ingest-verified；DS-S4 ready-for-human dogfood；DS-S5 deferred, eval-gated）
 Triage: ready-for-human
 Decision: [ADR-0008](../../docs/adr/0008-revisioned-document-tree-and-grounded-knowledge-graph.md)
 
@@ -169,14 +169,14 @@ related、contradicts 关系。跨资源 CanonicalConcept 与 Learning Memory �
    - 确定性 parser、revision/tree schema、迁移回填、原子 current 切换和 store parity。
 2. **DS-S2 精确 Evidence 与可解析 citation**（done 2026-07-17）
    - evidence 正规化、locator 校验、旧 quote 回填审计、Reader node-local 输出和引用展示。
-3. **DS-S3 Reader 节点化覆盖型深读**（replay-complete 2026-07-17，真实筛选/citation dogfood 待执行）
+3. **DS-S3 Reader 节点化覆盖型深读**（production-ingest-verified 2026-07-18，最终 citation 与 DS-S4 联合验收）
    - 用自然节点批次替换临时 token chunk，保持预算、重试、审批、快照原子性和真实 cassette。
 4. **DS-S4 FTS5 + 渐进式 Agentic Search**（replay-complete 2026-07-17，开放搜索 dogfood 待执行）
    - 大纲、搜索、展开、读取工具，严格 scope、预算、trace 与检索 eval。
 5. **DS-S5 KnowledgeRelation eval 门控实验**（HITL，暂缓）
    - 类型化语义边、provenance、前置知识/多跳对照 eval；由证据决定保留，不推进全局概念归并。
 
-## Implementation checkpoint（2026-07-17）
+## Implementation checkpoint（2026-07-18）
 
 - DS-S1–S4 的本地代码、迁移、确定性测试和 Agentic Search capstone 已实现；静态四门全绿。
 - 生产 `learning.db` 已在 SHA256 可核对备份后从 schema v9 迁移到 v11。3 resources / 88 items /
@@ -191,6 +191,14 @@ related、contradicts 关系。跨资源 CanonicalConcept 与 Learning Memory �
   exactly-once、预算/usage、current exact evidence，以及 selected search → bounded read → node citation 全部成立才通过。
 - DS-S5 暂不建表、不抽关系、不接生产消费路径。先完成至少一次真实筛选/citation 与开放搜索 dogfood；再预注册基线、
   数据集、相关性/grounding/token/latency 指标，交由 HITL 决定是否启动可删除实验。
+- 用户对授权材料完成真实 CLI ingest。trace `2515ec1af79a4a0a9860993b4a35beb9` 通过 `audit-doc` ingest 全部门：
+  141 个可考节点 exactly-once 分入 2 批，最大真实 prompt 11154 tokens，人工保留 34 项，current revision
+  `a37bdcb799210246` 的 34 条 evidence 全部逐字可解。生产库现为 4 resources / 122 items / 4 revisions /
+  1723 nodes / 1723 FTS rows。
+- 同一 ReAct 会话 trace `f0eb5eb637244375b9fb44cb68544d02` 确实完成 2 轮、5 道题的持久考核，但只调用
+  `start_quiz`，没有 document search/read/node citation 事件；因此 DS-S4 仍待一次明确要求查原文并引用的 dogfood。
+- 真机还暴露模型会给出节点内唯一逐字 quote、但误报 Unicode 左边界。Reader 现在只在 quote 于声明节点内唯一
+  出现时确定性规范化 start/end；零匹配或多匹配继续 fail closed。静态四门与全量 pytest `770 passed`。
 
 ## Out of Scope
 

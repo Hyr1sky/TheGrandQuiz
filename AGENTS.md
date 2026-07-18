@@ -8,19 +8,20 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 作者本人是用户 #1，同时作为 AI/Agent 工程师方向的简历项目。核心循环是"考核"：学完材料 → 被拷问
 → 暴露薄弱概念 → 记入记忆 → 下次优先考薄弱点。
 
-**当前状态（2026-07-17）**：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel/`（events/runner/tools/
+**当前状态（2026-07-18）**：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel/`（events/runner/tools/
 hooks/context/clock/recovery/trace/db）+ `providers/`（OpenAI 兼容 + Record/Replay）+ `domain/learning/`
 （考核竖切 ingest→深读→出题→判卷→薄弱记账）+ `interfaces/cli/`（ingest/quiz/react/report/trace 子命令）
 + `evals/`（Tier-1 规则 harness）。**最小 ReAct 对话核（R1）与全局 KB 重构均已落地**（`grandquiz react`
 可真机跑：自然语言选材料 + 定题型的持久全局知识库考核）；上下文压缩、真实网络抓取、跨会话去重与
 自适应难度第一阶段也已完成。[稳定性加固](.scratch/stability-hardening/PRD.md) 已收口；其上的
 [修订化文档结构](.scratch/document-structure/PRD.md) DS-S1–S4 代码也已落地：不可变 revision/tree、精确
-Evidence、自然节点 Reader、FTS5 与有界 Agentic Search。生产 DB 已备份并迁移到 schema v11；三份真实材料的
-88 个 KnowledgeItem、学习状态与 item 身份无损保留，形成 3 revisions / 1551 nodes / 1551 FTS rows；135 条
-evidence 确定性回填为 83 resolved / 52 unresolved。Reader 与 ReAct case14 已用真实模型重录；静态四门全绿，
-全量 pytest 当前为 `768 passed`。Reader 真实基线为 105/105 个可考节点 exactly-once 覆盖、12 个候选、0 重复，
-单次请求 8715 prompt tokens。DS-S3 的生产筛选/citation 与 DS-S4 开放搜索 dogfood 仍待用户在独立终端执行；
-完成前不把整个文档结构 PRD 标为 done。DS-S5 KnowledgeRelation 继续关闭，等待 dogfood 证据后再决定是否实验。
+Evidence、自然节点 Reader、FTS5 与有界 Agentic Search。生产 DB 已备份并迁移到 schema v11；新增真实材料后现为
+4 resources / 122 items / 4 revisions / 1723 nodes / 1723 FTS rows / 169 evidence（117 resolved / 52 unresolved）。
+Reader 与 ReAct case14 已用真实模型重录；静态四门全绿，全量 pytest 当前为 `770 passed`。Reader 真实基线为
+105/105 个可考节点 exactly-once 覆盖、12 个候选、0 重复、单次请求 8715 prompt tokens。DS-S3 的生产 ingest/
+人工筛选已由 trace `2515ec1af79a4a0a9860993b4a35beb9` 通过只读审计（141 个可考节点、2 批、34 条 exact
+evidence）；DS-S4 开放搜索/read-before-cite dogfood 尚未发生，普通 `start_quiz` trace 不能替代。完成前不把
+整个文档结构 PRD 标为 done。DS-S5 KnowledgeRelation 继续关闭，等待搜索 dogfood 证据后再决定是否实验。
 设计权威仍在 `docs/` 与 `CONTEXT.md`。
 **动手写代码前按序读**：
 
