@@ -4,9 +4,10 @@
 case12 empty_scope / case13 题型 honor 三条全局 KB 探针 + 两条 react 层用例：case14
 大批量出题不能编造、case15 自然材料问答必须有界检索并精确引用。）
 
-**只兑现 Tier-1 规则断言**：``graders/`` 里按 case id 键控的确定性 Python scorer（读事件流 /
-result / 记忆 / 存储 / span 树五族）。**Tier-2 LLM judge 仍待建（scoped-out）**——本 harness 当前
-不含任何 LLM 评审槽，别把它读成已双 Tier。
+Tier-1 是 ``graders/`` 里按 case id 键控的确定性 Python scorer（读事件流 / result / 记忆 /
+存储 / span 树五族）。Tier-2 是 eval 层校准优先的 ``QualityJudge``：首版只给 case15 声明
+``grounded_answer`` profile，默认从真实 cassette 离线 Replay，独立统计 judge trace 与成本；其余
+14 条用例继续只跑 Tier-1。
 
 借 inspect_ai 的 Task / Solver / Scorer / 报告**词汇与形状**（reference-map.md:48），但保留手写
 runtime、不引入 inspect_ai 依赖：
@@ -17,7 +18,7 @@ runtime、不引入 inspect_ai 依赖：
   canned JSON，独立于 cassette、不触网）；``kind: react``（R2 新增）驱动 ``Runner.run_agent_turn``
   ——覆盖 ReAct 决策层这个 ingest/assess 直调天然测不到的盲区，**必须**用真录 cassette（回放，不
   烧 token，但录制时是真机行为，非假 provider 能替代）。+ runner + 报告（per-case pass/fail、
-  token 成本列、prompt 版本 name@digest）。
+  execution/judge token 分列、prompt 版本 name@digest）。
 
 ``ReplayMiss`` 等 provider 基础设施异常在 runner 里**硬失败**，绝不静默通过。
 """

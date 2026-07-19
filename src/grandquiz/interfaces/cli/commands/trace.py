@@ -72,7 +72,7 @@ def export_trace_html(
 
 
 def _run_report_cli(*, out: Path | None) -> None:
-    # 报告不碰 provider / learning 库：全确定性假件驱动 harness，纯导出 HTML。
+    # 报告不碰真实 provider / learning 库：Tier-1 假件 + Tier-2 cassette 离线 Replay。
     from grandquiz.evals.harness import export_html_report
 
     console = Console()

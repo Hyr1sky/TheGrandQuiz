@@ -52,6 +52,8 @@ from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.domain.learning.tools import register_learning_tools
+from grandquiz.evals.quality import QualityEvaluation, QualityRequest
+from grandquiz.evals.quality_calibration import CalibratedQualitySuite
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.context import ContextBuilder, Partition
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
@@ -61,6 +63,8 @@ from grandquiz.kernel.tools import ToolRegistry
 from grandquiz.kernel.trace import Span, TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
 from grandquiz.providers.replay import Cassette, ReplayProvider
+
+_QUALITY_CASSETTE = Path("tests/fixtures/eval_quality_grounded_answer.cassette.json")
 
 # --- 规范确定性装配（test_assessment / test_ingest 的 _harness / _summ 权威版本）-------------
 
@@ -440,6 +444,14 @@ class PresetVerdict:
     verdict: str
 
 
+@dataclass(frozen=True)
+class QualityProfile:
+    """一个用例显式选择的预注册 Tier-2 rubric 与最小参考证据。"""
+
+    rubric_id: str
+    reference: str
+
+
 def _empty_presets() -> list[PresetVerdict]:
     # 显式类型工厂（照 trace.Span._empty_children）：裸 default_factory=list 会被推成 Unknown。
     return []
@@ -495,6 +507,7 @@ class Case:
     user_messages: list[str] = field(default_factory=_empty_strs)
     cassette: str | None = None
     react_fixture: Literal["quiz", "grounded"] = "quiz"
+    quality: QualityProfile | None = None
 
 
 def _parse_case(raw: Any) -> Case:
@@ -539,6 +552,18 @@ def _parse_case(raw: Any) -> Case:
         react_fixture: Literal["quiz", "grounded"] = (
             "grounded" if raw_fixture == "grounded" else "quiz"
         )
+        raw_quality: Any = setup.get("quality")
+        quality_mapping = (
+            cast("Mapping[str, Any]", raw_quality) if isinstance(raw_quality, Mapping) else None
+        )
+        quality = (
+            QualityProfile(
+                rubric_id=str(quality_mapping["rubric_id"]),
+                reference=str(quality_mapping["reference"]),
+            )
+            if quality_mapping is not None
+            else None
+        )
         return Case(
             id=case_id,
             kind="react",
@@ -547,6 +572,7 @@ def _parse_case(raw: Any) -> Case:
             user_messages=[str(m) for m in setup.get("user_messages", [])],
             cassette=str(setup["cassette"]),
             react_fixture=react_fixture,
+            quality=quality,
         )
     src: Literal["ok", "boom"] = "boom" if str(setup.get("source", "ok")) == "boom" else "ok"
     return Case(
@@ -825,8 +851,9 @@ async def _solve_react(case: Case, provider_override: Provider | None) -> SolveR
         max_iterations=8,
         context_builder=context_builder,
     )
+    final_outputs: list[str] = []
     for message in case.user_messages:
-        await runner.run_agent_turn(message)
+        final_outputs.append(await runner.run_agent_turn(message))
     spans = trace.span_tree("run")
     trace.close()
     return SolveResult(
@@ -840,6 +867,7 @@ async def _solve_react(case: Case, provider_override: Provider | None) -> SolveR
         roles=[],
         context={
             "resource_id": grounded_resource_id,
+            "final_outputs": final_outputs,
             "full_document_chars": (
                 len(GROUNDED_REACT_CONTENT) if grounded_resource_id is not None else 0
             ),
@@ -874,6 +902,24 @@ class CaseReport:
     total_tokens: int
     prompt_versions: list[str]
     error: str | None = None
+    rule_passed: bool = False
+    quality_passed: bool | None = None
+    quality_rubric_id: str | None = None
+    judge_tokens: int = 0
+    quality_evaluation: QualityEvaluation | None = None
+    subject_events: list[AgentEvent] = field(default_factory=lambda: list[AgentEvent]())
+    subject_spans: list[Span] = field(default_factory=lambda: list[Span]())
+    quality_events: list[AgentEvent] = field(default_factory=lambda: list[AgentEvent]())
+    quality_spans: list[Span] = field(default_factory=lambda: list[Span]())
+
+    @property
+    def execution_tokens(self) -> int:
+        """兼容旧 ``total_tokens`` 名称，同时明确它只属于被测 workflow。"""
+        return self.total_tokens
+
+    @property
+    def judge_prompt_versions(self) -> list[str]:
+        return _prompt_versions(self.quality_events)
 
 
 def _sum_tokens(events: list[AgentEvent]) -> int:
@@ -902,7 +948,13 @@ def _prompt_versions(events: list[AgentEvent]) -> list[str]:
     return versions
 
 
-async def run_case(case: Case, *, provider_override: Provider | None = None) -> CaseReport:
+async def run_case(
+    case: Case,
+    *,
+    provider_override: Provider | None = None,
+    quality_suite: CalibratedQualitySuite | None = None,
+    quality_unavailable_reason: str | None = None,
+) -> CaseReport:
     """跑一个用例：校期望事件序列（YAML）+ 按 id 的规则 scorer（四族结构断言）→ CaseReport。
 
     solve 抛异常（``ReplayMiss`` / provider 基础设施错误 / bug）→ **硬失败**：``passed=False`` +
@@ -921,6 +973,8 @@ async def run_case(case: Case, *, provider_override: Provider | None = None) -> 
             total_tokens=0,
             prompt_versions=[],
             error=repr(exc),
+            rule_passed=False,
+            quality_rubric_id=case.quality.rubric_id if case.quality is not None else None,
         )
 
     failures: list[str] = []
@@ -932,32 +986,110 @@ async def run_case(case: Case, *, provider_override: Provider | None = None) -> 
         failures.append(f"缺少 grader：{case.id}")
     else:
         failures.extend(grader(result))
+    rule_passed = not failures
+    quality_evaluation: QualityEvaluation | None = None
+    quality_passed: bool | None = None
+    quality_events: list[AgentEvent] = []
+    quality_spans: list[Span] = []
+    if case.quality is not None and quality_suite is None:
+        suffix = f"：{quality_unavailable_reason}" if quality_unavailable_reason else ""
+        failures.append(f"Tier-2 缺少已校准 QualitySuite，不能退化为仅运行规则门{suffix}")
+        quality_passed = False
+    elif case.quality is not None and quality_suite is not None:
+        final_outputs = cast("list[str]", result.context.get("final_outputs", []))
+        if not case.user_messages or not final_outputs:
+            failures.append("Tier-2 缺少用户问题或最终用户可见回答")
+            quality_passed = False
+        else:
+            quality_emitter, quality_events, quality_trace = build_event_harness()
+            try:
+                quality_evaluation = await quality_suite.evaluate(
+                    QualityRequest(
+                        rubric_id=case.quality.rubric_id,
+                        question=case.user_messages[-1],
+                        candidate=final_outputs[-1],
+                        reference=case.quality.reference,
+                    ),
+                    emitter=quality_emitter,
+                )
+            except Exception as exc:
+                failures.append(f"Tier-2 judge 抛异常（质量硬失败）：{exc!r}")
+                quality_passed = False
+            finally:
+                quality_spans = quality_trace.span_tree("run")
+                quality_trace.close()
+            if quality_evaluation is not None:
+                quality_passed = quality_evaluation.passed
+            if quality_evaluation is not None and not quality_passed:
+                failures.extend(
+                    f"Tier-2 {criterion.criterion_id}={criterion.score}：{criterion.rationale}"
+                    for criterion in quality_evaluation.criteria
+                    if criterion.score < 3
+                )
     return CaseReport(
         case_id=case.id,
         kind=case.kind,
-        passed=not failures,
+        passed=rule_passed and quality_passed is not False,
         failures=failures,
         total_tokens=_sum_tokens(result.events),
         prompt_versions=_prompt_versions(result.events),
+        rule_passed=rule_passed,
+        quality_passed=quality_passed,
+        quality_rubric_id=case.quality.rubric_id if case.quality is not None else None,
+        judge_tokens=(
+            quality_evaluation.usage.total_tokens if quality_evaluation is not None else 0
+        ),
+        quality_evaluation=quality_evaluation,
+        subject_events=result.events,
+        subject_spans=result.spans,
+        quality_events=quality_events,
+        quality_spans=quality_spans,
     )
 
 
-async def run_all() -> list[CaseReport]:
-    """跑全部用例，返回按 id 排序的报告列表。"""
-    return [await run_case(case) for case in load_cases()]
+def _load_quality_cassette() -> ReplayProvider:
+    raw: dict[str, dict[str, str]] = json.loads(_QUALITY_CASSETTE.read_text(encoding="utf-8"))
+    model_for_role = cast(
+        "dict[Role, str]", {entry["role"]: entry["model"] for entry in raw.values()}
+    )
+    return ReplayProvider(Cassette.load(_QUALITY_CASSETTE), model_for_role)
+
+
+async def run_all(*, quality_provider_override: Provider | None = None) -> list[CaseReport]:
+    """跑全部用例；Tier-2 先校准一次，默认仅从固定 cassette 离线回放。"""
+    suite: CalibratedQualitySuite | None = None
+    unavailable_reason: str | None = None
+    try:
+        provider = quality_provider_override or _load_quality_cassette()
+        suite = await CalibratedQualitySuite.create(provider=provider)
+    except Exception as exc:
+        unavailable_reason = repr(exc)
+    return [
+        await run_case(
+            case,
+            quality_suite=suite,
+            quality_unavailable_reason=unavailable_reason,
+        )
+        for case in load_cases()
+    ]
 
 
 def render_report(reports: list[CaseReport]) -> str:
-    """把报告渲染成人读文本表：case / kind / pass / tokens / prompts，附失败明细。"""
+    """把报告渲染成人读文本表：双 Tier verdict、分列成本与失败明细。"""
     lines = [
         f"Eval 报告：{sum(r.passed for r in reports)}/{len(reports)} 通过",
-        "-" * 72,
-        f"{'case':<8}{'kind':<8}{'pass':<6}{'tokens':<8}prompts",
+        "-" * 88,
+        f"{'case':<8}{'kind':<8}{'all':<6}{'rule':<6}{'quality':<9}{'exec':<8}{'judge':<8}rubric",
     ]
     for r in reports:
         mark = "PASS" if r.passed else "FAIL"
-        prompts = ", ".join(r.prompt_versions) if r.prompt_versions else "-"
-        lines.append(f"{r.case_id:<8}{r.kind:<8}{mark:<6}{r.total_tokens:<8}{prompts}")
+        rule = "PASS" if r.rule_passed else "FAIL"
+        quality = "N/A" if r.quality_passed is None else "PASS" if r.quality_passed else "FAIL"
+        rubric = r.quality_rubric_id or "-"
+        lines.append(
+            f"{r.case_id:<8}{r.kind:<8}{mark:<6}{rule:<6}{quality:<9}"
+            f"{r.execution_tokens:<8}{r.judge_tokens:<8}{rubric}"
+        )
         for failure in r.failures:
             lines.append(f"    ✗ {failure}")
     return "\n".join(lines)
@@ -997,6 +1129,10 @@ h1 { font-size: 1.2rem; margin: 0 0 0.75rem; }
   font: inherit; padding: 0.3rem 0.6rem; width: 100%; max-width: 22rem;
   border: 1px solid #ccc; border-radius: 4px; background: inherit; color: inherit;
 }
+.controls select {
+  font: inherit; padding: 0.3rem 0.6rem; margin-left: 0.5rem;
+  border: 1px solid #ccc; border-radius: 4px; background: inherit; color: inherit;
+}
 table.cases { border-collapse: collapse; width: 100%; overflow-x: auto; display: block; }
 table.cases th, table.cases td {
   text-align: left; padding: 0.3rem 0.7rem; border-bottom: 1px solid #e2e2e2; vertical-align: top;
@@ -1018,6 +1154,7 @@ a { color: inherit; }
   .summary .stat.ok .n { color: #5fbf5f; }
   .summary .stat.bad .n { color: #ff6b6b; }
   .controls input[type="search"] { border-color: #3a3f47; }
+  .controls select { border-color: #3a3f47; }
   table.cases th, table.cases td { border-color: #262a31; }
   table.cases th[data-sort-key]:hover { color: #eee; }
   td.pass { color: #5fbf5f; }
@@ -1035,6 +1172,7 @@ _REPORT_INDEX_JS = """
   var tbody = table.tBodies[0];
   var headers = Array.prototype.slice.call(table.querySelectorAll("th[data-sort-key]"));
   var filterInput = document.getElementById("case-filter");
+  var statusFilter = document.getElementById("status-filter");
   var state = { key: null, dir: 1 };
 
   function rowGroups() {
@@ -1081,16 +1219,21 @@ _REPORT_INDEX_JS = """
     h.addEventListener("click", function () { applySort(h.dataset.sortKey); });
   });
 
-  if (filterInput) {
-    filterInput.addEventListener("input", function () {
-      var q = filterInput.value.trim().toLowerCase();
-      rowGroups().forEach(function (g) {
-        var haystack = (g.key.dataset.id + " " + g.key.dataset.kind).toLowerCase();
-        var visible = q === "" || haystack.indexOf(q) !== -1;
-        g.rows.forEach(function (r) { r.classList.toggle("hidden", !visible); });
-      });
+  function applyFilters() {
+    var q = filterInput ? filterInput.value.trim().toLowerCase() : "";
+    var status = statusFilter ? statusFilter.value : "all";
+    rowGroups().forEach(function (g) {
+      var haystack = (g.key.dataset.id + " " + g.key.dataset.kind).toLowerCase();
+      var textMatch = q === "" || haystack.indexOf(q) !== -1;
+      var statusMatch = status === "all" ||
+        (status === "pass" && g.key.dataset.pass === "1") ||
+        (status === "rule-fail" && g.key.dataset.rule === "fail") ||
+        (status === "quality-fail" && g.key.dataset.quality === "fail");
+      g.rows.forEach(function (r) { r.classList.toggle("hidden", !(textMatch && statusMatch)); });
     });
   }
+  if (filterInput) filterInput.addEventListener("input", applyFilters);
+  if (statusFilter) statusFilter.addEventListener("change", applyFilters);
 })();
 """
 
@@ -1102,7 +1245,8 @@ def _render_summary(reports: list[CaseReport]) -> str:
     """
     passed = sum(r.passed for r in reports)
     failed = len(reports) - passed
-    total_tokens = sum(r.total_tokens for r in reports)
+    execution_tokens = sum(r.execution_tokens for r in reports)
+    judge_tokens = sum(r.judge_tokens for r in reports)
     failed_cls = "bad" if failed else "ok"
     return (
         '<div class="summary">'
@@ -1111,7 +1255,9 @@ def _render_summary(reports: list[CaseReport]) -> str:
         f'<div class="stat {failed_cls}"><span class="n">'
         f'{failed}</span><span class="l">failed</span></div>'
         '<div class="stat"><span class="n">'
-        f'{total_tokens}</span><span class="l">total tokens</span></div>'
+        f'{execution_tokens}</span><span class="l">execution tokens</span></div>'
+        '<div class="stat"><span class="n">'
+        f'{judge_tokens}</span><span class="l">judge tokens</span></div>'
         "</div>"
     )
 
@@ -1130,23 +1276,41 @@ def _render_report_index(reports: list[CaseReport]) -> str:
     for r in reports:
         mark = "PASS" if r.passed else "FAIL"
         cls = "pass" if r.passed else "fail"
+        rule_mark = "PASS" if r.rule_passed else "FAIL"
+        rule_cls = "pass" if r.rule_passed else "fail"
+        if r.quality_passed is None:
+            quality_mark = "N/A"
+            quality_cls = ""
+            quality_data = "na"
+        else:
+            quality_mark = "PASS" if r.quality_passed else "FAIL"
+            quality_cls = "pass" if r.quality_passed else "fail"
+            quality_data = "pass" if r.quality_passed else "fail"
+        rubric = r.quality_rubric_id or "—"
         prompts = ", ".join(r.prompt_versions) if r.prompt_versions else "—"
+        judge_prompts = ", ".join(r.judge_prompt_versions) if r.judge_prompt_versions else "—"
         href = html.escape(f"{r.case_id}.html", quote=True)
         case_id_attr = html.escape(r.case_id, quote=True)
         kind_attr = html.escape(r.kind, quote=True)
         rows.append(
             '<tr class="case-row" '
             f'data-id="{case_id_attr}" data-kind="{kind_attr}" '
-            f'data-pass="{1 if r.passed else 0}" data-tokens="{r.total_tokens}">'
+            f'data-pass="{1 if r.passed else 0}" data-rule="{rule_cls}" '
+            f'data-quality="{quality_data}" data-tokens="{r.total_tokens}">'
             f'<td><a href="{href}">{html.escape(r.case_id)}</a></td>'
             f"<td>{html.escape(r.kind)}</td>"
             f'<td class="{cls}">{mark}</td>'
+            f'<td class="{rule_cls}">{rule_mark}</td>'
+            f'<td class="{quality_cls}">{quality_mark}</td>'
             f"<td>{r.total_tokens}</td>"
+            f"<td>{r.judge_tokens}</td>"
+            f"<td>{html.escape(rubric)}</td>"
             f"<td>{html.escape(prompts)}</td>"
+            f"<td>{html.escape(judge_prompts)}</td>"
             "</tr>"
         )
         for failure in r.failures:  # 失败明细挂在该行下方（红字）；同 data-id 供 JS 分组整体移动
-            cell = f'<td colspan="4">✗ {html.escape(failure)}</td>'
+            cell = f'<td colspan="9">✗ {html.escape(failure)}</td>'
             rows.append(f'<tr class="fail-detail" data-id="{case_id_attr}"><td></td>{cell}</tr>')
     body = (
         f"<h1>Eval 报告 · {passed}/{len(reports)} 通过</h1>"
@@ -1154,13 +1318,24 @@ def _render_report_index(reports: list[CaseReport]) -> str:
         '<div class="controls">'
         '<input type="search" id="case-filter" placeholder="筛选 case id / kind…" '
         'aria-label="筛选用例">'
+        '<select id="status-filter" aria-label="筛选状态">'
+        '<option value="all">全部状态</option>'
+        '<option value="pass">全部通过</option>'
+        '<option value="rule-fail">Rule 失败</option>'
+        '<option value="quality-fail">Quality 失败</option>'
+        "</select>"
         "</div>"
         '<table class="cases"><thead><tr>'
         '<th data-sort-key="id">case</th>'
         '<th data-sort-key="kind">kind</th>'
         '<th data-sort-key="pass">pass</th>'
-        '<th data-sort-key="tokens">tokens</th>'
-        "<th>prompts</th>"
+        "<th>Rule</th>"
+        "<th>Quality</th>"
+        '<th data-sort-key="tokens">execution tokens</th>'
+        "<th>judge tokens</th>"
+        "<th>rubric</th>"
+        "<th>subject prompts</th>"
+        "<th>judge prompts</th>"
         "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
     )
     return (
@@ -1175,17 +1350,44 @@ def _render_report_index(reports: list[CaseReport]) -> str:
     )
 
 
-async def _solve_events_spans(case: Case) -> tuple[list[AgentEvent], list[Span]]:
-    """取某用例的 events + span 森林（供 render_trace_html）；solve 抛异常 → 空（详情页仍生成）。
+def _quality_detail_section(report: CaseReport) -> str:
+    """把结构化质量判定附到 subject 详情；judge 事件树仍交给 trace renderer 单独渲染。"""
+    evaluation = report.quality_evaluation
+    if evaluation is None:
+        return ""
+    rows: list[str] = []
+    for criterion in evaluation.criteria:
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(criterion.criterion_id)}</td>"
+            f"<td>{criterion.score}</td>"
+            f"<td>{html.escape(criterion.rationale)}</td>"
+            f"<td>{html.escape(criterion.candidate_evidence)}</td>"
+            f"<td>{html.escape(criterion.reference_evidence)}</td>"
+            "</tr>"
+        )
+    return (
+        '<section class="quality-evaluation">'
+        "<h2>Tier-2 Quality</h2>"
+        '<div class="meta">'
+        f'<span class="kv"><span class="k">rubric</span> '
+        f'<span class="v">{html.escape(evaluation.rubric_id)}</span></span>'
+        f'<span class="kv"><span class="k">prompt</span> '
+        f'<span class="v">{html.escape(evaluation.prompt_version)}</span></span>'
+        f'<span class="kv"><span class="k">judge tokens</span> '
+        f'<span class="v">{evaluation.usage.total_tokens}</span></span>'
+        '</div><table class="events"><thead><tr>'
+        "<th>criterion</th><th>score</th><th>rationale</th>"
+        "<th>candidate evidence</th><th>reference evidence</th>"
+        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+        f"<p>{html.escape(evaluation.overall_rationale)}</p>"
+        f'<p><a href="{html.escape(report.case_id, quote=True)}-quality.html">'
+        "查看独立 judge trace</a></p></section>"
+    )
 
-    与 ``run_case`` 各自独立 solve（run_case 的 pass/fail 判定保持权威、一行不改）；harness 全确定性
-    且快，重复 solve 可忽略。硬失败用例（solve 冒泡）不该炸掉整份报告——降级为无 span 的详情页。
-    """
-    try:
-        solved = await solve(case)
-    except Exception:  # 报告生成对任何 solve 异常降级，绝不中断全批导出
-        return [], []
-    return solved.events, solved.spans
+
+def _append_before_body(document: str, fragment: str) -> str:
+    return document.replace("</body>", f"{fragment}</body>", 1)
 
 
 async def export_html_report(out_dir: Path) -> Path:
@@ -1196,21 +1398,49 @@ async def export_html_report(out_dir: Path) -> Path:
     事件流）。各文件相对链接、各自自包含、零外部请求。返回索引页路径。
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    reports: list[CaseReport] = []
-    for case in load_cases():
-        report = await run_case(case)  # 权威 pass/fail（不改）
-        events, spans = await _solve_events_spans(case)
+    reports = await run_all()
+    for report in reports:
         meta: dict[str, Any] = {
             "case_id": report.case_id,
             "kind": report.kind,
             "verdict": "PASS" if report.passed else "FAIL",
-            "total_tokens": report.total_tokens,
+            "rule": "PASS" if report.rule_passed else "FAIL",
+            "quality": (
+                "N/A"
+                if report.quality_passed is None
+                else "PASS"
+                if report.quality_passed
+                else "FAIL"
+            ),
+            "execution_tokens": report.total_tokens,
+            "judge_tokens": report.judge_tokens,
+            "rubric": report.quality_rubric_id or "—",
             "prompt_versions": ", ".join(report.prompt_versions) if report.prompt_versions else "—",
-            "event_count": len(events),
+            "event_count": len(report.subject_events),
         }
-        detail = render_trace_html(events, spans, meta=meta, title=f"用例 {report.case_id}")
+        detail = render_trace_html(
+            report.subject_events,
+            report.subject_spans,
+            meta=meta,
+            title=f"用例 {report.case_id}",
+        )
+        detail = _append_before_body(detail, _quality_detail_section(report))
         (out_dir / f"{report.case_id}.html").write_text(detail, encoding="utf-8")
-        reports.append(report)
+        if report.quality_events:
+            quality_trace = render_trace_html(
+                report.quality_events,
+                report.quality_spans,
+                meta={
+                    "case_id": report.case_id,
+                    "rubric": (report.quality_rubric_id or "—"),
+                    "judge_tokens": report.judge_tokens,
+                },
+                title=f"用例 {report.case_id} · Quality Judge",
+            )
+            (out_dir / f"{report.case_id}-quality.html").write_text(
+                quality_trace,
+                encoding="utf-8",
+            )
     index_path = out_dir / "index.html"
     index_path.write_text(_render_report_index(reports), encoding="utf-8")
     return index_path

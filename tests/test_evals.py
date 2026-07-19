@@ -107,6 +107,33 @@ async def test_case14_react_layer_calls_start_quiz_with_matching_count() -> None
     assert len(asked) == 3  # 真跑了 3 轮，不是编的
 
 
+async def test_case15_solver_exposes_the_final_user_visible_answer() -> None:
+    case15 = next(case for case in load_cases() if case.id == "case15")
+
+    result = await solve(case15)
+
+    final_outputs = result.context["final_outputs"]
+    assert len(final_outputs) == 1
+    assert isinstance(final_outputs[0], str)
+    assert final_outputs[0].strip()
+    final_model_output = [
+        event.payload["output"]
+        for event in result.events
+        if event.type == EventType.MODEL_ENDED and event.payload.get("ok") is True
+    ][-1]
+    assert final_outputs[0] == final_model_output
+
+
+def test_only_case15_declares_a_tier_two_quality_profile() -> None:
+    cases = load_cases()
+    case15 = next(case for case in cases if case.id == "case15")
+
+    assert case15.quality is not None
+    assert case15.quality.rubric_id == "grounded_answer"
+    assert case15.quality.reference
+    assert all(case.quality is None for case in cases if case.id != "case15")
+
+
 def _fake_case14() -> Case:
     return Case(
         id="case14",

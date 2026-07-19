@@ -37,6 +37,7 @@ from grandquiz.interfaces.cli.composition import _DEFAULT_DB, _DEFAULT_ROUNDS, _
 # 保持 ``grandquiz.interfaces.cli.app`` 的历史导入契约稳定（re-export 公开编排 + _file_source）。
 __all__ = [
     "_file_source",
+    "build_parser",
     "export_trace_html",
     "main",
     "run_ingest",
@@ -45,7 +46,7 @@ __all__ = [
 ]
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="grandquiz", description="考核驱动的个人学习工具")
     sub = parser.add_subparsers(dest="command")
 
@@ -76,12 +77,36 @@ def _build_parser() -> argparse.ArgumentParser:
         help="本地材料目录（ingest 的 file://local/<文件名> 相对此目录解析，默认当前目录）",
     )
 
-    p_report = sub.add_parser("report", help="跑 eval harness → 导出自包含 HTML 报告")
+    p_report = sub.add_parser(
+        "report",
+        help="跑 eval harness → 导出自包含 HTML 报告",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""示例：
+  grandquiz report
+  open ~/.grandquiz/eval-report/index.html
+  grandquiz report --out ./eval-report && open ./eval-report/index.html
+
+默认只使用 Replay cassette，零网络、不会从 .env 隐式调用真实 judge。
+默认首页：~/.grandquiz/eval-report/index.html
+""",
+    )
     p_report.add_argument(
         "--out", type=Path, default=None, help="报告输出目录（默认 ~/.grandquiz/eval-report）"
     )
 
-    p_trace = sub.add_parser("trace", help="按 trace_id 从 trace 库导出自包含 HTML")
+    p_trace = sub.add_parser(
+        "trace",
+        help="按 trace_id 从 trace 库导出自包含 HTML",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""示例：
+  grandquiz trace <trace_id> --db ~/.grandquiz/learning.db
+  grandquiz trace <trace_id> --trace-db ~/.grandquiz/trace.db
+  open ~/.grandquiz/trace-<trace_id>.html
+
+默认 trace DB：learning.db 同目录的 trace.db
+默认输出：trace DB 同目录的 trace-<trace_id>.html
+""",
+    )
     p_trace.add_argument("trace_id", help="要导出的会话 trace_id（会话结束时打印过）")
     p_trace.add_argument(
         "--db", type=Path, default=_DEFAULT_DB, help="learning 库路径（派生默认 trace 库位置）"
@@ -90,7 +115,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--trace-db", type=Path, default=None, help="独立 trace 库路径（默认同目录 trace.db）"
     )
     p_trace.add_argument(
-        "--out", type=Path, default=None, help="输出 HTML 文件（默认 trace-<id>.html）"
+        "--out", type=Path, default=None, help="输出 HTML 文件（默认 trace-<trace_id>.html）"
     )
 
     p_audit = sub.add_parser("audit-doc", help="只读核验文档结构 dogfood 的 trace/DB 证据")
@@ -117,7 +142,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     无需每次 ``--env-file``；已在环境里的变量不覆盖（``uv run --env-file .env`` 仍兼容）。
     """
     load_dotenv()
-    parser = _build_parser()
+    parser = build_parser()
     args = parser.parse_args(argv)
 
     if args.command == "ingest":

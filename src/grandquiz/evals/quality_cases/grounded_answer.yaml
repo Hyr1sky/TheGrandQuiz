@@ -1,0 +1,39 @@
+- sample_id: fully-supported
+  rubric_id: grounded_answer
+  question: 为什么 AgentEvent 被称为事件信封，它服务哪些消费者？
+  candidate: AgentEvent 用 type、元数据和不透明 payload 形成事件信封；trace、hook、流式输出与 eval replay 复用同一条事件流。
+  reference: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。trace、hook、流式输出与 eval replay 复用同一条事件流。
+  expected_scores:
+    semantic_support: {min: 4, max: 4}
+    question_coverage: {min: 3, max: 4}
+    learning_usefulness: {min: 3, max: 4}
+
+- sample_id: partially-supported
+  rubric_id: grounded_answer
+  question: 为什么 AgentEvent 被称为事件信封，它服务哪些消费者？
+  candidate: AgentEvent 用 type、元数据和不透明 payload 形成事件信封。
+  reference: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。trace、hook、流式输出与 eval replay 复用同一条事件流。
+  expected_scores:
+    semantic_support: {min: 3, max: 4}
+    question_coverage: {min: 2, max: 2}
+    learning_usefulness: {min: 2, max: 3}
+
+- sample_id: unsupported-embellishment
+  rubric_id: grounded_answer
+  question: 事件信封是否保证运行时零故障并自动加密 payload？
+  candidate: 事件信封保证运行时不会发生故障，而且会自动加密所有 payload。
+  reference: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。错误本身也是一种 AgentEvent。
+  expected_scores:
+    semantic_support: {min: 1, max: 1}
+    question_coverage: {min: 1, max: 2}
+    learning_usefulness: {min: 1, max: 1}
+
+- sample_id: justified-refusal
+  rubric_id: grounded_answer
+  question: 事件信封是否会自动加密 payload？
+  candidate: 材料只说明 payload 是不透明的，没有说明会加密，因此无法从材料得出加密结论。
+  reference: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。
+  expected_scores:
+    semantic_support: {min: 3, max: 4}
+    question_coverage: {min: 3, max: 4}
+    learning_usefulness: {min: 3, max: 4}

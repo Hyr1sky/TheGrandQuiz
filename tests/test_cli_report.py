@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from grandquiz.evals.harness import export_html_report, load_cases, run_all
-from grandquiz.interfaces.cli.app import export_trace_html
+from grandquiz.interfaces.cli.app import build_parser, export_trace_html
 from grandquiz.kernel.events import AgentEvent, EventType
 from grandquiz.kernel.trace import TraceStore
 
@@ -55,6 +55,10 @@ async def test_report_export_index_and_per_case_details(tmp_path: Path) -> None:
     assert "PASS" in index
     assert "tokens" in index and "prompts" in index
     assert "@" in index  # prompt 版本形如 name@digest（如 reader_extract@…）
+    assert "Rule" in index and "Quality" in index
+    assert "execution tokens" in index and "judge tokens" in index
+    assert "rubric" in index and "N/A" in index
+    assert "quality_judge@" in index
 
     # 15 个用例：每个都在索引出现、行链到 <case_id>.html、详情文件存在且含 span 树内容
     case_ids = [c.id for c in load_cases()]
@@ -82,6 +86,17 @@ async def test_report_export_index_and_per_case_details(tmp_path: Path) -> None:
     assert top.total_tokens > 0
     assert f"<td>{top.total_tokens}</td>" in index
 
+    case15_detail = (out_dir / "case15.html").read_text(encoding="utf-8")
+    assert "grounded_answer" in case15_detail
+    assert "semantic_support" in case15_detail
+    assert "candidate evidence" in case15_detail
+    assert "reference evidence" in case15_detail
+    assert "quality_judge@" in case15_detail
+    assert 'href="case15-quality.html"' in case15_detail
+    quality_trace = (out_dir / "case15-quality.html").read_text(encoding="utf-8")
+    _assert_self_contained(quality_trace)
+    assert "eval.quality_judge.started" in quality_trace
+
 
 async def test_report_index_has_sort_filter_and_summary(tmp_path: Path) -> None:
     """索引页 v1 静态增强：可排序表头 + 客户端文本筛选 + 顶部通过/失败/token 汇总条。
@@ -100,12 +115,16 @@ async def test_report_index_has_sort_filter_and_summary(tmp_path: Path) -> None:
     reports = await run_all()
     passed = sum(r.passed for r in reports)
     failed = len(reports) - passed
-    total_tokens = sum(r.total_tokens for r in reports)
+    execution_tokens = sum(r.execution_tokens for r in reports)
+    judge_tokens = sum(r.judge_tokens for r in reports)
 
     # 顶部汇总条：passed / failed / total tokens 三个数字都按值出现（非仅存在某个 class）
     assert f'<span class="n">{passed}</span><span class="l">passed</span>' in index
     assert f'<span class="n">{failed}</span><span class="l">failed</span>' in index
-    assert f'<span class="n">{total_tokens}</span><span class="l">total tokens</span>' in index
+    assert (
+        f'<span class="n">{execution_tokens}</span><span class="l">execution tokens</span>' in index
+    )
+    assert f'<span class="n">{judge_tokens}</span><span class="l">judge tokens</span>' in index
 
     # 可排序表头：case id / kind / pass / tokens 四列都带 data-sort-key（prompts 列不参与排序）
     for key in ("id", "kind", "pass", "tokens"):
@@ -114,6 +133,9 @@ async def test_report_index_has_sort_filter_and_summary(tmp_path: Path) -> None:
 
     # 客户端筛选输入框存在
     assert 'id="case-filter"' in index
+    assert 'id="status-filter"' in index
+    for value in ("pass", "rule-fail", "quality-fail"):
+        assert f'value="{value}"' in index
 
     # 每个用例行都带排序用的 data 属性（分组 + 排序键都来自这些属性）
     for r in reports:
@@ -218,3 +240,29 @@ async def test_trace_export_missing_id_fails_loudly(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="missing-id"):
         export_trace_html("missing-id", trace_db_path=trace_db, out_path=out)
     assert not out.exists()  # 未静默写出空报告
+
+
+@pytest.mark.parametrize(
+    ("command", "needles"),
+    [
+        (
+            "report",
+            ("Replay", "~/.grandquiz/eval-report/index.html", "--out", "open"),
+        ),
+        (
+            "trace",
+            ("trace_id", "trace.db", "trace-<trace_id>.html", "open"),
+        ),
+    ],
+)
+def test_report_and_trace_help_are_actionable(
+    command: str,
+    needles: tuple[str, ...],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit, match="0"):
+        build_parser().parse_args([command, "--help"])
+
+    help_text = capsys.readouterr().out
+    for needle in needles:
+        assert needle in help_text
