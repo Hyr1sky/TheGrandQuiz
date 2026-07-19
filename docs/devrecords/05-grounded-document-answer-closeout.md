@@ -2,8 +2,8 @@
 
 > 记录日期：2026-07-19
 > 范围：`.scratch/grounded-answer-efficiency/` 的 GAS-S1–S4。
-> 当前边界：GAS-S1–S3、真实 case14/case15 Replay 与五门已完成；GAS-S4 仅剩一次用户独立终端的生产材料
-> dogfood，完成前不把整个 PRD 标为 done。
+> 当前边界：GAS-S1–S4、真实 case14/case15 Replay、生产 current-revision dogfood、联合审计与五门均已完成；
+> DS-S5 KnowledgeRelation 继续关闭。
 
 ## 1. 问题基线
 
@@ -121,20 +121,33 @@ pytest                      784 passed
 `no_evidence` 而非重试耗尽；workflow ended 事件必须保留 started 的外层 TOOL_CALL parent。DS-S5 继续关闭，
 KnowledgeItem/Learning Memory/quiz workflow 均未改变。
 
-## 7. 剩余生产 dogfood（HITL）
+## 7. 生产 dogfood 与联合审计
 
-代码、合成真实模型 Replay 与五门已经收口。最后需要用户在独立终端对一个已授权的生产 current revision 提一个
-普通问题，不点名任何工具；Codex 随后只读 `~/.grandquiz/trace.db` 与 `~/.grandquiz/learning.db` 验证 scope、
-search → read → citation、逐字 span、调用/tokens 和读取比例。
-
-建议命令：
+生产复验使用已 ingest 的 Agent Memory current revision，启动一个无历史上下文的新 ReAct 会话：
 
 ```bash
-uv run grandquiz react "Grounded answer dogfood" \
+uv run grandquiz react "Grounded answer production verification" \
   --db ~/.grandquiz/learning.db \
-  --materials-dir /Users/hyriskyhe/Documents/TheGrandQuiz
+  --materials-dir /Users/hyriskyhe/Documents/TheGrandQuiz/agent-memory.md
 ```
 
-进入对话后直接询问，例如：“根据库存里的 agent-memory 材料，解释事件信封的作用，并给出原文出处。”不要写
-`answer_from_documents`、search/read/citation 等工具名。完成后无需在对话中转贴长日志；保留 CLI 打印的 trace id，
-或让 Codex从 trace.db 的最新 trace 自动定位即可。
+用户只用自然语言询问：“根据库存里的 Agent Memory 材料，Mem0 的记忆处理流程是什么？请给出原文出处。”，没有
+点名 `answer_from_documents`、search、read 或 citation。生产 trace 为
+`01c64e58ba9949368a06a4693bc5ec26`，结果为：
+
+| 指标 | 生产结果 |
+| --- | ---: |
+| 外层高层工具 | `answer_from_documents` × 1 |
+| 模型调用 / 累计 tokens | 3 / 12,125 |
+| selected search / bounded reads | 1 / 3 |
+| 阅读字符 / revision 全文 | 2,044 / 20,721（9.86%） |
+| current exact node citation | 1 |
+
+`audit-doc` 将该 trace 与 ingest trace `2515ec1af79a4a0a9860993b4a35beb9`、生产 learning DB 联合核验，
+`passed=true`。审计确认 exact selected scope 仅包含 resource `6128cc2fa1b9e850`，citation 属于 current revision
+`a37bdcb799210246`，且 span 被更早的 node read 完整覆盖；读取比例低于 25% 门限。
+
+生产探索同时留下一个明确限制：对材料中并不存在的“事件信封 / Agent Event”提问时，高层 workflow 正确返回
+`no_evidence`，但外层自由 ReAct 仍可能继续调用原子 outline/search，增加失败路径成本。该行为没有扩大高层工具的
+exact scope、没有生成伪 citation，也没有用模型常识补写答案；本轮不以扩大阅读或放宽 citation 修复它。若后续要
+优化无证据体验，应单独以失败路径 cost gate 立项，而不是改变本 PRD 已验证的 grounding 基座。
