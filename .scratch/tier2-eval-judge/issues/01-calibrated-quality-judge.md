@@ -1,6 +1,6 @@
 # EJ-S1 — 校准优先的 QualityJudge
 
-Status: ready-for-agent
+Status: done（2026-07-19；QualityJudge、人工 calibration set、独立事件流与 fail-closed 契约完成）
 Type: AFK
 
 ## Parent
@@ -15,14 +15,14 @@ Type: AFK
 
 ## Acceptance criteria
 
-- [ ] rubric 只能按预注册 id 选择，criteria、评分锚点和门限不来自任意 YAML prompt
-- [ ] QualityJudge 返回每个 criterion 恰好一次的 1..4 分、理由和 candidate/reference 逐字依据
-- [ ] 缺失、重复、未知 criterion、越界分数、空理由或伪造依据均有限重试并 fail closed
-- [ ] judge started/ended、模型 span、prompt version、usage 和失败 fingerprint 进入独立 AgentEvent 流
-- [ ] calibration set 覆盖 fully supported、partially supported、unsupported embellishment、justified refusal
-- [ ] calibration runner 以人工分数区间判一致，任何阻断性分歧使 gate 失败
-- [ ] scripted fake 只测契约；真实语义能力必须由后续真实 Replay + calibration 证明
-- [ ] kernel/domain 生产 workflow 零改动，现有干扰项 judge 行为不变
+- [x] rubric 只能按预注册 id 选择，criteria、评分锚点和门限不来自任意 YAML prompt
+- [x] QualityJudge 返回每个 criterion 恰好一次的 1..4 分、理由和 candidate/reference 逐字依据
+- [x] 缺失、重复、未知 criterion、越界分数、空理由或伪造依据均有限重试并 fail closed
+- [x] judge started/ended、模型 span、prompt version、usage 和失败 fingerprint 进入独立 AgentEvent 流
+- [x] calibration set 覆盖 fully supported、partially supported、unsupported embellishment、justified refusal
+- [x] calibration runner 以人工分数区间判一致，任何阻断性分歧使 gate 失败
+- [x] scripted fake 只测契约；真实语义能力必须由后续真实 Replay + calibration 证明
+- [x] kernel/domain 生产 workflow 零改动，现有干扰项 judge 行为不变
 
 ## Blocked by
 

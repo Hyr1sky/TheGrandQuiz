@@ -12,6 +12,10 @@ _Avoid_: 把 Runtime 单独当产品、面向外部用户的服务
 事件总线脊柱上的 Agent 执行内核（runner / trace / hook / replay / eval / recovery）。产品的工程核心、简历叙事的承重部分，但不是独立产品；kernel API 是内部纪律，不是对外契约。
 _Avoid_: 框架（不承诺对外 API 稳定性 / semver / 插件文档）
 
+**Eval Quality Gate**:
+Eval 层对最终产物的离线质量门，与生产考核的“判决”不是同一概念。Tier-1 用确定性代码核验工具顺序、scope、状态与精确引用；Tier-2 `QualityJudge` 只评预注册 rubric，在通过人工 calibration 后才参与用例 pass/fail，并通过真实 cassette 日常 Replay。两层 verdict、trace 与 token 成本必须分开；首版只给 case15 启用 `grounded_answer`。
+_Avoid_: 用 LLM judge 替代规则门、拿 judge 自己的输出当 calibration 真值、在 report 中隐式调用外部模型、让 Eval 自动修改 prompt 或生产数据
+
 **简历价值**:
 项目的第二目标：面向 AI 应用 / Agent 工程师岗位的叙事——"手写一套可观测、可评测的 agent runtime，并且自己真的在用"。"全面技术栈"指覆盖完整工程生命周期（异步、事件架构、持久化、流式接口、eval、可观测性、CI），不指框架数量。
 _Avoid_: 为凑技术栈引入产品不需要的组件（前端 / 向量库 / k8s 不因简历进入 roadmap）

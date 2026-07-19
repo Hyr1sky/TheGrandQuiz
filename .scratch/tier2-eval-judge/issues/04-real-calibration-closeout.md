@@ -1,6 +1,6 @@
 # EJ-S4 — 真实校准、Replay 与收口
 
-Status: ready-for-agent
+Status: done（2026-07-19；真实 deepseek-v4-flash 校准/录制、离线报告、五门与文档收口完成）
 Type: HITL
 
 ## Parent
@@ -15,15 +15,15 @@ Type: HITL
 
 ## Acceptance criteria
 
-- [ ] 显式录制脚本只发送合成 calibration samples、case15 问题/回答/参考证据和版本化 judge prompt
-- [ ] 真实 judge 对全部 calibration 阻断性维度落入人工区间；分歧必须先审计，不手改模型输出
-- [ ] cassette 保存 resolved model、role、prompt/request 指纹与 usage；不含密钥或生产材料
-- [ ] 默认 run_all/report 在 Replay 下零网络、稳定通过；删除/篡改 cassette 必须大声失败
-- [ ] case15 Tier-1/Tier-2 均绿，execution/judge tokens 与 prompt versions 可复算
-- [ ] HTML index/detail 真跑可打开，rule/quality/cost/rationale/evidence 完整可见
-- [ ] Ruff check、Ruff format check、Pyright、import-linter、全量 pytest 与 Eval report 全绿
+- [x] 显式录制脚本只发送合成 calibration samples、case15 问题/回答/参考证据和版本化 judge prompt
+- [x] 真实 judge 对全部 calibration 阻断性维度落入人工区间；分歧必须先审计，不手改模型输出
+- [x] cassette 保存 resolved model、role、prompt/request 指纹与 usage；不含密钥或生产材料
+- [x] 默认 run_all/report 在 Replay 下零网络、稳定通过；删除/篡改 cassette 必须大声失败
+- [x] case15 Tier-1/Tier-2 均绿，execution/judge tokens 与 prompt versions 可复算
+- [x] HTML index/detail 真跑可打开，rule/quality/cost/rationale/evidence 完整可见
+- [x] Ruff check、Ruff format check、Pyright、import-linter、全量 pytest 与 Eval report 全绿
 - [ ] PRD/EJ-S1–S4、开发日志和 README/CLI discoverability 回填完成，git 历史规范并推送 main
-- [ ] DS-S5 继续关闭；judge 不写 production learning.db、不自动修改 prompt 或难度
+- [x] DS-S5 继续关闭；judge 不写 production learning.db、不自动修改 prompt 或难度
 
 ## Blocked by
 

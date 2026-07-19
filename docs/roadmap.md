@@ -310,6 +310,8 @@ Errors should be written into trace records. They should not only be returned as
 
 Eval should be planned early, even if the first version is simple. The key capability is deterministic replay.
 
+当前实现（2026-07-19）已有 15 条 Tier-1 用例，并给 case15 自然材料回答增加了首条 Tier-2 `grounded_answer` 质量门。Tier-2 在参与 pass/fail 前必须先复现 4 个人工标注 calibration samples；真实结果由显式脚本录制，默认 harness 与 HTML 报告只做离线 Replay。Rule/Quality verdict、被测 workflow 成本与 judge 成本分开统计，未声明 quality profile 的 14 条用例显示 N/A 且不调用 judge。
+
 ```mermaid
 flowchart LR
     CASE[Eval Case] --> RUN[Run Agent]

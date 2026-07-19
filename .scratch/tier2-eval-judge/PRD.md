@@ -1,7 +1,7 @@
 # PRD：Tier-2 LLM Grader 与质量评测闭环
 
-Status: approved（2026-07-19；用户批准先完成 Eval 方向）
-Triage: ready-for-agent
+Status: done（2026-07-19；EJ-S1–S4、真实 calibration/Replay、HTML/CLI 与五门全部完成）
+Triage: complete
 Decision: 延伸 `docs/architecture.md` 的“双层 grader”，不改变 ADR-0004 的考核 workflow
 
 ## Problem Statement
