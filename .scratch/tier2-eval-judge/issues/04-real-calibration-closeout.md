@@ -22,7 +22,7 @@ Type: HITL
 - [x] case15 Tier-1/Tier-2 均绿，execution/judge tokens 与 prompt versions 可复算
 - [x] HTML index/detail 真跑可打开，rule/quality/cost/rationale/evidence 完整可见
 - [x] Ruff check、Ruff format check、Pyright、import-linter、全量 pytest 与 Eval report 全绿
-- [ ] PRD/EJ-S1–S4、开发日志和 README/CLI discoverability 回填完成，git 历史规范并推送 main
+- [x] PRD/EJ-S1–S4、开发日志和 README/CLI discoverability 回填完成，git 历史规范并推送 main
 - [x] DS-S5 继续关闭；judge 不写 production learning.db、不自动修改 prompt 或难度
 
 ## Blocked by
