@@ -310,3 +310,31 @@ def test_record_inferred_preference_restarts_on_disagreement() -> None:
     assert restarted is not None
     assert restarted.value == "中文"
     assert restarted.confidence < boosted.confidence  # 不是继续累加旧信号的置信度
+
+
+def test_record_inferred_preference_parity_dict_vs_sqlite() -> None:
+    # 推断侧的 dict ↔ SQLite parity（此前只显式 set 有 parity，见 test_dict_sqlite_parity_*）：
+    # record_inferred_preference 是"读回已有 confidence → +step → 写回"的读-改-写循环，递增后的
+    # float 必须原样 round-trip 过 SQLite（而非退化成字符串或丢精度），否则一致观察的置信度累积
+    # 会在持久化背板上悄悄失真。同一观察序列喂 dict 版与 SQLite 版，末态逐字段（含递增后的
+    # confidence）一致方为真。序列选连续同值让末态 confidence 是被递增过的计算值（非初始默认）。
+    # 下界基准取"单次观察的初始 confidence"（不 import 私有常量、随策略调参自适应）。
+    baseline_mem = DictPreferenceMemory()
+    record_inferred_preference(baseline_mem, QUESTION_LANGUAGE_KEY, "英文")
+    baseline = baseline_mem.get_preference(QUESTION_LANGUAGE_KEY)
+    assert baseline is not None
+
+    dict_mem: PreferenceMemory = DictPreferenceMemory()
+    sqlite_mem: PreferenceMemory = SqlitePreferenceMemory(":memory:")
+    for _ in range(3):  # 起步 → 递增 → 再递增：末态 confidence 已被读-改-写抬过两档
+        record_inferred_preference(dict_mem, QUESTION_LANGUAGE_KEY, "英文")
+        record_inferred_preference(sqlite_mem, QUESTION_LANGUAGE_KEY, "英文")
+    d = dict_mem.get_preference(QUESTION_LANGUAGE_KEY)
+    s = sqlite_mem.get_preference(QUESTION_LANGUAGE_KEY)
+    assert d is not None
+    assert s is not None
+    assert d.key == s.key
+    assert d.value == s.value
+    assert d.confidence == s.confidence  # 递增后的置信度逐位 round-trip（float 未失真）
+    assert baseline.confidence < s.confidence < 1.0  # 确是被抬过、且仍与显式的 1.0 区分
+    assert d == s
