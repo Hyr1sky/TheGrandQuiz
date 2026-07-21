@@ -2,6 +2,7 @@
 
 > 记录日期：2026-07-21
 > 范围：WA-S4 真实 SearXNG + ReAct dogfood、case17、候选选择边界与失败页零污染。
+> 独立验收：[Web Acquisition 终端 Dogfood 指南](../guides/web-acquisition-dogfood.md)。
 
 ## 1. 收口目标
 
@@ -74,3 +75,16 @@ pytest                      831 passed
 python -m grandquiz.evals   17/17 passed
 HTML report                 pass（case17 / 36,168 execution tokens）
 ```
+
+## 7. Git 交付
+
+本轮按 Conventional Commits 拆成三个可回溯提交，并已推送到远端 `main`：
+
+```text
+440a7bd feat(learning): add no-card web search providers
+dd8623c docs: record no-card search dogfood
+1ee002c feat(learning): close web acquisition react loop
+```
+
+其中前两笔覆盖 WA-S3 的 Tavily / SearXNG adapter、真实 provider dogfood 与文档；最后一笔覆盖 WA-S4
+选择边界、SearXNG domain pushdown、真实 ReAct cassette、case17 grader 和完整收口。
