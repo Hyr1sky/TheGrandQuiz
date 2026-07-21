@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <title>Python 闭包指南</title>
+    <link rel="canonical" href="https://docs.example.test/python/closures" />
+    <style>.cookie-banner { position: fixed; }</style>
+    <script>window.analytics = "navigation noise";</script>
+  </head>
+  <body>
+    <nav>
+      <a href="/">首页</a>
+      <a href="/archive">归档</a>
+      <a href="/login">登录</a>
+    </nav>
+    <main>
+      <article>
+        <h1>Python 闭包指南</h1>
+        <p>
+          闭包是一个函数以及创建该函数时可访问的词法环境。即使外层函数已经返回，内部函数仍然可以
+          读取这些被捕获的变量，因此闭包适合封装少量状态和构造函数工厂。
+        </p>
+        <h2>晚绑定</h2>
+        <p>
+          Python 闭包捕获的是变量本身，而不是定义函数那一刻的值。循环中创建多个函数时，它们可能在
+          调用时读取到同一个最终值；把当前值放进默认参数，可以显式冻结每次迭代的值。
+        </p>
+        <pre><code>funcs = [lambda value=value: value for value in range(3)]</code></pre>
+        <h2>何时使用</h2>
+        <p>
+          当行为只需要一小段不可变配置时，闭包通常比定义完整类更紧凑；当状态复杂、需要多个操作或
+          需要清晰类型边界时，应优先使用类。选择依据是可读性，而不是追求语法技巧。
+        </p>
+      </article>
+    </main>
+    <aside>你可能还喜欢：十个 Python 语法技巧</aside>
+    <div class="cookie-banner">接受 Cookie 后继续浏览</div>
+    <footer>版权所有 · 联系我们 · 隐私政策</footer>
+  </body>
+</html>

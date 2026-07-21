@@ -8,7 +8,8 @@ from urllib.parse import urlparse
 
 import httpx
 
-from grandquiz.domain.learning.ingest.fetch import FetchError, FetchResult
+from grandquiz.domain.learning.ingest.fetch import DocumentQuality, FetchedDocument, FetchError
+from grandquiz.domain.learning.ingest.web_extraction import extract_web_document
 
 _MAX_REDIRECTS = 5
 _ALLOWED_CONTENT_TYPES = frozenset(
@@ -63,7 +64,7 @@ class HttpFetchSource:
         self._timeout_seconds = timeout_seconds
         self._transport = transport
 
-    async def fetch(self, url: str, *, max_bytes: int) -> FetchResult:
+    async def fetch(self, url: str, *, max_bytes: int) -> FetchedDocument:
         timeout = httpx.Timeout(self._timeout_seconds)
         async with httpx.AsyncClient(timeout=timeout, transport=self._transport) as client:
             request = client.build_request("GET", url)
@@ -73,18 +74,24 @@ class HttpFetchSource:
                 raw = await _read_bounded(response, max_bytes=max_bytes)
                 encoding = response.encoding or "utf-8"
                 decoded = raw.decode(encoding, errors="replace")
-                content = (
-                    extract_text_from_html(decoded)
-                    if content_type in ("text/html", "application/xhtml+xml")
-                    else decoded
-                )
-                encoded_content = content.encode("utf-8")
-                return FetchResult(
+                if content_type in ("text/html", "application/xhtml+xml"):
+                    return extract_web_document(
+                        decoded,
+                        requested_url=url,
+                        final_url=str(response.url),
+                        content_type=content_type,
+                    )
+                content = decoded.strip()
+                if not content:
+                    raise FetchError("empty_content", "纯文本响应没有正文")
+                return FetchedDocument(
                     requested_url=url,
                     final_url=str(response.url),
                     content=content,
                     content_type=content_type,
-                    content_hash=hashlib.sha256(encoded_content).hexdigest(),
+                    content_hash=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                    adapter="native_http",
+                    quality=DocumentQuality(content_char_count=len(content)),
                 )
             finally:
                 await response.aclose()

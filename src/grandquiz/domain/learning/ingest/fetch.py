@@ -6,7 +6,7 @@ from collections.abc import Callable, Collection
 from typing import Literal, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from grandquiz.kernel.recovery import ErrorClass
 
@@ -20,8 +20,24 @@ FetchFailureReason = Literal[
     "timeout",
     "http_status",
     "unsupported_content_type",
+    "empty_content",
+    "too_short",
+    "navigation_page",
+    "login_page",
+    "bot_challenge",
     "source_failure",
 ]
+QualityFailureReason = Literal[
+    "empty_content",
+    "too_short",
+    "navigation_page",
+    "login_page",
+    "bot_challenge",
+]
+
+
+def _empty_quality_reasons() -> list[QualityFailureReason]:
+    return []
 
 
 class FetchError(Exception):
@@ -34,21 +50,39 @@ class FetchError(Exception):
         super().__init__(message)
 
 
-class FetchResult(BaseModel):
-    """获取层的结构化结果；正文始终是不可信输入。"""
+class DocumentQuality(BaseModel):
+    """正文质量门的确定性结论；失败分类稳定、可进入 trace / replay。"""
+
+    accepted: bool = True
+    reasons: list[QualityFailureReason] = Field(default_factory=_empty_quality_reasons)
+    content_char_count: int = 0
+
+
+class FetchedDocument(BaseModel):
+    """供应商无关的规范化抓取结果；正文始终是不可信输入。"""
 
     requested_url: str
     final_url: str
+    canonical_url: str | None = None
+    title: str | None = None
     content: str
     content_type: str
     content_hash: str
+    adapter: str = "source"
+    extractor: str = "plain_text:v1"
+    quality: DocumentQuality = Field(default_factory=DocumentQuality)
+    trusted: bool = False
+
+
+# 兼容已存在的 source / CLI 组装点；新代码使用领域名 FetchedDocument。
+FetchResult = FetchedDocument
 
 
 @runtime_checkable
 class BoundedFetchSource(Protocol):
     """能在传输途中执行解压后字节上限的原生异步 source。"""
 
-    async def fetch(self, url: str, *, max_bytes: int) -> FetchResult: ...
+    async def fetch(self, url: str, *, max_bytes: int) -> FetchedDocument: ...
 
 
 FetchSource = Callable[[str], str] | BoundedFetchSource
@@ -60,7 +94,7 @@ async def fetch_resource(
     source: FetchSource,
     max_bytes: int,
     allowed_domains: Collection[str] | Literal["*"],
-) -> FetchResult:
+) -> FetchedDocument:
     """获取一个资源；同步 source 在线程中执行，原生 source 自己流式限流。"""
     host = urlparse(url).hostname
     if host is None:
@@ -81,10 +115,11 @@ async def fetch_resource(
         raise FetchError(
             "too_large", f"内容超过大小上限：{len(encoded)} > {max_bytes} 字节（url={url}）"
         )
-    return FetchResult(
+    return FetchedDocument(
         requested_url=url,
         final_url=url,
         content=content,
         content_type="text/plain",
         content_hash=hashlib.sha256(encoded).hexdigest(),
+        quality=DocumentQuality(content_char_count=len(content.strip())),
     )

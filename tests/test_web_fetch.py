@@ -215,7 +215,11 @@ async def test_source_extracts_text_from_html(monkeypatch: pytest.MonkeyPatch) -
     )
     html = """
     <html><head><style>body{color:red}</style><script>alert(1)</script></head>
-    <body><h1>闭包</h1><p>闭包捕获变量而非值。</p></body></html>
+    <body><h1>闭包</h1><article>
+    <p>闭包捕获变量而非值。内部函数即使在外层函数返回后，仍然能够读取创建时词法环境里的变量。</p>
+    <p>循环创建闭包时要留意晚绑定：多个函数可能在调用时读取同一个最终值，可以用默认参数冻结当前值。</p>
+    <p>闭包适合封装少量状态；状态和行为逐渐复杂时，使用具有清晰类型边界的类通常更容易维护和测试。</p>
+    </article></body></html>
     """
 
     def handler(request: httpx.Request) -> httpx.Response:

@@ -11,6 +11,7 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "questionary>=2.1.1",
     "rich>=15.0.0",
+    "trafilatura>=2.1.0,<3",
 ]
 
 [project.scripts]
