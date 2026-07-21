@@ -1,0 +1,34 @@
+# eval case 16：Search / Fetch 规范化 cassette 断网回放；成功候选进入既有 ingest workflow，
+# 质量失败候选在 Reader / 审批之前 fail closed，不能污染 KB。
+id: case16
+kind: ingest
+setup:
+  source: web_replay
+  approval_keep:
+    - 闭包
+    - 事件循环
+expected_events:
+  - learning.web_search.started
+  - learning.web_search.ended
+  - ingest.started
+  - learning.resource_created
+  - learning.resource_read
+  - learning.document_parsed
+  - learning.reader_batch.started
+  - hook.invoked
+  - model.started
+  - model.ended
+  - learning.reader_batch.ended
+  - learning.citation_validated
+  - learning.items_extracted
+  - approval.requested
+  - approval.decided
+  - learning.revision_committed
+  - learning.resource_approved
+  - learning.item_created
+  - learning.item_created
+  - ingest.ended
+  - ingest.started
+  - learning.resource_created
+  - learning.resource_fetch_failed
+  - ingest.ended

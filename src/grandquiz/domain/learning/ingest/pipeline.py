@@ -79,15 +79,18 @@ async def ingest_resource(
     resource = LearningResource.create(url=url)
     previous = store.get_resource(resource.resource_id)
 
-    def fail(reason: str) -> IngestResult:
+    def fail(reason: str, *, classification: str | None = None) -> IngestResult:
         # 首次 ingest 失败留下 failed 诊断记录；刷新失败不覆盖既有获批 read 快照。
         if previous is None or previous.status != "read":
             failed = resource.model_copy(update={"status": "failed"})
             store.add_resource(failed)
+        failure_payload = {"resource_id": resource.resource_id, "url": url, "reason": reason}
+        if classification is not None:
+            failure_payload["classification"] = classification
         emitter.emit(
             LearningEvent.RESOURCE_FETCH_FAILED,
             parent_span_id=ingest_span,
-            payload={"resource_id": resource.resource_id, "url": url, "reason": reason},
+            payload=failure_payload,
         )
         emitter.emit(_INGEST_ENDED, span_id=ingest_span, payload={"ok": False, "reason": reason})
         return IngestResult(status="failed", resource_id=resource.resource_id, items=[])
@@ -106,7 +109,7 @@ async def ingest_resource(
                 url, source=source, max_bytes=max_bytes, allowed_domains=allowed_domains
             )
         except FetchError as exc:
-            return fail(f"fetch: {exc}")
+            return fail(f"fetch: {exc}", classification=exc.reason)
 
         # d. 回填 staged 内容 + hash，status=read，trusted=False；RESOURCE_READ 让
         #    成功侧状态跃迁也上脊柱（对称于 RESOURCE_FETCH_FAILED，兑现"回放=事件流回放"）。
@@ -127,6 +130,13 @@ async def ingest_resource(
                 "resource_id": resource.resource_id,
                 "status": resource.status,
                 "content_hash": content_hash,
+                "requested_url": fetched.requested_url,
+                "final_url": fetched.final_url,
+                "canonical_url": fetched.canonical_url,
+                "title": fetched.title,
+                "adapter": fetched.adapter,
+                "extractor": fetched.extractor,
+                "quality": fetched.quality.model_dump(),
             },
         )
         document = build_document_snapshot(resource)

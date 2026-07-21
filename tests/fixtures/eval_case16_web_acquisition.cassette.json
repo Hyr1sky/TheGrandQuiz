@@ -1,0 +1,68 @@
+{
+  "6356a5fd2a5d32544307fa0099d6d06c0d2792110434d76feb126dff68d24e48": {
+    "adapter_fingerprint": "eval:synthetic-web-v1",
+    "cassette_version": 1,
+    "kind": "search",
+    "normalization_version": "search-v1",
+    "request": {
+      "domains": [
+        "example.com"
+      ],
+      "limit": 3,
+      "query": "react hooks runtime"
+    },
+    "results": [
+      {
+        "adapter": "synthetic_search",
+        "metadata": {
+          "engine": "fixture"
+        },
+        "rank": 1,
+        "snippet": "闭包、变量提升与事件循环",
+        "title": "React Hooks Runtime Guide",
+        "url": "https://example.com/react-hooks-web"
+      }
+    ]
+  },
+  "97042189c977b9dbea596a8765608e972175f5a300cc174828c3058dde2aa8ba": {
+    "adapter_fingerprint": "eval:synthetic-web-v1",
+    "cassette_version": 1,
+    "failure": {
+      "message": "网页正文质量门拒绝：bot_challenge",
+      "reason": "bot_challenge"
+    },
+    "kind": "fetch",
+    "normalization_version": "trafilatura:2.1.0/web-v1",
+    "request": {
+      "max_bytes": 4096,
+      "url": "https://example.com/challenge"
+    }
+  },
+  "cbd20d2af4c54e7432f4fb8bf906dbaccdfa2763f11b6d3a95e17382ff55b2f0": {
+    "adapter_fingerprint": "eval:synthetic-web-v1",
+    "cassette_version": 1,
+    "document": {
+      "adapter": "native_http",
+      "canonical_url": "https://example.com/react-hooks-web",
+      "content": "React hooks 深读材料：q1、q2、q3",
+      "content_hash": "cc5fb197b521d4d2b06ab60b939330f118b870ccca92b133a1246c889f8b5bf4",
+      "content_type": "text/html",
+      "extractor": "trafilatura:2.1.0",
+      "final_url": "https://example.com/react-hooks-web",
+      "quality": {
+        "accepted": true,
+        "content_char_count": 25,
+        "reasons": []
+      },
+      "requested_url": "https://example.com/react-hooks-web",
+      "title": "React Hooks Runtime Guide",
+      "trusted": false
+    },
+    "kind": "fetch",
+    "normalization_version": "trafilatura:2.1.0/web-v1",
+    "request": {
+      "max_bytes": 4096,
+      "url": "https://example.com/react-hooks-web"
+    }
+  }
+}

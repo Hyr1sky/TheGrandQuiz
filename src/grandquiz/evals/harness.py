@@ -37,6 +37,11 @@ from grandquiz.domain.learning.assessment.scope import ALL_SCOPE, QuizScope, Sel
 from grandquiz.domain.learning.assessment.selection import Focus, apply_scope, select_target
 from grandquiz.domain.learning.context import learner_context_provider
 from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
+from grandquiz.domain.learning.ingest.acquisition_replay import (
+    AcquisitionCassette,
+    ReplayFetchSource,
+    ReplaySearchProvider,
+)
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import (
     Evidence,
@@ -52,6 +57,7 @@ from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.domain.learning.tools import register_learning_tools
+from grandquiz.domain.learning.tools.web_search_tool import SearchToolResult, make_web_search_tool
 from grandquiz.evals.quality import QualityEvaluation, QualityRequest
 from grandquiz.evals.quality_calibration import CalibratedQualitySuite
 from grandquiz.kernel.clock import ManualClock, new_rng
@@ -59,7 +65,7 @@ from grandquiz.kernel.context import ContextBuilder, Partition
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.report import render_trace_html
 from grandquiz.kernel.runner import Runner
-from grandquiz.kernel.tools import ToolRegistry
+from grandquiz.kernel.tools import ToolContext, ToolRegistry
 from grandquiz.kernel.trace import Span, TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
 from grandquiz.providers.replay import Cassette, ReplayProvider
@@ -498,7 +504,7 @@ class Case:
     # （既有用例不变）。
     question_type: str | None = None
     # ingest 专属
-    source: Literal["ok", "boom"] = "ok"
+    source: Literal["ok", "boom", "web_replay"] = "ok"
     approval_keep: list[str] = field(default_factory=_empty_strs)
     # react 专属（驱动 Runner.run_agent_turn 而非 domain 函数直调——覆盖 ReAct 决策层，Tier-1 harness
     # 此前的盲区）：user_messages 逐条喂给 run_agent_turn；cassette 是真机录制的响应库文件名（相对
@@ -574,7 +580,10 @@ def _parse_case(raw: Any) -> Case:
             react_fixture=react_fixture,
             quality=quality,
         )
-    src: Literal["ok", "boom"] = "boom" if str(setup.get("source", "ok")) == "boom" else "ok"
+    raw_source = str(setup.get("source", "ok"))
+    src: Literal["ok", "boom", "web_replay"] = (
+        "web_replay" if raw_source == "web_replay" else "boom" if raw_source == "boom" else "ok"
+    )
     return Case(
         id=case_id,
         kind="ingest",
@@ -742,6 +751,8 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
 
 
 async def _solve_ingest(case: Case, provider_override: Provider | None) -> SolveResult:
+    if case.source == "web_replay":
+        return await _solve_web_acquisition(case, provider_override)
     store = LearningStore()
     keep_concepts = set(case.approval_keep)
     approval = ScriptedApprovalGate(keep=lambda item: item.concept in keep_concepts)
@@ -780,6 +791,82 @@ async def _solve_ingest(case: Case, provider_override: Provider | None) -> Solve
         calls=fake.calls if fake is not None else 0,
         roles=fake.roles if fake is not None else [],
         context={"approved_concepts": sorted(keep_concepts)},
+    )
+
+
+async def _solve_web_acquisition(
+    case: Case, provider_override: Provider | None
+) -> SolveResult:
+    """case16：全程只读规范化 acquisition cassette，不触公网或真实搜索服务。"""
+    cassette = AcquisitionCassette.load(
+        Path("tests/fixtures/eval_case16_web_acquisition.cassette.json")
+    )
+    fingerprint = "eval:synthetic-web-v1"
+    search = ReplaySearchProvider(
+        cassette,
+        adapter_name="synthetic_search",
+        adapter_fingerprint=fingerprint,
+    )
+    fetch = ReplayFetchSource(
+        cassette,
+        adapter_fingerprint=fingerprint,
+        normalization_version="trafilatura:2.1.0/web-v1",
+    )
+    store = LearningStore()
+    keep_concepts = set(case.approval_keep)
+    approval = ScriptedApprovalGate(keep=lambda item: item.concept in keep_concepts)
+    provider = provider_override or IngestFakeProvider(READER_JSON)
+    fake = provider if isinstance(provider, IngestFakeProvider) else None
+    emitter, events, trace = build_event_harness()
+    registry = ToolRegistry()
+    registry.register(make_web_search_tool(provider=search))
+    search_output = SearchToolResult.model_validate_json(
+        await registry.dispatch(
+            "web_search",
+            {"query": "react hooks runtime", "limit": 3, "domains": ["example.com"]},
+            ctx=ToolContext(emitter=emitter),
+        )
+    )
+    selected_url = search_output.results[0].url
+    success = await ingest_resource(
+        selected_url,
+        source=fetch,
+        provider=provider,
+        store=store,
+        approval=approval,
+        emitter=emitter,
+        max_bytes=4096,
+        allowed_domains=ALLOWED_DOMAINS,
+    )
+    calls_after_success = fake.calls if fake is not None else 0
+    rejected_url = "https://example.com/challenge"
+    rejected = await ingest_resource(
+        rejected_url,
+        source=fetch,
+        provider=provider,
+        store=store,
+        approval=approval,
+        emitter=emitter,
+        max_bytes=4096,
+        allowed_domains=ALLOWED_DOMAINS,
+    )
+    spans = trace.span_tree("run")
+    trace.close()
+    return SolveResult(
+        case=case,
+        events=events,
+        spans=spans,
+        result=success,
+        store=store,
+        memory=LearningMemory(),
+        calls=fake.calls if fake is not None else 0,
+        roles=fake.roles if fake is not None else [],
+        context={
+            "selected_url": selected_url,
+            "rejected_url": rejected_url,
+            "rejected_result": rejected,
+            "calls_after_success": calls_after_success,
+        },
     )
 
 

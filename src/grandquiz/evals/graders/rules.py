@@ -789,6 +789,72 @@ def grade_case15(sr: SolveResult) -> list[str]:
     return failures
 
 
+# --- case 16：Search / Fetch cassette 离线回放 + 质量失败零 KB 污染 ---------------------------
+
+
+def grade_case16(sr: SolveResult) -> list[str]:
+    failures: list[str] = []
+    result = _ingest(sr)
+    if result is None:
+        return [f"result 不是 IngestResult：{sr.result!r}"]
+    selected_url = sr.context.get("selected_url")
+    rejected_url = sr.context.get("rejected_url")
+    rejected = sr.context.get("rejected_result")
+    _check(failures, result.status == "read", f"选中候选应成功入库，实为 {result.status}")
+    resource = sr.store.get_resource(result.resource_id)
+    _check(failures, resource is not None, "选中候选缺资源快照")
+    if resource is not None:
+        _check(
+            failures,
+            resource.url == selected_url,
+            "资源 identity 必须保持 selected requested URL",
+        )
+        _check(failures, resource.trusted is False, "网页正文必须保持不可信标记")
+    _check(
+        failures,
+        {item.concept for item in result.items} == set(INGEST_APPROVED_CONCEPTS),
+        "成功候选只应写入获批概念",
+    )
+    resource_read = _find(sr.events, LearningEvent.RESOURCE_READ)
+    _check(failures, resource_read is not None, "成功候选缺 RESOURCE_READ 审计事件")
+    if resource_read is not None:
+        _check(
+            failures,
+            resource_read.payload.get("adapter") == "native_http"
+            and resource_read.payload.get("extractor") == "trafilatura:2.1.0"
+            and cast("Mapping[str, object]", resource_read.payload.get("quality", {})).get(
+                "accepted"
+            )
+            is True,
+            "RESOURCE_READ 应记录 adapter / extractor / 质量结论",
+        )
+        _check(failures, "content" not in resource_read.payload, "trace 不得保存完整网页正文")
+    _check(failures, isinstance(rejected, IngestResult), "质量失败分支缺 IngestResult")
+    if isinstance(rejected, IngestResult):
+        _check(failures, rejected.status == "failed", "challenge 页面必须 fail closed")
+        _check(failures, rejected.items == [], "challenge 页面不得产生 KnowledgeItem")
+        _check(
+            failures,
+            sr.store.items_for_resource(rejected.resource_id) == [],
+            "质量失败资源不得污染 KB",
+        )
+    _check(
+        failures,
+        sr.calls == sr.context.get("calls_after_success") == 1,
+        "质量失败之后 Reader 调用数不得增加",
+    )
+    failed_events = _find_all(sr.events, LearningEvent.RESOURCE_FETCH_FAILED)
+    _check(failures, len(failed_events) == 1, "应恰有一次结构化质量失败事件")
+    if failed_events:
+        _check(
+            failures,
+            failed_events[0].payload.get("url") == rejected_url
+            and failed_events[0].payload.get("classification") == "bot_challenge",
+            "失败事件应锚定被拒 URL 与 bot_challenge 分类",
+        )
+    return failures
+
+
 GRADERS: dict[str, Grader] = {
     "case1": grade_case1,
     "case2": grade_case2,
@@ -805,4 +871,5 @@ GRADERS: dict[str, Grader] = {
     "case13": grade_case13,
     "case14": grade_case14,
     "case15": grade_case15,
+    "case16": grade_case16,
 }

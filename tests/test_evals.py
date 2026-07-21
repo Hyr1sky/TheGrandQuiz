@@ -23,9 +23,20 @@ async def test_all_cases_pass() -> None:
     reports = await run_all()
     # 10（8 + 语言一致性 / 无重复）+ 3 GKB-S7 + 2 个 react 层用例
     # （批量考核、自然 grounded answer）。
-    assert len(reports) == 15
+    assert len(reports) == 16
     failing = {r.case_id: r.failures for r in reports if not r.passed}
     assert failing == {}, f"有用例未通过：{failing}"
+
+
+async def test_case16_replays_web_acquisition_without_quality_pollution() -> None:
+    case16 = next(case for case in load_cases() if case.id == "case16")
+    result = await solve(case16)
+
+    assert isinstance(result.result, object)
+    assert result.context["calls_after_success"] == result.calls == 1
+    rejected = result.context["rejected_result"]
+    assert rejected.status == "failed"
+    assert rejected.items == []
 
 
 async def test_language_consistency_case_is_all_one_bucket() -> None:

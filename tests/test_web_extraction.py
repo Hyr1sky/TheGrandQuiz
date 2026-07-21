@@ -172,5 +172,6 @@ async def test_quality_failure_never_reaches_reader_approval_or_kb(
     resource = store.get_resource(result.resource_id)
     assert resource is not None
     assert resource.status == "failed"
-    assert any("login_page" in str(event.payload.get("reason")) for event in events)
+    failure = next(event for event in events if event.type == "learning.resource_fetch_failed")
+    assert failure.payload["classification"] == "login_page"
     trace.close()
