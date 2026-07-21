@@ -1,6 +1,6 @@
 # WA-S1 — Trafilatura 可靠 URL 入库
 
-Status: ready-for-agent
+Status: done（2026-07-21；Trafilatura、FetchedDocument、质量门、真实 JavaGuide dogfood 与全门收口）
 Type: AFK
 
 ## Parent
@@ -21,14 +21,14 @@ Type: AFK
 
 ## Acceptance criteria
 
-- [ ] 普通文章 / 文档 HTML 被规范化为包含标题、canonical URL 和 Markdown 正文的 `FetchedDocument`
-- [ ] fixture corpus 用“必须存在 / 必须不存在”断言证明导航、脚本、Cookie 等 boilerplate 不进入正文
-- [ ] 空页、正文过短、导航页、登录页与 bot challenge 返回稳定、结构化的质量失败原因
-- [ ] 质量失败复用现有 ingest 失败路径：Reader 零调用、KnowledgeItem 零创建、审批零触发
-- [ ] transport 继续执行流式解压后大小上限、逐跳 SSRF、跳转数、超时和 content-type 守卫
-- [ ] 正文 hash 基于规范化正文；trace 不保存完整网页 body，不记录墙上时间
-- [ ] requested URL 保持资源 identity，final / canonical URL 不造成同一资源的隐式改名
-- [ ] 生产依赖与锁文件固定 Trafilatura，静态四门和相关 pytest 全绿
+- [x] 普通文章 / 文档 HTML 被规范化为包含标题、canonical URL 和 Markdown 正文的 `FetchedDocument`
+- [x] fixture corpus 用“必须存在 / 必须不存在”断言证明导航、脚本、Cookie 等 boilerplate 不进入正文
+- [x] 空页、正文过短、导航页、登录页与 bot challenge 返回稳定、结构化的质量失败原因
+- [x] 质量失败复用现有 ingest 失败路径：Reader 零调用、KnowledgeItem 零创建、审批零触发
+- [x] transport 继续执行流式解压后大小上限、逐跳 SSRF、跳转数、超时和 content-type 守卫
+- [x] 正文 hash 基于规范化正文；trace 不保存完整网页 body，不记录墙上时间
+- [x] requested URL 保持资源 identity，final / canonical URL 不造成同一资源的隐式改名
+- [x] 生产依赖与锁文件固定 Trafilatura，静态四门和相关 pytest 全绿
 
 ## Blocked by
 

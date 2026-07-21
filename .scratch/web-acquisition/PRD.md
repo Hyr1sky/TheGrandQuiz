@@ -1,8 +1,8 @@
 # PRD：Web Acquisition（原生 Fetch / Search + 可选 MCP Adapter）
 
-Status: approved（2026-07-16：五项推荐默认值已由用户确认；稳定性加固 SH-S3 先落流式抓取地基，
-本文在稳定性 P1/P2 收口后再拆实现 issue）
-Triage: ready-for-agent
+Status: delivered through WA-S3（2026-07-21：可靠 Fetch、Trafilatura、质量门、可选 SearXNG Search、
+Acquisition Replay 与 case16 已完成；WA-S4 真实 SearXNG + ReAct 为 HITL，MCP / browser adapter 后置）
+Triage: ready-for-human
 
 ## Problem Statement
 
@@ -154,9 +154,9 @@ artifact 由实现 issue 决定，但不得默认把超大 body 塞进 trace。
 
 以下推荐默认值已由用户确认：
 
-1. **正文抽取**：以 fixture benchmark 在 `trafilatura` / `readability-lxml` 中择优，不预先锁死某个库。
-2. **首个直接搜索 adapter**：以 SearXNG 为首个实现；商业 Key adapter 后置。
-3. **MCP transport**：第一版只做本地 `stdio`；Streamable HTTP 后置。
+1. **正文抽取**：用户于 2026-07-21 进一步确认直接采用 `trafilatura`；fixture corpus 对比现有标准库基线，不再额外引入 `readability-lxml`。
+2. **首个直接搜索 adapter**：SearXNG 已实现为可选 endpoint adapter；商业 Key adapter 后置。
+3. **MCP transport**：本轮未实现；后续出现真实需求时仍先做本地 `stdio`，Streamable HTTP 后置。
 4. **MCP 暴露范围**：只做受控 Search / Fetch 映射，不动态挂载任意工具。
 5. **JavaScript 页面**：v1 诚实失败，浏览器 adapter 后置。
 

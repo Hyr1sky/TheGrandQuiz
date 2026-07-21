@@ -1,6 +1,6 @@
 # WA-S4 — 真实 SearXNG + ReAct dogfood
 
-Status: ready-for-human
+Status: ready-for-human（2026-07-21；WA-S1–S3 与 JavaGuide fetch dogfood 已完成，待真实 SearXNG + ReAct）
 Type: HITL
 
 ## Parent
@@ -32,3 +32,8 @@ JavaGuide `docs` 可作为无搜索依赖的真实 fetch dogfood 材料，但 Gi
 
 WA-S1, WA-S2 and WA-S3. Requires a reachable SearXNG endpoint and specific authorization before sending
 prompts / tool context to the configured external LLM.
+
+## Comments
+
+- 2026-07-21：用户提供的 JavaGuide `docs` 目录页与具体 MySQL 面试 Markdown 已通过生产 Fetch 路径只读 dogfood；没有写生产 DB，也没有向外部 LLM 发送材料。
+- 真实 SearXNG 搜索与 ReAct 模型决策仍保留 HITL。配置入口是 `SEARXNG_URL`；GrandQuiz 不启动服务或 Docker。

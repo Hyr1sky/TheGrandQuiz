@@ -8,7 +8,9 @@
 
 🟢 稳定性加固、修订化文档树、Agentic Search 与 GroundedDocumentAnswer 已收口（2026-07-19）。Runtime 以 `AgentEvent` 为唯一事件脊柱，具备 trace、恢复、Record/Replay、持久全局知识库、精确 DocumentNode citation、考核 workflow 与开放 ReAct 编排。
 
-Eval Harness 现有 15 条用例：全部运行 Tier-1 确定性规则门，case15 额外运行校准优先的 Tier-2 `grounded_answer` LLM grader。真实 judge 响应已录入 cassette；日常 pytest 和 `grandquiz report` 只做离线 Replay，分别显示 Rule/Quality、execution/judge tokens、rubric、逐维理由和逐字审计依据。静态门全绿，全量 pytest 为 `802 passed`。下一程进入独立的 Web Acquisition PRD。
+Eval Harness 现有 16 条用例：全部运行 Tier-1 确定性规则门，case15 额外运行校准优先的 Tier-2 `grounded_answer` LLM grader，case16 离线保护 Web Acquisition 的 search → fetch → ingest 与质量失败零 KB 污染。真实 judge 响应已录入 cassette；日常 pytest 和 `grandquiz report` 只做离线 Replay，分别显示 Rule/Quality、execution/judge tokens、rubric、逐维理由和逐字审计依据。
+
+Web Acquisition 的 WA-S1–S3 已完成：Trafilatura 正文抽取、结构化质量门、可选 SearXNG `web_search`、Search/Fetch Record-Replay 均已接入原有事件脊柱与确定性 ingest workflow。SearXNG endpoint 仅在配置 `SEARXNG_URL` 时启用，不要求本地 Docker；真实搜索 + ReAct dogfood（WA-S4）保留 HITL。静态门全绿，全量 pytest 为 `819 passed`。
 
 ## 文档
 

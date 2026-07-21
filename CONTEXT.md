@@ -63,6 +63,14 @@ LLM 决定读哪一节，代码强制 exact scope、稳定排序、累计读取�
 核心考核 workflow 的确定性选题，也不是通用 RAG/向量检索层。
 _Avoid_: 点名失败后扩大到全库、未读取正文就引用、一次倾倒全文、让自由 ReAct 接管考核状态机
 
+**Web Acquisition**（WA-S1–S3 已实现，WA-S4 待真实验收）:
+学习材料进入 Reader 之前的外部发现与规范化边界。`web_search` 只返回 `SearchResult[]` 候选，用户或开放 ReAct 选择 URL 后，Fetch 才产生 `FetchedDocument`；随后仍走确定性的 Reader → KnowledgeItem 审批 → 全局 KB workflow。SearchProvider 可拔插，首个 adapter 是可选 SearXNG endpoint；不配置时工具不注册，SearXNG 服务或 Docker 不是基础运行依赖。
+_Avoid_: 搜索结果自动批量抓取/入库、让 search adapter 直接写 KB、把 SearXNG/Docker 变成强依赖、把 Web Search 与库内 DocumentNode Agentic Search 混为一谈
+
+**FetchedDocument**:
+网络或其他 acquisition adapter 归一化后的不可信文档信封：requested/final/canonical URL、标题、规范化正文、content type/hash、adapter/extractor 指纹和结构化质量结论。HTML 由 Trafilatura 产 Markdown；空壳、过短、导航、登录与 bot challenge 页面 fail closed。requested URL 仍是 LearningResource identity，正文不进入 trace。
+_Avoid_: 原始 HTTP response 对象、把 canonical URL 悄悄改成资源身份、质量失败后继续调用 Reader、把完整网页 body 塞进事件
+
 **KnowledgeRelation**（ADR-0008，DS-S5 eval-gated，当前关闭）:
 两个 source-grounded KnowledgeItem 之间的类型化语义边，首批关系限定为 prerequisite / related /
 contradicts，必须携带 confidence、evidence provenance、抽取版本、trace id 与 review status。它是 LLM 推断的

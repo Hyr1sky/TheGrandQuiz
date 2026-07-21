@@ -1,6 +1,6 @@
 # WA-S3 — Acquisition Record/Replay 与 Eval
 
-Status: ready-for-agent
+Status: done（2026-07-21；Acquisition cassette、失败回放与离线 case16 完成）
 Type: AFK
 
 ## Parent
@@ -17,14 +17,14 @@ Type: AFK
 
 ## Acceptance criteria
 
-- [ ] Search replay 保存 / 回放规范化 `SearchResult[]`；Fetch replay 保存 / 回放规范化 `FetchedDocument`
-- [ ] replay key 包含规范化请求、adapter 类型、公开配置与 extractor / normalization 版本
-- [ ] key、cassette、trace 均不包含 secret、Authorization header 或不稳定客户端对象
-- [ ] extractor / normalization 版本变化使旧 cassette 显式 miss / 失效，不产生静默假绿
-- [ ] 新增离线 case16 覆盖 search → selected URL → fetch → ingest 的可观察行为
-- [ ] case16 同时断言正文质量失败时 Reader 零调用、审批零触发、KnowledgeItem 零创建
-- [ ] 默认 `python -m grandquiz.evals` 与 pytest 不访问公网，不依赖 SearXNG 或外部 LLM
-- [ ] 事件序、adapter、内容 hash、质量结论与最终入库结果在 Replay 中保持确定性
+- [x] Search replay 保存 / 回放规范化 `SearchResult[]`；Fetch replay 保存 / 回放规范化 `FetchedDocument`
+- [x] replay key 包含规范化请求、adapter 类型、公开配置与 extractor / normalization 版本
+- [x] key、cassette、trace 均不包含 secret、Authorization header 或不稳定客户端对象
+- [x] extractor / normalization 版本变化使旧 cassette 显式 miss / 失效，不产生静默假绿
+- [x] 新增离线 case16 覆盖 search → selected URL → fetch → ingest 的可观察行为
+- [x] case16 同时断言正文质量失败时 Reader 零调用、审批零触发、KnowledgeItem 零创建
+- [x] 默认 `python -m grandquiz.evals` 与 pytest 不访问公网，不依赖 SearXNG 或外部 LLM
+- [x] 事件序、adapter、内容 hash、质量结论与最终入库结果在 Replay 中保持确定性
 
 ## Blocked by
 
