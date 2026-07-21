@@ -1,9 +1,9 @@
 # PRD：Web Acquisition（原生 Fetch / Search + 可选 MCP Adapter）
 
-Status: delivered through WA-S3 + WA-S5（2026-07-21：可靠 Fetch、Trafilatura、质量门、可选 Tavily /
-SearXNG Search、Acquisition Replay、case16、免信用卡启动路径与两种真实 provider 连通均已完成；WA-S4
-真实 Search + ReAct 为 HITL，MCP / browser adapter 后置）
-Triage: ready-for-human
+Status: delivered through WA-S5（2026-07-21：可靠 Fetch、Trafilatura、质量门、可选 Tavily /
+SearXNG Search、Acquisition Replay、case16/case17、免信用卡启动路径、真实 provider 连通与
+Search → 用户选择 → ingest ReAct dogfood 均已完成；MCP / browser adapter 后置）
+Triage: done
 
 ## Problem Statement
 

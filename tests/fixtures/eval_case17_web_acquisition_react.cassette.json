@@ -1,0 +1,117 @@
+{
+  "18249df7e71e0a8f74a018038c69ecff336e7f6ff5f04c68e96c9fe4cacd4224": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "好的，正在将这份 MySQL 面试高频考点材料入库深读。",
+    "tool_calls": [
+      {
+        "arguments": {
+          "url": "https://javaguide.cn/database/mysql/mysql-questions-01.html"
+        },
+        "id": "call_00_5xQEPjaSflkZLozBZr6U2819",
+        "name": "ingest"
+      }
+    ],
+    "tool_contract_hash": "0b529340bc91dbcec88d4fe5aab153bfb50b8b11c565b39bed678b9b9c9715d8",
+    "usage": {
+      "completion_tokens": 95,
+      "prompt_tokens": 5077,
+      "total_tokens": 5172
+    }
+  },
+  "3b487c157e402c3f646418d7e91072f06b9908b1242595483678e464a71abad2": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "{\"topic\": \"MySQL 面试高频考点\", \"candidates\": [{\"concept\": \"回表\", \"summary\": \"从二级索引拿到主键后再次访问聚簇索引读取完整行的过程\", \"evidence\": [{\"node_key\": \"n000003\", \"start_offset\": 65, \"end_offset\": 74, \"quote\": \"这个过程称为回表。\"}], \"confidence\": 0.95}, {\"concept\": \"覆盖索引\", \"summary\": \"查询所需列全部包含在索引中，无需回表，减少随机I/O\", \"evidence\": [{\"node_key\": \"n000003\", \"start_offset\": 74, \"end_offset\": 92, \"quote\": \"覆盖索引可以直接从索引取得查询所需列\"}], \"confidence\": 0.95}, {\"concept\": \"最左前缀原则\", \"summary\": \"联合索引按声明顺序组织，查询条件从最左列连续匹配才能充分利用索引的有序前缀\", \"evidence\": [{\"node_key\": \"n000005\", \"start_offset\": 18, \"end_offset\": 103, \"quote\": \"查询条件从最左列开始连续匹配时，优化器更容易利用索引；跳过最左列\\n通常无法直接使用该联合索引的有序前缀。\"}], \"confidence\": 0.95}, {\"concept\": \"Read View 建立时机\", \"summary\": \"读已提交在每条语句开始时建立Read View，可重复读在事务第一次一致性读时建立Read View\", \"evidence\": [{\"node_key\": \"n000007\", \"start_offset\": 0, \"end_offset\": 56, \"quote\": \"读已提交在每条语句开始时建立 Read View，可重复读通常在事务第一次一致性读时建立 Read View。\"}], \"confidence\": 0.95}, {\"concept\": \"EXPLAIN 分析慢查询\", \"summary\": \"使用EXPLAIN查看访问类型、索引和扫描行数，结合回表成本等判断慢查询瓶颈\", \"evidence\": [{\"node_key\": \"n000009\", \"start_offset\": 10, \"end_offset\": 86, \"quote\": \"应先用 EXPLAIN 查看访问类型、可能索引、实际选用索引与扫描行数，再结合数据分布、\\n回表成本和排序临时表判断瓶颈。\"}], \"confidence\": 0.95}]}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 2582,
+      "prompt_tokens": 1004,
+      "total_tokens": 3586
+    }
+  },
+  "3e7d47b447f37703c4d5b05d3fc859ac04d35a870eed80154ec796e0d003e576": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "以下是 javaguide.cn 上搜索到的 **5 条 MySQL 面试高频考点相关材料**，请看看哪些是你想入库学习的：\n\n---\n\n**1️⃣ MySQL常见面试题总结**\n→ [javaguide.cn/database/mysql/mysql-questions-01.html](https://javaguide.cn/database/mysql/mysql-questions-01.html)\n涵盖基础架构、InnoDB引擎、索引原理、B+树、事务ACID、MVCC、redo/undo/binlog日志、行锁/表锁、慢查询优化——大厂必考点。\n\n**2️⃣ SQL常见面试题总结（1）**\n→ [javaguide.cn/database/sql/sql-questions-01.html](https://javaguide.cn/database/sql/sql-questions-01.html)\nSELECT检索、WHERE过滤、ORDER BY排序、DISTINCT去重、LIMIT分页等基础查询操作及牛客真题解析。\n\n**3️⃣ SQL 专题：语法基础、查询、聚合、连接、子查询与常见面试题**\n→ [javaguide.cn/database/sql/](https://javaguide.cn/database/sql/)\nSQL 核心概念、实践方法、常见问题和高频面试考点的系统性梳理。\n\n**4️⃣ 数据库基础常见面试题总结**\n→ [javaguide.cn/database/basis.html](https://javaguide.cn/database/basis.html)\n数据库理论知识基础，是学习 MySQL 的前置必备内容。\n\n**5️⃣ SQL常见面试题总结（4）**\n→ [javaguide.cn/database/sql/sql-questions-04.html](https://javaguide.cn/database/sql/sql-questions-04.html)\nMySQL 8.0 窗口函数详解：ROW_NUMBER、RANK、DENSE_RANK、NTILE、LAG、LEAD 等及场景应用。\n\n---\n\n请告诉我你想把哪些材料的 URL 喂入库中，我会调用 `ingest` 进行深读学习。",
+    "tool_contract_hash": "0b529340bc91dbcec88d4fe5aab153bfb50b8b11c565b39bed678b9b9c9715d8",
+    "usage": {
+      "completion_tokens": 473,
+      "prompt_tokens": 5379,
+      "total_tokens": 5852
+    }
+  },
+  "4ec84a4281c41d533ff6b4a957edcc75aef9b373b051fe62ce625c7de0ffa806": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "好的，我来搜索 javaguide.cn 上关于 MySQL 面试高频考点的资料。",
+    "tool_calls": [
+      {
+        "arguments": {
+          "domains": [
+            "javaguide.cn"
+          ],
+          "limit": 5,
+          "query": "MySQL 面试高频考点"
+        },
+        "id": "call_00_OiwBvkexHtFGMGPUIgYA0053",
+        "name": "web_search"
+      }
+    ],
+    "tool_contract_hash": "0b529340bc91dbcec88d4fe5aab153bfb50b8b11c565b39bed678b9b9c9715d8",
+    "usage": {
+      "completion_tokens": 170,
+      "prompt_tokens": 4625,
+      "total_tokens": 4795
+    }
+  },
+  "5b85e4579260ed84f3343c2fac3f74c05312ac84ab6eed5f0d22a31ce9ff8d75": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "",
+    "tool_calls": [
+      {
+        "arguments": {
+          "url": "https://example.com/login"
+        },
+        "id": "call_00_tbX0pKdHagDPI69cVDJi2580",
+        "name": "ingest"
+      }
+    ],
+    "tool_contract_hash": "0b529340bc91dbcec88d4fe5aab153bfb50b8b11c565b39bed678b9b9c9715d8",
+    "usage": {
+      "completion_tokens": 82,
+      "prompt_tokens": 5389,
+      "total_tokens": 5471
+    }
+  },
+  "6b42d7d1950d5732ef5f6c18571f522a156b96d77a69c5fec2e91794f4a78e53": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "材料已成功深读并入库，审批通过。以下是入库小结：\n\n---\n\n**📄 材料：** MySQL常见面试题总结\n**🏷️ 资源 ID：** `c8d449be257f254d`\n**📦 抽取知识点：** 5 个\n\n| 序号 | 知识点 |\n|:---:|:---|\n| 1 | **回表** |\n| 2 | **覆盖索引** |\n| 3 | **最左前缀原则** |\n| 4 | **Read View 建立时机** |\n| 5 | **EXPLAIN 分析慢查询** |\n\n---\n\n知识库已就绪。接下来你可以：\n\n- **「考我几题」** — 从这份材料出题检验掌握程度\n- **「我哪里薄弱」** — 查看哪些知识点被标记为薄弱\n- **「根据材料解释回表是什么」** — 基于材料精确回答并给出来源出处\n- **继续添加更多材料** — 把列表中其他 4 条也入库\n\n你想怎么继续？",
+    "tool_contract_hash": "0b529340bc91dbcec88d4fe5aab153bfb50b8b11c565b39bed678b9b9c9715d8",
+    "usage": {
+      "completion_tokens": 368,
+      "prompt_tokens": 5236,
+      "total_tokens": 5604
+    }
+  },
+  "f074d8d750a35e3aa9a5b5179f631e708f692b2708a8ff247bf33b8dc9b2a8da": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "**测试结果：安全拒绝 ✅**\n\n- **URL：** `https://example.com/login`\n- **入库状态：** 失败（`failed`）\n- **知识点抽取数：** 0\n- **结论：** 该低质量页面未能通过材料的深读校验，系统安全地拒绝入库，未产生任何知识点，不会污染知识库。\n\n---\n\n如需继续学习，可以：\n\n- **考核已入库的 MySQL 面试题材料** — 直接说「考我几题」\n- **查询薄弱点** — 「查查我薄弱的地方」\n- **添加更多材料** — 从之前列表中选择其他 javaguide.cn 页面入库",
+    "tool_contract_hash": "0b529340bc91dbcec88d4fe5aab153bfb50b8b11c565b39bed678b9b9c9715d8",
+    "usage": {
+      "completion_tokens": 177,
+      "prompt_tokens": 5511,
+      "total_tokens": 5688
+    }
+  }
+}

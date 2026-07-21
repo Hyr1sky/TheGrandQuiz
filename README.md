@@ -8,9 +8,9 @@
 
 🟢 稳定性加固、修订化文档树、Agentic Search 与 GroundedDocumentAnswer 已收口（2026-07-19）。Runtime 以 `AgentEvent` 为唯一事件脊柱，具备 trace、恢复、Record/Replay、持久全局知识库、精确 DocumentNode citation、考核 workflow 与开放 ReAct 编排。
 
-Eval Harness 现有 16 条用例：全部运行 Tier-1 确定性规则门，case15 额外运行校准优先的 Tier-2 `grounded_answer` LLM grader，case16 离线保护 Web Acquisition 的 search → fetch → ingest 与质量失败零 KB 污染。真实 judge 响应已录入 cassette；日常 pytest 和 `grandquiz report` 只做离线 Replay，分别显示 Rule/Quality、execution/judge tokens、rubric、逐维理由和逐字审计依据。
+Eval Harness 现有 17 条用例：全部运行 Tier-1 确定性规则门，case15 额外运行校准优先的 Tier-2 `grounded_answer` LLM grader；case16 离线保护 Acquisition 接口，case17 回放真实模型的 search → 用户选择 → ingest 决策与质量失败零 KB 污染。真实响应已录入 cassette；日常 pytest 和 `grandquiz report` 只做离线 Replay，分别显示 Rule/Quality、execution/judge tokens、rubric、逐维理由和逐字审计依据。
 
-Web Acquisition 的 WA-S1–S3 与免信用卡 WA-S5 已完成：Trafilatura 正文抽取、结构化质量门、可选 Tavily / SearXNG `web_search`、Search/Fetch Record-Replay 均已接入原有事件脊柱与确定性 ingest workflow。Tavily 只需无需信用卡的免费 API key；SearXNG 提供 loopback-only 最小单容器配置，但 Docker 仍不是基础依赖。两种 provider 的真实直接搜索均已验收；真实 ReAct dogfood（WA-S4）保留 HITL。
+Web Acquisition 的 WA-S1–S5 已完成：Trafilatura 正文抽取、结构化质量门、可选 Tavily / SearXNG `web_search`、Search/Fetch Record-Replay 均已接入原有事件脊柱与确定性 ingest workflow。Tavily 只需无需信用卡的免费 API key；SearXNG 提供 loopback-only 最小单容器配置，但 Docker 仍不是基础依赖。两种 provider 的真实搜索与 search → 用户选择 → ingest ReAct dogfood 均已验收。
 
 ## 文档
 

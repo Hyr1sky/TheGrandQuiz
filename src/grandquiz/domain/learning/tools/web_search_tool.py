@@ -1,6 +1,7 @@
 """``web_search`` 工具：只发现有界候选，不自动抓取或入库。"""
 
 import hashlib
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -15,6 +16,7 @@ def _empty_domains() -> list[str]:
 
 class SearchToolResult(BaseModel):
     adapter: str
+    selection_required: Literal[True] = True
     results: list[SearchResult]
 
 
@@ -81,6 +83,7 @@ def make_web_search_tool(*, provider: SearchProvider) -> Tool:
         name="web_search",
         description=(
             "按主题搜索学习材料候选，返回标题、URL 和摘要；只发现候选，不会自动读取或入库。"
+            "调用后必须结束当前回合并等待用户显式选择，不能在同一回合继续调用 ingest。"
         ),
         params=_SearchParams,
         handler=handler,

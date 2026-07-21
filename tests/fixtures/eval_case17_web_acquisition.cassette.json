@@ -1,0 +1,108 @@
+{
+  "2a1a58adb78a5f269cfd37aa79576157d67b21cdfa18c616bde0d643238bf7e9": {
+    "adapter_fingerprint": "eval:synthetic-mysql-web-v1",
+    "cassette_version": 1,
+    "failure": {
+      "message": "网页正文质量门拒绝：login_page（正文字符数=0）",
+      "reason": "login_page"
+    },
+    "kind": "fetch",
+    "normalization_version": "trafilatura:2.1.0/web-v1",
+    "request": {
+      "max_bytes": 4096,
+      "url": "https://example.com/login"
+    }
+  },
+  "30c5bcdce4e641834fd4d9d9aa6bb329adf2367dac000be88d311c2c96101faa": {
+    "adapter_fingerprint": "eval:synthetic-mysql-web-v1",
+    "cassette_version": 1,
+    "document": {
+      "adapter": "native_http",
+      "canonical_url": "https://javaguide.cn/database/mysql/mysql-questions-01.html",
+      "content": "# MySQL 面试高频考点\n\n## 索引与回表\n\nInnoDB 的普通二级索引叶子节点保存主键值。查询列没有被二级索引覆盖时，需要先从二级索引取得主键，\n再访问聚簇索引读取完整行，这个过程称为回表。覆盖索引可以直接从索引取得查询所需列，减少随机 I/O。\n\n## 联合索引与最左前缀\n\n联合索引按照索引列的声明顺序组织。查询条件从最左列开始连续匹配时，优化器更容易利用索引；跳过最左列\n通常无法直接使用该联合索引的有序前缀。范围条件之后的列能否继续用于定位，需要结合具体执行计划判断。\n\n## 事务隔离\n\n读已提交在每条语句开始时建立 Read View，可重复读通常在事务第一次一致性读时建立 Read View。\nInnoDB 通过 MVCC 与锁协作处理并发；当前读仍会读取最新版本并按需加锁，不能把快照读规则套到所有查询。\n\n## 排查方法\n\n面试中讨论慢查询时，应先用 EXPLAIN 查看访问类型、可能索引、实际选用索引与扫描行数，再结合数据分布、\n回表成本和排序临时表判断瓶颈。不能只凭 SQL 文本断言某个索引一定生效。\n",
+      "content_hash": "2444608ce86ca9c6340802368872f1f95a71fc2bbeccc70ab0628d96889d25ca",
+      "content_type": "text/html",
+      "extractor": "trafilatura:2.1.0",
+      "final_url": "https://javaguide.cn/database/mysql/mysql-questions-01.html",
+      "quality": {
+        "accepted": true,
+        "content_char_count": 470,
+        "reasons": []
+      },
+      "requested_url": "https://javaguide.cn/database/mysql/mysql-questions-01.html",
+      "title": "MySQL 面试高频考点（合成 Eval 材料）",
+      "trusted": false
+    },
+    "kind": "fetch",
+    "normalization_version": "trafilatura:2.1.0/web-v1",
+    "request": {
+      "max_bytes": 4096,
+      "url": "https://javaguide.cn/database/mysql/mysql-questions-01.html"
+    }
+  },
+  "ccfad14ed88ca283403f2102d3af890b2b18723d8bcbddf444a79ed0dbf8b873": {
+    "adapter_fingerprint": "wa-s4:searxng-2026.7.19-json-v1",
+    "cassette_version": 1,
+    "kind": "search",
+    "normalization_version": "search-v1",
+    "request": {
+      "domains": [
+        "javaguide.cn"
+      ],
+      "limit": 5,
+      "query": "MySQL 面试高频考点"
+    },
+    "results": [
+      {
+        "adapter": "searxng",
+        "metadata": {
+          "engine": "google cse"
+        },
+        "rank": 1,
+        "snippet": "May 24, 2026 ... MySQL高频面试题精讲：基础架构、InnoDB引擎、索引原理、B+树、事务ACID、MVCC、redo/undo/binlog日志、行锁/表锁、慢查询优化，一文速通大厂必考点！",
+        "title": "MySQL常见面试题总结 - JavaGuide",
+        "url": "https://javaguide.cn/database/mysql/mysql-questions-01.html"
+      },
+      {
+        "adapter": "searxng",
+        "metadata": {
+          "engine": "google cse"
+        },
+        "rank": 2,
+        "snippet": "Jun 7, 2026 ... SQL常见面试题总结第一篇，涵盖SELECT检索数据、WHERE条件过滤、ORDER BY排序、DISTINCT去重、LIMIT分页等基础查询操作及牛客真题解析。",
+        "title": "SQL常见面试题总结（1） - JavaGuide",
+        "url": "https://javaguide.cn/database/sql/sql-questions-01.html"
+      },
+      {
+        "adapter": "searxng",
+        "metadata": {
+          "engine": "google cse"
+        },
+        "rank": 3,
+        "snippet": "May 26, 2026 ... ... 建议阅读顺序、核心文章、SQL 等内容展开。结合JavaGuide 知识体系梳理数据库/ SQL 的核心概念、实践方法、常见问题和高频面试考点等核心。",
+        "title": "SQL 专题：语法基础、查询、聚合、连接、子查询与常见面试题 ...",
+        "url": "https://javaguide.cn/database/sql/"
+      },
+      {
+        "adapter": "searxng",
+        "metadata": {
+          "engine": "google cse"
+        },
+        "rank": 4,
+        "snippet": "May 21, 2026 ... 数据库知识基础，这部分内容一定要理解记忆。虽然这部分内容只是理论知识，但是非常重要，这是后面学习MySQL 数据库的基础。PS: 这部分内容由于涉及太多 ...",
+        "title": "数据库基础常见面试题总结 - JavaGuide",
+        "url": "https://javaguide.cn/database/basis.html"
+      },
+      {
+        "adapter": "searxng",
+        "metadata": {
+          "engine": "google cse"
+        },
+        "rank": 5,
+        "snippet": "May 18, 2026 ... SQL常见面试题总结第四篇，详解MySQL 8.0窗口函数ROW_NUMBER、RANK、DENSE_RANK、NTILE、LAG、LEAD等的用法和应用场景。重点围绕专用窗口函数、聚合 ...",
+        "title": "SQL常见面试题总结（4） - JavaGuide",
+        "url": "https://javaguide.cn/database/sql/sql-questions-04.html"
+      }
+    ]
+  }
+}

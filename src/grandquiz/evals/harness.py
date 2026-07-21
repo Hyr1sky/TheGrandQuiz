@@ -42,6 +42,8 @@ from grandquiz.domain.learning.ingest.acquisition_replay import (
     ReplayFetchSource,
     ReplaySearchProvider,
 )
+from grandquiz.domain.learning.ingest.fetch import ALLOW_ANY_DOMAIN, BoundedFetchSource, FetchSource
+from grandquiz.domain.learning.ingest.web_search import SearchProvider
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import (
     Evidence,
@@ -71,6 +73,11 @@ from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
 from grandquiz.providers.replay import Cassette, ReplayProvider
 
 _QUALITY_CASSETTE = Path("tests/fixtures/eval_quality_grounded_answer.cassette.json")
+_CASE17_ACQUISITION_CASSETTE = Path("tests/fixtures/eval_case17_web_acquisition.cassette.json")
+CASE17_ACQUISITION_ADAPTER = "searxng"
+CASE17_SEARCH_FINGERPRINT = "wa-s4:searxng-2026.7.19-json-v1"
+CASE17_FETCH_FINGERPRINT = "eval:synthetic-mysql-web-v1"
+CASE17_FETCH_NORMALIZATION = "trafilatura:2.1.0/web-v1"
 
 # --- 规范确定性装配（test_assessment / test_ingest 的 _harness / _summ 权威版本）-------------
 
@@ -512,7 +519,7 @@ class Case:
     # provider 演会失去测试意义。answer 复用给 start_quiz 内部逐题作答的 ScriptedResponder。
     user_messages: list[str] = field(default_factory=_empty_strs)
     cassette: str | None = None
-    react_fixture: Literal["quiz", "grounded"] = "quiz"
+    react_fixture: Literal["quiz", "grounded", "web_acquisition"] = "quiz"
     quality: QualityProfile | None = None
 
 
@@ -555,8 +562,8 @@ def _parse_case(raw: Any) -> Case:
         )
     if str(raw["kind"]) == "react":
         raw_fixture = str(setup.get("fixture", "quiz"))
-        react_fixture: Literal["quiz", "grounded"] = (
-            "grounded" if raw_fixture == "grounded" else "quiz"
+        react_fixture: Literal["quiz", "grounded", "web_acquisition"] = (
+            raw_fixture if raw_fixture in ("grounded", "web_acquisition") else "quiz"
         )
         raw_quality: Any = setup.get("quality")
         quality_mapping = (
@@ -878,7 +885,13 @@ def _load_react_cassette(name: str) -> ReplayProvider:
     return ReplayProvider(Cassette.load(path), model_for_role)
 
 
-async def _solve_react(case: Case, provider_override: Provider | None) -> SolveResult:
+async def _solve_react(
+    case: Case,
+    provider_override: Provider | None,
+    *,
+    search_provider_override: SearchProvider | None = None,
+    fetch_source_override: BoundedFetchSource | None = None,
+) -> SolveResult:
     """驱动 ``Runner.run_agent_turn``（而非 domain 函数直调）——覆盖 ReAct 决策层：LLM 会不会真的
     触发工具，而非在最终文本里编结果。装配逐字照 ``composition.build_react_runner`` 的形状（工具
     注册 + system/memory 分区），但用内存态 ``LearningStore``/``LearningMemory``（同其余用例，零
@@ -889,17 +902,40 @@ async def _solve_react(case: Case, provider_override: Provider | None) -> SolveR
     ``ReplayProvider``——react 用例**没有**"canned JSON 假件"这个选项：ReAct 决策本身就是被测行为，
     假 provider 会把它演成恒定正确、测不出真实模型是否偷懒编造。
     """
+
+    def no_ingest_source(_url: str) -> str:
+        raise AssertionError("react 用例的知识库已预先入库，不应触发 ingest")
+
+    search_provider = None
+    source: FetchSource = no_ingest_source
     if case.react_fixture == "grounded":
         store, grounded_resource_id = build_grounded_react_store()
+    elif case.react_fixture == "web_acquisition":
+        store = LearningStore()
+        grounded_resource_id = None
+        if (search_provider_override is None) != (fetch_source_override is None):
+            raise ValueError("web_acquisition recording 必须同时注入 search 与 fetch")
+        if search_provider_override is not None and fetch_source_override is not None:
+            search_provider = search_provider_override
+            source = fetch_source_override
+        else:
+            acquisition = AcquisitionCassette.load(_CASE17_ACQUISITION_CASSETTE)
+            search_provider = ReplaySearchProvider(
+                acquisition,
+                adapter_name=CASE17_ACQUISITION_ADAPTER,
+                adapter_fingerprint=CASE17_SEARCH_FINGERPRINT,
+            )
+            source = ReplayFetchSource(
+                acquisition,
+                adapter_fingerprint=CASE17_FETCH_FINGERPRINT,
+                normalization_version=CASE17_FETCH_NORMALIZATION,
+            )
     else:
         store, _ = build_stocked_store()
         grounded_resource_id = None
     memory = LearningMemory()
     preferences: PreferenceMemory = DictPreferenceMemory()
     registry = ToolRegistry()
-
-    def source(_url: str) -> str:
-        raise AssertionError("react 用例的知识库已预先入库，不应触发 ingest")
 
     provider = provider_override or _load_react_cassette(cast("str", case.cassette))
     register_learning_tools(
@@ -910,10 +946,13 @@ async def _solve_react(case: Case, provider_override: Provider | None) -> SolveR
         approval=ScriptedApprovalGate(keep=lambda _item: True),
         memory=memory,
         max_bytes=4096,
-        allowed_domains=ALLOWED_DOMAINS,
+        allowed_domains=(
+            ALLOW_ANY_DOMAIN if case.react_fixture == "web_acquisition" else ALLOWED_DOMAINS
+        ),
         responder=ScriptedResponder(answer=case.answer),
         preferences=preferences,
         quiz_seed=SEED,
+        search_provider=search_provider,
     )
     prompt = load_prompt("react_system")
     context_builder = ContextBuilder(
@@ -960,7 +999,13 @@ async def _solve_react(case: Case, provider_override: Provider | None) -> SolveR
     )
 
 
-async def solve(case: Case, *, provider_override: Provider | None = None) -> SolveResult:
+async def solve(
+    case: Case,
+    *,
+    provider_override: Provider | None = None,
+    search_provider_override: SearchProvider | None = None,
+    fetch_source_override: BoundedFetchSource | None = None,
+) -> SolveResult:
     """从 ``case`` 重建确定性前置，调既有入口一次，捕获事件 + span 树 + result + 记忆 / 存储末态。
 
     ``provider_override`` 供硬失败测试注入会抛 ``ReplayMiss`` 的 provider——solve **不吞**任何
@@ -969,7 +1014,12 @@ async def solve(case: Case, *, provider_override: Provider | None = None) -> Sol
     if case.kind == "ingest":
         return await _solve_ingest(case, provider_override)
     if case.kind == "react":
-        return await _solve_react(case, provider_override)
+        return await _solve_react(
+            case,
+            provider_override,
+            search_provider_override=search_provider_override,
+            fetch_source_override=fetch_source_override,
+        )
     return await _solve_assess(case, provider_override)
 
 

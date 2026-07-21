@@ -137,6 +137,7 @@ async def test_web_search_returns_candidates_and_emits_bounded_trace() -> None:
 
     assert provider.calls == [("MySQL 面试高频考点", 3, ("guide.example",))]
     assert result.adapter == "fake_search"
+    assert result.selection_required is True
     assert [candidate.url for candidate in result.results] == [
         "https://guide.example/mysql/indexes"
     ]
@@ -175,7 +176,7 @@ async def test_direct_search_cli_service_lists_candidates_without_llm_or_ingest(
 async def test_searxng_adapter_maps_and_domain_filters_results() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/search"
-        assert request.url.params["q"] == "mysql interview"
+        assert request.url.params["q"] == "mysql interview site:guide.example"
         assert request.url.params["format"] == "json"
         return httpx.Response(
             200,

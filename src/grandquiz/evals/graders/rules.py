@@ -20,7 +20,8 @@ from grandquiz.domain.learning.assessment.engine import AssessmentResult
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.grounded_answer import GroundedAnswerResult
 from grandquiz.domain.learning.ingest import IngestResult
-from grandquiz.domain.learning.models import KnowledgeItem
+from grandquiz.domain.learning.models import KnowledgeItem, LearningResource
+from grandquiz.domain.learning.tools.web_search_tool import SearchToolResult
 from grandquiz.evals.graders.scorers import (
     expected_bucket_for_language,
     language_consistency,
@@ -855,6 +856,137 @@ def grade_case16(sr: SolveResult) -> list[str]:
     return failures
 
 
+# --- case 17：真实 ReAct 决策必须 search → 人选 → ingest，失败页零污染 ----------------------
+
+
+def grade_case17(sr: SolveResult) -> list[str]:
+    failures: list[str] = []
+    starts = _find_all(sr.events, EventType.TOOL_CALL_STARTED)
+    names = [event.payload.get("tool_name") for event in starts]
+    search_starts = [event for event in starts if event.payload.get("tool_name") == "web_search"]
+    ingest_starts = [event for event in starts if event.payload.get("tool_name") == "ingest"]
+    _check(
+        failures,
+        1 <= len(search_starts) <= 3,
+        f"应有 1–3 次有界 web_search（允许开放 ReAct 调整 query），实为 {len(search_starts)}",
+    )
+    _check(failures, len(ingest_starts) == 2, f"应恰好两次 ingest，实为 {len(ingest_starts)}")
+    _check(
+        failures,
+        names == ["web_search"] * len(search_starts) + ["ingest", "ingest"],
+        f"所有搜索必须发生在两次 ingest 之前，且不得调用其他工具，实为 {names}",
+    )
+    if not search_starts or len(ingest_starts) != 2:
+        return failures
+
+    success_start, failed_start = ingest_starts
+    _check(
+        failures,
+        all(event.parent_span_id != success_start.parent_span_id for event in search_starts),
+        "搜索与成功 ingest 必须分属不同 agent turn，等待用户选择后才能抓取",
+    )
+    _check(
+        failures,
+        len({event.parent_span_id for event in search_starts}) == 1,
+        "搜索重试应收敛在第一个发现回合，不得跨到用户选择后的回合",
+    )
+    _check(
+        failures,
+        success_start.parent_span_id != failed_start.parent_span_id,
+        "成功材料与低质量页必须分别由独立用户消息触发",
+    )
+
+    ends = _find_all(sr.events, EventType.TOOL_CALL_ENDED)
+    _check(
+        failures,
+        len(ends) == len(starts),
+        f"所有工具调用都必须闭合，started={len(starts)} ended={len(ends)}",
+    )
+    candidate_urls: set[str] = set()
+    search_span_ids = {event.span_id for event in search_starts}
+    successful_search_ends = [
+        event
+        for event in ends
+        if event.span_id in search_span_ids and event.payload.get("ok") is True
+    ]
+    for search_end in successful_search_ends:
+        raw_search = search_end.payload.get("result")
+        try:
+            if not isinstance(raw_search, str):
+                raise ValueError("search result 不是 JSON 字符串")
+            search_result = SearchToolResult.model_validate_json(raw_search)
+        except Exception as exc:
+            failures.append(f"web_search 结果无法解析：{exc!r}")
+        else:
+            _check(
+                failures,
+                search_result.selection_required is True,
+                "web_search 结果必须显式要求用户选择",
+            )
+            candidate_urls.update(result.url for result in search_result.results)
+    _check(failures, bool(candidate_urls), "至少一次 web_search 必须返回候选")
+
+    success_args = cast("Mapping[str, object]", success_start.payload.get("arguments") or {})
+    failed_args = cast("Mapping[str, object]", failed_start.payload.get("arguments") or {})
+    success_url = success_args.get("url")
+    failed_url = failed_args.get("url")
+    _check(
+        failures,
+        isinstance(success_url, str) and success_url in candidate_urls,
+        f"成功 ingest URL 必须逐字来自搜索候选，实为 {success_url!r}",
+    )
+    _check(
+        failures,
+        isinstance(failed_url, str) and failed_url not in candidate_urls,
+        "低质量页应是用户显式提供的独立 URL，不得冒充搜索候选",
+    )
+
+    if isinstance(success_url, str):
+        success_resource = sr.store.get_resource(
+            LearningResource.create(url=success_url).resource_id
+        )
+        _check(failures, success_resource is not None, "成功候选缺资源快照")
+        if success_resource is not None:
+            _check(
+                failures,
+                success_resource.status == "read" and success_resource.trusted is False,
+                "成功网页应以 read + untrusted 状态入库",
+            )
+            _check(
+                failures,
+                bool(sr.store.items_for_resource(success_resource.resource_id)),
+                "成功网页必须形成获批 KnowledgeItem",
+            )
+    if isinstance(failed_url, str):
+        failed_resource = sr.store.get_resource(LearningResource.create(url=failed_url).resource_id)
+        _check(failures, failed_resource is not None, "失败页缺可审计资源记录")
+        if failed_resource is not None:
+            _check(failures, failed_resource.status == "failed", "低质量页必须 fail closed")
+            _check(
+                failures,
+                sr.store.items_for_resource(failed_resource.resource_id) == [],
+                "低质量页不得污染 KB",
+            )
+
+    _check(
+        failures,
+        len(_find_all(sr.events, LearningEvent.WEB_SEARCH_STARTED)) == len(search_starts)
+        and len(_find_all(sr.events, LearningEvent.WEB_SEARCH_ENDED)) == len(search_starts),
+        "每次 web_search 都必须在领域事件脊柱上成对闭合",
+    )
+    _check(
+        failures,
+        len(_find_all(sr.events, LearningEvent.RESOURCE_FETCH_FAILED)) == 1,
+        "低质量页应产生恰好一条结构化 fetch failure",
+    )
+    _check(
+        failures,
+        len(_find_all(sr.events, LearningEvent.RESOURCE_APPROVED)) == 1,
+        "只有成功候选可以越过 Reader / 审批并获批",
+    )
+    return failures
+
+
 GRADERS: dict[str, Grader] = {
     "case1": grade_case1,
     "case2": grade_case2,
@@ -872,4 +1004,5 @@ GRADERS: dict[str, Grader] = {
     "case14": grade_case14,
     "case15": grade_case15,
     "case16": grade_case16,
+    "case17": grade_case17,
 }

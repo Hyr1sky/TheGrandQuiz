@@ -1,0 +1,63 @@
+# eval case 17：真实模型在开放 ReAct 层先调用 SearXNG 搜索、结束回合等待用户选择；收到选择后才
+# 进入确定性 ingest / Reader / approval，另一个低质量页面必须 fail closed 且零 KB 污染。
+id: case17
+kind: react
+setup:
+  fixture: web_acquisition
+  cassette: eval_case17_web_acquisition_react.cassette.json
+  user_messages:
+    - 我想更深入地学习 MySQL，尤其是面试高频考点。请只在 javaguide.cn 搜索 5 条高质量资料供我选择。
+    - 我选择 https://javaguide.cn/database/mysql/mysql-questions-01.html 。请深读、审批并入库。
+    - 再测试这个低质量页面是否会被安全拒绝：https://example.com/login
+expected_events:
+  - agent_turn.started
+  - model.started
+  - model.ended
+  - tool_call.started
+  - learning.web_search.started
+  - learning.web_search.ended
+  - tool_call.ended
+  - model.started
+  - model.ended
+  - agent_turn.ended
+  - agent_turn.started
+  - model.started
+  - model.ended
+  - tool_call.started
+  - ingest.started
+  - learning.resource_created
+  - learning.resource_read
+  - learning.document_parsed
+  - learning.reader_batch.started
+  - hook.invoked
+  - model.started
+  - model.ended
+  - learning.reader_batch.ended
+  - learning.citation_validated
+  - learning.items_extracted
+  - approval.requested
+  - approval.decided
+  - learning.revision_committed
+  - learning.resource_approved
+  - learning.item_created
+  - learning.item_created
+  - learning.item_created
+  - learning.item_created
+  - learning.item_created
+  - ingest.ended
+  - tool_call.ended
+  - model.started
+  - model.ended
+  - agent_turn.ended
+  - agent_turn.started
+  - model.started
+  - model.ended
+  - tool_call.started
+  - ingest.started
+  - learning.resource_created
+  - learning.resource_fetch_failed
+  - ingest.ended
+  - tool_call.ended
+  - model.started
+  - model.ended
+  - agent_turn.ended

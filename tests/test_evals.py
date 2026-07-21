@@ -1,29 +1,166 @@
-"""M8 Eval Harness 测试——8 规则用例全绿 + 报告列（token / prompt 版本）+ ReplayMiss 硬失败。
+"""M8 Eval Harness 测试——规则用例全绿 + 报告列（token / prompt 版本）+ ReplayMiss 硬失败。
 
 harness 用与 test_assessment / test_ingest 相同的假 provider（canned JSON）驱动，独立于 cassette。
 本文件是 eval harness 自身的确定性契约测试（harness 是 eval 机制、这里验证它可信）。
 """
 
+from collections.abc import Sequence
+from dataclasses import replace
+from pathlib import Path
+
 import pytest
 
 from grandquiz.domain.learning.events import LearningEvent
+from grandquiz.domain.learning.ingest.acquisition_replay import (
+    AcquisitionCassette,
+    ReplayFetchSource,
+    ReplaySearchProvider,
+)
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.store import LearningStore
-from grandquiz.evals.graders.rules import grade_case14, grade_case15
+from grandquiz.evals.graders.rules import grade_case14, grade_case15, grade_case17
 from grandquiz.evals.graders.scorers import language_consistency, no_duplicate
-from grandquiz.evals.harness import Case, SolveResult, load_cases, run_all, run_case, solve
+from grandquiz.evals.harness import (
+    READER_JSON,
+    Case,
+    SolveResult,
+    load_cases,
+    run_all,
+    run_case,
+    solve,
+)
 from grandquiz.kernel.events import AgentEvent, EventType
-from grandquiz.providers.base import Role
+from grandquiz.providers.base import Completion, Message, Role, ToolCall, ToolSpec, Usage
 from grandquiz.providers.replay import Cassette, ReplayMiss, ReplayProvider
 
 _MODELS: dict[Role, str] = {"basic": "deepseek-x", "enrich": "qwen-x"}
 
 
+class _WebAcquisitionDecisionProvider:
+    """只替代外部 LLM；Runner、工具、Reader、审批与 store 都走真实公开路径。"""
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        if tools is None:
+            return Completion(text=READER_JSON, usage=Usage())
+
+        last = messages[-1]
+        if last.role == "tool":
+            if last.tool_call_id == "search-1":
+                return Completion(text="找到一个候选，请确认后再入库。", usage=Usage())
+            if last.tool_call_id == "ingest-good":
+                return Completion(text="已按你的选择完成深读和审批。", usage=Usage())
+            return Completion(text="低质量页面已被安全拒绝。", usage=Usage())
+
+        if "深入学习" in last.content:
+            return Completion(
+                text="",
+                tool_calls=[
+                    ToolCall(
+                        id="search-1",
+                        name="web_search",
+                        arguments={
+                            "query": "react hooks runtime",
+                            "limit": 3,
+                            "domains": ["example.com"],
+                        },
+                    )
+                ],
+                usage=Usage(),
+            )
+        if "第一个" in last.content:
+            return Completion(
+                text="",
+                tool_calls=[
+                    ToolCall(
+                        id="ingest-good",
+                        name="ingest",
+                        arguments={"url": "https://example.com/react-hooks-web"},
+                    )
+                ],
+                usage=Usage(),
+            )
+        return Completion(
+            text="",
+            tool_calls=[
+                ToolCall(
+                    id="ingest-bad",
+                    name="ingest",
+                    arguments={"url": "https://example.com/challenge"},
+                )
+            ],
+            usage=Usage(),
+        )
+
+
+async def test_web_acquisition_react_waits_for_selection_and_fails_closed() -> None:
+    case = Case(
+        id="case17",
+        kind="react",
+        expected_events=[],
+        user_messages=[
+            "我想深入学习 React，先搜索高质量材料。",
+            "选择第一个候选并入库。",
+            "再试一下这个低质量页面。",
+        ],
+        cassette="unused-with-provider-override.json",
+        react_fixture="web_acquisition",
+    )
+
+    acquisition = AcquisitionCassette.load(
+        Path("tests/fixtures/eval_case16_web_acquisition.cassette.json")
+    )
+    result = await solve(
+        case,
+        provider_override=_WebAcquisitionDecisionProvider(),
+        search_provider_override=ReplaySearchProvider(
+            acquisition,
+            adapter_name="synthetic_search",
+            adapter_fingerprint="eval:synthetic-web-v1",
+        ),
+        fetch_source_override=ReplayFetchSource(
+            acquisition,
+            adapter_fingerprint="eval:synthetic-web-v1",
+            normalization_version="trafilatura:2.1.0/web-v1",
+        ),
+    )
+
+    calls = [
+        event.payload["tool_name"]
+        for event in result.events
+        if event.type == EventType.TOOL_CALL_STARTED
+    ]
+    assert calls == ["web_search", "ingest", "ingest"]
+    assert len(result.context["final_outputs"]) == 3
+    assert len(result.store.all_items()) == 3
+    failed = [event for event in result.events if event.type == "learning.resource_fetch_failed"]
+    assert len(failed) == 1
+    assert grade_case17(result) == []
+
+    starts = [event for event in result.events if event.type == EventType.TOOL_CALL_STARTED]
+    search_start, success_start = starts[:2]
+    auto_ingest = replace(
+        result,
+        events=[
+            event.model_copy(update={"parent_span_id": search_start.parent_span_id})
+            if event is success_start
+            else event
+            for event in result.events
+        ],
+    )
+    assert any("等待用户选择" in failure for failure in grade_case17(auto_ingest))
+
+
 async def test_all_cases_pass() -> None:
     reports = await run_all()
-    # 10（8 + 语言一致性 / 无重复）+ 3 GKB-S7 + 2 个 react 层用例
-    # （批量考核、自然 grounded answer）。
-    assert len(reports) == 16
+    # 10（8 + 语言一致性 / 无重复）+ 3 GKB-S7 + 3 个 react 层用例
+    # （批量考核、自然 grounded answer、Web Acquisition）+ case16 acquisition 直调。
+    assert len(reports) == 17
     failing = {r.case_id: r.failures for r in reports if not r.passed}
     assert failing == {}, f"有用例未通过：{failing}"
 
@@ -37,6 +174,22 @@ async def test_case16_replays_web_acquisition_without_quality_pollution() -> Non
     rejected = result.context["rejected_result"]
     assert rejected.status == "failed"
     assert rejected.items == []
+
+
+async def test_case17_replays_real_search_selection_and_ingest_decisions() -> None:
+    case17 = next(case for case in load_cases() if case.id == "case17")
+
+    result = await solve(case17)
+
+    calls = [
+        event.payload["tool_name"]
+        for event in result.events
+        if event.type == EventType.TOOL_CALL_STARTED
+    ]
+    assert calls == ["web_search", "ingest", "ingest"]
+    assert len(result.context["final_outputs"]) == 3
+    assert len(result.store.all_items()) == 5
+    assert grade_case17(result) == []
 
 
 async def test_language_consistency_case_is_all_one_bucket() -> None:

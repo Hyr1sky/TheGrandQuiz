@@ -102,9 +102,9 @@ async def test_run_all_calibrates_once_and_only_judges_quality_cases() -> None:
 
     reports = await run_all(quality_provider_override=provider)
 
-    assert len(reports) == 16
+    assert len(reports) == 17
     assert all(report.passed for report in reports)
-    assert provider.calls == 5  # 4 calibration + case15；其余 15 条不调用 judge
+    assert provider.calls == 5  # 4 calibration + case15；其余 16 条不调用 judge
 
 
 async def test_run_all_turns_quality_replay_miss_into_a_case_failure() -> None:

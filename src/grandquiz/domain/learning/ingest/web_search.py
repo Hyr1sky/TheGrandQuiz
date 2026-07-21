@@ -203,13 +203,14 @@ class SearXNGSearchProvider:
         if not 1 <= limit <= 10:
             raise SearchError("invalid_limit", "搜索结果上限必须在 1..10")
         normalized_domains = _normalize_domains(domains)
+        provider_query = _searx_query(normalized_query, normalized_domains)
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(self._timeout_seconds), transport=self._transport
             ) as client:
                 response = await client.get(
                     f"{self._endpoint}/search",
-                    params={"q": normalized_query, "format": "json"},
+                    params={"q": provider_query, "format": "json"},
                 )
                 response.raise_for_status()
         except httpx.TimeoutException as exc:
@@ -256,6 +257,16 @@ def _normalize_domains(domains: Sequence[str]) -> tuple[str, ...]:
         if host and "/" not in host and ":" not in host:
             normalized.append(host)
     return tuple(dict.fromkeys(normalized))
+
+
+def _searx_query(query: str, domains: tuple[str, ...]) -> str:
+    """把显式域名约束下推给上游引擎；返回后仍由 ``_domain_allowed`` 二次校验。"""
+    if not domains:
+        return query
+    if len(domains) == 1:
+        return f"{query} site:{domains[0]}"
+    sites = " OR ".join(f"site:{domain}" for domain in domains)
+    return f"{query} ({sites})"
 
 
 def _domain_allowed(url: str, domains: tuple[str, ...]) -> bool:
