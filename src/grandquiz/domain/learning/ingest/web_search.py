@@ -73,6 +73,108 @@ class _SearXResponse(BaseModel):
     results: list[_SearXResult]
 
 
+class _TavilyResult(BaseModel):
+    title: str = ""
+    url: str
+    content: str = ""
+    score: float | None = None
+
+
+class _TavilyResponse(BaseModel):
+    results: list[_TavilyResult]
+
+
+class TavilySearchProvider:
+    """调用 Tavily Search API；API key 仅保存在请求边界，不进入结果或 trace。"""
+
+    adapter_name = "tavily"
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        endpoint: str = "https://api.tavily.com",
+        timeout_seconds: float = 10.0,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        if not api_key.strip():
+            raise ValueError("Tavily API key 不能为空")
+        parsed = urlparse(endpoint)
+        if parsed.scheme not in ("http", "https") or parsed.hostname is None:
+            raise ValueError("Tavily endpoint 必须是带主机名的 http(s) URL")
+        self._api_key = api_key
+        self._endpoint = endpoint.rstrip("/")
+        self._timeout_seconds = timeout_seconds
+        self._transport = transport
+
+    async def search(
+        self, query: str, *, limit: int, domains: tuple[str, ...] = ()
+    ) -> list[SearchResult]:
+        normalized_query = " ".join(query.split())
+        if not normalized_query:
+            raise SearchError("invalid_query", "搜索 query 不能为空")
+        if not 1 <= limit <= 10:
+            raise SearchError("invalid_limit", "搜索结果上限必须在 1..10")
+        normalized_domains = _normalize_domains(domains)
+        request_payload: dict[str, object] = {
+            "query": normalized_query,
+            "max_results": limit,
+            "search_depth": "basic",
+            "include_answer": False,
+            "include_raw_content": False,
+        }
+        if normalized_domains:
+            request_payload["include_domains"] = list(normalized_domains)
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(self._timeout_seconds), transport=self._transport
+            ) as client:
+                response = await client.post(
+                    f"{self._endpoint}/search",
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                    json=request_payload,
+                )
+                response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise SearchError("timeout", "Tavily 搜索超时") from exc
+        except httpx.HTTPStatusError as exc:
+            raise SearchError(
+                "http_status", f"Tavily HTTP 状态异常：{exc.response.status_code}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise SearchError("source_failure", "Tavily 请求失败") from exc
+
+        try:
+            payload = _TavilyResponse.model_validate(response.json())
+        except (ValidationError, ValueError) as exc:
+            raise SearchError("invalid_response", "Tavily 返回了无效 JSON schema") from exc
+
+        results: list[SearchResult] = []
+        seen: set[str] = set()
+        for candidate in payload.results:
+            if candidate.url in seen or not _domain_allowed(candidate.url, normalized_domains):
+                continue
+            metadata: dict[str, str] = {}
+            if candidate.score is not None:
+                metadata["score"] = format(candidate.score, "g")
+            try:
+                result = SearchResult(
+                    title=candidate.title.strip() or candidate.url,
+                    url=candidate.url,
+                    snippet=candidate.content.strip(),
+                    adapter=self.adapter_name,
+                    rank=len(results) + 1,
+                    metadata=metadata,
+                )
+            except ValidationError:
+                continue
+            seen.add(candidate.url)
+            results.append(result)
+            if len(results) >= limit:
+                break
+        return results
+
+
 class SearXNGSearchProvider:
     """调用已配置 SearXNG JSON API；不拥有服务进程或 Docker 生命周期。"""
 

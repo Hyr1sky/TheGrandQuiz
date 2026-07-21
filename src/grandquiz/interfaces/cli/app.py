@@ -25,6 +25,7 @@ from grandquiz.interfaces.cli.commands.audit import run_document_dogfood_audit_c
 from grandquiz.interfaces.cli.commands.ingest import _run_ingest_cli, run_ingest
 from grandquiz.interfaces.cli.commands.quiz import _run_quiz_cli, run_quiz
 from grandquiz.interfaces.cli.commands.react import _run_react_cli, run_react
+from grandquiz.interfaces.cli.commands.search import _run_search_cli, run_search
 from grandquiz.interfaces.cli.commands.trace import (
     _run_report_cli,
     _run_trace_cli,
@@ -43,6 +44,7 @@ __all__ = [
     "run_ingest",
     "run_quiz",
     "run_react",
+    "run_search",
 ]
 
 
@@ -75,6 +77,34 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path.cwd(),
         help="本地材料目录（ingest 的 file://local/<文件名> 相对此目录解析，默认当前目录）",
+    )
+
+    p_search = sub.add_parser(
+        "search",
+        help="直接搜索学习材料候选（不调用 LLM、不抓取或入库）",
+        description="直接搜索学习材料候选（不调用 LLM、不抓取、不执行 Reader 或入库）",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""配置：
+  TAVILY_API_KEY=tvly-... grandquiz search "MySQL 面试高频考点"
+  SEARXNG_URL=http://127.0.0.1:8080 grandquiz search "MySQL 面试高频考点"
+
+同时配置两者时，用 WEB_SEARCH_PROVIDER=tavily|searxng 显式选择。
+""",
+    )
+    p_search.add_argument("query", help="搜索词")
+    p_search.add_argument("--limit", type=int, default=5, choices=range(1, 11), help="候选数 1..10")
+    p_search.add_argument(
+        "--domain",
+        dest="domains",
+        action="append",
+        default=[],
+        help="只保留指定域名，可重复（如 --domain github.com）",
+    )
+    p_search.add_argument(
+        "--trace-db",
+        type=Path,
+        default=None,
+        help="独立 trace 库路径（默认 ~/.grandquiz/trace.db）",
     )
 
     p_report = sub.add_parser(
@@ -165,6 +195,13 @@ def main(argv: Sequence[str] | None = None) -> None:
             asyncio.run(
                 _run_react_cli(title=args.title, db_path=args.db, materials_dir=args.materials_dir)
             )
+    elif args.command == "search":
+        _run_search_cli(
+            query=args.query,
+            limit=args.limit,
+            domains=tuple(args.domains),
+            trace_db_path=args.trace_db,
+        )
     elif args.command == "report":
         _run_report_cli(out=args.out)
     elif args.command == "trace":

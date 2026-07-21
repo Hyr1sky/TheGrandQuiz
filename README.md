@@ -10,7 +10,7 @@
 
 Eval Harness 现有 16 条用例：全部运行 Tier-1 确定性规则门，case15 额外运行校准优先的 Tier-2 `grounded_answer` LLM grader，case16 离线保护 Web Acquisition 的 search → fetch → ingest 与质量失败零 KB 污染。真实 judge 响应已录入 cassette；日常 pytest 和 `grandquiz report` 只做离线 Replay，分别显示 Rule/Quality、execution/judge tokens、rubric、逐维理由和逐字审计依据。
 
-Web Acquisition 的 WA-S1–S3 已完成：Trafilatura 正文抽取、结构化质量门、可选 SearXNG `web_search`、Search/Fetch Record-Replay 均已接入原有事件脊柱与确定性 ingest workflow。SearXNG endpoint 仅在配置 `SEARXNG_URL` 时启用，不要求本地 Docker；真实搜索 + ReAct dogfood（WA-S4）保留 HITL。静态门全绿，全量 pytest 为 `819 passed`。
+Web Acquisition 的 WA-S1–S3 已完成：Trafilatura 正文抽取、结构化质量门、可选 Tavily / SearXNG `web_search`、Search/Fetch Record-Replay 均已接入原有事件脊柱与确定性 ingest workflow。Tavily 只需无需信用卡的免费 API key；SearXNG 提供 loopback-only 最小单容器配置，但 Docker 仍不是基础依赖。真实搜索 + ReAct dogfood（WA-S4）保留 HITL。
 
 ## 文档
 
@@ -34,9 +34,14 @@ uv run ruff check .    # lint
 uv run ruff format .   # 格式化
 uv run pyright         # 类型检查（strict）
 uv run pre-commit install  # 安装提交钩子
+uv run grandquiz search "MySQL 面试高频考点"  # 不经 LLM 验证已配置的搜索 provider
 uv run grandquiz report    # 离线 Replay 全部 Eval，导出 ~/.grandquiz/eval-report/index.html
 open ~/.grandquiz/eval-report/index.html
 ```
+
+Web Search 默认不启用。在 `.env` 配置 `TAVILY_API_KEY` 即可使用 Tavily；也可按
+[`deploy/searxng/README.md`](deploy/searxng/README.md) 启动本机 SearXNG。两者同时存在时必须用
+`WEB_SEARCH_PROVIDER=tavily|searxng` 显式选择，避免静默改变供应商。
 
 CI 在每次 push / PR 上跑 lint + format + typecheck + test，全绿才能合并。
 

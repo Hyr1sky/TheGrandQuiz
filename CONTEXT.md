@@ -63,8 +63,8 @@ LLM 决定读哪一节，代码强制 exact scope、稳定排序、累计读取�
 核心考核 workflow 的确定性选题，也不是通用 RAG/向量检索层。
 _Avoid_: 点名失败后扩大到全库、未读取正文就引用、一次倾倒全文、让自由 ReAct 接管考核状态机
 
-**Web Acquisition**（WA-S1–S3 已实现，WA-S4 待真实验收）:
-学习材料进入 Reader 之前的外部发现与规范化边界。`web_search` 只返回 `SearchResult[]` 候选，用户或开放 ReAct 选择 URL 后，Fetch 才产生 `FetchedDocument`；随后仍走确定性的 Reader → KnowledgeItem 审批 → 全局 KB workflow。SearchProvider 可拔插，首个 adapter 是可选 SearXNG endpoint；不配置时工具不注册，SearXNG 服务或 Docker 不是基础运行依赖。
+**Web Acquisition**（WA-S1–S3 已实现，免信用卡搜索路径已补齐，WA-S4 待真实验收）:
+学习材料进入 Reader 之前的外部发现与规范化边界。`web_search` 只返回 `SearchResult[]` 候选，用户或开放 ReAct 选择 URL 后，Fetch 才产生 `FetchedDocument`；随后仍走确定性的 Reader → KnowledgeItem 审批 → 全局 KB workflow。SearchProvider 可拔插：Tavily 提供无需信用卡的免费 Key 路径，SearXNG 提供可选自托管路径；不配置时工具不注册，SearXNG 服务或 Docker 不是基础运行依赖。两者同时配置必须显式选择 provider，不做隐藏 fallback。
 _Avoid_: 搜索结果自动批量抓取/入库、让 search adapter 直接写 KB、把 SearXNG/Docker 变成强依赖、把 Web Search 与库内 DocumentNode Agentic Search 混为一谈
 
 **FetchedDocument**:

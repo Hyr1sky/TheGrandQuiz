@@ -29,7 +29,11 @@ from grandquiz.domain.learning.ingest.fetch import (
     FetchSource,
 )
 from grandquiz.domain.learning.ingest.web_fetch import create_http_source
-from grandquiz.domain.learning.ingest.web_search import SearchProvider, SearXNGSearchProvider
+from grandquiz.domain.learning.ingest.web_search import (
+    SearchProvider,
+    SearXNGSearchProvider,
+    TavilySearchProvider,
+)
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.persistence import LearningDatabase
 from grandquiz.domain.learning.preference import SqlitePreferenceMemory
@@ -89,6 +93,9 @@ _DEFAULT_MAX_BYTES = 8 * 1024 * 1024
 _DEFAULT_ROUNDS = 5
 _SEARXNG_URL_ENV = "SEARXNG_URL"
 _SEARXNG_TIMEOUT_ENV = "SEARXNG_TIMEOUT_SECONDS"
+_TAVILY_API_KEY_ENV = "TAVILY_API_KEY"
+_TAVILY_TIMEOUT_ENV = "TAVILY_TIMEOUT_SECONDS"
+_WEB_SEARCH_PROVIDER_ENV = "WEB_SEARCH_PROVIDER"
 
 # Context compression（C-wire 增量 1，见 .scratch/context-compression/PRD.md + gap-review）：
 # system 分区实测 ~925 token（react_system.md），memory 分区随薄弱点/资源目录增长；两个 budget
@@ -133,8 +140,23 @@ def budget_provider(provider: Provider) -> Provider:
 
 
 def search_provider_from_env() -> SearchProvider | None:
-    """仅在显式配置 endpoint 时启用 SearXNG；不负责启动服务或 Docker。"""
+    """从显式凭证选择搜索 provider；不负责启动服务或 Docker。"""
+    selected = os.environ.get(_WEB_SEARCH_PROVIDER_ENV, "").strip().casefold()
+    tavily_api_key = os.environ.get(_TAVILY_API_KEY_ENV, "").strip()
     endpoint = os.environ.get(_SEARXNG_URL_ENV, "").strip()
+
+    if selected and selected not in {"tavily", "searxng"}:
+        raise ValueError("WEB_SEARCH_PROVIDER 只能是 tavily 或 searxng")
+    if not selected and tavily_api_key and endpoint:
+        raise ValueError("同时配置 Tavily 与 SearXNG 时必须设置 WEB_SEARCH_PROVIDER")
+
+    if selected == "tavily" or (not selected and tavily_api_key):
+        if not tavily_api_key:
+            raise ValueError("WEB_SEARCH_PROVIDER=tavily 需要 TAVILY_API_KEY")
+        timeout = float(os.environ.get(_TAVILY_TIMEOUT_ENV, "10"))
+        return TavilySearchProvider(api_key=tavily_api_key, timeout_seconds=timeout)
+    if selected == "searxng" and not endpoint:
+        raise ValueError("WEB_SEARCH_PROVIDER=searxng 需要 SEARXNG_URL")
     if not endpoint:
         return None
     timeout = float(os.environ.get(_SEARXNG_TIMEOUT_ENV, "10"))

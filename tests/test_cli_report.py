@@ -253,9 +253,13 @@ async def test_trace_export_missing_id_fails_loudly(tmp_path: Path) -> None:
             "trace",
             ("trace_id", "trace.db", "trace-<trace_id>.html", "open"),
         ),
+        (
+            "search",
+            ("不调用 LLM", "TAVILY_API_KEY", "SEARXNG_URL", "WEB_SEARCH_PROVIDER"),
+        ),
     ],
 )
-def test_report_and_trace_help_are_actionable(
+def test_operational_command_help_is_actionable(
     command: str,
     needles: tuple[str, ...],
     capsys: pytest.CaptureFixture[str],

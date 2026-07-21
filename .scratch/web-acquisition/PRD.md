@@ -1,7 +1,8 @@
 # PRD：Web Acquisition（原生 Fetch / Search + 可选 MCP Adapter）
 
-Status: delivered through WA-S3（2026-07-21：可靠 Fetch、Trafilatura、质量门、可选 SearXNG Search、
-Acquisition Replay 与 case16 已完成；WA-S4 真实 SearXNG + ReAct 为 HITL，MCP / browser adapter 后置）
+Status: delivered through WA-S3；WA-S5 ready-for-human（2026-07-21：可靠 Fetch、Trafilatura、质量门、
+可选 Tavily / SearXNG Search、Acquisition Replay、case16 与免信用卡代码路径已完成；真实 provider 连通与
+WA-S4 Search + ReAct 为 HITL，MCP / browser adapter 后置）
 Triage: ready-for-human
 
 ## Problem Statement
@@ -95,8 +96,9 @@ artifact 由实现 issue 决定，但不得默认把超大 body 塞进 trace。
 
 - `web_search(query)` 只返回结构化候选，不自动 ingest 搜索结果全文。
 - “原生工具”指 GrandQuiz 拥有稳定工具接口，不意味着搜索供应商天然无 Key。
-- 首个直接搜索 adapter 建议支持 SearXNG（可自托管、避免把商业 Key 作为基础前提）。
-- 商业搜索 adapter 后续按真实需求添加，凭证只从环境变量读取。
+- 直接搜索 adapter 支持 Tavily 与 SearXNG：Tavily 免费额度无需信用卡，SearXNG 可本机自托管；二者都不是基础运行依赖。
+- Tavily Key 只从环境变量读取，固定使用 basic search，不请求供应商生成答案或 raw content；选定 URL 后仍由内部 Fetch / Trafilatura 取得正文。
+- 同时配置多个 provider 时必须显式选择，不做隐藏优先级或静默 fallback。
 - 查询、返回数量、域名约束和超时均为显式参数；返回数量有保守上限。
 
 ### 5. MCP Adapter
@@ -155,10 +157,11 @@ artifact 由实现 issue 决定，但不得默认把超大 body 塞进 trace。
 以下推荐默认值已由用户确认：
 
 1. **正文抽取**：用户于 2026-07-21 进一步确认直接采用 `trafilatura`；fixture corpus 对比现有标准库基线，不再额外引入 `readability-lxml`。
-2. **首个直接搜索 adapter**：SearXNG 已实现为可选 endpoint adapter；商业 Key adapter 后置。
+2. **直接搜索 adapter**：SearXNG 与 Tavily 均为可选；Tavily 提供无需信用卡的免费 Key 路径，SearXNG 提供 loopback-only 单容器自托管路径。二者同时配置时必须显式选择。
 3. **MCP transport**：本轮未实现；后续出现真实需求时仍先做本地 `stdio`，Streamable HTTP 后置。
 4. **MCP 暴露范围**：只做受控 Search / Fetch 映射，不动态挂载任意工具。
 5. **JavaScript 页面**：v1 诚实失败，浏览器 adapter 后置。
+6. **直接验收入口**：`grandquiz search` 复用正式 `web_search` 工具与事件脊柱，只列候选，不调用 LLM、Fetch、Reader 或 learning store。
 
 ## Further Notes
 
