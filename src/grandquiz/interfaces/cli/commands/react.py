@@ -33,6 +33,7 @@ from grandquiz.interfaces.cli.composition import (
     build_event_backbone,
     build_learning_stores,
     build_react_runner,
+    search_provider_from_env,
 )
 from grandquiz.interfaces.cli.interactive import InteractiveResponder
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
@@ -109,6 +110,7 @@ async def run_react(
             responder=responder,
             seed=seed,
             max_iterations=max_iterations,
+            search_provider=search_provider_from_env(),
         )
 
         banner = f"「{title}」" if title else ""

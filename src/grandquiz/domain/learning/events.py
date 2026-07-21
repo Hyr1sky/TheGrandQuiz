@@ -38,6 +38,8 @@ class LearningEvent:
     CITATION_REJECTED = "learning.citation_rejected"  # grounding fail closed；payload 不含原文
     REVISION_COMMITTED = "learning.revision_committed"  # 审批后 revision/tree 原子成为 current
     RESOURCE_FETCH_FAILED = "learning.resource_fetch_failed"  # eval case 7：深读失败，不产幽灵 item
+    WEB_SEARCH_STARTED = "learning.web_search.started"
+    WEB_SEARCH_ENDED = "learning.web_search.ended"
     ITEMS_EXTRACTED = "learning.items_extracted"  # Reader 产候选（审批前预览）
     RESOURCE_APPROVED = "learning.resource_approved"  # 用户经审批门通过
     ITEM_CREATED = "learning.item_created"  # 逐个入库（审批后）——eval case 1

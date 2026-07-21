@@ -36,6 +36,7 @@ from grandquiz.domain.learning.approval import ApprovalGate
 from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
 from grandquiz.domain.learning.difficulty import DifficultyLedger
 from grandquiz.domain.learning.ingest.fetch import FetchSource
+from grandquiz.domain.learning.ingest.web_search import SearchProvider
 from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.preference import PreferenceMemory
 from grandquiz.domain.learning.responder import Responder
@@ -45,6 +46,7 @@ from grandquiz.domain.learning.tools.grounded_answer_tool import make_grounded_a
 from grandquiz.domain.learning.tools.ingest_tool import make_ingest_tool
 from grandquiz.domain.learning.tools.query_weak_tool import make_query_weak_concepts_tool
 from grandquiz.domain.learning.tools.start_quiz_tool import make_start_quiz_tool
+from grandquiz.domain.learning.tools.web_search_tool import make_web_search_tool
 from grandquiz.kernel.tools import ToolRegistry
 from grandquiz.providers.base import Provider
 
@@ -66,6 +68,7 @@ def register_learning_tools(
     quiz_seed: int = 0,
     asked_questions: AskedQuestionsLedger | None = None,
     difficulty: DifficultyLedger | None = None,
+    search_provider: SearchProvider | None = None,
 ) -> None:
     """组装点：注册 ``ingest`` / ``query_weak_concepts`` /（有 responder 时）``start_quiz``。
 
@@ -93,6 +96,8 @@ def register_learning_tools(
     registry.register(make_grounded_answer_tool(store=store, provider=provider))
     for tool in make_document_search_tools(store=store):
         registry.register(tool)
+    if search_provider is not None:
+        registry.register(make_web_search_tool(provider=search_provider))
     if responder is not None:
         registry.register(
             make_start_quiz_tool(

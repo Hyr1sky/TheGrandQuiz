@@ -13,6 +13,7 @@ FastAPI handler）都能调同一套工厂拿到**逐字等价**的对象图（�
 
 import asyncio
 import hashlib
+import os
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from urllib.parse import urlparse
@@ -28,6 +29,7 @@ from grandquiz.domain.learning.ingest.fetch import (
     FetchSource,
 )
 from grandquiz.domain.learning.ingest.web_fetch import create_http_source
+from grandquiz.domain.learning.ingest.web_search import SearchProvider, SearXNGSearchProvider
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.persistence import LearningDatabase
 from grandquiz.domain.learning.preference import SqlitePreferenceMemory
@@ -69,6 +71,7 @@ __all__ = [
     "build_event_backbone",
     "build_learning_stores",
     "build_react_runner",
+    "search_provider_from_env",
 ]
 
 # ReAct 系统提示的版本化模板名（load_prompt 读 prompts/react_system.md，版本号进 trace）。
@@ -84,6 +87,8 @@ _TRACE_DB_NAME = "trace.db"
 _LOCAL_HOST = "local"
 _DEFAULT_MAX_BYTES = 8 * 1024 * 1024
 _DEFAULT_ROUNDS = 5
+_SEARXNG_URL_ENV = "SEARXNG_URL"
+_SEARXNG_TIMEOUT_ENV = "SEARXNG_TIMEOUT_SECONDS"
 
 # Context compression（C-wire 增量 1，见 .scratch/context-compression/PRD.md + gap-review）：
 # system 分区实测 ~925 token（react_system.md），memory 分区随薄弱点/资源目录增长；两个 budget
@@ -125,6 +130,15 @@ def budget_provider(provider: Provider) -> Provider:
         counter=HeuristicTokenCounter(),
         ceiling=_PROVIDER_REQUEST_BUDGET,
     )
+
+
+def search_provider_from_env() -> SearchProvider | None:
+    """仅在显式配置 endpoint 时启用 SearXNG；不负责启动服务或 Docker。"""
+    endpoint = os.environ.get(_SEARXNG_URL_ENV, "").strip()
+    if not endpoint:
+        return None
+    timeout = float(os.environ.get(_SEARXNG_TIMEOUT_ENV, "10"))
+    return SearXNGSearchProvider(endpoint=endpoint, timeout_seconds=timeout)
 
 
 def _file_source(materials_dir: Path) -> Callable[[str], str]:
@@ -247,6 +261,7 @@ def build_react_runner(
     responder: Responder,
     seed: int,
     max_iterations: int,
+    search_provider: SearchProvider | None = None,
 ) -> Runner:
     """装配真机 ReAct 的 ``Runner``：工具注册 + 版本化系统提示 + ContextBuilder 分区 + Runner 接线。
 
@@ -284,6 +299,7 @@ def build_react_runner(
         quiz_seed=seed,
         asked_questions=asked_questions,  # 跨会话去重台账（skeleton-ledger.md #8）
         difficulty=difficulty,  # 跨会话难度台账（SE-S3）：销账那刻据三路信号跨档
+        search_provider=search_provider,  # 未配置时不注册 web_search，既有 tool schema 不变
     )
     prompt = load_prompt(_REACT_PROMPT_NAME)
     # ContextBuilder（M5）分区装配：system 前言区（版本化 react 系统提示）+ 学情注入分区
