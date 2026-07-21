@@ -1,6 +1,6 @@
 # WA-S5 — 免信用卡搜索启动路径
 
-Status: in-progress（2026-07-21；代码与离线门已完成，待真实 Tavily / SearXNG 连通验收）
+Status: done（2026-07-21；Tavily / SearXNG 真实候选搜索、trace 审计与容器清理均完成）
 Type: HITL
 
 ## Parent
@@ -22,9 +22,16 @@ provider 连通、候选归一化和 trace，同时不触发 Fetch、Reader 或�
 - [x] `grandquiz search` 不调用 LLM、Fetch、Reader 或 learning store，并复用正式 search 事件
 - [x] 最小 SearXNG 配置只监听 `127.0.0.1`，单容器、无 Valkey、默认开放 JSON API
 - [x] CI / pytest 不访问公网、不要求 Docker；两种 provider 的 HTTP contract 均由 fake transport 验证
-- [ ] 使用 `.env` 中真实 Tavily Key 完成一次候选搜索，保存非敏感 trace 审计结论
-- [ ] 启动最小 SearXNG 并完成同 query 的候选搜索；若本机没有 Docker，明确记录为环境限制而非代码失败
-- [ ] 静态四门、import-linter、全量 pytest 与离线 Eval 全绿
+- [x] 使用 `.env` 中真实 Tavily Key 完成一次候选搜索，保存非敏感 trace 审计结论
+- [x] 启动最小 SearXNG 并完成同 query 的候选搜索，验收后停止并移除容器与临时网络
+- [x] 静态四门、import-linter、全量 pytest 与离线 Eval 全绿
+
+## Real verification
+
+- Tavily trace：`9e06cd8df5bc40bda0dc3de8a942dfaa`，返回 5 条候选，事件审计中无 key 前缀。
+- SearXNG `2026.7.19-6da6eee26` trace：`00c92ec25f484ab6b0238731a9d4d798`，返回 5 条候选，首条为 JavaGuide MySQL 面试题。
+- 两条 trace 都只有 `learning.web_search.started/ended`，adapter 与结果数正确，query 只保存 hash。
+- Compose 只发布 `127.0.0.1:8080`；验收后 `docker compose ps` 为空，官方 GHCR 镜像保留。
 
 ## Architecture constraints
 

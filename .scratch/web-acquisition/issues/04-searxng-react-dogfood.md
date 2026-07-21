@@ -36,4 +36,5 @@ prompts / tool context to the configured external LLM.
 ## Comments
 
 - 2026-07-21：用户提供的 JavaGuide `docs` 目录页与具体 MySQL 面试 Markdown 已通过生产 Fetch 路径只读 dogfood；没有写生产 DB，也没有向外部 LLM 发送材料。
-- 真实 SearXNG 搜索与 ReAct 模型决策仍保留 HITL。配置入口是 `SEARXNG_URL`；GrandQuiz 不启动服务或 Docker。
+- 2026-07-21：WA-S5 已用最小单容器 SearXNG `2026.7.19-6da6eee26` 完成真实直接搜索，返回 JavaGuide 等 5 条候选并通过 trace 审计；验收后容器与临时网络已清理。
+- 剩余 HITL 是让真实 ReAct 模型自主调用 search、选择候选并进入 Fetch / Reader / 审批，而不是再次证明 adapter 连通。配置入口仍是 `SEARXNG_URL`；正常 `react` 运行不负责启动 Docker。

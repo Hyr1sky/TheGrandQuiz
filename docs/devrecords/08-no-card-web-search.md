@@ -2,7 +2,7 @@
 
 > 记录日期：2026-07-21
 > 范围：WA-S5 Tavily adapter、显式 provider 选择、直接搜索 CLI 与最小本地 SearXNG。
-> 当前边界：离线代码门已完成；真实 Tavily 等待用户在 `.env` 配置 Key，SearXNG 镜像已拉取但容器启动被桌面安全审批拒绝。
+> 当前边界：Tavily 与 SearXNG 的真实直接搜索均已完成；剩余 HITL 是 WA-S4 的真实模型 ReAct 决策与 cassette。
 
 ## 1. 产品约束
 
@@ -48,7 +48,7 @@ uv run grandquiz search "MySQL interview" --domain github.com --limit 3
 - 显式开启 JSON API。
 - 默认使用官方 GHCR 镜像，可通过 `SEARXNG_IMAGE` 固定版本或切换官方 Docker Hub 镜像。
 
-配置测试锁住 loopback、单容器、无 Valkey 与 JSON API 四个约束。Docker Compose `config` 已成功展开；官方 GHCR 镜像 digest `sha256:b8ca38ba06eea544d7555e88321e212ddc0d5c3c7de055419cfb2e5c6bf30812` 已拉取。实际 `compose up` 被桌面安全审批通道拒绝，本轮没有运行或遗留容器。
+配置测试锁住 loopback、单容器、无 Valkey 与 JSON API 四个约束。Docker Compose `config` 已成功展开；官方 GHCR 镜像 digest `sha256:b8ca38ba06eea544d7555e88321e212ddc0d5c3c7de055419cfb2e5c6bf30812` 已拉取。首次 `compose up` 因桌面安全审批通道断开而被拒绝；用户重新明确授权后正常启动并完成验收，随后容器与临时网络均已移除，镜像保留。
 
 ## 6. 当前验证结果
 
@@ -60,6 +60,16 @@ lint-imports                pass（kernel layering kept）
 pytest                      829 passed
 python -m grandquiz.evals   16/16 passed
 docker compose config       pass（loopback-only / single container）
+Tavily live search          pass（5 results / trace audited）
+SearXNG live search         pass（5 results / trace audited）
 ```
 
-真实 Tavily 与真实 SearXNG 查询仍是两个人工环境验收点。二者完成后，再进入 WA-S4 的真实模型 ReAct 轨迹；无需为了 provider 连通测试提前调用外部 LLM。
+### Tavily
+
+使用 `.env` 中的真实 Key，通过 `grandquiz search "MySQL 面试高频考点" --limit 5` 返回 5 条候选。首条是小林 Coding 的 MySQL 面试题，相关度分数约 0.823。trace `9e06cd8df5bc40bda0dc3de8a942dfaa` 只有 `learning.web_search.started/ended`，adapter 为 `tavily`、结果数为 5，payload 中没有 `tvly-` key 前缀。
+
+### SearXNG
+
+启动版本 `2026.7.19-6da6eee26`，宿主健康检查返回 HTTP 200。同一查询通过 GrandQuiz 返回 5 条候选，首条为 JavaGuide 的 MySQL 面试题；结果来自 Brave / Google CSE 等已启用引擎。trace `00c92ec25f484ab6b0238731a9d4d798` 的事件、adapter 与结果数审计正确。非提权命令第一次连接失败是 Codex 网络沙箱不能访问宿主 loopback；宿主网络执行成功，容器日志与 HTTP 200 证明不是应用配置故障。
+
+两种 provider 连通已不再是 WA-S4 风险。下一步只需验证真实模型是否按开放编排调用 search、选择候选，再进入受控 Fetch / Reader / 审批链路。
