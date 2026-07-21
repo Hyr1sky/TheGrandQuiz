@@ -20,7 +20,6 @@ _BOT_SIGNALS = (
     "verify you are human",
     "checking your browser",
     "cloudflare ray id",
-    "captcha",
 )
 _LOGIN_SIGNALS = ("sign in", "log in", "login", "登录")
 
@@ -50,6 +49,7 @@ class _PageSignals(HTMLParser):
         self.visible_chars = 0
         self.link_chars = 0
         self.link_count = 0
+        self.visible_text: list[str] = []
         self._in_link = False
         self._skip_depth = 0
 
@@ -71,6 +71,7 @@ class _PageSignals(HTMLParser):
             return
         size = len("".join(data.split()))
         self.visible_chars += size
+        self.visible_text.append(data)
         if self._in_link:
             self.link_chars += size
 
@@ -115,10 +116,10 @@ def evaluate_document_quality(
     """基于规范化正文与原始页面形状给出确定性、结构化质量结论。"""
     content_chars = len("".join(markdown.split()))
     reasons: list[QualityFailureReason] = []
-    if content_chars == 0:
-        reasons.append("empty_content")
-    elif _looks_like_navigation(html, policy=policy):
+    if _looks_like_navigation(html, policy=policy):
         reasons.append("navigation_page")
+    elif content_chars == 0:
+        reasons.append("empty_content")
     elif content_chars < policy.min_content_chars:
         reasons.append("too_short")
     return DocumentQuality(
@@ -148,11 +149,14 @@ def _extract(html: str, *, final_url: str) -> ExtractedContent:
 
 
 def _classify_page_shell(html: str) -> QualityFailureReason | None:
-    lowered = " ".join(html.lower().split())
-    if any(signal in lowered for signal in _BOT_SIGNALS):
+    signals = _PageSignals()
+    signals.feed(html)
+    visible = " ".join(" ".join(signals.visible_text).lower().split())
+    if any(signal in visible for signal in _BOT_SIGNALS):
         return "bot_challenge"
-    has_password = "type='password'" in lowered or 'type="password"' in lowered
-    if has_password and any(signal in lowered for signal in _LOGIN_SIGNALS):
+    lowered_html = html.lower()
+    has_password = "type='password'" in lowered_html or 'type="password"' in lowered_html
+    if has_password and any(signal in visible for signal in _LOGIN_SIGNALS):
         return "login_page"
     return None
 

@@ -7,6 +7,7 @@ import pytest
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.ingest.web_search import (
+    SearchError,
     SearchResult,
     SearXNGSearchProvider,
 )
@@ -146,3 +147,15 @@ async def test_searxng_adapter_maps_and_domain_filters_results() -> None:
             "metadata": {"engine": "brave"},
         }
     ]
+
+
+async def test_searxng_invalid_schema_fails_with_stable_reason() -> None:
+    provider = SearXNGSearchProvider(
+        endpoint="https://search.example",
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"oops": []})),
+    )
+
+    with pytest.raises(SearchError) as captured:
+        await provider.search("mysql interview", limit=5)
+
+    assert captured.value.reason == "invalid_response"

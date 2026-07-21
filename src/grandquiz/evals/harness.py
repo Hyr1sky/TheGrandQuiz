@@ -794,9 +794,7 @@ async def _solve_ingest(case: Case, provider_override: Provider | None) -> Solve
     )
 
 
-async def _solve_web_acquisition(
-    case: Case, provider_override: Provider | None
-) -> SolveResult:
+async def _solve_web_acquisition(case: Case, provider_override: Provider | None) -> SolveResult:
     """case16：全程只读规范化 acquisition cassette，不触公网或真实搜索服务。"""
     cassette = AcquisitionCassette.load(
         Path("tests/fixtures/eval_case16_web_acquisition.cassette.json")

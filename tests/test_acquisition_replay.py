@@ -74,9 +74,7 @@ async def test_normalized_search_and_fetch_round_trip_offline(tmp_path: Path) ->
     expected_search = await search_recorder.search(
         "agent runtime", limit=3, domains=("guide.example",)
     )
-    expected_fetch = await fetch_recorder.fetch(
-        "https://guide.example/runtime", max_bytes=4096
-    )
+    expected_fetch = await fetch_recorder.fetch("https://guide.example/runtime", max_bytes=4096)
     path = tmp_path / "acquisition.cassette.json"
     cassette.save(path)
 
@@ -92,12 +90,12 @@ async def test_normalized_search_and_fetch_round_trip_offline(tmp_path: Path) ->
         normalization_version="trafilatura:2.1.0/web-v1",
     )
 
-    assert await search_replay.search(
-        "agent runtime", limit=3, domains=("guide.example",)
-    ) == expected_search
     assert (
-        await fetch_replay.fetch("https://guide.example/runtime", max_bytes=4096)
-        == expected_fetch
+        await search_replay.search("agent runtime", limit=3, domains=("guide.example",))
+        == expected_search
+    )
+    assert (
+        await fetch_replay.fetch("https://guide.example/runtime", max_bytes=4096) == expected_fetch
     )
     stored = path.read_text(encoding="utf-8")
     assert "Authorization" not in stored

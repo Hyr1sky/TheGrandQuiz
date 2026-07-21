@@ -95,6 +95,18 @@ async def test_html_becomes_grounded_fetched_document(
     [
         ("<html><body></body></html>", "empty_content"),
         (
+            "<html><body><nav>"
+            + "".join(f"<a href='/{index}'>栏目{index}</a>" for index in range(8))
+            + "</nav></body></html>",
+            "navigation_page",
+        ),
+        (
+            "<html><body><article><h1>短文</h1>"
+            "<p>这是一段能够被正文抽取器识别，但不足以支撑可靠学习和出题的简短说明。</p>"
+            "</article></body></html>",
+            "too_short",
+        ),
+        (
             "<html><body><form><h1>Sign in</h1><p>Please log in to continue.</p>"
             "<input type='password'></form></body></html>",
             "login_page",
