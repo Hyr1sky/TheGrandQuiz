@@ -116,15 +116,17 @@ ingest Reader 按树的自然节点确定性覆盖材料，保留核心 workflow
 citation 解析、自然节点覆盖型 Reader，以及 current-only FTS5 / 大纲 / 搜索 / 展开 / 有界读取 / read-before-cite
 工具。revision/tree/items/evidence/FTS 共享原子提交；显式资源 scope 解析失败时零读取并 fail closed。parser、
 Reader 批次、搜索、读取和 citation 事件全部进入同一事件脊柱，kernel 仍保持领域无关。生产库已无损迁移到
-schema v11；两份受 prompt/tool schema 影响的真实 cassette 已重录，静态四门和 `768` 项 pytest 全绿。生产
-筛选/citation 与开放搜索 dogfood 仍是把 DS-S3–S4 从工程完成推进到产品验收的最后一步。
+schema v11；受 prompt/tool schema 影响的真实 cassette 已重录，生产筛选/citation 与开放搜索 dogfood 已完成，
+静态四门和全量 pytest 保持全绿。
 
 ### 记忆系统
 
 两类领域记忆 **Learning + Preference**（见 ADR-0003；Resource Memory 已并入 KnowledgeItem，Session 归 kernel 会话历史），SQLite + JSON 实现。关键机制：
 
 - **写入策略**：Preference Memory 挂 `after_turn`、由 LLM 判断值得记什么；**Learning Memory 写入是判决的确定性后果（代码），不走 LLM 判断**。
-- **召回策略**：区分两种召回——(a) 把记忆喂进 LLM 上下文（让考官知道你弱在哪），ContextBuilder 按当前 LearningTask 查询带 confidence 过滤；(b) 确定性地构造下一题的薄弱优先候选集（代码，见核心设计判断二）。两者都在，机制不同。
+- **召回策略**：区分两种召回——(a) 把全局 KB 的薄弱概念、Preference Memory 与资源目录喂进 LLM
+  上下文，让开放 ReAct 能识别学情并把用户意图映射到查询期 exact scope；(b) 确定性地构造下一题的薄弱
+  优先候选集（代码，见核心设计判断二）。两者都在，机制不同；`LearningTask` 不再参与查询或分区。
 
 ### 错误恢复
 

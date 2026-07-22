@@ -78,7 +78,14 @@ contradicts，必须携带 confidence、evidence provenance、抽取版本、tra
 _Avoid_: 把文档层级自动提升为知识图谱、无置信度/无出处的自由三元组、用关系边替代 KnowledgeItem 身份
 
 **LearningTask**（已消解，ADR-0005）:
-~~学习主题的容器与考核范围~~——**已废弃**。真机 dogfood 暴露"会话绑一个启动标题 = 换标题换库"把持久库切成孤岛（PRD #2）。现收敛到**全局 KB 单池**：不再有独立 `LearningTask` 实体、无 `tasks` 表；资源**内容寻址**（`resource_id = derive_id(url)`，同 URL 全局唯一、`INSERT OR REPLACE` 去重），进同一持久库。会话是无状态对话前端，`react`/`quiz` 的 `title` 降为可选横幅（只打印、不进派生 / 分区）。出题 / 判卷语言从 task 属性移入 [Preference Memory]（`question_language`，跨全库个人设置）。跨会话 / 跨材料的薄弱概念天然互见（[Learning Memory] 锚定 KnowledgeItem、本就不按 task 分区——ADR-0003 期望终态）。
+~~学习主题的容器与考核范围~~——**已废弃**。真机 dogfood 暴露"会话绑一个启动标题 = 换标题换库"
+把持久库切成孤岛（PRD #2）。现收敛到**全局 KB 单池**：不再有独立 `LearningTask` 实体、无 `tasks`
+表；LearningResource 按规范化的稳定 locator 寻址（ADR-0007），`content_hash` 标识该资源获批内容对应的
+ResourceRevision。相同 locator 的重 ingest 通过原子快照提交切换 current revision，而不是把 URL 误称为
+内容身份或用 delete-then-insert 替换资源。会话是无状态对话前端，`react`/`quiz` 的 `title` 降为可选横幅
+（只打印、不进派生 / 分区）。出题 / 判卷语言从 task 属性移入 [Preference Memory]（`question_language`，
+跨全库个人设置）。跨会话 / 跨材料的薄弱概念天然互见（[Learning Memory] 锚定 KnowledgeItem、本就不按
+task 分区——ADR-0003 期望终态）。
 _Avoid_: 任务、待办；"标题锁库"；把 title 当知识范围（scope 走查询期软过滤，见全局 KB PRD）
 
 **ActivityEvent**:
