@@ -164,7 +164,7 @@ def search_provider_from_env() -> SearchProvider | None:
 
 
 def _file_source(materials_dir: Path) -> Callable[[str], str]:
-    """建**文件式** fetch 源（复用现有 ingest 那套读本地材料，非 httpx——真远程抓取仍缓办）。
+    """建**文件式** fetch 源；真实 ``http(s)`` 抓取由 ``_web_and_file_source`` 的另一分支负责。
 
     把 ``file://local/<相对路径>`` 的 url 映射到 ``materials_dir/<相对路径>`` 读取；文件不存在等 IO
     异常由 ``fetch_resource`` 归一成 ``FetchError`` → ingest 走优雅失败分支（不炸整条会话）。url 的

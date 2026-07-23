@@ -13,8 +13,8 @@
   工具边界）。
 - ``query_weak_concepts()``：**只读**——读 Learning Memory（薄弱 / 观察中 item）+ store（概念名，
   全库读）→ 返回薄弱概念摘要。无 LLM、确定性（context-free 工具，不需要 ctx）。
-- ``start_quiz(count?, focus?)``：**受控一问一答子流程**——内部跑 ``assess_once × count``
-  （``assess_once`` 一行不改），用**注入的 Responder** 逐题作答（MC 走 ``questionary.select`` 逐字
+- ``start_quiz(count?, focus?)``：**受控一问一答子流程**——由 ``AssessmentSession`` 组合单题
+  ``assess_once`` workflow，用**注入的 Responder** 逐题作答（MC 走 ``questionary.select`` 逐字
   选项文本 → 确定性逐字判卷），共享 emitter（内部 assess_once span 嵌 TOOL_CALL 之下），返回结构化
   小结（考几题 / 每题判决 / 暴露哪些薄弱点）。**LLM 只触发它、拿小结，不进逐题循环、不复述题目、
   不自己判卷**——
@@ -24,9 +24,8 @@
 组装点 ``register_learning_tools`` 把三者一并注册（``start_quiz`` 仅当注入了 ``responder`` 时
 注册——无 responder 无从逐题作答）；工具的领域依赖（source / provider / store / approval / memory /
 responder / preferences …）在此闭包捕获，per-call 只多收工具入参与（context-aware 工具才用的）
-``ToolContext``。``LearningTask`` 已消解（ADR-0005）——知识进全局 KB 单池、无 task 线程，工具不再收
-task。三个工具各自的结果 / 参数类型（``IngestToolResult``、``StartQuizResult`` 等）走精确子模块路径
-导入，本包顶层只公开这一个组装入口。
+``ToolContext``。知识进入全局 KB 单池、没有标题分区（ADR-0005）；三个工具各自的结果 / 参数类型
+（``IngestToolResult``、``StartQuizResult`` 等）走精确子模块路径导入，本包顶层只公开这一个组装入口。
 """
 
 from collections.abc import Collection

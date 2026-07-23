@@ -66,8 +66,8 @@ async def ingest_resource(
 ) -> IngestResult:
     """把一个 URL 喂入全局 KB，深读 → 审批 → 入库，全程发事件。见模块 docstring。
 
-    ``resource_id = derive_id(url)``（内容寻址，ADR-0005）：同 URL 重 ingest → 同 resource_id →
-    ``INSERT OR REPLACE`` 天然去重（不再挂 ``LearningTask``、不分标题进库）。
+    ``resource_id`` 从稳定 locator 确定性派生（locator-addressed，ADR-0007）：同一 locator 重
+    ingest 仍定位同一资源；审批成功后以原子快照提交切换 current revision（不按标题分库）。
     """
     # a. 开 ingest span（根）。此后任何未预期异常都必须闭合它（见末尾 except）。
     ingest_span = emitter.new_span_id()

@@ -30,7 +30,7 @@ def make_query_weak_concepts_tool(*, store: Store, memory: Memory) -> Tool:
     """建 ``query_weak_concepts()`` 工具：只读 Learning Memory + store，返回全库薄弱概念摘要。
 
     确定性、无 LLM（context-free，不需 ctx）：取记忆里被追踪的 item，用**全库**概念名映射解析
-    （全局 KB——``LearningTask`` 已消解、知识进同一池，ADR-0005），按 item_id 升序输出概念名 + 状态。
+    （全局 KB 单池，ADR-0005），按 item_id 升序输出概念名 + 状态。
     """
 
     async def handler(params: _QueryWeakParams) -> str:

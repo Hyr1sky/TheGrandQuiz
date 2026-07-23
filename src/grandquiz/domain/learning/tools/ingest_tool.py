@@ -46,8 +46,9 @@ def make_ingest_tool(
     """建 ``ingest(url)`` 工具：wrap ``ingest_resource``，把内部 span 重挂到本次 TOOL_CALL 之下。
 
     领域依赖在闭包捕获（同 CLI ``run_ingest`` 的组装形状）；per-call 只多收 ``url`` 与
-    ``ToolContext``（emitter + TOOL_CALL span id）。资源内容寻址（``resource_id = derive_id(url)``，
-    ADR-0005）、进全局 KB 单池。返回结构化 ``IngestToolResult`` 的 JSON 串。
+    ``ToolContext``（emitter + TOOL_CALL span id）。资源按稳定 locator 标识
+    （``resource_id = derive_id(url)``，ADR-0007）、进入全局 KB 单池。返回结构化
+    ``IngestToolResult`` 的 JSON 串。
     """
 
     async def handler(params: _IngestParams, ctx: ToolContext) -> str:

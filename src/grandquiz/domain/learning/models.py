@@ -169,12 +169,11 @@ class KnowledgeItem(BaseModel):
 class LearningResource(BaseModel):
     """全局 KB 里的一个学习资源（待深读 / 已深读 / 深读失败），按 locator 标识（ADR-0007）。
 
-    ``resource_id = derive_id(url)``——同 URL 全局唯一，不再挂在某个 ``LearningTask`` 下
-    （``LearningTask`` 已消解）；重 ingest 同一 URL → 同 resource_id → ``INSERT OR REPLACE`` 天然
-    去重。``topic`` = 资源级软标签（"这份材料讲什么"的一句话，Reader 抽，本 slice 先建列、留空，
-    S3 填），是目录式 scope 清单的人类可读来源。``trusted`` 默认 False——抓取的网页 / GitHub 内容
-    是不可信输入（注入防护，深读前不得当可信）；``status`` 深读失败 → ``"failed"``，不产生幽灵
-    item（eval case 7）。无时间戳字段（决策 2）：创建 / 深读时序来自事件流。
+    ``resource_id = derive_id(url)``——同一稳定 locator 全局唯一；重 ingest 同一 locator 时仍是同一
+    资源，获批内容以新的 ``ResourceRevision`` 表达并原子切换 ``current_revision_id``。``topic`` =
+    资源级软标签，是目录式 scope 清单的人类可读来源。``trusted`` 默认 False——抓取的网页 / GitHub
+    内容是不可信输入（注入防护，深读前不得当可信）；``status`` 深读失败 → ``"failed"``，不产生
+    幽灵 item（eval case 7）。无时间戳字段（决策 2）：创建 / 深读时序来自事件流。
     """
 
     resource_id: str
@@ -188,7 +187,7 @@ class LearningResource(BaseModel):
 
     @classmethod
     def create(cls, *, url: str) -> Self:
-        """工厂：``resource_id = derive_id(url)``（内容寻址，同 URL 全局唯一）。"""
+        """工厂：从稳定 locator 确定性派生 ``resource_id``（locator-addressed，ADR-0007）。"""
         return cls(resource_id=derive_id(url), url=url)
 
 

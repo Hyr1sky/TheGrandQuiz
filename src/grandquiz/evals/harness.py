@@ -311,8 +311,8 @@ class DedupAssessProvider:
 def build_stocked_store() -> tuple[LearningStore, list[str]]:
     """建一个塞了 ``ITEM_DATA`` 若干 KnowledgeItem 的 store，返回 ``(store, item_ids)``。
 
-    ``LearningTask`` 已消解（ADR-0005）：资源内容寻址（``resource_id = derive_id(ASSESS_URL)``）、
-    进全局 KB 单池；出题语言归 Preference Memory（``_solve_assess`` 按 ``case.language`` 设偏好）。
+    资源按稳定 locator 标识（``resource_id = derive_id(ASSESS_URL)``，ADR-0007）并进入全局 KB
+    单池；出题语言归 Preference Memory（``_solve_assess`` 按 ``case.language`` 设偏好）。
     """
     store = LearningStore()
     resource = LearningResource.create(url=ASSESS_URL)
@@ -448,7 +448,7 @@ async def _solve_assess(case: AssessCase, provider_override: Provider | None) ->
     memory = LearningMemory()
     context: dict[str, Any] = {}
     # 语言归 Preference Memory（ADR-0005）：case.language 设进 question_language 偏好、下传
-    # assess_once（偏好 > 中文）。默认"中文"解析同旧 task 默认，故既有用例 message / replay 不变。
+    # assess_once（偏好 > 中文）。默认"中文"保持既有用例 message / replay 不变。
     preferences: PreferenceMemory = DictPreferenceMemory()
     preferences.set_preference(QUESTION_LANGUAGE_KEY, case.language)
     resource_ids: list[str] | None = None

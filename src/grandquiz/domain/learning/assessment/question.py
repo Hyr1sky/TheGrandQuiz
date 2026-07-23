@@ -179,8 +179,8 @@ async def generate_question(
     ``prompt_name``：出题 system prompt 模板名——默认 ``question_generate``（标准开放题）；
     追问深挖传 ``question_probe``（同一 schema、仅换 prompt 逼深一层）。trace 记的 prompt_version
     随之反映所用变体，故 eval 回归可归因到具体题型 prompt（追问用例即靠此断言走了 probe）。
-    ``language``：出题语言（默认"中文"，由 ``assess_once`` 解析偏好 > 中文后下传；ADR-0005 消解
-    ``LearningTask`` 后语言来自 Preference Memory 而非 task）——
+    ``language``：出题语言（默认"中文"，由 ``assess_once`` 解析偏好 > 中文后下传；语言来自
+    Preference Memory，而非临时考核输入）——
     用字面 ``str.replace`` 把模板里的 ``{{LANGUAGE}}`` 哨兵换成它（**不用 str.format**：模板含
     JSON schema 示例的字面花括号，format 会崩）。模板文件内容（含字面 ``{{LANGUAGE}}``）才是
     prompt 版本号的哈希对象，故版本号跨语言稳定；只有发出的 message 及 replay_key 按语言不同。

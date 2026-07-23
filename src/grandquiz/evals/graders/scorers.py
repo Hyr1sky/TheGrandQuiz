@@ -78,7 +78,7 @@ def language_consistency(sr: SolveResult, expected: str) -> list[str]:
     """断言每个 QUESTION_ASKED 的 question / options 都落在 ``expected`` 语言桶、且全会话同一桶。
 
     ``expected`` 是 ``language_bucket`` 的值（``"zh"`` / ``"en"`` / ``"mixed"``），由 case 按其
-    ``task.language`` 给定。返回失败明细列表（空 = 通过）。
+    ``AssessCase.language`` 给定。返回失败明细列表（空 = 通过）。
     """
     failures: list[str] = []
     asked = _questions_asked(sr.events)

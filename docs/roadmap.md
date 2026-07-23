@@ -77,41 +77,31 @@ Do not start with a complex vector database. First make the structured model cle
 
 ```mermaid
 classDiagram
-    class LearningTask {
-      id
-      user_id
-      topic
-      goal
-      level
-      status
-      created_at
-    }
-
-    class ResourceCandidate {
-      id
-      task_id
-      title
-      url
-      source_type
-      summary
-      reason
-      quality_score
-      status
-    }
-
     class LearningResource {
-      id
-      task_id
-      candidate_id
-      title
+      resource_id
       url
-      content_status
-      approved_at
-      notes
+      topic
+      status
+      current_revision_id
+    }
+
+    class ResourceRevision {
+      revision_id
+      resource_id
+      content_hash
+      raw_content
+    }
+
+    class DocumentNode {
+      node_id
+      revision_id
+      parent_node_id
+      kind
+      source_span
     }
 
     class KnowledgeItem {
-      id
+      item_id
       resource_id
       concept
       summary
@@ -119,38 +109,53 @@ classDiagram
       confidence
     }
 
-    class ActivityEvent {
-      id
-      user_id
-      task_id
-      event_type
-      target_id
-      payload
-      created_at
+    class Evidence {
+      revision_id
+      node_id
+      section_path
+      source_span
+      quote
+      quote_hash
     }
 
-    class MemoryRecord {
-      id
-      user_id
-      scope
-      kind
-      content
+    class LearningMemory {
+      item_id
+      state
+      consecutive_correct
+      verdict_history
+    }
+
+    class PreferenceMemory {
+      key
+      value
       confidence
-      updated_at
     }
 
-    LearningTask --> ResourceCandidate
-    ResourceCandidate --> LearningResource
-    LearningResource --> KnowledgeItem
-    LearningTask --> ActivityEvent
-    ActivityEvent --> MemoryRecord
+    class AskedQuestions {
+      item_id
+      question
+      seq
+    }
+
+    class Difficulty {
+      item_id
+      tier
+      correct_streak
+    }
+
+    LearningResource --> ResourceRevision : current revision
+    ResourceRevision --> DocumentNode : immutable tree
+    LearningResource --> KnowledgeItem : approved snapshot
+    KnowledgeItem --> Evidence : grounded by
+    Evidence --> DocumentNode : exact locator
+    KnowledgeItem --> LearningMemory
+    KnowledgeItem --> AskedQuestions
+    KnowledgeItem --> Difficulty
 ```
 
-> 2026-06-15 领域模型精化（保持 ADR-0002）：KnowledgeItem 的 `evidence` 落为 `{quote, locator|None}`
-> 结构（locator 携 section_path/锚点，MVP 可 None）；LearningResource 持久化原始抓取内容（blob + content_hash）。
-> 二者在当时为“出处定位符”与文档结构树留下了无需重抓的地基；ADR-0008 已将其升级为
-> ResourceRevision + DocumentNode + 精确 evidence 架构；DS-S1–S4 已交付代码与生产迁移，真实 Reader/ReAct
-> cassette 重录后才完成五门收口。
+当前模型以稳定 locator 标识 `LearningResource`，以不可变 `ResourceRevision` 表达获批内容版本；
+`DocumentNode` 保存确定性文档树，`Evidence` 精确锚定 revision/node/source span。全局 KB 不按标题
+分区，Learning Memory、AskedQuestions 与 Difficulty 均锚定稳定的 `KnowledgeItem.item_id`。
 
 ## Subagent Plan
 

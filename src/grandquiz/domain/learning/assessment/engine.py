@@ -96,10 +96,10 @@ _MC_ATTEMPTS_WITH_JUDGE_FLOOR = 5
 def _resolve_language(preferences: PreferenceMemory | None) -> str:
     """按 **偏好(question_language) > 硬兜底"中文"** 解析出题 / 判卷有效语言（确定性代码，非 LLM）。
 
-    ``LearningTask`` 已消解（ADR-0005）：语言是**跨全库的个人设置**，只来自 Preference Memory，
-    不再是材料 / 任务属性。显式设置且非空的 ``question_language`` 偏好生效；否则退到硬兜底"中文"。
+    语言是**跨全库的个人设置**（ADR-0005），只来自 Preference Memory，不是材料或标题属性。
+    显式设置且非空的 ``question_language`` 偏好生效；否则退到硬兜底"中文"。
     ``preferences`` 为 ``None``（不传偏好的调用方 / 既有 eval harness）时直接走"中文"兜底——向后
-    兼容（旧 task.language 默认亦是"中文"，故既有默认路径 message / replay_key 一字不变）。
+    兼容，既有默认路径 message / replay_key 一字不变。
     """
     if preferences is not None:
         pref = preferences.get_preference(QUESTION_LANGUAGE_KEY)
@@ -157,8 +157,8 @@ async def assess_once(
 ) -> AssessmentResult:
     """对**全局 KB** 跑一轮单题考核，全程发事件。见模块 docstring。
 
-    ``LearningTask`` 已消解（ADR-0005）：候选池 = 全库（``store.all_items()``），无 task 分区、无
-    task 入参；出题 / 判卷语言只来自 ``preferences``（偏好 > 中文，见 ``_resolve_language``）。
+    候选池 = 全库（``store.all_items()``），不按标题分区（ADR-0005）；出题 / 判卷语言只来自
+    ``preferences``（偏好 > 中文，见 ``_resolve_language``）。
 
     ``recently_asked``：会话内**已问过**台账（item_id → 已问过的题目文本列表），由考核循环入口
     （``run_quiz``）持有并跨轮累积、下传做去重（"LLM 判卷，代码记账"——已问过是代码持有的状态）。

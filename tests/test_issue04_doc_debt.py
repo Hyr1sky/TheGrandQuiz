@@ -12,6 +12,7 @@ import grandquiz.evals as evals_pkg
 from grandquiz.evals.harness import load_cases
 
 _PKG_DIR = Path(evals_pkg.__file__).parent  # .../grandquiz/evals
+_REPO_ROOT = _PKG_DIR.parents[2]
 
 
 def test_evals_docstring_case_count_matches_disk() -> None:
@@ -33,3 +34,27 @@ def test_evals_docstring_describes_the_limited_tier2_scope() -> None:
 def test_legacy_repl_module_is_deleted() -> None:
     repl = _PKG_DIR.parent / "interfaces" / "cli" / "repl.py"
     assert not repl.exists(), repl
+
+
+def test_current_state_docs_and_production_copy_use_current_architecture_terms() -> None:
+    current_state_files = [
+        _REPO_ROOT / "docs" / "roadmap.md",
+        _REPO_ROOT / "src" / "grandquiz" / "domain" / "learning" / "models.py",
+        _REPO_ROOT / "src" / "grandquiz" / "domain" / "learning" / "ingest" / "pipeline.py",
+        _REPO_ROOT / "src" / "grandquiz" / "domain" / "learning" / "tools" / "ingest_tool.py",
+        _REPO_ROOT / "src" / "grandquiz" / "interfaces" / "cli" / "composition.py",
+        _REPO_ROOT / "src" / "grandquiz" / "interfaces" / "cli" / "commands" / "ingest.py",
+        _REPO_ROOT / "src" / "grandquiz" / "interfaces" / "cli" / "commands" / "react.py",
+        _REPO_ROOT / "src" / "grandquiz" / "evals" / "harness.py",
+        _REPO_ROOT / "src" / "grandquiz" / "evals" / "graders" / "scorers.py",
+    ]
+    forbidden = ("内容寻址", "真远程抓取仍缓办", "任务「", "task 默认", "task.language")
+    for path in current_state_files:
+        text = path.read_text(encoding="utf-8")
+        for phrase in forbidden:
+            assert phrase not in text, f"{path.relative_to(_REPO_ROOT)} 仍含过期术语 {phrase!r}"
+
+    roadmap = (_REPO_ROOT / "docs" / "roadmap.md").read_text(encoding="utf-8")
+    assert "ResourceRevision" in roadmap
+    assert "DocumentNode" in roadmap
+    assert "LearningTask" not in roadmap

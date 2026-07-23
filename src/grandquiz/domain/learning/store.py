@@ -46,7 +46,7 @@ ResourceStatus = Literal["pending", "read", "failed"]
 
 
 class Store(Protocol):
-    """资源 / 知识点存储的结构化契约（ingest 编排的形参类型；全局 KB 单池，无 task 分区）。
+    """资源 / 知识点存储的结构化契约（ingest 编排的形参类型；全局 KB 单池，无标题分区）。
 
     dict 版（``LearningStore``）与 SQLite 版（``SqliteLearningStore``）都结构上满足它，
     故调用方按此协议编程、可无改动地替换实现。方法语义见各实现的 docstring。

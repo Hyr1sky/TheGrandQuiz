@@ -7,7 +7,7 @@
 
 两个出口：
 - ``render_learner_context``：纯渲染（取当前 memory / preferences 快照 → 字符串），可直接单测。
-- ``learner_context_provider``：返回一个**闭包**（捕获 store / memory / preferences / task 引用），
+- ``learner_context_provider``：返回一个**闭包**（捕获 store / memory / preferences 引用），
   作为 kernel ``ContextBuilder`` 某分区的 ``Callable[[], str]`` provider。ContextBuilder 每次 build
   调它现取 → 学情随考核推进刷新（同一会话下一回合的注入反映最新薄弱账）。这条 domain→kernel 的
   传入合法（kernel 只认字符串 provider，不认识本模块的领域类型）。
@@ -35,7 +35,7 @@ def render_learner_context(*, store: Store, memory: Memory, preferences: Prefere
     """把当前薄弱概念 + 偏好渲成紧凑"学情"文本；无薄弱且无偏好 → 空串（分区据此被跳过）。
 
     确定性：薄弱概念按 ``item_id`` 升序（不随 set 迭代序漂移）；无时序输入。薄弱概念名走**全库**
-    读（``store.all_items()``，全局 KB——``LearningTask`` 已消解，无 task 分区，ADR-0005）。
+    读（``store.all_items()``，全局 KB 无标题分区，ADR-0005）。
     """
     sections: list[str] = []
     weak = _render_weak(store, memory)

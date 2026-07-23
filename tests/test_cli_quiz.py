@@ -251,7 +251,10 @@ async def test_run_ingest_reads_material_and_persists_items(tmp_path: Path) -> N
     store = SqliteLearningStore(db)
     assert [item.concept for item in store.all_items()] == ["闭包"]
     store.close()
-    assert "闭包" in console.export_text()  # Rich 打印了抽出的知识点
+    output = console.export_text()
+    assert "闭包" in output  # Rich 打印了抽出的知识点
+    assert "入库标签「React」" in output
+    assert "任务「" not in output
 
 
 async def test_run_ingest_keeps_same_named_files_from_different_directories(

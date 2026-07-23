@@ -86,12 +86,12 @@ async def run_ingest(
 
 def _print_ingest_result(console: Console, title: str, result: IngestResult) -> None:
     if result.status == "failed":
-        console.print(f"[red]深读失败：材料未能入库（任务「{title}」）。[/]")
+        console.print(f"[red]深读失败：材料未能入库（入库标签「{title}」）。[/]")
         return
     if not result.items:
-        console.print(f"[yellow]深读完成但没有抽出知识点（任务「{title}」）。[/]")
+        console.print(f"[yellow]深读完成但没有抽出知识点（入库标签「{title}」）。[/]")
         return
-    console.print(f"[bold green]已入库 {len(result.items)} 个知识点（任务「{title}」）：[/]")
+    console.print(f"[bold green]已入库 {len(result.items)} 个知识点（入库标签「{title}」）：[/]")
     for item in result.items:
         console.print(f"  · [bold]{item.concept}[/] — {item.summary}")
 

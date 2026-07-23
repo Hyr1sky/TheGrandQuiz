@@ -45,8 +45,8 @@ async def run_quiz(
 ) -> None:
     """对**全局 KB** 跑 ``rounds`` 轮逐题考核；空库 → 提示先 ingest。会话结束打印薄弱点小结。
 
-    ``title`` 是**可选横幅**（只用于打印开场白 / 空库提示，不进任何派生 / 分区）——``LearningTask``
-    已消解（ADR-0005），会话不再绑标题，选题候选池恒为全库。
+    ``title`` 是**可选横幅**（只用于打印开场白 / 空库提示，不进任何派生 / 分区）；会话不按标题
+    分区，选题候选池恒为全库（ADR-0005）。
 
     ``QuizEventPrinter`` 订阅事件流做 Rich 呈现（CLI = 事件脊柱的投影）。``responder`` 取消作答
     （``InteractiveResponder`` 抛 ``KeyboardInterrupt``）→ 优雅退出本次会话、仍打印已积累的薄弱点。
@@ -74,7 +74,7 @@ async def run_quiz(
     asked_questions = persistence.asked_questions
     difficulty = persistence.difficulty
     if prefer_lang is not None:
-        # 显式设置出题语言偏好（confidence 恒 1.0），跨会话留存、后续覆盖 task 默认语言。
+        # 显式设置出题语言偏好（confidence 恒 1.0），跨会话留存并覆盖中文兜底。
         preferences.set_preference(QUESTION_LANGUAGE_KEY, prefer_lang)
     trace_store: TraceStore | None = None  # 空库分支不落 trace（无会话）；在 finally 里择机关闭
     try:

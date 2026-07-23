@@ -17,7 +17,7 @@
 
 第一个被消费的偏好是 ``question_language``（键 ``QUESTION_LANGUAGE_KEY``）：``assess_once`` 出题前
 读它决定出题 / 判卷语言，有效语言优先级 **偏好 > 硬兜底"中文"**（见 assessment）。语言是跨全库的
-个人设置——ADR-0005 消解 ``LearningTask`` 后不再有 task 层语言，偏好即唯一显式来源。
+个人设置；没有材料或标题层的语言属性，偏好即唯一显式来源（ADR-0005）。
 
 确定性纪律（否则 replay 对不齐）：本模块**不 import time / random / datetime / uuid**——偏好是显式
 键值、无时序含义，表 schema 亦无时间戳列（决策 2）。

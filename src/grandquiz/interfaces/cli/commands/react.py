@@ -4,8 +4,8 @@
 ``Runner.run_agent_turn``（有界 tool-calling 循环）+ ``QuizEventPrinter``（事件脊柱的终端投影）+
 独立 trace 库。考官内核 / ingest 编排一行不改——react 只是新增命令 + 组装（组装本身已剥到
 ``composition.build_react_runner``，供 CLI / Web 复用）。R1-S6：交互考核硬化为受控子流程——LLM 只
-触发 ``start_quiz(count)``，逐题一问一答 + MC 选择器逐字提交都在工具内部的 ``assess_once`` 循环里跑
-（LLM 不进逐题循环、不复述题目、不自己判卷）。
+触发 ``start_quiz(count)``，逐题一问一答 + MC 选择器逐字提交都由 ``AssessmentSession`` 组合单题
+workflow（LLM 不进逐题循环、不复述题目、不自己判卷）。
 """
 
 import contextlib
@@ -67,20 +67,21 @@ async def run_react(
 ) -> str:
     """真机 ReAct 会话循环：逐条用户消息跑一次 ``run_agent_turn``，多回合共享同一 agent / 会话态。
 
-    ``title`` 是**可选横幅**（只用于打印开场白，不进任何派生 / 分区）——``LearningTask`` 已消解
-    （ADR-0005），会话操作的是持久全局 KB 单池、不绑标题。
+    ``title`` 是**可选横幅**（只用于打印开场白，不进任何派生 / 分区）；会话操作持久全局 KB
+    单池，不按标题分区（ADR-0005）。
 
     组装（经 ``composition.build_react_runner``）：``provider`` + ``ToolRegistry``（注入真依赖：
-    SQLite store/memory/preferences + 文件式 fetch 源 + 注入的审批门 / ``responder`` +
-    ``quiz_seed=seed``）+ **ContextBuilder 分区装配**（M5）：system 前言区（版本化 ReAct 系统提示，
+    SQLite store/memory/preferences + 本地文件/真实网页路由式 fetch 源 + 注入的审批门 /
+    ``responder`` + ``quiz_seed=seed``）+ **ContextBuilder 分区装配**（M5）：system 前言区
+    （版本化 ReAct 系统提示，
     ``load_prompt`` 读 name@digest，进 trace）+ 学情注入分区（``learner_context_provider`` 闭包，
     每回合 build 现取最新薄弱点 + 偏好 → agent 不调工具即知学情、更聪明编排）。**一个 ``Runner``
     贯穿全部回合**——``run_agent_turn`` 的历史裁剪（只留 user + final assistant）跨回合累积，学情
     分区随之逐回合刷新。R1-S6：考核走**受控子流程** ``start_quiz(count)``——LLM 只触发它、拿结构化
-    小结，逐题一问一答 + MC 选择器逐字提交都在工具内部的 ``assess_once`` 循环里（``responder`` 逐题
-    作答），LLM
-    不进逐题循环、不复述题目、不自己判卷。``preferences`` 透传给 ``start_quiz`` → ``assess_once``
-    解析出题语言（偏好 > task 默认 > 中文；跨会话留存，可由 ``quiz --prefer-lang`` 预先设定）。
+    小结，逐题一问一答 + MC 选择器逐字提交都由工具内部的 ``AssessmentSession`` 组合单题 workflow
+    （``responder`` 逐题作答），LLM 不进逐题循环、不复述题目、不自己判卷。``preferences`` 透传给
+    ``start_quiz``，出题语言按 **偏好 > 中文** 解析；跨会话留存，可由 ``quiz
+    --prefer-lang`` 预先设定。
 
     **一个 ``EventEmitter`` / ``trace_id`` 贯穿全会话**：``QuizEventPrinter`` 订阅做 Rich 呈现、
     ``TraceStore`` 经 ``register`` 落**独立 trace 库**（默认与 learning.db 同目录 ``trace.db``）。
