@@ -1,7 +1,7 @@
 # PRD：架构 Deepening（考核循环 / Learning persistence / Eval case / 权威文档）
 
-Status: in-progress
-Triage: ready-for-agent
+Status: done（2026-07-23；AD-S1–S4 全部落地，静态四门与 841 tests 全绿）
+Triage: ready-for-human（仅归档复核；无待实现 issue）
 
 ## Problem Statement
 
@@ -104,3 +104,17 @@ Document Structure、Reader 单 subagent executor、Dict/SQLite 双 Adapter 不�
   issue 留下反证并停止该切片，而不是为完成清单强造抽象。
 - 完成顺序以风险递增：考核循环 tracer → persistence owner → Eval strict cases → 当前态文档 → 全量收口。
 
+## Completion Evidence
+
+- `AssessmentSession` 成为 CLI quiz 与 ReAct `start_quiz` 共用的多轮考核 Interface，会话覆盖台账与
+  确定性种子推进不再由两个 Adapter 重复持有。
+- `LearningPersistence` 唯一拥有共享数据库及五类具名 SQLite Adapter，生产入口只关闭一次；
+  `TransactionParticipant.transaction_owner` 取代私有属性反射。
+- `IngestCase` / `AssessCase` / `ReactCase` 严格解析并各自求解，公共 runner 只消费统一
+  `SolveResult`；非法配置在加载阶段 fail closed。
+- 当前态 roadmap、生产 docstring 与 ingest 文案已对齐 ADR-0005/0007/0008；历史记录未改写。
+- 删除性证据：`start_quiz_tool.py`、CLI `quiz.py` 与 Eval `harness.py` 合计新增 88 行、删除 327 行；
+  新 Module 隐藏了调用者知识，没有形成仅转发参数的浅层包装。
+- 完整质量门：Ruff、format check、Pyright（0 errors）、import-linter（1 contract kept）与
+  `841 passed` 全绿；Replay/cassette 用例包含在全量测试中。
+- 用户原有 `README.md` 与 `docs/open-source-release-checklist.md` 改动未进入本任务提交。
