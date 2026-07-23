@@ -7,10 +7,8 @@
   ManualClock + 种子化 rng + trace_id="run" 保证逐字节可回放。
 - **假 provider（canned JSON）**：``AssessFakeProvider`` / ``IngestFakeProvider`` 镜像两测试文件里
   的假 provider——按 role 分槽、从 messages 回抽真实证据引用、计调用次数与 role。独立于 cassette。
-- **Solver 通用适配器**：从一个 ``Case`` 重建确定性前置（种子化 KnowledgeItem 库、预置 Learning
-  Memory 状态、ScriptedResponder 作答、rng 种子、ManualClock、canned provider），调既有入口
-  （``assess_once`` / ``ingest_resource``）**一次**，捕获发射的 ``AgentEvent`` 列表 + span 树 +
-  result + 记忆 / 存储末态。
+- **Per-kind Solver**：``IngestCase`` / ``AssessCase`` / ``ReactCase`` 各自只暴露合法配置，并由
+  对应 solver 重建确定性前置；公共 facade 只分派类型，公共 runner 消费统一 ``SolveResult``。
 - **runner + 报告**：per-case pass/fail、token 成本列（汇总 ``MODEL_ENDED`` payload 的
   ``usage.total_tokens``）、prompt 版本（``MODEL_STARTED`` payload 的 ``prompt_version`` =
   ``name@digest``）。``ReplayMiss`` 等 provider 异常在 ``run_case`` 里被记为**硬失败**（``passed``
@@ -26,17 +24,16 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Protocol, cast
 
 import yaml
 
 from grandquiz.domain.learning.approval import ScriptedApprovalGate
 from grandquiz.domain.learning.assessment.engine import AssessmentResult, assess_once
-from grandquiz.domain.learning.assessment.grading import VerdictLabel
 from grandquiz.domain.learning.assessment.scope import ALL_SCOPE, QuizScope, SelectedScope
-from grandquiz.domain.learning.assessment.selection import Focus, apply_scope, select_target
+from grandquiz.domain.learning.assessment.selection import apply_scope, select_target
 from grandquiz.domain.learning.context import learner_context_provider
-from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
+from grandquiz.domain.learning.ingest import ingest_resource
 from grandquiz.domain.learning.ingest.acquisition_replay import (
     AcquisitionCassette,
     ReplayFetchSource,
@@ -60,8 +57,17 @@ from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.domain.learning.tools import register_learning_tools
 from grandquiz.domain.learning.tools.web_search_tool import SearchToolResult, make_web_search_tool
+from grandquiz.evals.case import AssessCase, Case, IngestCase, ReactCase, parse_case
+from grandquiz.evals.fixture import (
+    INGEST_RAW_CONTENT,
+    MC_CORRECT,
+    MC_WRONG,
+    READER_JSON,
+)
+from grandquiz.evals.graders import GRADERS
 from grandquiz.evals.quality import QualityEvaluation, QualityRequest
 from grandquiz.evals.quality_calibration import CalibratedQualitySuite
+from grandquiz.evals.result import SolveResult
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.context import ContextBuilder, Partition
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
@@ -131,10 +137,6 @@ GROUNDED_REACT_CONTENT = (
     "## 恢复\n\n错误本身也是一种 AgentEvent。\n"
 )
 
-# 选择题固定选项（正确项恒在下标 0）——responder 注入其一即可确定性判对 / 判错。
-MC_CORRECT = "正确选项"
-MC_WRONG = "干扰项"
-
 # 每个 item 一条独一无二的证据引文（互不为子串）——假 provider 据此从 messages 回抽真实证据。
 ITEM_DATA: list[tuple[str, str]] = [
     ("闭包", "闭包捕获变量而非值"),
@@ -142,59 +144,6 @@ ITEM_DATA: list[tuple[str, str]] = [
     ("事件循环", "事件循环调度宏任务与微任务"),
 ]
 QUOTES = {quote for _concept, quote in ITEM_DATA}
-
-# ingest 用 Reader 固定输出：三个候选，审批只放行其中两个（闭包 / 事件循环）。
-INGEST_RAW_CONTENT = "React hooks 深读材料：q1、q2、q3"
-READER_JSON = json.dumps(
-    {
-        "topic": "JavaScript 核心机制",
-        "candidates": [
-            {
-                "concept": "闭包",
-                "summary": "s1",
-                "evidence": [
-                    {
-                        "node_key": "n000001",
-                        "start_offset": INGEST_RAW_CONTENT.index("q1"),
-                        "end_offset": INGEST_RAW_CONTENT.index("q1") + 2,
-                        "quote": "q1",
-                    }
-                ],
-                "confidence": 0.9,
-            },
-            {
-                "concept": "变量提升",
-                "summary": "s2",
-                "evidence": [
-                    {
-                        "node_key": "n000001",
-                        "start_offset": INGEST_RAW_CONTENT.index("q2"),
-                        "end_offset": INGEST_RAW_CONTENT.index("q2") + 2,
-                        "quote": "q2",
-                    }
-                ],
-                "confidence": 0.8,
-            },
-            {
-                "concept": "事件循环",
-                "summary": "s3",
-                "evidence": [
-                    {
-                        "node_key": "n000001",
-                        "start_offset": INGEST_RAW_CONTENT.index("q3"),
-                        "end_offset": INGEST_RAW_CONTENT.index("q3") + 2,
-                        "quote": "q3",
-                    }
-                ],
-                "confidence": 0.7,
-            },
-        ],
-    },
-    ensure_ascii=False,
-)
-INGEST_APPROVED_CONCEPTS = ["闭包", "事件循环"]
-INGEST_CANDIDATE_COUNT = 3
-
 
 # --- 假 provider（canned JSON，镜像两测试文件）------------------------------------------------
 
@@ -440,190 +389,23 @@ def build_multi_resource_store() -> tuple[LearningStore, dict[str, str], list[st
     return store, {"A": rid_a, "B": resource_b.resource_id}, all_item_ids
 
 
-# --- Case 模型 + YAML 加载 --------------------------------------------------------------------
+# --- Case YAML 加载 ---------------------------------------------------------------------------
 
 CASES_DIR = Path(__file__).parent / "cases"
 
 
-@dataclass(frozen=True)
-class PresetVerdict:
-    """assess 前置：对某 item 预置一次判决（经真实 ``record_verdict`` 建 Learning Memory 状态）。
-
-    ``target`` 是选择器：``"index:N"``（第 N 个 item）或 ``"non_natural"``（第一个 != 全集随机
-    自然选择的 item——用来证明薄弱优先确实压过了全集随机，照 case 5 / 6 的对照手法）。
-    """
-
-    target: str
-    verdict: str
-
-
-@dataclass(frozen=True)
-class QualityProfile:
-    """一个用例显式选择的预注册 Tier-2 rubric 与最小参考证据。"""
-
-    rubric_id: str
-    reference: str
-
-
-def _empty_presets() -> list[PresetVerdict]:
-    # 显式类型工厂（照 trace.Span._empty_children）：裸 default_factory=list 会被推成 Unknown。
-    return []
-
-
-def _empty_strs() -> list[str]:
-    return []
-
-
-@dataclass(frozen=True)
-class Case:
-    """一个 eval 用例：case id + 类型 + 输入 / 前置 + 期望的有序事件类型序列。
-
-    更丰富的结构断言（payload 字段、记忆 / 存储末态、span 树形状、provider 调用 / 角色）不进 YAML，
-    由 ``graders/`` 里按 ``id`` 键控的 Python scorer 负责（避免造通用 YAML 断言 DSL）。
-    """
-
-    id: str
-    kind: Literal["ingest", "assess", "react"]
-    expected_events: list[str]
-    # assess 专属
-    stocked: bool = True
-    preset: list[PresetVerdict] = field(default_factory=_empty_presets)
-    answer: str = "我的作答"
-    verdict: str = "对"
-    # 多轮 assess：非空时对每个 answer 调 assess_once 一次，跨轮复用同一 memory / store / 会话内
-    # recently_asked 台账（镜像 CLI run_quiz 驱动），事件流按序拼接。空 = 单轮（走 ``answer``），
-    # 既有 8 用例走此向后兼容路径、行为一字不变。
-    answers: list[str] = field(default_factory=_empty_strs)
-    # 假 provider 选择：default = canned JSON；language_echo / dedup = 两个新用例的回归探针 fake。
-    provider: Literal["default", "language_echo", "dedup"] = "default"
-    # task 出题 / 判卷语言（下传到 {{LANGUAGE}} 槽）；默认"中文"使既有用例装配不变。
-    language: str = "中文"
-    # 选题聚焦（R1-S7）：mixed 覆盖优先（默认）/ new 只考未考过 / weak 复习薄弱。下传 assess_once。
-    focus: Focus = "mixed"
-    # 多资源夹具选择（GKB-S7）：single = build_stocked_store（默认，既有用例逐字节不变）；
-    # multi = build_multi_resource_store（≥2 资源，供 scope 用例）。
-    fixture: Literal["single", "multi"] = "single"
-    # 目录式 scope（GKB-S7）：符号 token 列表（"A"/"B" 走多资源夹具映射，未知 token 原样当"库中
-    # 不存在的 resource_id"，供 empty_scope 用例）；空列表 = 无 scope = 全库（resource_ids=None）。
-    # 既有用例不填 → resource_ids 恒 None、与改动前字节等价。
-    scope: list[str] = field(default_factory=_empty_strs)
-    # 用户显式题型意图短语（GKB-S5/S7）：透传 assess_once；None = 走记忆状态自适应路由
-    # （既有用例不变）。
-    question_type: str | None = None
-    # ingest 专属
-    source: Literal["ok", "boom", "web_replay"] = "ok"
-    approval_keep: list[str] = field(default_factory=_empty_strs)
-    # react 专属（驱动 Runner.run_agent_turn 而非 domain 函数直调——覆盖 ReAct 决策层，Tier-1 harness
-    # 此前的盲区）：user_messages 逐条喂给 run_agent_turn；cassette 是真机录制的响应库文件名（相对
-    # tests/fixtures/），react 用例**必须**提供真录 cassette——ReAct 决策本身就是被测行为，用假
-    # provider 演会失去测试意义。answer 复用给 start_quiz 内部逐题作答的 ScriptedResponder。
-    user_messages: list[str] = field(default_factory=_empty_strs)
-    cassette: str | None = None
-    react_fixture: Literal["quiz", "grounded", "web_acquisition"] = "quiz"
-    quality: QualityProfile | None = None
-
-
-def _parse_case(raw: Any) -> Case:
-    case_id = str(raw["id"])
-    expected = [str(x) for x in raw["expected_events"]]
-    setup: Any = raw.get("setup") or {}
-    if str(raw["kind"]) == "assess":
-        preset = [
-            PresetVerdict(target=str(p["target"]), verdict=str(p["verdict"]))
-            for p in setup.get("preset", [])
-        ]
-        raw_provider = str(setup.get("provider", "default"))
-        provider: Literal["default", "language_echo", "dedup"] = (
-            raw_provider if raw_provider in ("default", "language_echo", "dedup") else "default"
-        )
-        raw_focus = str(setup.get("focus", "mixed"))
-        focus: Focus = raw_focus if raw_focus in ("mixed", "new", "weak") else "mixed"
-        raw_fixture = str(setup.get("fixture", "single"))
-        fixture: Literal["single", "multi"] = (
-            raw_fixture if raw_fixture in ("single", "multi") else "single"
-        )
-        raw_qt = setup.get("question_type")
-        question_type = str(raw_qt) if raw_qt is not None else None
-        return Case(
-            id=case_id,
-            kind="assess",
-            expected_events=expected,
-            stocked=bool(setup.get("stocked", True)),
-            preset=preset,
-            answer=str(setup.get("answer", "我的作答")),
-            verdict=str(setup.get("verdict", "对")),
-            answers=[str(a) for a in setup.get("answers", [])],
-            provider=provider,
-            language=str(setup.get("language", "中文")),
-            focus=focus,
-            fixture=fixture,
-            scope=[str(s) for s in setup.get("scope", [])],
-            question_type=question_type,
-        )
-    if str(raw["kind"]) == "react":
-        raw_fixture = str(setup.get("fixture", "quiz"))
-        react_fixture: Literal["quiz", "grounded", "web_acquisition"] = (
-            raw_fixture if raw_fixture in ("grounded", "web_acquisition") else "quiz"
-        )
-        raw_quality: Any = setup.get("quality")
-        quality_mapping = (
-            cast("Mapping[str, Any]", raw_quality) if isinstance(raw_quality, Mapping) else None
-        )
-        quality = (
-            QualityProfile(
-                rubric_id=str(quality_mapping["rubric_id"]),
-                reference=str(quality_mapping["reference"]),
-            )
-            if quality_mapping is not None
-            else None
-        )
-        return Case(
-            id=case_id,
-            kind="react",
-            expected_events=expected,
-            answer=str(setup.get("answer", "我的作答")),
-            user_messages=[str(m) for m in setup.get("user_messages", [])],
-            cassette=str(setup["cassette"]),
-            react_fixture=react_fixture,
-            quality=quality,
-        )
-    raw_source = str(setup.get("source", "ok"))
-    src: Literal["ok", "boom", "web_replay"] = (
-        "web_replay" if raw_source == "web_replay" else "boom" if raw_source == "boom" else "ok"
-    )
-    return Case(
-        id=case_id,
-        kind="ingest",
-        expected_events=expected,
-        source=src,
-        approval_keep=[str(c) for c in setup.get("approval_keep", [])],
-    )
-
-
 def load_cases() -> list[Case]:
     """从 ``cases/*.yaml`` 加载全部用例，按 ``id`` 稳定排序。"""
-    cases = [
-        _parse_case(yaml.safe_load(p.read_text(encoding="utf-8"))) for p in CASES_DIR.glob("*.yaml")
-    ]
+    cases: list[Case] = []
+    for path in CASES_DIR.glob("*.yaml"):
+        try:
+            cases.append(parse_case(yaml.safe_load(path.read_text(encoding="utf-8"))))
+        except ValueError as exc:
+            raise ValueError(f"{path}: {exc}") from exc
     return sorted(cases, key=lambda c: c.id)
 
 
 # --- Solver（通用适配器：case → 确定性前置 → 调既有入口一次 → 捕获事件 / trace）-----------------
-
-
-@dataclass
-class SolveResult:
-    """一次 solve 的产物：供规则 scorer 断言五族的全部素材。"""
-
-    case: Case
-    events: list[AgentEvent]
-    spans: list[Span]
-    result: AssessmentResult | IngestResult | None
-    store: LearningStore
-    memory: LearningMemory
-    calls: int
-    roles: list[Role]
-    context: dict[str, Any]
 
 
 def _resolve_answer(token: str) -> str:
@@ -645,7 +427,7 @@ class _CountingFake(Protocol):
     ) -> Completion: ...
 
 
-def _build_assess_fake(case: Case) -> _CountingFake:
+def _build_assess_fake(case: AssessCase) -> _CountingFake:
     """按 case 选假 provider：默认 canned JSON；language_echo / dedup 是两个新用例的回归探针。"""
     if case.provider == "language_echo":
         return LanguageEchoAssessProvider()
@@ -662,7 +444,7 @@ def _resolve_target(selector: str, item_ids: list[str], natural: str) -> str:
     raise ValueError(f"未知 target 选择器：{selector}")
 
 
-async def _solve_assess(case: Case, provider_override: Provider | None) -> SolveResult:
+async def _solve_assess(case: AssessCase, provider_override: Provider | None) -> SolveResult:
     memory = LearningMemory()
     context: dict[str, Any] = {}
     # 语言归 Preference Memory（ADR-0005）：case.language 设进 question_language 偏好、下传
@@ -700,7 +482,7 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
         weak_target: str | None = None
         for pv in case.preset:  # 经真实 record_verdict 建前置状态（状态机不重写）
             weak_target = _resolve_target(pv.target, item_ids, cast("str", natural))
-            memory.record_verdict(weak_target, cast("VerdictLabel", pv.verdict))
+            memory.record_verdict(weak_target, pv.verdict)
         context["weak_target"] = weak_target
         if weak_target is not None:
             # 捕获跑 assess 前的记忆状态：case 6 靠它断言"第一次答对→观察中（仍在表内）"这一前置半。
@@ -757,7 +539,7 @@ async def _solve_assess(case: Case, provider_override: Provider | None) -> Solve
     )
 
 
-async def _solve_ingest(case: Case, provider_override: Provider | None) -> SolveResult:
+async def _solve_ingest(case: IngestCase, provider_override: Provider | None) -> SolveResult:
     if case.source == "web_replay":
         return await _solve_web_acquisition(case, provider_override)
     store = LearningStore()
@@ -801,7 +583,9 @@ async def _solve_ingest(case: Case, provider_override: Provider | None) -> Solve
     )
 
 
-async def _solve_web_acquisition(case: Case, provider_override: Provider | None) -> SolveResult:
+async def _solve_web_acquisition(
+    case: IngestCase, provider_override: Provider | None
+) -> SolveResult:
     """case16：全程只读规范化 acquisition cassette，不触公网或真实搜索服务。"""
     cassette = AcquisitionCassette.load(
         Path("tests/fixtures/eval_case16_web_acquisition.cassette.json")
@@ -886,7 +670,7 @@ def _load_react_cassette(name: str) -> ReplayProvider:
 
 
 async def _solve_react(
-    case: Case,
+    case: ReactCase,
     provider_override: Provider | None,
     *,
     search_provider_override: SearchProvider | None = None,
@@ -937,7 +721,7 @@ async def _solve_react(
     preferences: PreferenceMemory = DictPreferenceMemory()
     registry = ToolRegistry()
 
-    provider = provider_override or _load_react_cassette(cast("str", case.cassette))
+    provider = provider_override or _load_react_cassette(case.cassette)
     register_learning_tools(
         registry,
         source=source,
@@ -1011,9 +795,9 @@ async def solve(
     ``provider_override`` 供硬失败测试注入会抛 ``ReplayMiss`` 的 provider——solve **不吞**任何
     provider 异常（照既有编排语义原样冒泡），由 ``run_case`` 记为硬失败。
     """
-    if case.kind == "ingest":
+    if isinstance(case, IngestCase):
         return await _solve_ingest(case, provider_override)
-    if case.kind == "react":
+    if isinstance(case, ReactCase):
         return await _solve_react(
             case,
             provider_override,
@@ -1095,8 +879,8 @@ async def run_case(
     solve 抛异常（``ReplayMiss`` / provider 基础设施错误 / bug）→ **硬失败**：``passed=False`` +
     捕获错误，绝不静默计为通过（决策 6）。
     """
-    from grandquiz.evals.graders import GRADERS
-
+    quality = case.quality_profile
+    quality_question = case.quality_question
     try:
         result = await solve(case, provider_override=provider_override)
     except Exception as exc:  # eval runner 须把任何异常记为硬失败而非冒泡中断全批
@@ -1109,7 +893,7 @@ async def run_case(
             prompt_versions=[],
             error=repr(exc),
             rule_passed=False,
-            quality_rubric_id=case.quality.rubric_id if case.quality is not None else None,
+            quality_rubric_id=quality.rubric_id if quality is not None else None,
         )
 
     failures: list[str] = []
@@ -1126,13 +910,13 @@ async def run_case(
     quality_passed: bool | None = None
     quality_events: list[AgentEvent] = []
     quality_spans: list[Span] = []
-    if case.quality is not None and quality_suite is None:
+    if quality is not None and quality_suite is None:
         suffix = f"：{quality_unavailable_reason}" if quality_unavailable_reason else ""
         failures.append(f"Tier-2 缺少已校准 QualitySuite，不能退化为仅运行规则门{suffix}")
         quality_passed = False
-    elif case.quality is not None and quality_suite is not None:
+    elif quality is not None and quality_suite is not None:
         final_outputs = cast("list[str]", result.context.get("final_outputs", []))
-        if not case.user_messages or not final_outputs:
+        if quality_question is None or not final_outputs:
             failures.append("Tier-2 缺少用户问题或最终用户可见回答")
             quality_passed = False
         else:
@@ -1140,10 +924,10 @@ async def run_case(
             try:
                 quality_evaluation = await quality_suite.evaluate(
                     QualityRequest(
-                        rubric_id=case.quality.rubric_id,
-                        question=case.user_messages[-1],
+                        rubric_id=quality.rubric_id,
+                        question=quality_question,
                         candidate=final_outputs[-1],
-                        reference=case.quality.reference,
+                        reference=quality.reference,
                     ),
                     emitter=quality_emitter,
                 )
@@ -1170,7 +954,7 @@ async def run_case(
         prompt_versions=_prompt_versions(result.events),
         rule_passed=rule_passed,
         quality_passed=quality_passed,
-        quality_rubric_id=case.quality.rubric_id if case.quality is not None else None,
+        quality_rubric_id=quality.rubric_id if quality is not None else None,
         judge_tokens=(
             quality_evaluation.usage.total_tokens if quality_evaluation is not None else 0
         ),

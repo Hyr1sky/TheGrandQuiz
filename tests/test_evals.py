@@ -18,11 +18,11 @@ from grandquiz.domain.learning.ingest.acquisition_replay import (
 )
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.store import LearningStore
+from grandquiz.evals.case import ReactCase, parse_case
 from grandquiz.evals.graders.rules import grade_case14, grade_case15, grade_case17
 from grandquiz.evals.graders.scorers import language_consistency, no_duplicate
 from grandquiz.evals.harness import (
     READER_JSON,
-    Case,
     SolveResult,
     load_cases,
     run_all,
@@ -34,6 +34,69 @@ from grandquiz.providers.base import Completion, Message, Role, ToolCall, ToolSp
 from grandquiz.providers.replay import Cassette, ReplayMiss, ReplayProvider
 
 _MODELS: dict[Role, str] = {"basic": "deepseek-x", "enrich": "qwen-x"}
+
+
+def test_unknown_eval_case_kind_fails_closed() -> None:
+    with pytest.raises(ValueError, match="kind"):
+        parse_case(
+            {
+                "id": "typo",
+                "kind": "asses",
+                "setup": {},
+                "expected_events": [],
+            }
+        )
+
+
+def test_unknown_assess_provider_fails_closed() -> None:
+    with pytest.raises(ValueError, match="provider"):
+        parse_case(
+            {
+                "id": "typo",
+                "kind": "assess",
+                "setup": {"provider": "defualt"},
+                "expected_events": [],
+            }
+        )
+
+
+def test_case_rejects_fields_owned_by_another_kind() -> None:
+    with pytest.raises(ValueError, match="focus"):
+        parse_case(
+            {
+                "id": "wrong-shape",
+                "kind": "ingest",
+                "setup": {"focus": "weak"},
+                "expected_events": [],
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("kind", "setup", "field"),
+    [
+        ("assess", {"focus": "weaak"}, "focus"),
+        ("assess", {"fixture": "many"}, "fixture"),
+        ("ingest", {"source": "network"}, "source"),
+        (
+            "react",
+            {"fixture": "chat", "cassette": "x", "user_messages": []},
+            "fixture",
+        ),
+    ],
+)
+def test_unknown_per_kind_enum_fails_closed(
+    kind: str, setup: dict[str, object], field: str
+) -> None:
+    with pytest.raises(ValueError, match=field):
+        parse_case(
+            {
+                "id": "typo",
+                "kind": kind,
+                "setup": setup,
+                "expected_events": [],
+            }
+        )
 
 
 class _WebAcquisitionDecisionProvider:
@@ -99,9 +162,8 @@ class _WebAcquisitionDecisionProvider:
 
 
 async def test_web_acquisition_react_waits_for_selection_and_fails_closed() -> None:
-    case = Case(
+    case = ReactCase(
         id="case17",
-        kind="react",
         expected_events=[],
         user_messages=[
             "我想深入学习 React，先搜索高质量材料。",
@@ -292,16 +354,20 @@ def test_only_case15_declares_a_tier_two_quality_profile() -> None:
     cases = load_cases()
     case15 = next(case for case in cases if case.id == "case15")
 
+    assert isinstance(case15, ReactCase)
     assert case15.quality is not None
     assert case15.quality.rubric_id == "grounded_answer"
     assert case15.quality.reference
-    assert all(case.quality is None for case in cases if case.id != "case15")
+    assert all(
+        not isinstance(case, ReactCase) or case.quality is None
+        for case in cases
+        if case.id != "case15"
+    )
 
 
-def _fake_case14() -> Case:
-    return Case(
+def _fake_case14() -> ReactCase:
+    return ReactCase(
         id="case14",
-        kind="react",
         expected_events=[],
         user_messages=["帮我出3道选择题"],
         cassette="x",
@@ -370,9 +436,8 @@ def test_grade_case15_rejects_natural_answer_without_grounded_tool() -> None:
             _event(3, "agent_turn.ended", {}),
         ]
     )
-    result.case = Case(
+    result.case = ReactCase(
         id="case15",
-        kind="react",
         expected_events=[],
         user_messages=["根据材料解释事件信封并给出出处"],
         cassette="x",

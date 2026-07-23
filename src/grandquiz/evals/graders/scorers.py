@@ -20,7 +20,7 @@ from typing import cast
 
 from grandquiz.domain.learning.assessment.question import dedup_key
 from grandquiz.domain.learning.events import LearningEvent
-from grandquiz.evals.harness import SolveResult
+from grandquiz.evals.result import SolveResult
 from grandquiz.kernel.events import AgentEvent
 
 # 语言桶阈值——与 tests/test_question_language._cjk_ratio 的判据同源（zh: 汉字占绝对多数；

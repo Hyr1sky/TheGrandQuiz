@@ -22,19 +22,20 @@ from grandquiz.domain.learning.grounded_answer import GroundedAnswerResult
 from grandquiz.domain.learning.ingest import IngestResult
 from grandquiz.domain.learning.models import KnowledgeItem, LearningResource
 from grandquiz.domain.learning.tools.web_search_tool import SearchToolResult
-from grandquiz.evals.graders.scorers import (
-    expected_bucket_for_language,
-    language_consistency,
-    no_duplicate,
-)
-from grandquiz.evals.harness import (
+from grandquiz.evals.case import AssessCase
+from grandquiz.evals.fixture import (
     INGEST_APPROVED_CONCEPTS,
     INGEST_CANDIDATE_COUNT,
     INGEST_RAW_CONTENT,
     MC_CORRECT,
     MC_WRONG,
-    SolveResult,
 )
+from grandquiz.evals.graders.scorers import (
+    expected_bucket_for_language,
+    language_consistency,
+    no_duplicate,
+)
+from grandquiz.evals.result import SolveResult
 from grandquiz.kernel.events import AgentEvent, EventType
 
 Grader = Callable[[SolveResult], list[str]]
@@ -434,6 +435,8 @@ def grade_case8(sr: SolveResult) -> list[str]:
 
 def grade_case9(sr: SolveResult) -> list[str]:
     failures: list[str] = []
+    if not isinstance(sr.case, AssessCase):
+        return [f"case9 应为 AssessCase，实为 {type(sr.case).__name__}"]
     result = _assess(sr)
     if result is None:
         return [f"result 不是 AssessmentResult：{sr.result!r}"]

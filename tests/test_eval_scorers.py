@@ -10,13 +10,14 @@ from typing import Any
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.store import LearningStore
+from grandquiz.evals.case import AssessCase
 from grandquiz.evals.graders.scorers import (
     cjk_ratio,
     language_bucket,
     language_consistency,
     no_duplicate,
 )
-from grandquiz.evals.harness import Case, SolveResult
+from grandquiz.evals.harness import SolveResult
 from grandquiz.kernel.events import AgentEvent
 
 
@@ -35,7 +36,7 @@ def _asked(question: str, options: list[str] | None = None, *, seq: int) -> Agen
 
 def _sr(events: list[AgentEvent]) -> SolveResult:
     # 造一个最小 SolveResult：scorer 只读 sr.events，其余字段填占位（不被 scorer 触碰）。
-    case = Case(id="synthetic", kind="assess", expected_events=[])
+    case = AssessCase(id="synthetic", expected_events=[])
     return SolveResult(
         case=case,
         events=events,
