@@ -1,6 +1,7 @@
 # 四项架构 Deepening 开发记录
 
 > 记录日期：2026-07-24
+> 工作起点：2026-07-23 完成架构审查确认并启动 deepening，7 月 24 日凌晨完成实现收口。
 > 范围：`.scratch/architecture-deepening/` 的 AD-S1–S4 与收口审计。
 > 目标：不改变考核行为、数据库 schema 和 Replay 契约，把调用者反复承担的知识收进更深的 Module。
 
