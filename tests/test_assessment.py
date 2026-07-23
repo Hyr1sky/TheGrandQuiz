@@ -28,6 +28,7 @@ from grandquiz.domain.learning.assessment.scope import (
     UnresolvedScope,
 )
 from grandquiz.domain.learning.assessment.selection import Focus, select_target
+from grandquiz.domain.learning.assessment.session import AssessmentSession
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
@@ -594,6 +595,25 @@ async def test_mc_round_passes_options_to_responder() -> None:
     assert responder.received_options == [[_MC_CORRECT, _MC_WRONG]]
     asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
     assert list(responder.received_options[0] or []) == asked.payload["options"]
+
+
+async def test_assessment_session_owns_multi_round_coverage_state() -> None:
+    emitter, _events, trace = _harness()
+    store, _item_ids = _stocked_store()
+    session = AssessmentSession(
+        store=store,
+        provider=_AssessProvider(verdict="对"),
+        responder=ScriptedResponder(answer=_MC_CORRECT),
+        memory=LearningMemory(),
+        seed=_SEED,
+    )
+
+    first = await session.assess(emitter=emitter, question_type="选择题")
+    second = await session.assess(emitter=emitter, question_type="选择题")
+
+    assert first.status == second.status == "judged"
+    assert first.item_id != second.item_id
+    trace.close()
 
 
 async def test_open_or_probe_round_passes_none_options_to_responder() -> None:

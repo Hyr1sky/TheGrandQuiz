@@ -7,8 +7,8 @@ from pathlib import Path
 from rich.console import Console
 from rich.markup import escape
 
-from grandquiz.domain.learning.assessment.engine import assess_once
 from grandquiz.domain.learning.assessment.scope import ALL_SCOPE
+from grandquiz.domain.learning.assessment.session import AssessmentSession
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY
 from grandquiz.domain.learning.responder import Responder
@@ -23,7 +23,6 @@ from grandquiz.interfaces.cli.composition import (
 )
 from grandquiz.interfaces.cli.interactive import InteractiveResponder
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
-from grandquiz.kernel.clock import new_rng
 from grandquiz.kernel.recovery import Decision, RecoveryPolicy
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Provider
@@ -54,10 +53,10 @@ async def run_quiz(
     某轮失败由 kernel ``RecoveryPolicy`` 统一裁决：``DEGRADED``（出题 / 判卷重试用尽）→ 跳过该轮
     继续下一轮；其余（``ReplayMiss`` 等 ``FATAL`` / 未知异常）→ 原样冒泡（绝不静默吞，保 eval /
     replay 契约）。裁决经异常自带的 ``error_class`` 标做出、并发 ``RECOVERY_DECIDED`` 上脊柱。
-    ``rng`` 用可变种子（CLI 非 replay）：每轮 ``new_rng(seed + 轮次)``。
+    ``AssessmentSession`` 持有会话覆盖台账与确定性种子推进；CLI 只保留逐轮展示和恢复策略。
 
     ``prefer_lang``：非 None 时先显式把 ``question_language`` 偏好写进持久 SQLite（跨会话留存），
-    再下传 Preference Memory 给 ``assess_once``——出题语言按 **偏好 > 中文** 解析。偏好台账**每次
+    再下传 Preference Memory 给会话 Module——出题语言按 **偏好 > 中文** 解析。偏好台账**每次
     会话都构造并下传**（哪怕本次未设），故上次会话设过的语言偏好本次仍生效。
 
     **每次会话一个 ``trace_id``**（一个 ``EventEmitter`` 贯穿全部轮次，故 ``seq`` / span id 跨轮
@@ -88,27 +87,24 @@ async def run_quiz(
             resolved_trace_db, trace_id=trace_id, subscribers=[QuizEventPrinter(console)]
         )
         policy = RecoveryPolicy(emitter)  # 每轮失败统一裁决（读异常 error_class 标、发事件上脊柱）
-        # 会话内进程内"已问过"台账（item_id → 已问过的题目文本），跨轮累积、经 assess_once 下传出题
-        # 函数做去重——复考同一薄弱概念时每轮换角度、不逐字重问。与 asked_questions（跨会话持久，
-        # skeleton-ledger.md #8 已修）互补：前者管本会话覆盖优先选题，后者管跨会话去重记忆。
-        recently_asked: dict[str, list[str]] = {}
+        session = AssessmentSession(
+            store=store,
+            provider=provider,
+            responder=responder,
+            memory=memory,
+            seed=seed,
+            asked_questions=asked_questions,
+            preferences=preferences,
+            difficulty=difficulty,
+        )
         banner = f"「{title}」" if title else ""
         console.print(f"[bold]开始考核{banner}——共 {rounds} 轮（Ctrl+C 随时退出）[/]")
         try:
             for round_index in range(rounds):
                 console.rule(f"第 {round_index + 1} / {rounds} 轮")
                 try:
-                    await assess_once(
-                        store=store,
-                        provider=provider,
-                        responder=responder,
-                        memory=memory,
+                    await session.assess(
                         emitter=emitter,
-                        rng=new_rng(seed + round_index),
-                        recently_asked=recently_asked,
-                        asked_questions=asked_questions,
-                        preferences=preferences,
-                        difficulty=difficulty,
                         scope=ALL_SCOPE,
                     )
                 except Exception as exc:

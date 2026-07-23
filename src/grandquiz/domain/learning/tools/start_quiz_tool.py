@@ -1,4 +1,4 @@
-"""``start_quiz(count)`` 工具：受控一问一答子流程，内部跑 ``assess_once × count``（R1-S6）。
+"""``start_quiz(count)`` 工具：受控一问一答子流程，委托 ``AssessmentSession``（R1-S6）。
 
 LLM 只触发它、拿结构化小结，不进逐题循环、不复述题目、不自己判卷——取代早期把逐轮编排压给
 LLM 的软工具方案（那套 deepseek 守不住：编题 / MC 答案加前缀毁逐字判卷 / 题目双重渲染 /
@@ -6,16 +6,16 @@ confabulate）。
 """
 
 import logging
-from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel
 
 from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
-from grandquiz.domain.learning.assessment.engine import AssessmentResult, assess_once
+from grandquiz.domain.learning.assessment.engine import AssessmentResult
 from grandquiz.domain.learning.assessment.grading import VerdictLabel
 from grandquiz.domain.learning.assessment.scope import QuizScope
 from grandquiz.domain.learning.assessment.selection import Focus
+from grandquiz.domain.learning.assessment.session import AssessmentSession
 from grandquiz.domain.learning.difficulty import DifficultyLedger
 from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.preference import PreferenceMemory
@@ -23,7 +23,6 @@ from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import Store
 from grandquiz.domain.learning.tools._scoped_emitter import ScopedEmitter
 from grandquiz.domain.learning.tools.query_weak_tool import WeakConcept
-from grandquiz.kernel.clock import new_rng
 from grandquiz.kernel.events import EventEmitter
 from grandquiz.kernel.tools import Tool, ToolContext
 from grandquiz.providers.base import Provider
@@ -98,24 +97,6 @@ def expand_segments(
         )
         intents = intents[:_MAX_QUIZ_COUNT]
     return intents
-
-
-@dataclass
-class _QuizSeedCounter:
-    """受控考核循环的**选题种子推进器**（进程内、跨同一会话的多次 start_quiz 调用累积）。
-
-    每题取 ``seed + counter`` 并把 counter 自增（**禁墙上时钟 / 全局 random**——replay 时同 seed +
-    同题序 → 同选题）；同 ``run_quiz`` 的 ``seed + 轮次``，只是把计数器提升为跨调用会话态，故连续
-    两次 ``start_quiz`` 不会因种子重置而复现同一选题序。
-    """
-
-    seed: int
-    _counter: int = 0
-
-    def next_seed(self) -> int:
-        seed = self.seed + self._counter
-        self._counter += 1
-        return seed
 
 
 class QuizRoundResult(BaseModel):
@@ -214,10 +195,10 @@ def make_start_quiz_tool(
     ``question_type`` / ``count`` 老路，行为字节等价改动前；给了 ``segments`` 时总题数 = 各段
     count 之和（``count`` 入参被忽略）。仍逐题一问一答，非批量出卷。
 
-    ``preferences``：透传给 ``assess_once`` 解析出题语言（**偏好 > 中文**）；``None`` 时行为不变
-    （走"中文"兜底）。``recently_asked`` / ``_QuizSeedCounter`` 在闭包捕获、跨同一会话的多次
-    ``start_quiz`` 累积（复考换角度去重 + 选题种子确定性推进）。空库 → 优雅返回 ``refused``（不调
-    任何 LLM）；用户中途取消作答（Responder 抛 ``KeyboardInterrupt``）→ 结束考核、返回已完成部分。
+    ``preferences``：透传给 ``AssessmentSession`` 解析出题语言（**偏好 > 中文**）；``None`` 时行为
+    不变（走"中文"兜底）。会话 Module 在闭包中跨多次 ``start_quiz`` 调用持有覆盖台账与确定性种子
+    推进；空库 → 优雅返回 ``refused``（不调任何 LLM）；用户中途取消作答（Responder 抛
+    ``KeyboardInterrupt``）→ 结束考核、返回已完成部分。
 
     ``asked_questions``：跨会话持久的已问过台账（``AskedQuestionsLedger``，skeleton-ledger.md
     #8 修复）——透传每题 ``assess_once``，与 ``recently_asked``（会话内）互补，让"换角度去重"这条
@@ -227,8 +208,16 @@ def make_start_quiz_tool(
     销账那刻据三路信号跨档、真跨档才发 ``DIFFICULTY_TIER_CHANGED``。``None``（默认）= 不接难度自
     适应、向后兼容（行为字节等价改动前）。
     """
-    seed_counter = _QuizSeedCounter(seed=quiz_seed)
-    recently_asked: dict[str, list[str]] = {}
+    session = AssessmentSession(
+        store=store,
+        provider=provider,
+        responder=responder,
+        memory=memory,
+        seed=quiz_seed,
+        asked_questions=asked_questions,
+        preferences=preferences,
+        difficulty=difficulty,
+    )
 
     async def handler(params: _StartQuizParams, ctx: ToolContext) -> str:
         # 作用域化 emitter：把每题 assessment 根 span 重挂到本次 TOOL_CALL 之下（隔离在工具边界）。
@@ -246,20 +235,11 @@ def make_start_quiz_tool(
         rounds: list[QuizRoundResult] = []
         for intent in intents:
             try:
-                result: AssessmentResult = await assess_once(
-                    store=store,
-                    provider=provider,
-                    responder=responder,
-                    memory=memory,
+                result: AssessmentResult = await session.assess(
                     emitter=scoped,
-                    rng=new_rng(seed_counter.next_seed()),
-                    recently_asked=recently_asked,
-                    asked_questions=asked_questions,
                     focus=params.focus,
-                    preferences=preferences,
                     scope=params.scope,
                     question_type=intent,
-                    difficulty=difficulty,
                 )
             except KeyboardInterrupt:
                 # 用户取消作答：结束本次考核，返回已完成部分（不把取消当空作答污染判卷）。
