@@ -38,7 +38,7 @@ from grandquiz.evals.harness import (
     AssessFakeProvider,
     build_stocked_store,
 )
-from grandquiz.interfaces.cli.composition import build_learning_stores
+from grandquiz.interfaces.cli.composition import build_learning_persistence
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
@@ -251,17 +251,15 @@ def test_tier_change_reason_demotion() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 透传链 & 展示：build_learning_stores 5 元组 + printer 渲染
+# 透传链 & 展示：Learning persistence owner + printer 渲染
 # --------------------------------------------------------------------------- #
 
 
-def test_build_learning_stores_returns_five_persistent_pieces(tmp_path: Path) -> None:
-    pieces = build_learning_stores(tmp_path / "learning.db")
-    assert len(pieces) == 5  # store / memory / preference / asked_questions / difficulty
-    store, memory, preferences, asked_questions, difficulty = pieces
+def test_build_learning_persistence_owns_named_adapters_and_lifecycle(tmp_path: Path) -> None:
+    db_path = tmp_path / "learning.db"
+    persistence = build_learning_persistence(db_path)
     try:
-        # 第五件是难度台账：新 item 读到默认档（跨会话留存的空态起点）。
-        assert difficulty.tier_of("item-x") == DEFAULT_TIER
+        assert persistence.difficulty.tier_of("item-x") == DEFAULT_TIER
         resource = LearningResource(resource_id="test-resource", url="file://local/test")
         item = KnowledgeItem(
             item_id="item-x",
@@ -271,15 +269,17 @@ def test_build_learning_stores_returns_five_persistent_pieces(tmp_path: Path) ->
             evidence=[Evidence(quote="证据")],
             confidence=0.8,
         )
-        store.replace_snapshot(resource, [item])
-        difficulty.set_tier("item-x", 5)
-        assert difficulty.tier_of("item-x") == 5
+        persistence.store.replace_snapshot(resource, [item])
+        persistence.difficulty.set_tier("item-x", 5)
     finally:
-        store.close()
-        memory.close()
-        preferences.close()
-        asked_questions.close()
-        difficulty.close()
+        persistence.close()
+
+    reopened = build_learning_persistence(db_path)
+    try:
+        assert reopened.store.get_resource(resource.resource_id) == resource
+        assert reopened.difficulty.tier_of("item-x") == 5
+    finally:
+        reopened.close()
 
 
 def _event(event_type: str, payload: dict[str, object]) -> AgentEvent:

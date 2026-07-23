@@ -7,8 +7,8 @@ ContextBuilder 的实例化 + 接线）若留在 CLI 函数里，Web/API 只能�
 FastAPI handler）都能调同一套工厂拿到**逐字等价**的对象图（同参数、同顺序、同默认），I/O（参数
 解析、打印、tty 交互）留在各通道自己那层。
 
-工厂只做装配、不做生命周期管理：打开的 store / TraceStore 由调用方在 finally 里关闭（沿用各命令
-编排既有的 try/finally 收尾），本层不隐藏 close 语义。
+Learning 持久层由 ``LearningPersistence`` 明确拥有共享连接与五个具名 Adapter，调用方在 finally
+只关闭 owner 一次；TraceStore 仍由事件脊柱工厂返回并由调用方显式关闭。
 """
 
 import asyncio
@@ -35,7 +35,7 @@ from grandquiz.domain.learning.ingest.web_search import (
     TavilySearchProvider,
 )
 from grandquiz.domain.learning.memory import SqliteLearningMemory
-from grandquiz.domain.learning.persistence import LearningDatabase
+from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.domain.learning.preference import SqlitePreferenceMemory
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.responder import Responder
@@ -73,7 +73,7 @@ __all__ = [
     "_resolve_trace_db",
     "budget_provider",
     "build_event_backbone",
-    "build_learning_stores",
+    "build_learning_persistence",
     "build_react_runner",
     "search_provider_from_env",
 ]
@@ -219,31 +219,9 @@ def _web_and_file_source(materials_dir: Path) -> FetchSource:
     return _RoutingSource()
 
 
-def build_learning_stores(
-    db_path: Path,
-) -> tuple[
-    SqliteLearningStore,
-    SqliteLearningMemory,
-    SqlitePreferenceMemory,
-    SqliteAskedQuestionsLedger,
-    SqliteDifficultyLedger,
-]:
-    """建考核会话的五件持久件（store / memory / preference / asked_questions / difficulty），全落
-    **同一** learning db 文件。
-
-    quiz / react 会话都要这五件同源（薄弱点、偏好、已问过台账、难度台账与知识共库、跨会话留存）；
-    工厂按固定顺序构造并返回，调用方在 finally 里逐个 ``close()``。``asked_questions``
-    （skeleton-ledger.md #8）修"关掉 CLI 重开、复考同一薄弱概念被逐字重问旧题"这个真实 bug；
-    ``difficulty``（SE-S3）是第五件——每个 KnowledgeItem 的离散 5 档难度，销账那刻据三路信号跨档、
-    跨会话留存（User Story 11）。
-    """
-    database = LearningDatabase(db_path)
-    store = SqliteLearningStore(database)
-    memory = SqliteLearningMemory(database)
-    preferences = SqlitePreferenceMemory(database)
-    asked_questions = SqliteAskedQuestionsLedger(database)
-    difficulty = SqliteDifficultyLedger(database)
-    return store, memory, preferences, asked_questions, difficulty
+def build_learning_persistence(db_path: Path) -> LearningPersistence:
+    """建 learning.db 的单一 owner；账本通过具名属性访问，连接由 owner 一次关闭。"""
+    return LearningPersistence(db_path)
 
 
 def build_event_backbone(

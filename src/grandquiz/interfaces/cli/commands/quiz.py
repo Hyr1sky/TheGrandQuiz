@@ -19,7 +19,7 @@ from grandquiz.interfaces.cli.composition import (
     _resolve_trace_db,
     budget_provider,
     build_event_backbone,
-    build_learning_stores,
+    build_learning_persistence,
 )
 from grandquiz.interfaces.cli.interactive import InteractiveResponder
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
@@ -67,7 +67,12 @@ async def run_quiz(
     """
     _ensure_parent(db_path)
     provider = budget_provider(provider)
-    store, memory, preferences, asked_questions, difficulty = build_learning_stores(db_path)
+    persistence = build_learning_persistence(db_path)
+    store = persistence.store
+    memory = persistence.memory
+    preferences = persistence.preferences
+    asked_questions = persistence.asked_questions
+    difficulty = persistence.difficulty
     if prefer_lang is not None:
         # 显式设置出题语言偏好（confidence 恒 1.0），跨会话留存、后续覆盖 task 默认语言。
         preferences.set_preference(QUESTION_LANGUAGE_KEY, prefer_lang)
@@ -122,11 +127,7 @@ async def run_quiz(
         _print_weak_summary(console, store, memory)
         _print_trace_location(console, trace_id, resolved_trace_db)
     finally:
-        store.close()
-        memory.close()
-        preferences.close()
-        asked_questions.close()
-        difficulty.close()
+        persistence.close()
         if trace_store is not None:
             trace_store.close()
 

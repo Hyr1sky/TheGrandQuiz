@@ -19,7 +19,7 @@ from grandquiz.domain.learning.difficulty import (
     evolve_difficulty,
 )
 from grandquiz.domain.learning.memory import ConceptRecord, Memory, Transition
-from grandquiz.domain.learning.persistence import LearningDatabase
+from grandquiz.domain.learning.persistence import LearningDatabase, TransactionParticipant
 
 
 @runtime_checkable
@@ -59,14 +59,14 @@ class LearningStateWriter:
             for participant in (memory, asked_questions, difficulty)
             if participant is not None
         ]
-        databases = {
-            database
+        transaction_owners = {
+            participant.transaction_owner
             for participant in self._participants
-            if (database := getattr(participant, "_learning_database", None)) is not None
+            if isinstance(participant, TransactionParticipant)
         }
-        if len(databases) > 1:
+        if len(transaction_owners) > 1:
             raise ValueError("学习状态 SQLite adapter 必须共享同一个 LearningDatabase")
-        self._database = next(iter(databases), None)
+        self._database = next(iter(transaction_owners), None)
 
     def commit_judgement(
         self,

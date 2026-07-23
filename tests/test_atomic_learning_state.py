@@ -105,6 +105,21 @@ def test_sqlite_state_rolls_back_all_ledgers_when_one_write_fails(tmp_path: Path
     assert difficulty.tier_of(_ITEM_ID) == DEFAULT_TIER
 
 
+def test_sqlite_state_uses_explicit_shared_transaction_owner(tmp_path: Path) -> None:
+    first = LearningDatabase(tmp_path / "first.db")
+    second = LearningDatabase(tmp_path / "second.db")
+    memory = SqliteLearningMemory(first)
+    asked = SqliteAskedQuestionsLedger(second)
+    try:
+        assert memory.transaction_owner is first
+        assert asked.transaction_owner is second
+        with pytest.raises(ValueError, match="必须共享同一个 LearningDatabase"):
+            LearningStateWriter(memory=memory, asked_questions=asked, difficulty=None)
+    finally:
+        first.close()
+        second.close()
+
+
 class _OpenCorrectProvider:
     async def complete(
         self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None

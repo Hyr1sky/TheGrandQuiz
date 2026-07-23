@@ -175,7 +175,8 @@ class SqliteDifficultyLedger:
         self._conn = self._db.connection
 
     @property
-    def _learning_database(self) -> LearningDatabase:
+    def transaction_owner(self) -> LearningDatabase:
+        """显式暴露跨账本判决写入使用的 transaction owner。"""
         return self._db
 
     def tier_of(self, item_id: str) -> DifficultyTier:

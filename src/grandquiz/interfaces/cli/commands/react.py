@@ -31,7 +31,7 @@ from grandquiz.interfaces.cli.composition import (
     _ensure_parent,
     _resolve_trace_db,
     build_event_backbone,
-    build_learning_stores,
+    build_learning_persistence,
     build_react_runner,
     search_provider_from_env,
 )
@@ -89,7 +89,12 @@ async def run_react(
     _ensure_parent(db_path)
     resolved_trace_db = _resolve_trace_db(db_path, trace_db_path)
     _ensure_parent(resolved_trace_db)
-    store, memory, preferences, asked_questions, difficulty = build_learning_stores(db_path)
+    persistence = build_learning_persistence(db_path)
+    store = persistence.store
+    memory = persistence.memory
+    preferences = persistence.preferences
+    asked_questions = persistence.asked_questions
+    difficulty = persistence.difficulty
     trace_store: TraceStore | None = None
     runner: Runner | None = None
     trace_id = uuid.uuid4().hex
@@ -147,11 +152,7 @@ async def run_react(
         # 关闭前跑（真 Summarizer 若将来要读 KB，避免用到已关闭的连接）。
         if runner is not None:
             await runner.aclose()
-        store.close()
-        memory.close()
-        preferences.close()
-        asked_questions.close()
-        difficulty.close()
+        persistence.close()
         if trace_store is not None:
             trace_store.close()
 
