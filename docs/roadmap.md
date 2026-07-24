@@ -420,8 +420,9 @@ KnowledgeRelation 是独立实验 issue，不能为“以后也许有图”阻�
 
 ### 明确不采纳（避免走偏）
 
-向量库 / embedding、GraphRAG 式 LLM 实体抽取 + 社区检测、knowhere 的重运行时（Postgres/Redis/S3/worker/
-FastAPI monorepo）、MinerU/VLM 多模态栈、大规模跨文档图导航。差异化卖点押在可观测/可评测
+向量库 / embedding、GraphRAG 式 LLM 实体抽取 + 社区检测、knowhere 的整套重运行时
+（Postgres/Redis/S3/worker 等）、MinerU/VLM 多模态栈、大规模跨文档图导航。ADR-0009 采用的本机
+FastAPI + React interface 不等于引入这套基础设施。差异化卖点押在可观测/可评测
 （trace/replay/eval），而非再造一个 RAG 壳。
 
 ### 待办的两笔工程性备注

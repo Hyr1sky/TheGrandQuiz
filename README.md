@@ -21,8 +21,10 @@ Web Acquisition 的 WA-S1–S5 已完成：Trafilatura 正文抽取、结构化�
 | [docs/reference-map.md](docs/reference-map.md) | 参考实现映射（scholarmate-digital-human 移植清单 + 外部参考仓库） |
 | [docs/adr/](docs/adr/) | 架构决策记录 |
 | [.scratch/tier2-eval-judge/PRD.md](.scratch/tier2-eval-judge/PRD.md) | 已完成：校准优先的 Tier-2 LLM grader 与质量报告闭环 |
+| [.scratch/local-web/PRD.md](.scratch/local-web/PRD.md) | 进行中：FastAPI + React local-first Article Workspace 与 Web v0.1.0 |
 | [docs/devrecords/](docs/devrecords/) | 各轮长任务的实现、真实 dogfood、成本与门禁记录 |
 | [docs/guides/web-acquisition-dogfood.md](docs/guides/web-acquisition-dogfood.md) | Web Acquisition 独立终端 dogfood、trace 与 DB 验收指南 |
+| [docs/open-source-release-checklist.md](docs/open-source-release-checklist.md) | v0.1.0 开源发布前的阻塞项、验收门与人工 dogfood 清单 |
 
 ## 开发
 

@@ -181,9 +181,13 @@ schema v11；受 prompt/tool schema 影响的真实 cassette 已重录，生产�
 步骤 3 是产品的脉搏，越早可跑越好；步骤 4-7 不是新需求，而是把竖切里临时凑合的 kernel 部件
 替换成正式实现，每一层都有真实 domain 调用方在压测它。
 
-## 已确认决策（2026-06）
+## 已确认决策
 
-- 后端优先，产品形态不绑定 Web；前端不迁移，开发期用 CLI REPL
+> 2026-07-24 更新：早期“开发期只用 CLI、前端不迁移”已经完成其后端优先使命。ADR-0009 现决定把
+> FastAPI + React local-first Web 纳入 v0.1.0；CLI 保留为调试、恢复与审计通道。事件脊柱、领域 workflow
+> 和分层规则不变。
+
+- 后端核心不绑定具体通道；FastAPI/React 与 CLI 都是 `interfaces` adapter，不复制领域逻辑
 - 语音（ASR）链路保留在路线图，但加硬门（2026-06-12）：只在"面试 subagent"立项时一起立项
   （口头面试模拟是语音唯一站得住的场景），不进 MVP、不占近期优先级；persona 降为
   system prompt 中的考官语气设定，不做形象

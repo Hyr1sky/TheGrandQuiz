@@ -67,6 +67,14 @@ _Avoid_: 点名失败后扩大到全库、未读取正文就引用、一次倾�
 学习材料进入 Reader 之前的外部发现与规范化边界。`web_search` 只返回 `SearchResult[]` 候选，用户或开放 ReAct 选择 URL 后，Fetch 才产生 `FetchedDocument`；随后仍走确定性的 Reader → KnowledgeItem 审批 → 全局 KB workflow。SearchProvider 可拔插：Tavily 提供无需信用卡的免费 Key 路径，SearXNG 提供可选自托管路径；不配置时工具不注册，SearXNG 服务或 Docker 不是基础运行依赖。两者同时配置必须显式选择 provider，不做隐藏 fallback。`web_search` 的结构化结果显式要求用户选择，真实 case17 证明开放 ReAct 会先结束发现回合，再对选中 URL 进入确定性 Reader / 审批 workflow；登录页失败保持零 KB 污染。
 _Avoid_: 搜索结果自动批量抓取/入库、让 search adapter 直接写 KB、把 SearXNG/Docker 变成强依赖、把 Web Search 与库内 DocumentNode Agentic Search 混为一谈
 
+**Local Web Interface**（ADR-0009，LW-S1 起步）:
+面向本机单用户的正式产品通道：React Article Workspace 通过版本化 REST + SSE 调用 FastAPI interface
+adapter；长操作形成可查询 run，进度是同一 `AgentEvent` 脊柱的安全 UI projection。它首先把资源 →
+DocumentNode 大纲/节点 → GroundedDocumentAnswer → 精确 citation 变成空间化阅读体验，后续再承载逐题考核、
+Acquisition/审批与学习轨迹。默认只监听 loopback，CLI 继续作为调试、恢复和审计入口。
+_Avoid_: 通用数据库 dashboard、浏览器直连 SQLite、把完整内部 AgentEvent/prompt/正文推给浏览器、把
+核心考核改成自由 ReAct、在 v0.1.0 假装支持多用户或公网部署
+
 **FetchedDocument**:
 网络或其他 acquisition adapter 归一化后的不可信文档信封：requested/final/canonical URL、标题、规范化正文、content type/hash、adapter/extractor 指纹和结构化质量结论。HTML 由 Trafilatura 产 Markdown；空壳、过短、导航、登录与 bot challenge 页面 fail closed。requested URL 仍是 LearningResource identity，正文不进入 trace。
 _Avoid_: 原始 HTTP response 对象、把 canonical URL 悄悄改成资源身份、质量失败后继续调用 Reader、把完整网页 body 塞进事件
