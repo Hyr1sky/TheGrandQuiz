@@ -1,6 +1,6 @@
 # LW-S2 — Web 视觉方向选择与设计语言
 
-Status: ready-for-human
+Status: done
 Type: HITL
 
 ## Parent
@@ -18,13 +18,18 @@ token、字体、状态、动效、responsive 和 accessibility 约束固化到
 
 ## Acceptance criteria
 
-- [ ] 三个方案使用相同信息架构和内容，能够公平比较
-- [ ] 方案不退化为传统 dashboard 或标准 chat 双栏
-- [ ] citation、运行状态、文章层级和 Evidence reveal 在静态画面中可理解
-- [ ] 每个方案说明字体、颜色、密度、动效和可访问性取舍
-- [ ] 用户明确选择或要求混合后才开始正式 React 视觉实现
-- [ ] 选择结果落盘为项目专用 visual language，不依赖聊天上下文
+- [x] 三个方案使用相同信息架构和内容，能够公平比较
+- [x] 方案不退化为传统 dashboard 或标准 chat 双栏
+- [x] citation、运行状态、文章层级和 Evidence reveal 在静态画面中可理解
+- [x] 每个方案说明字体、颜色、密度、动效和可访问性取舍
+- [x] 用户明确选择或要求混合后才开始正式 React 视觉实现
+- [x] 选择结果落盘为项目专用 visual language，不依赖聊天上下文
 
 ## Blocked by
 
-LW-S1 的稳定 HTTP 信息架构。需要用户完成一次视觉 HITL 选择。
+LW-S1 的稳定 HTTP 信息架构。
+
+## Completion
+
+用户选择第 3 个“墨迹星图”方向，并要求亮色/暗色双主题。视觉权威已落盘至
+`docs/design/web-visual-language.md`，两张参考稿位于 `docs/design/assets/`。

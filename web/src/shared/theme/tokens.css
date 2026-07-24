@@ -1,0 +1,55 @@
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --font-reading: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+  --font-interface: "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  --canvas: #071521;
+  --surface: rgb(9 24 37 / 88%);
+  --surface-quiet: rgb(8 21 33 / 68%);
+  --field: rgb(12 30 43 / 82%);
+  --text: #e9ddc5;
+  --text-strong: #f3e7ce;
+  --muted: #afa58f;
+  --brass: #c9a05d;
+  --brass-strong: #e0bc76;
+  --evidence: #4ad3f4;
+  --evidence-soft: rgb(74 211 244 / 15%);
+  --line: rgb(201 160 93 / 30%);
+  --line-strong: rgb(201 160 93 / 58%);
+  --glass: rgb(23 40 53 / 82%);
+  --glass-blur: rgb(156 171 177 / 16%);
+  --danger: #f0a49b;
+  --success: #83dac8;
+  --focus: #5edcff;
+  --shadow-raised: 8px 8px 20px rgb(0 0 0 / 28%), -5px -5px 16px rgb(36 59 72 / 18%);
+  --shadow-pressed: inset 5px 5px 12px rgb(0 0 0 / 30%),
+    inset -4px -4px 10px rgb(38 61 74 / 14%);
+  --background-image: url("/assets/star-map-dark.webp");
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --canvas: #f5efdf;
+  --surface: rgb(250 246 235 / 86%);
+  --surface-quiet: rgb(247 241 225 / 70%);
+  --field: rgb(251 248 239 / 88%);
+  --text: #263341;
+  --text-strong: #142536;
+  --muted: #69727b;
+  --brass: #9d7135;
+  --brass-strong: #79501d;
+  --evidence: #087ca1;
+  --evidence-soft: rgb(8 124 161 / 10%);
+  --line: rgb(157 113 53 / 28%);
+  --line-strong: rgb(157 113 53 / 54%);
+  --glass: rgb(242 239 226 / 86%);
+  --glass-blur: rgb(255 255 255 / 50%);
+  --danger: #9c3d36;
+  --success: #176e61;
+  --focus: #006a8d;
+  --shadow-raised: 8px 8px 20px rgb(132 112 75 / 16%),
+    -5px -5px 16px rgb(255 255 255 / 66%);
+  --shadow-pressed: inset 5px 5px 12px rgb(137 116 77 / 14%),
+    inset -4px -4px 10px rgb(255 255 255 / 70%);
+  --background-image: url("/assets/star-map-light.webp");
+}

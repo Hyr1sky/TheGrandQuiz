@@ -19,6 +19,17 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Web dependencies
+        working-directory: web
+        run: npm ci
+
       - name: Lint
         run: uv run ruff check .
 
@@ -36,3 +47,23 @@ jobs:
 
       - name: Eval harness (Tier-1, R2 迭代 gate)
         run: uv run python -m grandquiz.evals
+
+      - name: Web API contract drift
+        working-directory: web
+        run: npm run api:check
+
+      - name: Web tests
+        working-directory: web
+        run: npm test
+
+      - name: Web type check
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Web build
+        working-directory: web
+        run: npm run build
+
+      - name: Web hosting adapter tests
+        working-directory: web
+        run: npm run test:sites

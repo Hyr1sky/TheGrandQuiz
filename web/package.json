@@ -1,0 +1,39 @@
+{
+  "name": "web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:fixture": "../.venv/bin/python ../scripts/run_web_fixture.py",
+    "build": "vite build && node scripts/prepare-sites-build.mjs",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "api:generate": "uv run python ../scripts/export_openapi.py --output src/shared/api/generated/openapi.json && openapi-typescript src/shared/api/generated/openapi.json -o src/shared/api/generated/schema.d.ts",
+    "api:check": "npm run api:generate && git diff --exit-code -- src/shared/api/generated/openapi.json src/shared/api/generated/schema.d.ts",
+    "test:sites": "node --test tests/sites-worker.test.mjs"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "@vitejs/plugin-react": "5.0.4",
+    "openapi-fetch": "^0.17.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "vite": "6.4.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "jsdom": "^29.1.1",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

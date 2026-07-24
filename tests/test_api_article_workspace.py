@@ -476,6 +476,8 @@ def test_openapi_exposes_the_versioned_article_workspace_contract(tmp_path: Path
         "/api/v1/runs/{run_id}/events",
         "/api/v1/runs/{run_id}/cancel",
     } <= set(paths)
+    event_stream = paths["/api/v1/runs/{run_id}/events"]["get"]["responses"]["200"]["content"]
+    assert event_stream["text/event-stream"]["schema"] == {"$ref": "#/components/schemas/UiEvent"}
 
 
 def test_web_entrypoint_binds_loopback_and_uses_the_app_factory(

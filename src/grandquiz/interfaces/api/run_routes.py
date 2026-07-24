@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
 from grandquiz.interfaces.api.errors import ApiError
-from grandquiz.interfaces.api.runs import RunManager, RunView
+from grandquiz.interfaces.api.runs import RunManager, RunView, UiEvent
 
 router = APIRouter(prefix="/api/v1/runs", tags=["runs"])
 
@@ -20,6 +20,16 @@ def run_manager_from(request: Request) -> RunManager:
 @router.get(
     "/{run_id}/events",
     response_class=StreamingResponse,
+    responses={
+        200: {
+            "model": UiEvent,
+            "content": {
+                "text/event-stream": {
+                    "schema": {"$ref": "#/components/schemas/UiEvent"},
+                }
+            },
+        }
+    },
 )
 async def stream_run_events(
     run_id: str,

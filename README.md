@@ -12,9 +12,10 @@ Eval Harness 现有 17 条用例：全部运行 Tier-1 确定性规则门，case
 
 Web Acquisition 的 WA-S1–S5 已完成：Trafilatura 正文抽取、结构化质量门、可选 Tavily / SearXNG `web_search`、Search/Fetch Record-Replay 均已接入原有事件脊柱与确定性 ingest workflow。Tavily 只需无需信用卡的免费 API key；SearXNG 提供 loopback-only 最小单容器配置，但 Docker 仍不是基础依赖。两种 provider 的真实搜索与 search → 用户选择 → ingest ReAct dogfood 均已验收。
 
-Local Web 的 LW-S1 API 基座已完成：FastAPI 提供资源/大纲/有界节点读取、GroundedDocumentAnswer
-后台 run、稳定 SSE 投影、取消和精确 citation；完整执行仍进入 trace.db，浏览器事件不暴露 prompt、
-模型输出或节点全文。React Article Workspace 将在三种视觉方向完成人工选择后开始实现。
+Local Web 的 LW-S1–S3 已完成：FastAPI 提供资源/大纲/有界节点读取、GroundedDocumentAnswer
+后台 run、稳定 SSE 投影、取消和精确 citation；React Article Workspace 采用“墨迹星图”亮/暗主题，
+支持材料选择、渐进阅读、运行轨迹、citation 定位与 Evidence reveal。完整执行仍进入 trace.db，
+浏览器事件不暴露 prompt、模型输出或节点全文。
 
 ## 文档
 
@@ -43,15 +44,35 @@ uv run pyright         # 类型检查（strict）
 uv run pre-commit install  # 安装提交钩子
 uv run grandquiz search "MySQL 面试高频考点"  # 不经 LLM 验证已配置的搜索 provider
 uv run grandquiz report    # 离线 Replay 全部 Eval，导出 ~/.grandquiz/eval-report/index.html
-uv run grandquiz-web       # 仅监听 127.0.0.1:8000；当前提供 API / OpenAPI，React UI 尚待 LW-S3
+uv run grandquiz-web       # API，仅监听 127.0.0.1:8000
 open ~/.grandquiz/eval-report/index.html
+```
+
+本地 Web 开发使用两个终端，均只监听 loopback：
+
+```bash
+uv run grandquiz-web
+cd web
+npm ci
+npm run dev               # http://127.0.0.1:5173
+```
+
+前端契约和自动门：
+
+```bash
+cd web
+npm run api:check         # OpenAPI / TypeScript 生成物无 drift
+npm test                  # Vitest + Testing Library
+npm run typecheck
+npm run build
+npm run test:sites
 ```
 
 Web Search 默认不启用。在 `.env` 配置 `TAVILY_API_KEY` 即可使用 Tavily；也可按
 [`deploy/searxng/README.md`](deploy/searxng/README.md) 启动本机 SearXNG。两者同时存在时必须用
 `WEB_SEARCH_PROVIDER=tavily|searxng` 显式选择，避免静默改变供应商。
 
-CI 在每次 push / PR 上跑 lint + format + typecheck + test，全绿才能合并。
+CI 在每次 push / PR 上同时跑 Python 静态门/测试/Eval 与 Web 契约、测试、类型、构建门，全绿才能合并。
 
 ## 工程规范
 
