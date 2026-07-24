@@ -1,7 +1,7 @@
 # PRD：Local-first Web 学习工作台
 
-Status: ready-for-agent（2026-07-24；产品范围、技术栈、首条竖切与视觉原则已由用户确认）
-Triage: ready-for-agent
+Status: in progress（2026-07-24；LW-S1 API 已交付并全门通过，下一节点为 LW-S2 视觉 HITL）
+Triage: ready-for-human
 
 ## Problem Statement
 
@@ -112,7 +112,8 @@ TypeScript client 的唯一契约源。
 - 长操作先返回 `202`，响应含 `run_id`、`trace_id`、`status`。
 - 状态固定为 `queued | running | needs_input | succeeded | failed | cancelled`。
 - 第一阶段 run registry 可在单进程内管理运行任务和 UI event backlog；权威执行证据仍写入 `trace.db`。
-- 已完成 run 可由 trace/result 投影读取；跨进程恢复与 `needs_input` 持久化在审批竖切实现。
+- 同一进程内已完成 run 可继续按 run_id 读取；服务重启后仍可按 trace_id 审计完整事件树，但首条竖切不从
+  trace 逆向重建 HTTP `RunView`。跨进程 run/result 恢复与 `needs_input` 持久化在审批竖切实现。
 - SSE 发送版本化 UI projection，例如 `run.started`、`search.completed`、`node.read`、
   `answer.completed`、`run.failed`，不直接序列化任意 `AgentEvent.payload`。
 - 每条 UI event 带单调序号，支持客户端重连后从 backlog 继续；正文、system prompt 和模型完整输出

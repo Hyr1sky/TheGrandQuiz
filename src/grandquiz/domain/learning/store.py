@@ -54,6 +54,7 @@ class Store(Protocol):
 
     def add_resource(self, resource: LearningResource) -> None: ...
     def get_resource(self, resource_id: str) -> LearningResource | None: ...
+    def all_resources(self) -> list[LearningResource]: ...
     def set_resource_status(self, resource_id: str, status: ResourceStatus) -> None: ...
     def add_items(self, items: list[KnowledgeItem]) -> None: ...
     def evidence_for_item(self, item_id: str) -> list[Evidence]: ...
@@ -89,6 +90,10 @@ class LearningStore:
 
     def get_resource(self, resource_id: str) -> LearningResource | None:
         return self._resources.get(resource_id)
+
+    def all_resources(self) -> list[LearningResource]:
+        """全库资源，按稳定 ``resource_id`` 升序。"""
+        return sorted(self._resources.values(), key=lambda resource: resource.resource_id)
 
     def set_resource_status(self, resource_id: str, status: ResourceStatus) -> None:
         """把已存资源的 ``status`` 改成给定值（深读失败 → ``failed``）。资源不存在则报错。"""
@@ -283,18 +288,15 @@ class SqliteLearningStore:
         ).fetchone()
         if row is None:
             return None
-        return LearningResource.model_validate(
-            {
-                "resource_id": str(row[0]),
-                "url": row[1],
-                "raw_content": row[2],
-                "content_hash": row[3],
-                "trusted": bool(row[4]),
-                "status": row[5],
-                "topic": row[6],
-                "current_revision_id": row[7],
-            }
-        )
+        return _row_to_resource(row)
+
+    def all_resources(self) -> list[LearningResource]:
+        """全库资源，按稳定 ``resource_id`` 升序。"""
+        rows = self._conn.execute(
+            "SELECT resource_id, url, raw_content, content_hash, trusted, status, topic, "
+            "current_revision_id FROM resources ORDER BY resource_id"
+        ).fetchall()
+        return [_row_to_resource(row) for row in rows]
 
     def set_resource_status(self, resource_id: str, status: ResourceStatus) -> None:
         """把已存资源的 ``status`` 改成给定值；资源不存在则报错（同 dict 版语义）。"""
@@ -700,6 +702,21 @@ def _row_to_item(row: Any) -> KnowledgeItem:
             "evidence": json.loads(row[4]),
             "confidence": float(row[5]),
             "concept_key": row[6],
+        }
+    )
+
+
+def _row_to_resource(row: Any) -> LearningResource:
+    return LearningResource.model_validate(
+        {
+            "resource_id": str(row[0]),
+            "url": row[1],
+            "raw_content": row[2],
+            "content_hash": row[3],
+            "trusted": bool(row[4]),
+            "status": row[5],
+            "topic": row[6],
+            "current_revision_id": row[7],
         }
     )
 

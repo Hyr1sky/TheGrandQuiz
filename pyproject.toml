@@ -5,6 +5,7 @@ description = "Learning-oriented digital human: an observable, recoverable, and 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.115,<0.139",
     "httpx>=0.27",
     "openai>=2.44.0",
     "pydantic>=2.0",
@@ -12,10 +13,12 @@ dependencies = [
     "questionary>=2.1.1",
     "rich>=15.0.0",
     "trafilatura>=2.1.0,<3",
+    "uvicorn>=0.30,<1",
 ]
 
 [project.scripts]
 grandquiz = "grandquiz.interfaces.cli.app:main"
+grandquiz-web = "grandquiz.interfaces.api.serve:main"
 
 [dependency-groups]
 dev = [

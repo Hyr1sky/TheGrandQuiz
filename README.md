@@ -12,6 +12,10 @@ Eval Harness 现有 17 条用例：全部运行 Tier-1 确定性规则门，case
 
 Web Acquisition 的 WA-S1–S5 已完成：Trafilatura 正文抽取、结构化质量门、可选 Tavily / SearXNG `web_search`、Search/Fetch Record-Replay 均已接入原有事件脊柱与确定性 ingest workflow。Tavily 只需无需信用卡的免费 API key；SearXNG 提供 loopback-only 最小单容器配置，但 Docker 仍不是基础依赖。两种 provider 的真实搜索与 search → 用户选择 → ingest ReAct dogfood 均已验收。
 
+Local Web 的 LW-S1 API 基座已完成：FastAPI 提供资源/大纲/有界节点读取、GroundedDocumentAnswer
+后台 run、稳定 SSE 投影、取消和精确 citation；完整执行仍进入 trace.db，浏览器事件不暴露 prompt、
+模型输出或节点全文。React Article Workspace 将在三种视觉方向完成人工选择后开始实现。
+
 ## 文档
 
 | 文档 | 内容 |
@@ -39,6 +43,7 @@ uv run pyright         # 类型检查（strict）
 uv run pre-commit install  # 安装提交钩子
 uv run grandquiz search "MySQL 面试高频考点"  # 不经 LLM 验证已配置的搜索 provider
 uv run grandquiz report    # 离线 Replay 全部 Eval，导出 ~/.grandquiz/eval-report/index.html
+uv run grandquiz-web       # 仅监听 127.0.0.1:8000；当前提供 API / OpenAPI，React UI 尚待 LW-S3
 open ~/.grandquiz/eval-report/index.html
 ```
 
@@ -52,5 +57,5 @@ CI 在每次 push / PR 上跑 lint + format + typecheck + test，全绿才能合
 
 - **分层守卫**：`kernel/` 禁止 import `domain/`（已由 import-linter 在 CI 强制，第 5 道门）
 - **提交规范**：conventional commits；issue 驱动开发，每个 issue 对应一个独立可验收的 PR
-- **决策记录**：架构级决策写入 `docs/adr/`（现 8 篇），领域术语沉淀在 [CONTEXT.md](CONTEXT.md)
+- **决策记录**：架构级决策写入 `docs/adr/`（现 9 篇），领域术语沉淀在 [CONTEXT.md](CONTEXT.md)
 - **密钥纪律**：凭证只走 `.env`（已 gitignore），任何 key 不进 git 历史

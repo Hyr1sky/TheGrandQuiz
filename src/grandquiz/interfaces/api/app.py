@@ -1,0 +1,93 @@
+"""FastAPI application factory for the local-first Web interface."""
+
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from pathlib import Path
+
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+from grandquiz.domain.learning.persistence import LearningPersistence
+from grandquiz.interfaces.api.errors import install_error_handlers
+from grandquiz.interfaces.api.resources import router as resources_router
+from grandquiz.interfaces.api.run_routes import router as runs_router
+from grandquiz.interfaces.api.runs import RunManager
+from grandquiz.kernel.trace import TraceStore
+from grandquiz.providers.base import Provider
+
+
+@dataclass(frozen=True)
+class ApiSettings:
+    """API 进程所拥有的本地持久化路径。"""
+
+    learning_db_path: Path
+    trace_db_path: Path
+
+    @classmethod
+    def default(cls) -> "ApiSettings":
+        data_dir = Path.home() / ".grandquiz"
+        return cls(
+            learning_db_path=data_dir / "learning.db",
+            trace_db_path=data_dir / "trace.db",
+        )
+
+
+class HealthResponse(BaseModel):
+    status: str
+    api_version: str
+
+
+async def health() -> HealthResponse:
+    return HealthResponse(status="ok", api_version="v1")
+
+
+def create_app(
+    *,
+    settings: ApiSettings,
+    provider: Provider,
+    provider_close: Callable[[], Awaitable[None]] | None = None,
+) -> FastAPI:
+    """创建可注入 provider/DB 的 app；模块导入本身不触碰 `.env` 或数据库。"""
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+        settings.learning_db_path.parent.mkdir(parents=True, exist_ok=True)
+        settings.trace_db_path.parent.mkdir(parents=True, exist_ok=True)
+        persistence = LearningPersistence(settings.learning_db_path)
+        trace_store = TraceStore(settings.trace_db_path)
+        run_manager = RunManager(
+            store=persistence.store,
+            provider=provider,
+            trace_store=trace_store,
+        )
+        app.state.persistence = persistence
+        app.state.provider = provider
+        app.state.settings = settings
+        app.state.run_manager = run_manager
+        try:
+            yield
+        finally:
+            await run_manager.aclose()
+            trace_store.close()
+            persistence.close()
+            if provider_close is not None:
+                await provider_close()
+
+    app = FastAPI(
+        title="TheGrandQuiz Local API",
+        version="0.1.0",
+        lifespan=lifespan,
+    )
+    install_error_handlers(app)
+
+    app.add_api_route(
+        "/api/v1/health",
+        health,
+        methods=["GET"],
+        response_model=HealthResponse,
+        tags=["system"],
+    )
+    app.include_router(resources_router)
+    app.include_router(runs_router)
+    return app

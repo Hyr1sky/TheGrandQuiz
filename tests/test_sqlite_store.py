@@ -120,6 +120,24 @@ def test_replace_snapshot_matches_dict_and_removes_stale_items() -> None:
     )
 
 
+def test_all_resources_matches_dict_and_uses_stable_order() -> None:
+    stores: list[Store] = [LearningStore(), _sqlite()]
+    resources = [
+        LearningResource.create(url=url).model_copy(update={"topic": topic})
+        for url, topic in [
+            ("https://example.com/z", "Z"),
+            ("https://example.com/a", "A"),
+        ]
+    ]
+    for store in stores:
+        for resource in resources:
+            store.add_resource(resource)
+
+    expected = sorted(resources, key=lambda resource: resource.resource_id)
+    assert stores[0].all_resources() == expected
+    assert stores[1].all_resources() == expected
+
+
 def test_replace_snapshot_cascades_removed_item_state_without_touching_retained_state(
     tmp_path: Path,
 ) -> None:
