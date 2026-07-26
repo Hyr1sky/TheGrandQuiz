@@ -1,21 +1,17 @@
 import type { components } from "../../shared/api/generated/schema";
 import { apiClient, toApiRequestError } from "../../shared/api/client";
+import {
+  listResources,
+  type ResourceSummary,
+} from "../../shared/api/resources";
 
-export type ResourceSummary = components["schemas"]["ResourceSummary"];
+export { listResources, type ResourceSummary };
 export type DocumentNodeSummary = components["schemas"]["DocumentNodeSummary"];
 export type DocumentNodeRead = components["schemas"]["DocumentNodeReadResponse"];
 export type RunView = components["schemas"]["RunView"];
 export type GroundedAnswerResult = components["schemas"]["GroundedAnswerResult"];
 export type ResolvedCitation = components["schemas"]["ResolvedCitation"];
 export type UiEvent = components["schemas"]["UiEvent"];
-
-export async function listResources(): Promise<ResourceSummary[]> {
-  const { data, error } = await apiClient.GET("/api/v1/resources");
-  if (error !== undefined) {
-    throw toApiRequestError(error);
-  }
-  return data.items;
-}
 
 export async function getOutline(resourceId: string): Promise<DocumentNodeSummary[]> {
   const { data, error } = await apiClient.GET("/api/v1/resources/{resource_id}/outline", {

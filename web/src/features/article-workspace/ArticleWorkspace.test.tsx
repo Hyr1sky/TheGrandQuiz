@@ -502,7 +502,7 @@ describe("Article Workspace", () => {
             error: null,
             result: {
               status: "no_evidence",
-              answer: null,
+              answer: "材料中没有足够证据回答该问题。",
               citations: [],
               searched_node_ids: [],
               read_node_ids: [],
@@ -543,6 +543,8 @@ describe("Article Workspace", () => {
     });
 
     expect(await screen.findByText("材料中没有足够证据，已停止生成答案。")).toBeInTheDocument();
+    expect(screen.queryByText("回答（基于本文）")).not.toBeInTheDocument();
+    expect(screen.queryByText("材料中没有足够证据回答该问题。")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "揭示证据" })).not.toBeInTheDocument();
   });
 });

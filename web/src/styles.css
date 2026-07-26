@@ -34,9 +34,26 @@ button {
   cursor: pointer;
 }
 
+button:not(:disabled),
+select:not(:disabled),
+textarea:not(:disabled) {
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px) scale(0.985);
+  box-shadow: var(--shadow-pressed);
 }
 
 button:focus-visible,
@@ -45,6 +62,22 @@ textarea:focus-visible,
 article:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 3px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled):hover {
+    z-index: 1;
+    transform: translateY(-2px);
+    border-color: var(--focus);
+    color: var(--text-strong);
+    box-shadow: var(--shadow-hover);
+  }
+
+  select:not(:disabled):hover,
+  textarea:not(:disabled):hover {
+    border-color: var(--focus);
+    box-shadow: 0 0 0 3px var(--evidence-soft);
+  }
 }
 
 .app-shell {
@@ -74,6 +107,46 @@ article:focus-visible {
 
 .theme-toggle:active {
   box-shadow: var(--shadow-pressed);
+}
+
+.workspace-mode-nav {
+  position: fixed;
+  z-index: 10;
+  top: 20px;
+  left: 24px;
+  display: inline-flex;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+}
+
+.workspace-mode-nav button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.workspace-mode-nav button[aria-pressed="true"] {
+  border-color: var(--line-strong);
+  background: var(--evidence-soft);
+  color: var(--text-strong);
+  box-shadow: var(--shadow-pressed);
+}
+
+@media (max-width: 759px) {
+  .workspace-mode-nav {
+    top: 14px;
+    left: 16px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

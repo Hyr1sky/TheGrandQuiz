@@ -9,6 +9,8 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from grandquiz.domain.learning.persistence import LearningPersistence
+from grandquiz.interfaces.api.assessment_routes import router as assessments_router
+from grandquiz.interfaces.api.assessment_runs import AssessmentManager
 from grandquiz.interfaces.api.errors import install_error_handlers
 from grandquiz.interfaces.api.resources import router as resources_router
 from grandquiz.interfaces.api.run_routes import router as runs_router
@@ -61,13 +63,24 @@ def create_app(
             provider=provider,
             trace_store=trace_store,
         )
+        assessment_manager = AssessmentManager(
+            store=persistence.store,
+            provider=provider,
+            memory=persistence.memory,
+            asked_questions=persistence.asked_questions,
+            preferences=persistence.preferences,
+            difficulty=persistence.difficulty,
+            trace_store=trace_store,
+        )
         app.state.persistence = persistence
         app.state.provider = provider
         app.state.settings = settings
         app.state.run_manager = run_manager
+        app.state.assessment_manager = assessment_manager
         try:
             yield
         finally:
+            await assessment_manager.aclose()
             await run_manager.aclose()
             trace_store.close()
             persistence.close()
@@ -90,4 +103,5 @@ def create_app(
     )
     app.include_router(resources_router)
     app.include_router(runs_router)
+    app.include_router(assessments_router)
     return app

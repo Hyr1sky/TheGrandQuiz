@@ -1,6 +1,6 @@
 # PRD：Local-first Web 学习工作台
 
-Status: in progress（2026-07-24；LW-S1–S3 已交付，下一节点为 LW-S4 考核工作台）
+Status: in progress（2026-07-26；LW-S1–S4 已交付，下一节点为 LW-S5 Acquisition / 可恢复审批）
 Triage: ready-for-agent
 
 ## Problem Statement
@@ -161,8 +161,8 @@ TypeScript client 的唯一契约源。
 - 取消测试使用可控阻塞 provider，证明 task 终止、run 状态和事件一致。
 - OpenAPI snapshot / schema test 固定路径、DTO、错误 envelope 和 run 状态；生成 TypeScript 后在前端 CI
   检查无 drift。
-- React 使用 Vitest + Testing Library 测用户行为；关键文章问答流用 Playwright 做同源端到端测试。
-- 既有 859 项 pytest、Eval 17/17、ruff、format、pyright、import-linter 必须保持全绿；React
+- React 使用 Vitest + Testing Library 测用户行为；关键文章问答与逐题考核流用 Playwright 做同源端到端测试。
+- 既有 Python 测试、Eval 17/17、ruff、format、pyright、import-linter 必须保持全绿；React
   另跑 contract drift、Vitest、TypeScript、Vite build 与 hosting adapter 门。
 
 ## Out of Scope

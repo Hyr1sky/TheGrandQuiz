@@ -71,6 +71,34 @@ class _NoEvidenceProvider:
         )
 
 
+class _LatentMemoryProvider:
+    def __init__(self, quote: str) -> None:
+        self._quote = quote
+        self.calls = 0
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        self.calls += 1
+        evidence = messages[1].content
+        payload: dict[str, object]
+        if self._quote not in evidence:
+            payload = {"answer": "材料中没有足够证据回答该问题。", "citations": []}
+        else:
+            payload = {
+                "answer": "潜在记忆以隐式形式承载在模型内部表示中。",
+                "citations": [{"node_key": "n0", "quote": self._quote}],
+            }
+        return Completion(
+            text=json.dumps(payload, ensure_ascii=False),
+            usage=Usage(prompt_tokens=120, completion_tokens=30),
+        )
+
+
 class _AmbiguousQuoteProvider:
     def __init__(self) -> None:
         self.calls = 0
@@ -211,6 +239,53 @@ async def test_grounded_answer_relaxes_multi_phrase_query_within_exact_scope(
 
     assert result.status == "answered"
     assert result.citations[0].quote == quote
+    assert provider.calls == 1
+    store.close()
+
+
+async def test_grounded_answer_extracts_high_information_phrase_from_chinese_question(
+    tmp_path: Path,
+) -> None:
+    noisy_sections = [
+        f"## Agent 基础 {index}\n\nagent agent agent 的常规说明 {index}。\n" for index in range(12)
+    ]
+    quote = "潜在记忆以隐式形式承载在模型内部表示中"
+    content = "# 记忆系统\n\n" + "\n".join(
+        [*noisy_sections, f"## 记忆有哪些存储形式？\n\n{quote}。\n"]
+    )
+    resource = LearningResource.create(url="https://example.com/latent-memory").model_copy(
+        update={
+            "raw_content": content,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+            "status": "read",
+            "topic": "Agent 记忆",
+        }
+    )
+    store = SqliteLearningStore(tmp_path / "learning.db")
+    store.replace_snapshot(resource, [])
+    provider = _LatentMemoryProvider(quote)
+    events: list[AgentEvent] = []
+    sink = EventSink()
+    sink.subscribe(events.append)
+    emitter = EventEmitter(sink, ManualClock(), trace_id="latent-memory")
+
+    result = await GroundedDocumentAnswer(store=store, provider=provider).answer(
+        GroundedAnswerRequest(
+            query="agent 的潜在记忆是什么",
+            resource_ids=[resource.resource_id],
+            max_candidates=3,
+            max_read_chars=600,
+            max_chars_per_node=200,
+        ),
+        emitter=emitter,
+    )
+
+    assert result.status == "answered"
+    assert result.citations[0].quote == quote
+    searched = next(
+        event for event in events if event.type == LearningEvent.DOCUMENT_NODES_SEARCHED
+    )
+    assert "潜在记忆" in searched.payload["queries_attempted"]
     assert provider.calls == 1
     store.close()
 

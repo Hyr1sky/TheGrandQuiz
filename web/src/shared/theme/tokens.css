@@ -22,6 +22,7 @@
   --success: #83dac8;
   --focus: #5edcff;
   --shadow-raised: 8px 8px 20px rgb(0 0 0 / 28%), -5px -5px 16px rgb(36 59 72 / 18%);
+  --shadow-hover: 0 0 0 1px rgb(74 211 244 / 48%), 0 10px 26px rgb(0 0 0 / 32%);
   --shadow-pressed: inset 5px 5px 12px rgb(0 0 0 / 30%),
     inset -4px -4px 10px rgb(38 61 74 / 14%);
   --background-image: url("/assets/star-map-dark.webp");
@@ -49,6 +50,7 @@
   --focus: #006a8d;
   --shadow-raised: 8px 8px 20px rgb(132 112 75 / 16%),
     -5px -5px 16px rgb(255 255 255 / 66%);
+  --shadow-hover: 0 0 0 1px rgb(8 124 161 / 42%), 0 10px 24px rgb(83 66 39 / 20%);
   --shadow-pressed: inset 5px 5px 12px rgb(137 116 77 / 14%),
     inset -4px -4px 10px rgb(255 255 255 / 70%);
   --background-image: url("/assets/star-map-light.webp");

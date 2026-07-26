@@ -69,6 +69,61 @@ class GroundedAnswerRequest(BaseModel):
         return value
 
 
+_QUERY_PART_RE = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9_./+-]*(?:\s+[A-Za-z0-9][A-Za-z0-9_./+-]*)*|[\u3400-\u9fff]+"
+)
+_CJK_QUESTION_PREFIXES = (
+    "请结合材料回答",
+    "请结合材料",
+    "根据材料",
+    "请问",
+    "本文中",
+    "文中",
+    "关于",
+    "什么是",
+)
+_CJK_QUESTION_SUFFIXES = (
+    "指的是什么",
+    "是什么意思",
+    "是什么",
+    "有哪些",
+    "有什么",
+    "为什么",
+    "怎么样",
+    "如何",
+    "怎么",
+    "吗",
+    "呢",
+)
+
+
+def _retrieval_phrases(question: str) -> list[str]:
+    """从自然语言问题提取确定性的检索短语；不调用模型、不改变 exact scope。"""
+    phrases: list[str] = []
+    for raw_part in _QUERY_PART_RE.findall(question):
+        phrase = raw_part.strip()
+        if re.search(r"[\u3400-\u9fff]", phrase):
+            for prefix in _CJK_QUESTION_PREFIXES:
+                if phrase.startswith(prefix) and len(phrase) > len(prefix):
+                    phrase = phrase[len(prefix) :]
+                    break
+            phrase = phrase.removeprefix("的")
+            for suffix in _CJK_QUESTION_SUFFIXES:
+                if phrase.endswith(suffix) and len(phrase) > len(suffix):
+                    phrase = phrase[: -len(suffix)]
+                    break
+        if phrase and phrase != question.strip() and phrase not in phrases:
+            phrases.append(phrase)
+    return sorted(
+        phrases,
+        key=lambda phrase: (
+            bool(re.search(r"[\u3400-\u9fff]", phrase)),
+            len(phrase.replace(" ", "")),
+        ),
+        reverse=True,
+    )
+
+
 class GroundedAnswerMetrics(BaseModel):
     candidate_nodes: int = Field(ge=0)
     read_nodes: int = Field(ge=0)
@@ -379,15 +434,13 @@ class GroundedDocumentAnswer:
         request: GroundedAnswerRequest,
         scope: SearchScope,
     ) -> tuple[list[DocumentSearchHit], list[str]]:
-        """全短语无命中时，在同一 exact scope 内按调用者给出的短语确定性放宽。"""
+        """整句无命中时，在同一 exact scope 内按高信息量短语确定性放宽。"""
         queries = [request.query]
         hits = search.search(request.query, scope=scope, limit=request.max_candidates)
         if hits:
             return hits, queries
-        phrases = [
-            phrase for phrase in re.findall(r"[^\s,，。；;：:！？!?]+", request.query) if phrase
-        ]
-        if len(phrases) < 2:
+        phrases = _retrieval_phrases(request.query)
+        if not phrases:
             return [], queries
         merged: list[DocumentSearchHit] = []
         seen: set[tuple[str, str]] = set()

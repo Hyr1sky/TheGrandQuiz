@@ -4,6 +4,91 @@
  */
 
 export interface paths {
+    "/api/v1/assessments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Assessment */
+        post: operations["start_assessment_api_v1_assessments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assessments/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Assessment */
+        get: operations["get_assessment_api_v1_assessments__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assessments/{session_id}/next": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Next Assessment Round */
+        post: operations["start_next_assessment_round_api_v1_assessments__session_id__next_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assessments/{session_id}/questions/{question_id}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Assessment Answer */
+        post: operations["submit_assessment_answer_api_v1_assessments__session_id__questions__question_id__answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assessments/{session_id}/questions/{question_id}/evidence/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reveal Assessment Evidence */
+        post: operations["reveal_assessment_evidence_api_v1_assessments__session_id__questions__question_id__evidence_reveal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -161,6 +246,79 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnswerSubmissionRequest */
+        AnswerSubmissionRequest: {
+            /** Answer */
+            answer: string;
+            /** Request Id */
+            request_id: string;
+        };
+        /** AssessmentJudgementView */
+        AssessmentJudgementView: {
+            /** Concept State */
+            concept_state?: string | null;
+            /** Correct Answer */
+            correct_answer?: string | null;
+            /** Reason */
+            reason: string;
+            /** Verdict */
+            verdict: string;
+        };
+        /** AssessmentQuestionView */
+        AssessmentQuestionView: {
+            /** Evidence */
+            evidence: string[];
+            /** Evidence Revealed */
+            evidence_revealed: boolean;
+            /** Item Id */
+            item_id: string;
+            /** Options */
+            options: string[];
+            /** Question Id */
+            question_id: string;
+            /** Question Type */
+            question_type: string;
+            /** Text */
+            text: string;
+        };
+        /** AssessmentStartRequest */
+        AssessmentStartRequest: {
+            /**
+             * Focus
+             * @default mixed
+             * @enum {string}
+             */
+            focus: "mixed" | "new" | "weak";
+            /** Question Type */
+            question_type?: string | null;
+            /** Resource Ids */
+            resource_ids: string[];
+            /**
+             * Rounds
+             * @default 3
+             */
+            rounds: number;
+        };
+        /** AssessmentView */
+        AssessmentView: {
+            /** Error */
+            error?: string | null;
+            judgement?: components["schemas"]["AssessmentJudgementView"] | null;
+            question?: components["schemas"]["AssessmentQuestionView"] | null;
+            /** Round Index */
+            round_index: number;
+            /** Rounds */
+            rounds: number;
+            /** Session Id */
+            session_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "preparing" | "awaiting_answer" | "grading" | "judged" | "completed" | "refused" | "failed" | "cancelled";
+            /** Trace Id */
+            trace_id: string;
+        };
         /** DocumentNodeReadResponse */
         DocumentNodeReadResponse: {
             /** Content */
@@ -224,6 +382,14 @@ export interface components {
             /** Trace Id */
             trace_id: string | null;
         };
+        /** EvidenceRevealRequest */
+        EvidenceRevealRequest: {
+            /**
+             * Interaction
+             * @enum {string}
+             */
+            interaction: "hover" | "click" | "keyboard";
+        };
         /** GroundedAnswerMetrics */
         GroundedAnswerMetrics: {
             /** Candidate Nodes */
@@ -275,6 +441,11 @@ export interface components {
             api_version: string;
             /** Status */
             status: string;
+        };
+        /** NextRoundRequest */
+        NextRoundRequest: {
+            /** Request Id */
+            request_id: string;
         };
         /** QuestionRequest */
         QuestionRequest: {
@@ -381,6 +552,177 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    start_assessment_api_v1_assessments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssessmentStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_assessment_api_v1_assessments__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_next_assessment_round_api_v1_assessments__session_id__next_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NextRoundRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_assessment_answer_api_v1_assessments__session_id__questions__question_id__answers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerSubmissionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reveal_assessment_evidence_api_v1_assessments__session_id__questions__question_id__evidence_reveal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvidenceRevealRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_api_v1_health_get: {
         parameters: {
             query?: never;

@@ -1,6 +1,6 @@
 # LW-S4 — 逐题考核与 Evidence reveal
 
-Status: blocked
+Status: done
 Type: AFK
 
 ## Parent
@@ -15,13 +15,13 @@ Type: AFK
 
 ## Acceptance criteria
 
-- [ ] LLM 只在既有出题/判卷槽中，状态转移和记账仍由代码执行
-- [ ] 一次只展示一道题，选择题与开放题均能提交
-- [ ] Evidence reveal 不修改原文，不绕过 citation 校验，并产生可审计事件
-- [ ] 判决展示对/勉强/错、证据和薄弱状态变化，不引入分数/掌握度
-- [ ] 刷新或短暂断线不会静默重复记账
-- [ ] fake/replay provider 下完成端到端测试
+- [x] LLM 只在既有出题/判卷槽中，状态转移和记账仍由代码执行
+- [x] 一次只展示一道题，选择题与开放题均能提交
+- [x] Evidence reveal 不修改原文，不绕过 citation 校验，并产生可审计事件
+- [x] 判决展示对/勉强/错、证据和薄弱状态变化，不引入分数/掌握度
+- [x] 刷新或短暂断线不会静默重复记账
+- [x] fake/replay provider 下完成端到端测试
 
-## Blocked by
+## Dependency
 
-LW-S3.
+LW-S3（已交付）。

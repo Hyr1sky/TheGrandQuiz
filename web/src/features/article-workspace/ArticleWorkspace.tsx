@@ -259,7 +259,7 @@ export function ArticleWorkspace() {
             <p>材料中没有足够证据，已停止生成答案。</p>
           </section>
         ) : null}
-        {result?.answer ? (
+        {result?.status === "answered" && result.answer ? (
           <section className="answer" aria-label="回答">
             <p className="answer__label">回答（基于本文）</p>
             <p>{result.answer}</p>
