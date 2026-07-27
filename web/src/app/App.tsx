@@ -1,6 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  BookOpenTextIcon,
+  CompassIcon,
+  ExamIcon,
+  ListBulletsIcon,
+} from "@phosphor-icons/react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatPanel, type NavigationEvent } from "../features/chat/ChatPanel";
 import { AssessmentPanel } from "../features/assessment-workspace/AssessmentPanel";
+import {
+  AssessmentProgress,
+  type RoundRecord,
+} from "../features/assessment-workspace/AssessmentProgress";
+import type { AssessmentView } from "../features/assessment-workspace/api";
 import {
   getOutline,
   listResources,
@@ -13,6 +24,7 @@ import { ThemeToggle } from "../shared/components/ThemeToggle";
 import { ThemeProvider } from "./ThemeProvider";
 
 type WorkspaceMode = "reading" | "assessment";
+type SidebarView = "outline" | "progress";
 
 interface AssessmentParams {
   resource_id: string;
@@ -30,6 +42,61 @@ export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceMode>("reading");
   const [assessmentParams, setAssessmentParams] =
     useState<AssessmentParams | null>(null);
+
+  // Assessment state lifted for sidebar progress
+  const [assessment, setAssessment] = useState<AssessmentView | null>(null);
+  const [roundHistory, setRoundHistory] = useState<RoundRecord[]>([]);
+
+  // Sidebar view: auto-follows workspace, but user can override
+  const [sidebarView, setSidebarView] = useState<SidebarView>("outline");
+  const prevWorkspaceRef = useRef<WorkspaceMode>(workspace);
+
+  // Auto-switch sidebar when workspace changes (unless manually overridden)
+  useEffect(() => {
+    if (prevWorkspaceRef.current !== workspace) {
+      prevWorkspaceRef.current = workspace;
+      setSidebarView(workspace === "assessment" ? "progress" : "outline");
+    }
+  }, [workspace]);
+
+  // Track assessment state changes for history
+  const handleAssessmentUpdate = useCallback((view: AssessmentView) => {
+    setAssessment(view);
+    if (view.judgement !== null && view.judgement !== undefined) {
+      setRoundHistory((prev) => {
+        const exists = prev.some(
+          (r) => r.roundIndex === view.round_index,
+        );
+        if (exists) {
+          return prev.map((r) =>
+            r.roundIndex === view.round_index
+              ? { ...r, verdict: view.judgement?.verdict ?? null }
+              : r,
+          );
+        }
+        return [
+          ...prev,
+          {
+            roundIndex: view.round_index,
+            verdict: view.judgement?.verdict ?? null,
+          },
+        ];
+      });
+    } else if (view.question !== null && view.question !== undefined) {
+      setRoundHistory((prev) => {
+        const exists = prev.some(
+          (r) => r.roundIndex === view.round_index,
+        );
+        if (!exists) {
+          return [
+            ...prev,
+            { roundIndex: view.round_index, verdict: null },
+          ];
+        }
+        return prev;
+      });
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -104,10 +171,14 @@ export function App() {
               ? params.question_type
               : null,
         });
+        setAssessment(null);
+        setRoundHistory([]);
         setWorkspace("assessment");
       } else {
         setWorkspace("reading");
         setAssessmentParams(null);
+        setAssessment(null);
+        setRoundHistory([]);
       }
     },
     [],
@@ -116,7 +187,69 @@ export function App() {
   const handleAssessmentClose = useCallback(() => {
     setWorkspace("reading");
     setAssessmentParams(null);
+    setAssessment(null);
+    setRoundHistory([]);
   }, []);
+
+  const toggleSidebarView = useCallback(() => {
+    setSidebarView((prev) =>
+      prev === "outline" ? "progress" : "outline",
+    );
+  }, []);
+
+  const renderSidebar = () => {
+    return (
+      <nav className="app-sidebar" aria-label={sidebarView === "outline" ? "文档大纲" : "考核进度"}>
+        <div className="sidebar__header">
+          <button
+            type="button"
+            className="sidebar__toggle"
+            aria-label={sidebarView === "outline" ? "切换到考核进度" : "切换到文档大纲"}
+            onClick={toggleSidebarView}
+          >
+            {sidebarView === "outline" ? (
+              <>
+                <ListBulletsIcon aria-hidden size={16} />
+                <span>大纲</span>
+              </>
+            ) : (
+              <>
+                <ExamIcon aria-hidden size={16} />
+                <span>进度</span>
+              </>
+            )}
+          </button>
+        </div>
+        {sidebarView === "outline" ? (
+          <div className="sidebar__content">
+            {outline.map((item, index) => (
+              <button
+                className="outline__item"
+                key={item.node_id}
+                type="button"
+                aria-current={
+                  node?.node_id === item.node_id ? "location" : undefined
+                }
+                onClick={() => void selectNode(item.node_id)}
+              >
+                <span aria-hidden>
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                {item.title ?? item.section_path}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="sidebar__content">
+            <AssessmentProgress
+              assessment={assessment}
+              history={roundHistory}
+            />
+          </div>
+        )}
+      </nav>
+    );
+  };
 
   const renderMainContent = () => {
     if (workspace === "assessment" && assessmentParams !== null) {
@@ -127,6 +260,7 @@ export function App() {
             rounds={assessmentParams.rounds}
             questionType={assessmentParams.question_type}
             onClose={handleAssessmentClose}
+            onUpdate={handleAssessmentUpdate}
           />
         </main>
       );
@@ -162,6 +296,15 @@ export function App() {
       </main>
     );
   };
+
+  const footerWorkspaceLabel =
+    workspace === "assessment" ? "考核" : "阅读";
+  const footerWorkspaceIcon =
+    workspace === "assessment" ? (
+      <ExamIcon aria-hidden size={14} />
+    ) : (
+      <BookOpenTextIcon aria-hidden size={14} />
+    );
 
   return (
     <ThemeProvider>
@@ -199,37 +342,29 @@ export function App() {
           </div>
         </header>
 
-        <nav className="app-sidebar" aria-label="文档大纲">
-          {outline.map((item, index) => (
-            <button
-              className="outline__item"
-              key={item.node_id}
-              type="button"
-              aria-current={
-                node?.node_id === item.node_id ? "location" : undefined
-              }
-              onClick={() => void selectNode(item.node_id)}
-            >
-              <span aria-hidden>
-                {String(index + 1).padStart(2, "0")}
-              </span>
-              {item.title ?? item.section_path}
-            </button>
-          ))}
-        </nav>
+        {renderSidebar()}
 
         {renderMainContent()}
 
         <ChatPanel onNavigation={handleNavigation} />
 
         <footer className="app-footer" aria-label="状态栏">
-          <span className="app-footer__status">
-            {workspace === "assessment"
-              ? "考核进行中"
-              : resource !== null
-                ? `材料: ${resource.topic ?? resource.url}`
-                : "就绪"}
-          </span>
+          <div className="compass-nav">
+            <CompassIcon aria-hidden size={16} className="compass-nav__icon" />
+            <span className="compass-nav__separator" aria-hidden />
+            <span className="compass-nav__state">
+              {footerWorkspaceIcon}
+              {footerWorkspaceLabel}
+            </span>
+            <span className="compass-nav__separator" aria-hidden />
+            <span className="compass-nav__detail">
+              {workspace === "assessment" && assessment !== null
+                ? `第 ${assessment.round_index} / ${assessment.rounds} 题`
+                : resource !== null
+                  ? (resource.topic ?? resource.url)
+                  : "就绪"}
+            </span>
+          </div>
         </footer>
       </div>
     </ThemeProvider>

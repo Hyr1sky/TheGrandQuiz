@@ -38,9 +38,7 @@ button:not(:disabled),
 select:not(:disabled),
 textarea:not(:disabled) {
   transition:
-    transform 140ms ease,
     border-color 140ms ease,
-    box-shadow 140ms ease,
     background-color 140ms ease,
     color 140ms ease,
     opacity 140ms ease;
@@ -51,7 +49,25 @@ button:disabled {
   opacity: 0.5;
 }
 
-button:not(:disabled):active {
+/* Only neumorphic controls get shadow transitions + active press */
+.chat-input button,
+.assessment-panel__submit,
+.assessment-panel__judgement button,
+.assessment-panel__evidence > button[aria-expanded="true"],
+.theme-toggle {
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease;
+}
+
+.chat-input button:not(:disabled):active,
+.assessment-panel__submit:not(:disabled):active,
+.assessment-panel__judgement button:not(:disabled):active,
+.theme-toggle:active {
   transform: translateY(1px) scale(0.985);
   box-shadow: var(--shadow-pressed);
 }
@@ -64,19 +80,25 @@ article:focus-visible {
   outline-offset: 3px;
 }
 
+/* Default hover for non-neumorphic buttons: border-color change only */
 @media (hover: hover) and (pointer: fine) {
   button:not(:disabled):hover {
-    z-index: 1;
-    transform: translateY(-2px);
     border-color: var(--focus);
     color: var(--text-strong);
+  }
+
+  /* Neumorphic controls get shadow hover */
+  .chat-input button:not(:disabled):hover,
+  .assessment-panel__submit:not(:disabled):hover,
+  .assessment-panel__judgement button:not(:disabled):hover,
+  .theme-toggle:not(:disabled):hover {
+    z-index: 1;
     box-shadow: var(--shadow-hover);
   }
 
   select:not(:disabled):hover,
   textarea:not(:disabled):hover {
     border-color: var(--focus);
-    box-shadow: 0 0 0 3px var(--evidence-soft);
   }
 }
 
@@ -165,16 +187,41 @@ article:focus-visible {
   box-shadow: var(--shadow-pressed);
 }
 
-/* ---- Sidebar (outline) ---- */
+/* ---- Sidebar ---- */
 
 .app-sidebar {
   grid-area: sidebar;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 20px 14px 20px 20px;
   overflow-y: auto;
   border-right: 1px solid var(--line);
+}
+
+.sidebar__header {
+  display: flex;
+  align-items: center;
+  padding: 12px 14px 8px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sidebar__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--brass);
+  font: 600 12px/1.4 var(--font-interface);
+  letter-spacing: 0.06em;
+}
+
+.sidebar__content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px 20px 20px;
 }
 
 .outline__item {
@@ -185,7 +232,7 @@ article:focus-visible {
   width: 100%;
   min-height: 52px;
   padding: 7px 8px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   color: var(--muted);
@@ -195,7 +242,7 @@ article:focus-visible {
 
 .outline__item span {
   color: var(--brass);
-  font-family: var(--font-reading);
+  font-family: var(--font-interface);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
 }
@@ -251,7 +298,7 @@ article:focus-visible {
   font: 500 20px/1.4 var(--font-reading);
 }
 
-/* ---- Footer ---- */
+/* ---- Footer / Compass Navigation ---- */
 
 .app-footer {
   grid-area: footer;
@@ -263,13 +310,47 @@ article:focus-visible {
   background: var(--surface);
 }
 
-.app-footer__status {
-  color: var(--muted);
+.compass-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
   font: 400 12px/1.4 var(--font-interface);
 }
 
+.compass-nav__icon {
+  color: var(--brass);
+  flex-shrink: 0;
+}
+
+.compass-nav__separator {
+  display: block;
+  width: 1px;
+  height: 14px;
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+.compass-nav__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--evidence);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.compass-nav__detail {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
 /* ================================================================
-   Responsive: collapse chat panel at medium widths
+   Responsive: collapse to two columns at medium widths
    ================================================================ */
 
 @media (max-width: 1179px) {

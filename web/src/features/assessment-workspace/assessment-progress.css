@@ -1,0 +1,65 @@
+/* Compact assessment progress panel for the sidebar */
+
+.assessment-progress {
+  padding: 8px 0;
+  font-family: var(--font-interface);
+}
+
+.assessment-progress__empty {
+  margin: 0;
+  color: var(--muted);
+  font: 400 13px/1.5 var(--font-interface);
+}
+
+.assessment-progress__summary {
+  margin: 0 0 12px;
+  color: var(--brass);
+  font: 600 13px/1.4 var(--font-interface);
+  letter-spacing: 0.06em;
+}
+
+.assessment-progress__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assessment-progress__item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  font: 400 13px/1.4 var(--font-interface);
+}
+
+.assessment-progress__item[aria-current="step"] {
+  background: var(--evidence-soft);
+  color: var(--text-strong);
+}
+
+.assessment-progress__item--\5BF9 {
+  color: var(--success);
+}
+
+.assessment-progress__item--\52C9\5F3A {
+  color: var(--brass-strong);
+}
+
+.assessment-progress__item--\9519 {
+  color: var(--danger);
+}
+
+.assessment-progress__round {
+  font-variant-numeric: tabular-nums;
+}
+
+.assessment-progress__verdict {
+  font-size: 12px;
+  text-align: right;
+}

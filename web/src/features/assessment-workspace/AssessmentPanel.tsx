@@ -11,6 +11,7 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -31,6 +32,7 @@ interface AssessmentPanelProps {
   rounds: number;
   questionType: string | null;
   onClose: () => void;
+  onUpdate?: (view: AssessmentView) => void;
 }
 
 function commandId(prefix: string): string {
@@ -42,6 +44,7 @@ export function AssessmentPanel({
   rounds,
   questionType,
   onClose,
+  onUpdate,
 }: AssessmentPanelProps) {
   const [assessment, setAssessment] = useState<AssessmentView | null>(null);
   const [answer, setAnswer] = useState("");
@@ -57,6 +60,14 @@ export function AssessmentPanel({
     null,
   );
   const started = useRef(false);
+
+  // Notify parent of assessment state changes
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+  const notifyUpdate = useCallback((view: AssessmentView) => {
+    setAssessment(view);
+    onUpdateRef.current?.(view);
+  }, []);
 
   // Start assessment on mount
   useEffect(() => {
@@ -74,7 +85,7 @@ export function AssessmentPanel({
           questionType ?? "",
         );
         if (active) {
-          setAssessment(result);
+          notifyUpdate(result);
         }
       } catch (reason) {
         if (active) {
@@ -110,7 +121,7 @@ export function AssessmentPanel({
         .then((next) => {
           if (active) {
             pollDelay.current = Math.min(delay * 2, 4000);
-            setAssessment(next);
+            notifyUpdate(next);
           }
         })
         .catch((reason: unknown) => {
@@ -141,7 +152,7 @@ export function AssessmentPanel({
     }
     revealRequested.current = question.question_id;
     try {
-      setAssessment(
+      notifyUpdate(
         await revealEvidence(
           assessment.session_id,
           question.question_id,
@@ -174,7 +185,7 @@ export function AssessmentPanel({
               requestId: commandId("answer"),
             };
       answerCommand.current = command;
-      setAssessment(
+      notifyUpdate(
         await submitAnswer(
           assessment.session_id,
           question.question_id,
@@ -211,7 +222,7 @@ export function AssessmentPanel({
       setAnswer("");
       revealRequested.current = null;
       answerCommand.current = null;
-      setAssessment(next);
+      notifyUpdate(next);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法进入下一题");
     } finally {
