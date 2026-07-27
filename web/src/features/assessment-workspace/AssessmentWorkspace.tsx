@@ -89,18 +89,23 @@ export function AssessmentWorkspace() {
     };
   }, []);
 
+  const pollDelay = useRef(1000);
+
   useEffect(() => {
     if (
       assessment === null ||
       !["preparing", "grading"].includes(assessment.status)
     ) {
+      pollDelay.current = 1000;
       return;
     }
     let active = true;
+    const delay = pollDelay.current;
     const timer = window.setTimeout(() => {
       void getAssessment(assessment.session_id)
         .then((next) => {
           if (active) {
+            pollDelay.current = Math.min(delay * 2, 4000);
             setAssessment(next);
           }
         })
@@ -109,7 +114,7 @@ export function AssessmentWorkspace() {
             setError(reason instanceof Error ? reason.message : "无法刷新考核状态");
           }
         });
-    }, 220);
+    }, delay);
     return () => {
       active = false;
       window.clearTimeout(timer);
@@ -297,8 +302,8 @@ export function AssessmentWorkspace() {
               </button>
               {question.evidence_revealed ? (
                 <blockquote>
-                  {question.evidence.map((quote) => (
-                    <p key={quote}>{quote}</p>
+                  {question.evidence.map((quote, index) => (
+                    <p key={index}>{quote}</p>
                   ))}
                 </blockquote>
               ) : (
