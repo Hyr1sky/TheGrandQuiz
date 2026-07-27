@@ -146,6 +146,19 @@
   font-weight: 600;
 }
 
+/* ---- Navigation transition hint ---- */
+
+.chat-navigation-hint {
+  margin-bottom: 10px;
+  padding: 8px 14px;
+  border: 1px dashed var(--evidence);
+  border-radius: 8px;
+  background: var(--evidence-soft);
+  color: var(--evidence);
+  font: 400 13px/1.5 var(--font-interface);
+  text-align: center;
+}
+
 /* ---- Tool call indicator ---- */
 
 .chat-tool-call {

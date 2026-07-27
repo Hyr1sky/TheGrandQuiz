@@ -10,6 +10,7 @@ const EVENT_TYPES = [
   "chat.turn_started",
   "chat.tool_call",
   "chat.tool_result",
+  "chat.navigation",
   "chat.turn_ended",
   "chat.error",
 ] as const;

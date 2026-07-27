@@ -16,6 +16,10 @@ from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.summarizer import LLMSummarizer
 from grandquiz.domain.learning.tools import register_learning_tools
+from grandquiz.interfaces.api.navigation_tools import (
+    NAVIGATION_REQUESTED,
+    register_navigation_tools,
+)
 from grandquiz.interfaces.cli.composition import (
     _HISTORY_MAX_TURNS,
     _MEMORY_PARTITION_BUDGET,
@@ -130,6 +134,7 @@ class ChatManager:
             asked_questions=self._persistence.asked_questions,
             difficulty=self._persistence.difficulty,
         )
+        register_navigation_tools(registry)
 
         prompt = load_prompt(_REACT_PROMPT_NAME)
         counter = HeuristicTokenCounter()
@@ -266,6 +271,20 @@ class ChatManager:
                     "turn_id": turn_id,
                     "ok": event.payload.get("ok", False),
                     "result": result if isinstance(result, str) else "",
+                },
+            )
+        elif event.type == NAVIGATION_REQUESTED:
+            target = event.payload.get("target")
+            params = event.payload.get("params")
+            self._append_event(
+                session,
+                "chat.navigation",
+                {
+                    "turn_id": turn_id,
+                    "target": target if isinstance(target, str) else "",
+                    "params": dict(cast("dict[str, object]", params))
+                    if isinstance(params, dict)
+                    else {},
                 },
             )
 

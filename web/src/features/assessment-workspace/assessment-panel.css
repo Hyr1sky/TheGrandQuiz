@@ -1,0 +1,279 @@
+/* Embedded assessment panel — sits inside .app-content grid area */
+
+.assessment-panel {
+  width: min(100%, 780px);
+  margin: 0 auto;
+  padding: clamp(20px, 3vw, 40px);
+}
+
+.assessment-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--brass);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.assessment-panel__header h2 {
+  margin: 0;
+  font: 500 18px/1.3 var(--font-reading);
+  color: var(--text-strong);
+}
+
+.assessment-panel__header p {
+  margin: 0;
+}
+
+.assessment-panel__type {
+  margin-left: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.assessment-panel__close {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.assessment-panel__question {
+  width: min(100%, 660px);
+  margin: 32px auto 28px;
+  color: var(--text-strong);
+  font: 500 clamp(22px, 3vw, 34px) / 1.4 var(--font-reading);
+  text-align: center;
+}
+
+/* ---- Answer form ---- */
+
+.assessment-panel__answer {
+  display: grid;
+  gap: 22px;
+  width: min(100%, 660px);
+  margin: 0 auto;
+}
+
+.assessment-panel__answer fieldset {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.assessment-panel__answer legend {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.assessment-panel__option {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 52px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease;
+}
+
+.assessment-panel__option input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--evidence);
+  cursor: pointer;
+}
+
+.assessment-panel__option:has(input:checked) {
+  border-color: var(--evidence);
+  background: var(--evidence-soft);
+  box-shadow: inset 4px 0 0 var(--evidence);
+}
+
+.assessment-panel__open {
+  display: grid;
+  gap: 8px;
+}
+
+.assessment-panel__open > span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.assessment-panel__open textarea {
+  min-height: 120px;
+  resize: vertical;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--field);
+  font: 400 15px/1.7 var(--font-reading);
+}
+
+/* ---- Evidence ---- */
+
+.assessment-panel__evidence {
+  position: relative;
+  min-height: 100px;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  overflow: hidden;
+}
+
+.assessment-panel__evidence > button {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.assessment-panel__evidence > button[aria-expanded="true"] {
+  position: static;
+  min-height: 38px;
+  border-bottom: 1px solid var(--line);
+  color: var(--evidence);
+}
+
+.assessment-panel__evidence blockquote {
+  margin: 0;
+  padding: 16px 20px;
+  font: 400 15px/1.8 var(--font-reading);
+}
+
+.assessment-panel__evidence blockquote p {
+  margin: 0;
+}
+
+.assessment-panel__veil {
+  min-height: 100px;
+  background-color: var(--glass);
+  filter: blur(8px);
+  opacity: 0.38;
+  color: transparent;
+}
+
+/* ---- Submit ---- */
+
+.assessment-panel__submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  justify-self: end;
+  padding: 10px 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--text-strong);
+}
+
+/* ---- Status / Error ---- */
+
+.assessment-panel__status {
+  margin: 24px 0;
+  color: var(--evidence);
+  text-align: center;
+  font: 400 14px/1.6 var(--font-interface);
+}
+
+.assessment-panel__error {
+  margin: 16px 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--danger);
+  color: var(--danger);
+  font: 400 14px/1.6 var(--font-interface);
+}
+
+/* ---- Judgement ---- */
+
+.assessment-panel__judgement {
+  width: min(100%, 660px);
+  margin: 24px auto 0;
+  padding: 20px 22px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+}
+
+.assessment-panel__verdict {
+  margin-top: 0;
+  font: 600 18px/1.4 var(--font-reading);
+}
+
+.assessment-panel__verdict--对 {
+  color: var(--success);
+}
+
+.assessment-panel__verdict--勉强 {
+  color: var(--brass-strong);
+}
+
+.assessment-panel__verdict--错 {
+  color: var(--danger);
+}
+
+.assessment-panel__judgement button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--text-strong);
+}
+
+.assessment-panel__complete {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.assessment-panel__done {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--success);
+  font-weight: 650;
+}
+
+/* ---- Trace footer ---- */
+
+.assessment-panel__trace {
+  margin-top: 24px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { ChatPanel } from "../features/chat/ChatPanel";
+import { useCallback, useEffect, useState } from "react";
+import { ChatPanel, type NavigationEvent } from "../features/chat/ChatPanel";
+import { AssessmentPanel } from "../features/assessment-workspace/AssessmentPanel";
 import {
   getOutline,
   listResources,
@@ -11,12 +12,24 @@ import {
 import { ThemeToggle } from "../shared/components/ThemeToggle";
 import { ThemeProvider } from "./ThemeProvider";
 
+type WorkspaceMode = "reading" | "assessment";
+
+interface AssessmentParams {
+  resource_id: string;
+  rounds: number;
+  question_type: string | null;
+}
+
 export function App() {
   const [resources, setResources] = useState<ResourceSummary[]>([]);
   const [resource, setResource] = useState<ResourceSummary | null>(null);
   const [outline, setOutline] = useState<DocumentNodeSummary[]>([]);
   const [node, setNode] = useState<DocumentNodeRead | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [workspace, setWorkspace] = useState<WorkspaceMode>("reading");
+  const [assessmentParams, setAssessmentParams] =
+    useState<AssessmentParams | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -77,6 +90,79 @@ export function App() {
   const readingBody = (content: string): string =>
     content.replace(/^#{1,6}\s+[^\n]+\n+/, "").trim();
 
+  const handleNavigation = useCallback(
+    (nav: NavigationEvent) => {
+      if (nav.target === "assessment") {
+        const params = nav.params;
+        setAssessmentParams({
+          resource_id:
+            typeof params.resource_id === "string" ? params.resource_id : "",
+          rounds:
+            typeof params.rounds === "number" ? params.rounds : 3,
+          question_type:
+            typeof params.question_type === "string"
+              ? params.question_type
+              : null,
+        });
+        setWorkspace("assessment");
+      } else {
+        setWorkspace("reading");
+        setAssessmentParams(null);
+      }
+    },
+    [],
+  );
+
+  const handleAssessmentClose = useCallback(() => {
+    setWorkspace("reading");
+    setAssessmentParams(null);
+  }, []);
+
+  const renderMainContent = () => {
+    if (workspace === "assessment" && assessmentParams !== null) {
+      return (
+        <main className="app-content" aria-label="考核面板">
+          <AssessmentPanel
+            resourceId={assessmentParams.resource_id}
+            rounds={assessmentParams.rounds}
+            questionType={assessmentParams.question_type}
+            onClose={handleAssessmentClose}
+          />
+        </main>
+      );
+    }
+
+    return (
+      <main className="app-content" aria-label="文章内容">
+        {error !== null && resource === null ? (
+          <p>{error}</p>
+        ) : resource === null ? (
+          <p>
+            {resources.length === 0
+              ? "正在打开本地材料..."
+              : "知识库中还没有材料。"}
+          </p>
+        ) : (
+          <>
+            {resource.topic ? (
+              <h1 className="content-title">{resource.topic}</h1>
+            ) : null}
+            <article className="reading-article" tabIndex={-1}>
+              <p className="section-path">
+                {node?.section_path ?? "选择一个章节"}
+              </p>
+              {node === null ? (
+                <p>从星图中选择一个章节开始阅读。</p>
+              ) : (
+                <p>{readingBody(node.content)}</p>
+              )}
+            </article>
+          </>
+        )}
+      </main>
+    );
+  };
+
   return (
     <ThemeProvider>
       <div className="app-shell">
@@ -132,41 +218,17 @@ export function App() {
           ))}
         </nav>
 
-        <main className="app-content" aria-label="文章内容">
-          {error !== null && resource === null ? (
-            <p>{error}</p>
-          ) : resource === null ? (
-            <p>
-              {resources.length === 0
-                ? "正在打开本地材料..."
-                : "知识库中还没有材料。"}
-            </p>
-          ) : (
-            <>
-              {resource.topic ? (
-                <h1 className="content-title">{resource.topic}</h1>
-              ) : null}
-              <article className="reading-article" tabIndex={-1}>
-                <p className="section-path">
-                  {node?.section_path ?? "选择一个章节"}
-                </p>
-                {node === null ? (
-                  <p>从星图中选择一个章节开始阅读。</p>
-                ) : (
-                  <p>{readingBody(node.content)}</p>
-                )}
-              </article>
-            </>
-          )}
-        </main>
+        {renderMainContent()}
 
-        <ChatPanel />
+        <ChatPanel onNavigation={handleNavigation} />
 
         <footer className="app-footer" aria-label="状态栏">
           <span className="app-footer__status">
-            {resource !== null
-              ? `材料: ${resource.topic ?? resource.url}`
-              : "就绪"}
+            {workspace === "assessment"
+              ? "考核进行中"
+              : resource !== null
+                ? `材料: ${resource.topic ?? resource.url}`
+                : "就绪"}
           </span>
         </footer>
       </div>

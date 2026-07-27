@@ -17,8 +17,17 @@ import {
 import { streamChatEvents } from "./chatEvents";
 import "./chat-panel.css";
 
+export interface NavigationEvent {
+  target: string;
+  params: Record<string, unknown>;
+}
+
+interface ChatPanelProps {
+  onNavigation?: (nav: NavigationEvent) => void;
+}
+
 interface ChatMessage {
-  role: "user" | "agent";
+  role: "user" | "agent" | "system";
   content: string;
 }
 
@@ -39,7 +48,7 @@ function toolCallLabel(name: string): string {
   return TOOL_LABELS[name] ?? `正在调用 ${name}...`;
 }
 
-export function ChatPanel() {
+export function ChatPanel({ onNavigation }: ChatPanelProps) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -81,6 +90,10 @@ export function ChatPanel() {
     };
   }, []);
 
+  // Stable ref to avoid re-creating the SSE callback when onNavigation changes
+  const onNavigationRef = useRef(onNavigation);
+  onNavigationRef.current = onNavigation;
+
   const onChatEvent = useCallback((event: ChatUiEvent) => {
     switch (event.type) {
       case "chat.turn_started":
@@ -96,6 +109,25 @@ export function ChatPanel() {
       case "chat.tool_result":
         // Tool completed; loading continues until turn ends
         break;
+      case "chat.navigation": {
+        const target =
+          typeof event.data.target === "string" ? event.data.target : "";
+        const params =
+          typeof event.data.params === "object" &&
+          event.data.params !== null
+            ? (event.data.params as Record<string, unknown>)
+            : {};
+        const label =
+          target === "assessment"
+            ? "正在为你准备考核..."
+            : "正在切换到文章阅读...";
+        setMessages((prev) => [
+          ...prev,
+          { role: "system", content: label },
+        ]);
+        onNavigationRef.current?.({ target, params });
+        break;
+      }
       case "chat.turn_ended": {
         const output =
           typeof event.data.output === "string" ? event.data.output : "";
@@ -158,7 +190,9 @@ export function ChatPanel() {
             className={
               message.role === "user"
                 ? "chat-bubble--user"
-                : "chat-bubble--agent"
+                : message.role === "system"
+                  ? "chat-navigation-hint"
+                  : "chat-bubble--agent"
             }
           >
             {message.role === "agent" ? (

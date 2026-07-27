@@ -287,4 +287,107 @@ describe("ChatPanel", () => {
 
     expect(screen.getByText("完成")).toBeInTheDocument();
   });
+
+  it("calls onNavigation when a chat.navigation event is received", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request = input instanceof Request ? input : new Request(String(input));
+        if (request.url.endsWith("/api/v1/chat/sessions") && request.method === "POST") {
+          return Response.json({ session_id: "session-nav" }, { status: 201 });
+        }
+        if (request.url.includes("/messages") && request.method === "POST") {
+          return Response.json({ turn_id: "turn-nav" }, { status: 202 });
+        }
+        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+      }),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const user = userEvent.setup();
+    const handleNavigation = vi.fn();
+
+    render(<ChatPanel onNavigation={handleNavigation} />);
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "发送消息" })).toBeEnabled();
+    });
+
+    await user.type(screen.getByRole("textbox", { name: "发送消息" }), "考我几道选择题");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const stream = FakeEventSource.instances[0];
+
+    // Emit navigation event
+    await act(async () => {
+      stream?.emit("chat.navigation", {
+        sequence: 1,
+        type: "chat.navigation",
+        session_id: "session-nav",
+        data: {
+          turn_id: "turn-nav",
+          target: "assessment",
+          params: { resource_id: "res-123", rounds: 3, question_type: "选择题" },
+        },
+      });
+    });
+
+    // onNavigation should have been called with the navigation data
+    expect(handleNavigation).toHaveBeenCalledOnce();
+    expect(handleNavigation).toHaveBeenCalledWith({
+      target: "assessment",
+      params: { resource_id: "res-123", rounds: 3, question_type: "选择题" },
+    });
+
+    // Transition hint should appear in the conversation
+    expect(screen.getByText("正在为你准备考核...")).toBeInTheDocument();
+  });
+
+  it("shows reading transition hint for open_article navigation", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request = input instanceof Request ? input : new Request(String(input));
+        if (request.url.endsWith("/api/v1/chat/sessions") && request.method === "POST") {
+          return Response.json({ session_id: "session-read" }, { status: 201 });
+        }
+        if (request.url.includes("/messages") && request.method === "POST") {
+          return Response.json({ turn_id: "turn-read" }, { status: 202 });
+        }
+        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+      }),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const user = userEvent.setup();
+    const handleNavigation = vi.fn();
+
+    render(<ChatPanel onNavigation={handleNavigation} />);
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "发送消息" })).toBeEnabled();
+    });
+
+    await user.type(screen.getByRole("textbox", { name: "发送消息" }), "打开文章");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const stream = FakeEventSource.instances[0];
+
+    await act(async () => {
+      stream?.emit("chat.navigation", {
+        sequence: 1,
+        type: "chat.navigation",
+        session_id: "session-read",
+        data: {
+          turn_id: "turn-read",
+          target: "reading",
+          params: { resource_id: "res-xyz" },
+        },
+      });
+    });
+
+    expect(handleNavigation).toHaveBeenCalledWith({
+      target: "reading",
+      params: { resource_id: "res-xyz" },
+    });
+    expect(screen.getByText("正在切换到文章阅读...")).toBeInTheDocument();
+  });
 });
