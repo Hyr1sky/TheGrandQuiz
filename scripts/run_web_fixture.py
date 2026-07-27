@@ -71,6 +71,12 @@ class _FixtureProvider:
                 ),
                 usage=Usage(prompt_tokens=180, completion_tokens=45),
             )
+        if tools is not None:
+            user_text = messages[-1].content if messages else ""
+            return Completion(
+                text=f"（fixture）你好，你刚才说的是：{user_text[:60]}",
+                usage=Usage(prompt_tokens=120, completion_tokens=30),
+            )
         return Completion(
             text=(
                 '{"answer":"失败后继续执行会让后续副作用依赖不完整状态，'
