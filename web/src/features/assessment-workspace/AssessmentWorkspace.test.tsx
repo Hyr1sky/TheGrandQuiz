@@ -2,7 +2,7 @@ import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App } from "../../app/App";
+import { AssessmentWorkspace } from "./AssessmentWorkspace";
 
 const resource = {
   resource_id: "resource-memory",
@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 describe("Assessment Workspace", () => {
-  it("opens a real assessment setup from the workspace navigation", async () => {
+  it("opens a real assessment setup form with material options", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
@@ -28,19 +28,13 @@ describe("Assessment Workspace", () => {
         if (request.url.endsWith("/api/v1/resources")) {
           return Response.json({ items: [resource] });
         }
-        if (request.url.endsWith(`/api/v1/resources/${resource.resource_id}/outline`)) {
-          return Response.json({ resource_id: resource.resource_id, nodes: [] });
-        }
         throw new Error(`Unexpected request: ${request.url}`);
       }),
     );
-    const user = userEvent.setup();
 
-    render(<App />);
-    await screen.findByRole("heading", { name: "Agent 记忆" });
-    await user.click(screen.getByRole("button", { name: "进入考核模式" }));
+    render(<AssessmentWorkspace />);
 
-    expect(screen.getByRole("heading", { name: "开始一轮考核" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "开始一轮考核" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "考核材料" })).toHaveValue(
       resource.resource_id,
     );
@@ -48,7 +42,6 @@ describe("Assessment Workspace", () => {
   });
 
   it("reveals grounded evidence and completes one question", async () => {
-    window.location.hash = "assessment";
     const question = {
       question_id: "question-memory",
       item_id: "item-memory",
@@ -108,7 +101,7 @@ describe("Assessment Workspace", () => {
     );
     const user = userEvent.setup();
 
-    render(<App />);
+    render(<AssessmentWorkspace />);
     await screen.findByRole("heading", { name: "开始一轮考核" });
     await user.click(screen.getByRole("button", { name: "生成第一题" }));
 
@@ -131,7 +124,6 @@ describe("Assessment Workspace", () => {
   });
 
   it("resumes the current question after a page refresh without starting again", async () => {
-    window.location.hash = "assessment";
     window.sessionStorage.setItem("grandquiz.assessment.session_id", "assessment-resume");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const request = input instanceof Request ? input : new Request(String(input));
@@ -162,7 +154,7 @@ describe("Assessment Workspace", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<App />);
+    render(<AssessmentWorkspace />);
 
     expect(
       await screen.findByRole("heading", { name: "刷新后继续回答哪一道题？" }),
@@ -173,7 +165,6 @@ describe("Assessment Workspace", () => {
   });
 
   it("explains when the selected material has no assessable knowledge", async () => {
-    window.location.hash = "assessment";
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
@@ -201,7 +192,7 @@ describe("Assessment Workspace", () => {
     );
     const user = userEvent.setup();
 
-    render(<App />);
+    render(<AssessmentWorkspace />);
     await screen.findByRole("heading", { name: "开始一轮考核" });
     await user.click(screen.getByRole("button", { name: "生成第一题" }));
 

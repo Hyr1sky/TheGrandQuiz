@@ -1,0 +1,217 @@
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.chat-messages {
+  flex: 1 1 0;
+  overflow-y: auto;
+  padding: 20px 16px;
+  scroll-behavior: smooth;
+}
+
+.chat-messages:empty::after {
+  display: block;
+  margin-top: 48px;
+  color: var(--muted);
+  font: 400 14px/1.8 var(--font-interface);
+  text-align: center;
+  content: "和 agent 开始对话...";
+}
+
+/* ---- User bubble ---- */
+
+.chat-bubble--user {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+.chat-bubble--user > div {
+  max-width: 85%;
+  padding: 10px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px 12px 2px 12px;
+  background: var(--evidence-soft);
+  color: var(--text-strong);
+  font: 400 15px/1.7 var(--font-interface);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- Agent bubble ---- */
+
+.chat-bubble--agent {
+  margin-bottom: 16px;
+}
+
+.chat-bubble--agent > div {
+  max-width: 92%;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 2px 12px 12px 12px;
+  background: var(--surface-quiet);
+  color: var(--text);
+  font: 400 15px/1.8 var(--font-reading);
+  word-break: break-word;
+}
+
+/* Markdown inside agent bubble */
+
+.chat-bubble--agent h1,
+.chat-bubble--agent h2,
+.chat-bubble--agent h3,
+.chat-bubble--agent h4 {
+  margin: 16px 0 8px;
+  color: var(--text-strong);
+  font-family: var(--font-reading);
+}
+
+.chat-bubble--agent h1 {
+  font-size: 18px;
+}
+
+.chat-bubble--agent h2 {
+  font-size: 16px;
+}
+
+.chat-bubble--agent h3,
+.chat-bubble--agent h4 {
+  font-size: 15px;
+}
+
+.chat-bubble--agent p {
+  margin: 0 0 8px;
+}
+
+.chat-bubble--agent p:last-child {
+  margin-bottom: 0;
+}
+
+.chat-bubble--agent ul,
+.chat-bubble--agent ol {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+
+.chat-bubble--agent li {
+  margin-bottom: 4px;
+}
+
+.chat-bubble--agent code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--glass);
+  font-size: 13px;
+}
+
+.chat-bubble--agent pre {
+  margin: 8px 0;
+  padding: 12px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--glass);
+}
+
+.chat-bubble--agent pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.chat-bubble--agent blockquote {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--brass);
+  color: var(--muted);
+}
+
+.chat-bubble--agent table {
+  width: 100%;
+  margin: 8px 0;
+  border-collapse: collapse;
+}
+
+.chat-bubble--agent th,
+.chat-bubble--agent td {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.chat-bubble--agent th {
+  background: var(--glass);
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+/* ---- Tool call indicator ---- */
+
+.chat-tool-call {
+  margin-bottom: 10px;
+  padding: 6px 12px;
+  border-left: 2px solid var(--brass);
+  color: var(--brass);
+  font: 400 13px/1.5 var(--font-interface);
+}
+
+/* ---- Loading indicator ---- */
+
+.chat-loading {
+  margin-bottom: 12px;
+  color: var(--muted);
+  font: 400 13px/1.5 var(--font-interface);
+}
+
+/* ---- Error ---- */
+
+.chat-error {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--danger);
+  color: var(--danger);
+  font: 400 13px/1.5 var(--font-interface);
+}
+
+/* ---- Input area ---- */
+
+.chat-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.chat-input textarea {
+  width: 100%;
+  min-height: 44px;
+  max-height: 140px;
+  resize: none;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--field);
+  font: 400 14px/1.6 var(--font-interface);
+}
+
+.chat-input button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--text-strong);
+}
+
+.chat-input button:active {
+  box-shadow: var(--shadow-pressed);
+}
