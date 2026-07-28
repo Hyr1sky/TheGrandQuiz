@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssessmentPanel } from "./AssessmentPanel";
 
@@ -181,5 +181,48 @@ describe("AssessmentPanel", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(screen.getByText("材料证据")).toBeInTheDocument();
+  });
+
+  it("cancels the backend assessment before closing the workspace", async () => {
+    const cancelledAssessment = {
+      ...readyAssessment,
+      status: "cancelled",
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const request =
+        input instanceof Request ? input : new Request(String(input));
+      if (
+        request.method === "POST" &&
+        request.url.endsWith("/api/v1/assessments")
+      ) {
+        return Response.json(readyAssessment, { status: 201 });
+      }
+      if (
+        request.method === "DELETE" &&
+        request.url.endsWith("/api/v1/assessments/assessment-1")
+      ) {
+        return Response.json(cancelledAssessment);
+      }
+      throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const onClose = vi.fn();
+
+    render(
+      <AssessmentPanel
+        resourceId="resource-1"
+        rounds={2}
+        questionType="选择题"
+        onClose={onClose}
+      />,
+    );
+    await screen.findByRole("heading", { name: "哪项最符合材料？" });
+
+    fireEvent.click(screen.getByRole("button", { name: "结束考核" }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    const lastRequest = fetchMock.mock.calls.at(-1)?.[0];
+    expect(lastRequest).toBeInstanceOf(Request);
+    expect((lastRequest as Request).method).toBe("DELETE");
   });
 });

@@ -32,6 +32,21 @@ export async function getAssessment(sessionId: string): Promise<AssessmentView> 
   return data;
 }
 
+export async function cancelAssessment(
+  sessionId: string,
+): Promise<AssessmentView> {
+  const { data, error } = await apiClient.DELETE(
+    "/api/v1/assessments/{session_id}",
+    {
+      params: { path: { session_id: sessionId } },
+    },
+  );
+  if (error !== undefined) {
+    throw toApiRequestError(error);
+  }
+  return data;
+}
+
 export async function revealEvidence(
   sessionId: string,
   questionId: string,

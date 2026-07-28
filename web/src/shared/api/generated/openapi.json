@@ -1356,6 +1356,46 @@
       }
     },
     "/api/v1/assessments/{session_id}": {
+      "delete": {
+        "operationId": "cancel_assessment_api_v1_assessments__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Assessment",
+        "tags": [
+          "assessments"
+        ]
+      },
       "get": {
         "operationId": "get_assessment_api_v1_assessments__session_id__get",
         "parameters": [

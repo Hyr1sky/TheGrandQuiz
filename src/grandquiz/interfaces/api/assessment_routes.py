@@ -42,6 +42,18 @@ async def get_assessment(session_id: str, request: Request) -> AssessmentView:
     return assessment
 
 
+@router.delete("/{session_id}", response_model=AssessmentView)
+async def cancel_assessment(session_id: str, request: Request) -> AssessmentView:
+    assessment = await assessment_manager_from(request).cancel(session_id)
+    if assessment is None:
+        raise ApiError(
+            status_code=404,
+            code="assessment_not_found",
+            message=f"考核会话不存在：{session_id}",
+        )
+    return assessment
+
+
 @router.post(
     "/{session_id}/questions/{question_id}/answers",
     response_model=AssessmentView,

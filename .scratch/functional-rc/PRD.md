@@ -31,7 +31,7 @@ Python / Web / Eval / OpenAPI / build / Playwright 全绿，随后对
 
 ## Closeout evidence
 
-- Python：893 passed；Eval：17/17。
-- Web：36 passed；typecheck / build / OpenAPI generation 全绿。
-- Playwright：桌面 + 移动端 6/6；失败自动保留 screenshot / trace / HTML。
-- 临时 SQLite：6 条 trace 的 sequence 连续，Chat turn 与 Assessment run 全部成对。
+- Python：894 passed；Eval：17/17。
+- Web：37 passed；typecheck / build / OpenAPI generation 全绿。
+- Playwright：桌面 + 移动端 8/8；失败自动保留 screenshot / trace / HTML。
+- 临时 SQLite：10 条 trace 的 sequence 连续，Chat turn 与 Assessment run 全部成对。

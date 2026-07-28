@@ -364,6 +364,31 @@ def test_shutdown_projects_a_cancelled_terminal_trace(tmp_path: Path) -> None:
     assert terminal[0].payload["status"] == "cancelled"
 
 
+def test_user_cancel_is_idempotent_and_closes_the_trace(tmp_path: Path) -> None:
+    resource, _ = _seed_item(tmp_path)
+
+    with TestClient(_app(tmp_path)) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "选择题",
+            },
+        ).json()
+        _wait_for_status(client, started["session_id"], "awaiting_answer")
+
+        first = client.delete(f"/api/v1/assessments/{started['session_id']}")
+        second = client.delete(f"/api/v1/assessments/{started['session_id']}")
+        trace_snapshot = client.get(f"/api/v1/observability/traces/{started['trace_id']}").json()
+
+    assert first.status_code == 200
+    assert first.json()["status"] == "cancelled"
+    assert second.status_code == 200
+    assert second.json()["status"] == "cancelled"
+    assert trace_snapshot["summary"]["status"] == "cancelled"
+
+
 def test_open_question_wrong_answer_waits_for_explicit_next_round(tmp_path: Path) -> None:
     resource, _ = _seed_item(tmp_path)
     provider = _OpenAssessmentProvider()

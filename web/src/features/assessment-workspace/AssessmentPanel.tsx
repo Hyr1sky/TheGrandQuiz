@@ -18,6 +18,7 @@ import {
   type FormEvent,
 } from "react";
 import {
+  cancelAssessment,
   getAssessment,
   nextRound,
   revealEvidence,
@@ -66,6 +67,7 @@ export function AssessmentPanel({
     key: string;
     promise: Promise<AssessmentView>;
   } | null>(null);
+  const closeRequested = useRef(false);
 
   // Notify parent of assessment state changes
   const onUpdateRef = useRef(onUpdate);
@@ -287,6 +289,39 @@ export function AssessmentPanel({
     }
   };
 
+  const close = async () => {
+    if (closeRequested.current) {
+      return;
+    }
+    closeRequested.current = true;
+    let current = assessment;
+    if (current === null && startRequest.current !== null) {
+      try {
+        current = await startRequest.current.promise;
+      } catch {
+        onClose();
+        return;
+      }
+    }
+    if (
+      current !== null &&
+      !["completed", "refused", "failed", "cancelled"].includes(
+        current.status,
+      )
+    ) {
+      try {
+        await cancelAssessment(current.session_id);
+      } catch (reason) {
+        closeRequested.current = false;
+        setError(
+          reason instanceof Error ? reason.message : "无法结束考核",
+        );
+        return;
+      }
+    }
+    onClose();
+  };
+
   // Loading / error state before first question
   if (assessment === null) {
     return (
@@ -297,7 +332,7 @@ export function AssessmentPanel({
             type="button"
             className="assessment-panel__close"
             aria-label="结束考核"
-            onClick={onClose}
+            onClick={() => void close()}
           >
             <XCircleIcon aria-hidden size={19} />
             结束考核
@@ -327,7 +362,7 @@ export function AssessmentPanel({
             type="button"
             className="assessment-panel__close"
             aria-label="结束考核"
-            onClick={onClose}
+            onClick={() => void close()}
           >
             <XCircleIcon aria-hidden size={19} />
             返回阅读
@@ -360,7 +395,7 @@ export function AssessmentPanel({
             type="button"
             className="assessment-panel__close"
             aria-label="结束考核"
-            onClick={onClose}
+            onClick={() => void close()}
           >
             <XCircleIcon aria-hidden size={19} />
             结束考核
@@ -496,7 +531,7 @@ export function AssessmentPanel({
                   <CheckCircleIcon aria-hidden size={20} />
                   本轮完成
                 </p>
-                <button type="button" onClick={onClose}>
+                <button type="button" onClick={() => void close()}>
                   返回阅读
                 </button>
               </div>
@@ -526,7 +561,7 @@ export function AssessmentPanel({
           type="button"
           className="assessment-panel__close"
           aria-label="结束考核"
-          onClick={onClose}
+          onClick={() => void close()}
         >
           <XCircleIcon aria-hidden size={19} />
           结束考核

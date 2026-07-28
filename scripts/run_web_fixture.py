@@ -64,17 +64,22 @@ class _FixtureProvider:
     ) -> Completion:
         if role == "enrich":
             self._question_calls += 1
+            questions = [
+                "durable processor 失败后为什么要阻断当前 turn？",
+                "继续执行会怎样破坏事件历史的因果一致性？",
+                "恢复流程为什么必须从完整事件记录开始？",
+                "持久化失败后，哪条执行边界不能跨越？",
+            ]
             return Completion(
                 text=json.dumps(
                     {
-                        "question": (
-                            "durable processor 失败后为什么要阻断当前 turn？"
-                            f"（fixture #{self._question_calls}）"
-                        ),
+                        "question": questions[(self._question_calls - 1) % len(questions)],
                         "options": [
                             "避免后续副作用依赖不完整状态",
-                            "为了清空浏览器缓存",
-                            "为了跳过事件记录",
+                            "允许后续副作用跳过事件持久化",
+                            "让恢复流程忽略最近成功快照",
+                            "把当前材料切换为另一个资源",
+                            "清空事件序列并从零继续执行",
                         ],
                         "answer_index": 0,
                         "cited_evidence": ["失败后继续当前 turn 会让后续副作用依赖不完整状态"],
@@ -82,6 +87,17 @@ class _FixtureProvider:
                     ensure_ascii=False,
                 ),
                 usage=Usage(prompt_tokens=180, completion_tokens=45),
+            )
+        if role == "basic" and any("待评干扰项：" in message.content for message in messages):
+            return Completion(
+                text=json.dumps(
+                    {
+                        "label": "合理干扰",
+                        "rationale": "与题干同域，但不符合原文证据。",
+                    },
+                    ensure_ascii=False,
+                ),
+                usage=Usage(prompt_tokens=90, completion_tokens=20),
             )
         if tools is not None:
             user_text = next(
@@ -141,18 +157,21 @@ def _seed(db_path: Path) -> str:
             "trusted": True,
         }
     )
-    item = KnowledgeItem.create(
-        resource_id=resource.resource_id,
-        concept="durable processor 失败处理",
-        summary="失败后必须阻断当前 turn，避免因果链继续建立在不完整状态上。",
-        evidence=[Evidence(quote="失败后继续当前 turn 会让后续副作用依赖不完整状态")],
-        confidence=0.96,
-    )
+    items = [
+        KnowledgeItem.create(
+            resource_id=resource.resource_id,
+            concept=f"durable processor 失败处理 {index}",
+            summary="失败后必须阻断当前 turn，避免因果链继续建立在不完整状态上。",
+            evidence=[Evidence(quote="失败后继续当前 turn 会让后续副作用依赖不完整状态")],
+            confidence=0.96,
+        )
+        for index in range(1, 9)
+    ]
     snapshot = build_document_snapshot(resource)
     assert snapshot is not None
-    item = ground_items(snapshot, [item])[0]
+    items = ground_items(snapshot, items)
     with LearningPersistence(db_path) as persistence:
-        persistence.store.replace_snapshot(resource, [item])
+        persistence.store.replace_snapshot(resource, items)
     return resource.resource_id
 
 

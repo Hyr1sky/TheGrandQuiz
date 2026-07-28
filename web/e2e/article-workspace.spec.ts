@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 
+const ASSESSMENT_QUESTION =
+  /durable processor|事件历史的因果一致性|完整事件记录|执行边界/;
+
 let browserErrors: string[] = [];
 let observedTraceIds: string[] = [];
 
@@ -141,7 +144,7 @@ test("navigates from Chat to Assessment and closes the trace", async ({ page }) 
 
   await expect(
     page.getByRole("heading", {
-      name: /durable processor 失败后为什么要阻断当前 turn？/,
+      name: ASSESSMENT_QUESTION,
     }),
   ).toBeVisible();
 
@@ -169,4 +172,36 @@ test("navigates from Chat to Assessment and closes the trace", async ({ page }) 
   await expect(page.getByRole("dialog", { name: "运行观测" })).toContainText(
     "已完成",
   );
+});
+
+test("cancels an abandoned Assessment before returning to reading", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const assessmentStarted = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith("/api/v1/assessments"),
+  );
+  await page
+    .getByRole("textbox", { name: "发送消息" })
+    .fill("请结合当前材料考我一题");
+  await page.getByRole("button", { name: "发送" }).click();
+  const started = (await (await assessmentStarted).json()) as {
+    trace_id: string;
+  };
+  await expect(
+    page.getByRole("heading", {
+      name: ASSESSMENT_QUESTION,
+    }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "结束考核" }).click();
+  await expect(page.getByRole("main", { name: "文章内容" })).toBeVisible();
+
+  const snapshot = await page.request.get(
+    `/api/v1/observability/traces/${started.trace_id}`,
+  );
+  expect(snapshot.ok()).toBe(true);
+  expect((await snapshot.json()).summary.status).toBe("cancelled");
 });

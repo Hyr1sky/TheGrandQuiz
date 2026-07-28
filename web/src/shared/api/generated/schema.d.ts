@@ -32,7 +32,8 @@ export interface paths {
         get: operations["get_assessment_api_v1_assessments__session_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Cancel Assessment */
+        delete: operations["cancel_assessment_api_v1_assessments__session_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -800,6 +801,37 @@ export interface operations {
         };
     };
     get_assessment_api_v1_assessments__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_assessment_api_v1_assessments__session_id__delete: {
         parameters: {
             query?: never;
             header?: never;

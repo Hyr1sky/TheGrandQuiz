@@ -443,6 +443,22 @@ class AssessmentManager:
         ).hexdigest()[:16]
         record.status = "awaiting_answer"
 
+    async def cancel(self, session_id: str) -> AssessmentView | None:
+        record = self._records.get(session_id)
+        if record is None:
+            return None
+        if record.status in {"completed", "refused", "failed", "cancelled"}:
+            return record.view()
+
+        record.responder.cancel()
+        if record.task is not None and not record.task.done():
+            record.task.cancel()
+            await asyncio.gather(record.task, return_exceptions=True)
+        else:
+            record.status = "cancelled"
+            self._emit_terminal(record, "cancelled")
+        return record.view()
+
     async def aclose(self) -> None:
         tasks: list[asyncio.Task[None]] = []
         for record in self._records.values():

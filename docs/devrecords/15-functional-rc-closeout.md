@@ -46,6 +46,10 @@ web.assessment_run.started
 异常还会先发一个脱敏 `error` 事件，所以 `error_count` 与终态一致。应用关闭时，正在等待
 provider 或用户输入的任务会收到取消，并写入 `cancelled`，不会留下悬空 span。
 
+第一次双轴审查还发现：“结束考核”当时只关闭 React 界面，后端仍在等待答案。现在关闭按钮会先
+发送幂等的 `DELETE /api/v1/assessments/{session_id}`，等待任务写完 `cancelled` 终态后才回到
+阅读页；即使第一题仍在生成，也会等 session 建立后再取消。
+
 ## 3. 为什么 Chat 选择“拒绝并发”
 
 一个 Chat session 复用同一个 Runner、history 和当前材料上下文。如果两次消息并发进入，第二次
