@@ -26,11 +26,22 @@ interface ChatPanelProps {
   onNavigation?: (nav: NavigationEvent) => void;
   onTraceChange?: (traceId: string) => void;
   activeResourceId?: string | null;
+  assessmentStatus?:
+    | "preparing"
+    | "awaiting_answer"
+    | "grading"
+    | "judged"
+    | "completed"
+    | "refused"
+    | "failed"
+    | "cancelled"
+    | null;
 }
 
 interface ChatMessage {
   role: "user" | "agent" | "system";
   content: string;
+  kind?: "assessment-status";
 }
 
 interface ToolCallInfo {
@@ -54,6 +65,7 @@ export function ChatPanel({
   onNavigation,
   onTraceChange,
   activeResourceId = null,
+  assessmentStatus = null,
 }: ChatPanelProps) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -68,6 +80,7 @@ export function ChatPanel({
   const stopStream = useRef<(() => void) | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastSequence = useRef(0);
+  const assessmentNavigationTurns = useRef(new Set<string>());
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -76,6 +89,30 @@ export function ChatPanel({
       el.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, loading, toolCall, error]);
+
+  useEffect(() => {
+    if (assessmentStatus === null) {
+      return;
+    }
+    const content =
+      assessmentStatus === "completed"
+        ? "本轮考核已完成。"
+        : assessmentStatus === "refused" ||
+            assessmentStatus === "failed"
+          ? "本轮考核未能开始。"
+          : assessmentStatus === "cancelled"
+            ? "本轮考核已取消。"
+            : assessmentStatus === "preparing"
+              ? "正在为你准备考核..."
+              : "考核进行中，请在工作面板完成本轮题目。";
+    setMessages((previous) =>
+      previous.map((message) =>
+        message.kind === "assessment-status"
+          ? { ...message, content }
+          : message,
+      ),
+    );
+  }, [assessmentStatus]);
 
   // Create session on mount
   useEffect(() => {
@@ -131,17 +168,49 @@ export function ChatPanel({
           target === "assessment"
             ? "正在为你准备考核..."
             : "正在切换到文章阅读...";
-        setMessages((prev) => [
-          ...prev,
-          { role: "system", content: label },
-        ]);
+        const turnId =
+          typeof event.data.turn_id === "string"
+            ? event.data.turn_id
+            : "";
+        if (target === "assessment") {
+          if (turnId !== "") {
+            assessmentNavigationTurns.current.add(turnId);
+          }
+          setMessages((previous) => [
+            ...previous.filter(
+              (message) => message.kind !== "assessment-status",
+            ),
+            {
+              role: "system",
+              content: label,
+              kind: "assessment-status",
+            },
+          ]);
+        } else {
+          setMessages((previous) => [
+            ...previous,
+            { role: "system", content: label },
+          ]);
+        }
         onNavigationRef.current?.({ target, params });
         break;
       }
       case "chat.turn_ended": {
         const output =
           typeof event.data.output === "string" ? event.data.output : "";
-        setMessages((prev) => [...prev, { role: "agent", content: output }]);
+        const turnId =
+          typeof event.data.turn_id === "string"
+            ? event.data.turn_id
+            : "";
+        const assessmentLaunch =
+          turnId !== "" &&
+          assessmentNavigationTurns.current.delete(turnId);
+        if (!assessmentLaunch && output !== "") {
+          setMessages((prev) => [
+            ...prev,
+            { role: "agent", content: output },
+          ]);
+        }
         setLoading(false);
         setToolCall(null);
         break;

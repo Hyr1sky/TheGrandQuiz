@@ -9,6 +9,8 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type {
   DocumentNodeRead,
   DocumentNodeSummary,
@@ -219,7 +221,11 @@ export function ArticleWorkspace() {
           {node === null ? (
             <p>从星图中选择一个章节开始阅读。</p>
           ) : (
-            <p>{readingBody(node.content)}</p>
+            <div className="reading-markdown">
+              <Markdown remarkPlugins={[remarkGfm]}>
+                {readingBody(node.content)}
+              </Markdown>
+            </div>
           )}
         </article>
       </section>

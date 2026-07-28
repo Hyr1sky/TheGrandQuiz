@@ -466,6 +466,91 @@ describe("ChatPanel", () => {
     expect(screen.getByText("正在为你准备考核...")).toBeInTheDocument();
   });
 
+  it("treats assessment launch messages as lifecycle status instead of permanent replies", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request =
+          input instanceof Request ? input : new Request(String(input));
+        if (
+          request.url.endsWith("/api/v1/chat/sessions") &&
+          request.method === "POST"
+        ) {
+          return Response.json(
+            { session_id: "session-lifecycle" },
+            { status: 201 },
+          );
+        }
+        if (
+          request.url.includes("/messages") &&
+          request.method === "POST"
+        ) {
+          return Response.json(
+            { turn_id: "turn-lifecycle" },
+            { status: 202 },
+          );
+        }
+        throw new Error(
+          `Unexpected request: ${request.method} ${request.url}`,
+        );
+      }),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const user = userEvent.setup();
+
+    const { rerender } = render(
+      <ChatPanel assessmentStatus={null} />,
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByRole("textbox", { name: "发送消息" }),
+      ).toBeEnabled();
+    });
+    await user.type(
+      screen.getByRole("textbox", { name: "发送消息" }),
+      "考我两题",
+    );
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() =>
+      expect(FakeEventSource.instances).toHaveLength(1),
+    );
+
+    await act(async () => {
+      FakeEventSource.instances[0]?.emit("chat.navigation", {
+        sequence: 1,
+        type: "chat.navigation",
+        session_id: "session-lifecycle",
+        data: {
+          turn_id: "turn-lifecycle",
+          target: "assessment",
+          params: { resource_id: "res-123", rounds: 2 },
+        },
+      });
+      FakeEventSource.instances[0]?.emit("chat.turn_ended", {
+        sequence: 2,
+        type: "chat.turn_ended",
+        session_id: "session-lifecycle",
+        data: {
+          turn_id: "turn-lifecycle",
+          output:
+            "考核已启动，请在工作面板上完成这两道选择题。完成后我会帮你查看结果小结。",
+        },
+      });
+    });
+
+    expect(
+      screen.queryByText(/完成后我会帮你查看结果小结/),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("正在为你准备考核...")).toBeInTheDocument();
+
+    rerender(<ChatPanel assessmentStatus="completed" />);
+
+    expect(
+      screen.queryByText("正在为你准备考核..."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("本轮考核已完成。")).toBeInTheDocument();
+  });
+
   it("shows reading transition hint for open_article navigation", async () => {
     vi.stubGlobal(
       "fetch",

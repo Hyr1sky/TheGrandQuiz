@@ -184,6 +184,49 @@ describe("Sidebar context switching", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders selected document nodes as Markdown", async () => {
+    const fetchMock = baseFetchMock();
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const request =
+        input instanceof Request ? input : new Request(String(input));
+      if (
+        request.url.includes(
+          `/api/v1/resources/${resource.resource_id}/nodes/runtime`,
+        )
+      ) {
+        return Response.json({
+          resource_id: resource.resource_id,
+          revision_id: "revision-1",
+          node_id: "runtime",
+          section_path: "Runtime",
+          start_offset: 0,
+          end_offset: 128,
+          content:
+            "# Runtime\n\n## 核心结构\n\n- 事件脊柱\n- 确定性 workflow\n\n| 模块 | 作用 |\n| --- | --- |\n| trace | 回放 |",
+          has_more: false,
+          untrusted: true,
+        });
+      }
+      return baseFetchMock()(input);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Agent Runtime" });
+
+    await user.click(screen.getByRole("button", { name: /Runtime/ }));
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "核心结构",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("list")).toHaveTextContent("事件脊柱");
+    expect(screen.getByRole("table")).toHaveTextContent("trace");
+  });
+
   it("switches sidebar to progress view when user clicks toggle", async () => {
     vi.stubGlobal("fetch", baseFetchMock());
     const user = userEvent.setup();

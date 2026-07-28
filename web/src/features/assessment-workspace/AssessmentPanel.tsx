@@ -50,7 +50,10 @@ export function AssessmentPanel({
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hoverCountdown, setHoverCountdown] = useState<number | null>(null);
   const revealRequested = useRef<string | null>(null);
+  const hoverRevealTimer = useRef<number | null>(null);
+  const hoverCountdownTimer = useRef<number | null>(null);
   const answerCommand = useRef<{
     questionId: string;
     answer: string;
@@ -168,6 +171,56 @@ export function AssessmentPanel({
       setError(reason instanceof Error ? reason.message : "无法揭示证据");
     }
   };
+
+  const cancelHoverReveal = useCallback(() => {
+    if (hoverRevealTimer.current !== null) {
+      window.clearTimeout(hoverRevealTimer.current);
+      hoverRevealTimer.current = null;
+    }
+    if (hoverCountdownTimer.current !== null) {
+      window.clearInterval(hoverCountdownTimer.current);
+      hoverCountdownTimer.current = null;
+    }
+    setHoverCountdown(null);
+  }, []);
+
+  const beginHoverReveal = () => {
+    const question = assessment?.question;
+    if (
+      question == null ||
+      question.evidence_revealed ||
+      revealRequested.current === question.question_id ||
+      hoverRevealTimer.current !== null
+    ) {
+      return;
+    }
+    setHoverCountdown(3);
+    hoverCountdownTimer.current = window.setInterval(() => {
+      setHoverCountdown((current) =>
+        current === null ? null : Math.max(1, current - 1),
+      );
+    }, 1000);
+    hoverRevealTimer.current = window.setTimeout(() => {
+      if (hoverCountdownTimer.current !== null) {
+        window.clearInterval(hoverCountdownTimer.current);
+        hoverCountdownTimer.current = null;
+      }
+      hoverRevealTimer.current = null;
+      setHoverCountdown(null);
+      void reveal("hover");
+    }, 3000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (hoverRevealTimer.current !== null) {
+        window.clearTimeout(hoverRevealTimer.current);
+      }
+      if (hoverCountdownTimer.current !== null) {
+        window.clearInterval(hoverCountdownTimer.current);
+      }
+    };
+  }, []);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -353,14 +406,26 @@ export function AssessmentPanel({
               type="button"
               aria-label="揭示本题材料证据"
               aria-expanded={question.evidence_revealed}
-              onPointerEnter={() => void reveal("hover")}
-              onFocus={() => void reveal("keyboard")}
-              onClick={() => void reveal("click")}
+              onPointerEnter={beginHoverReveal}
+              onPointerLeave={cancelHoverReveal}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  cancelHoverReveal();
+                  void reveal("keyboard");
+                }
+              }}
+              onClick={() => {
+                cancelHoverReveal();
+                void reveal("click");
+              }}
             >
               <EyeIcon aria-hidden size={19} />
               {question.evidence_revealed
                 ? "材料证据已揭示"
-                : "想不起来？悬停或点击查看材料"}
+                : hoverCountdown === null
+                  ? "想不起来？悬停 3 秒或点击查看材料"
+                  : `继续悬停 ${hoverCountdown} 秒查看材料`}
             </button>
             {question.evidence_revealed ? (
               <blockquote>

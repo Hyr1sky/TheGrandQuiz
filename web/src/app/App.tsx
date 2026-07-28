@@ -5,6 +5,8 @@ import {
   ListBulletsIcon,
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ChatPanel, type NavigationEvent } from "../features/chat/ChatPanel";
 import { ObservatoryDrawer } from "../features/observability/ObservatoryDrawer";
 import { AssessmentPanel } from "../features/assessment-workspace/AssessmentPanel";
@@ -295,7 +297,11 @@ export function App() {
               {node === null ? (
                 <p>从星图中选择一个章节开始阅读。</p>
               ) : (
-                <p>{readingBody(node.content)}</p>
+                <div className="reading-markdown">
+                  <Markdown remarkPlugins={[remarkGfm]}>
+                    {readingBody(node.content)}
+                  </Markdown>
+                </div>
               )}
             </article>
           </>
@@ -360,6 +366,7 @@ export function App() {
 
         <ChatPanel
           activeResourceId={resource?.resource_id ?? null}
+          assessmentStatus={assessment?.status ?? null}
           onNavigation={handleNavigation}
           onTraceChange={handleChatTraceChange}
         />
