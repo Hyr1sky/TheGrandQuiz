@@ -1,19 +1,22 @@
-# Issue tracker: Local Markdown
+# Issue tracker: GitHub Issues
 
-Issues and PRDs for this repo live as markdown files in `.scratch/`.
+GitHub Issues is the public backlog and the only issue state that contributors should rely on.
 
-## Conventions
+## Public planning boundaries
 
-- One feature per directory: `.scratch/<feature-slug>/`
-- The PRD is `.scratch/<feature-slug>/PRD.md`
-- Implementation issues are `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`
-- Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
-- Comments and conversation history append to the bottom of the file under a `## Comments` heading
+- One independently acceptable behavior maps to one issue and, normally, one pull request.
+- Use the repository issue templates for bugs and scoped improvements.
+- Put stable product direction and release slices in `docs/roadmap.md`.
+- Put irreversible architecture decisions in `docs/adr/`.
+- Put completed implementation narratives and evidence in `docs/devrecords/`.
+- Keep exploratory notes local. They must not become dependencies of code, tests, or public documentation.
 
 ## When a skill says "publish to the issue tracker"
 
-Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
+Create or update a GitHub Issue. Record the user-visible outcome, acceptance criteria, scope boundaries, and verification
+evidence. Apply one triage role from `triage-labels.md` when the issue needs routing.
 
 ## When a skill says "fetch the relevant ticket"
 
-Read the file at the referenced path. The user will normally pass the path or the issue number directly.
+Read the referenced GitHub Issue. If only a local draft exists, treat it as working context and publish the stable,
+actionable part before asking contributors to depend on it.

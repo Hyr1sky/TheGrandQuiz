@@ -370,6 +370,23 @@ provider). Real search/discovery, learning-route planning, and summaries are sec
 The main recommendation is unchanged: build the Agent Runtime skeleton, approval gate, trace, and
 eval extension points before adding many tools.
 
+## Local Web 后续竖切
+
+LW-S1–S4 已交付 Article、Chat、Assessment 与 Trace Observatory 主路径。后续只保留三条稳定方向，
+具体执行项进入 GitHub Issues：
+
+1. **LW-S7：v0.1.0 发布门**——把生产 React build 作为明确的 package/release artifact，由 FastAPI
+   同源托管；验证 loopback 启动、静态资源打包、OpenAPI drift、前后端 CI、installed-wheel smoke、
+   隐私说明与真实 dogfood。它是当前发布收口，不依赖下面两项。
+2. **LW-S5：Web Acquisition 与可恢复审批（v0.1.0 后）**——把既有 Search → 用户选择 → Fetch →
+   Reader 投影到 Web；审批 run 必须持久化为 `needs_input`，服务重启后仍可凭单次、可过期 token
+   恢复并原子提交。质量失败不能触发 Reader、审批或 KB 写入。
+3. **LW-S6：资源、知识点与学习轨迹管理（v0.1.0 后）**——提供 article/revision/KnowledgeItem/
+   Evidence 浏览、安全资源操作、三态学习轨迹、配置状态和数据备份说明。页面是领域行为与 trace 的
+   投影，不做 SQLite 表格管理器，也不通过 API 回传 secret value。
+
+LW-S5/LW-S6 是否进入下一版本，由首轮小范围体验反馈决定；在证据出现前不阻塞 v0.1.0。
+
 ## 未来方向（潜在扩展，"可达不堵死"，非 MVP）
 
 > 2026-06-15 记录，基于对 [Ontos-AI/knowhere](https://github.com/Ontos-AI/knowhere) 的调研 + 一次对抗式设计审查。
@@ -377,8 +394,8 @@ eval extension points before adding many tools.
 
 ### 文档结构与轻量知识图谱：分层演进，成本/可信度各不同
 
-> 2026-07-17：长文 Reader 预算红灯证明“原文 blob + 临时 token 分块”不足以支撑稳定深读。ADR-0008 已接受，
-> 对应实施计划见 `.scratch/document-structure/`。以下 Layer 1 从旧称“资源内概念树”纠正为“文档结构树”：
+> 2026-07-17：长文 Reader 预算红灯证明“原文 blob + 临时 token 分块”不足以支撑稳定深读。ADR-0008 已接受。
+> 以下 Layer 1 从旧称“资源内概念树”纠正为“文档结构树”：
 > section 父子关系表达作者如何组织原文，不能自动推导概念上下位或 prerequisite。
 
 关键教训（对标 [GitNexus](https://github.com/abhigyanpatwari/GitNexus)：纯 Tree-sitter AST、零 LLM 建

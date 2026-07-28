@@ -1,7 +1,7 @@
 # 修订化文档树与精确检索基座开发记录
 
 > 记录日期：2026-07-18
-> 范围：ADR-0008 / `.scratch/document-structure/` 的 DS-S1–S4；DS-S5 仅做门控决策。
+> 范围：ADR-0008 的 DS-S1–S4；DS-S5 仅做门控决策。
 > 当前边界：DS-S1–S4 代码、生产 schema v11 迁移、真实模型 cassette、生产 ingest/人工筛选与开放搜索/node citation dogfood 已全部通过；DS-S5 经 eval gate 关闭。
 
 ## 1. 为什么做这轮改造

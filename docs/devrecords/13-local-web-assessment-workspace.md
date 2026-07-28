@@ -2,7 +2,7 @@
 
 > 记录日期：2026-07-26
 >
-> 对应范围：`.scratch/local-web/` 的 LW-S4，并包含 GroundedDocumentAnswer 问句检索加固
+> 对应范围：LW-S4，并包含 GroundedDocumentAnswer 问句检索加固
 >
 > 目标：把既有逐题考核 workflow 投影成可恢复、可审计的 Web 交互，同时让阅读问答与所有控件的
 > hover、focus、pressed 和 selected 反馈更明确。

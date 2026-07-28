@@ -40,3 +40,8 @@ web/test-results/
 
 # Localdata
 localtemp
+
+# Local planning and private working notes
+.scratch/
+.private/
+*.local.md

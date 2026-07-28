@@ -2,7 +2,7 @@
 
 > 记录日期：2026-07-24
 >
-> 对应范围：`.scratch/local-web/` 的 LW-S2、LW-S3
+> 对应范围：LW-S2、LW-S3
 >
 > 目标：在既有 FastAPI/SSE 契约上交付可真实操作的 Article Workspace，同时保持文档结构、
 > GroundedDocumentAnswer、事件脊柱和 loopback-only 边界。

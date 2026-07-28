@@ -135,7 +135,7 @@ clone → uv sync → cp .env.example .env → 配置 LLM
 ### OR-S6：仓库协作入口
 
 - [x] 增加最小 `CONTRIBUTING.md`：环境安装、五道门、issue/PR 约定、cassette 重录规则和密钥纪律。
-- [x] 说明 `.scratch/` 是本仓库的本地 Markdown issue tracker。
+- [x] 明确 GitHub Issues 是公开 backlog；本地草稿不构成代码或公开文档依赖。
 - [x] 增加 issue / PR 模板，至少要求复现、trace_id、测试与架构影响。
 - [x] 决定是否增加 `CODE_OF_CONDUCT.md`；若不增加，在 Release Notes 说明当前为个人维护 alpha。
 - [ ] 检查 GitHub 仓库描述、Topics、默认分支和私有贡献显示设置。
@@ -151,8 +151,7 @@ clone → uv sync → cp .env.example .env → 配置 LLM
 
 ### OR-S8：Local Web 最小产品闭环
 
-- [x] 完成 `.scratch/local-web/PRD.md` 的 LW-S1–S3：FastAPI contract、稳定 SSE 投影和 React
-  Article Workspace。
+- [x] 完成 Local Web LW-S1–S3：FastAPI contract、稳定 SSE 投影和 React Article Workspace。
 - [x] 默认只监听 `127.0.0.1`，production build 与 API 同源，不默认开放宽松 CORS。
 - [x] OpenAPI 生成 TypeScript client，CI 检查 schema/client 无 drift。
 - [x] 资源列表不默认返回 raw_content；SSE 不泄露 system prompt、完整模型上下文、secret 或节点全文。

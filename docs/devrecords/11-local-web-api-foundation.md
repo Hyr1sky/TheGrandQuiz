@@ -1,7 +1,7 @@
 # Local Web API 基座开发记录
 
 > 记录日期：2026-07-24
-> 对应范围：`.scratch/local-web/` 的规划与 LW-S1
+> 对应范围：Local Web 规划与 LW-S1
 > 目标：在不复制领域 workflow、不让浏览器直连 SQLite 的前提下，贯通第一条
 > Article Workspace HTTP tracer bullet。
 
@@ -9,7 +9,7 @@
 
 本轮先用 `zoom-out`、`to-prd` 和 `to-issues` 重新审视仓库，再写代码：
 
-- 新增 `.scratch/local-web/PRD.md` 和 LW-S1–S7 七个竖切 issue；
+- 明确 LW-S1–S7 七个产品竖切；
 - 新增 ADR-0009，确认 FastAPI + React 同仓、同 `main`、local-first、REST + SSE；
 - 把旧发布清单从 “CLI-only v0.1.0” 修订为包含最小 Article Workspace；
 - 明确 FastAPI 是 interface adapter，领域行为仍由现有 Module 拥有；

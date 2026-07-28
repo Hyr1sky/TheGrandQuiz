@@ -1,7 +1,7 @@
 # Tier-2 Eval 质量门开发记录
 
 > 记录日期：2026-07-19
-> 范围：`.scratch/tier2-eval-judge/` 的 EJ-S1–S4。
+> 范围：EJ-S1–S4。
 > 当前边界：首版只给 case15 自然材料回答启用 `grounded_answer`；其余 14 条用例继续只运行 Tier-1。Eval 不自动修改 prompt、难度或生产数据，DS-S5 KnowledgeRelation 继续关闭。
 
 ## 1. 为什么要增加第二层评测

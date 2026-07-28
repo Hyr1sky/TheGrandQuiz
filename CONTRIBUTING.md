@@ -21,10 +21,11 @@ cd web && npm ci
 1. [CONTEXT.md](CONTEXT.md)；
 2. [docs/architecture.md](docs/architecture.md)；
 3. 对应 [ADR](docs/adr/)；
-4. 相关 `.scratch/<feature>/PRD.md` 与 issue。
+4. 相关 GitHub Issue 与 [roadmap](docs/roadmap.md)。
 
-`.scratch/` 是本仓库的本地 Markdown issue tracker。一个 PR 对应一个可验收行为；架构级决策写 ADR，
-领域术语只在 `CONTEXT.md` 维护权威定义。
+GitHub Issues 是公开 backlog 与协作状态的唯一权威。一个 PR 对应一个可验收行为；稳定产品方向写入
+roadmap，架构级决策写 ADR，领域术语只在 `CONTEXT.md` 维护权威定义。本地草稿不得成为代码或公开文档
+的依赖。
 
 ## Architecture rules
 
@@ -73,7 +74,7 @@ Cassette 是真实外部 I/O 的可审计快照，不是随手更新的 golden �
 ## Commits and pull requests
 
 - 使用 conventional commits，例如 `fix(evals): package replay assets`；
-- PR 关联对应 issue/PRD；
+- PR 关联对应 GitHub Issue；
 - 描述用户可见行为、测试证据、架构影响和数据迁移；
 - UI 改动附截图；运行问题附脱敏 `trace_id`；
 - 不提交 `.env`、数据库、Playwright artifact、个人绝对路径或供应商凭证。

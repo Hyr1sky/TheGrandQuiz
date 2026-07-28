@@ -25,11 +25,8 @@
   → 判决与 Difficulty / AskedQuestions 原子持久化
 ```
 
-权威需求与最终证据见：
-
-- [稳定性加固 PRD](../../.scratch/stability-hardening/PRD.md)
-- [完成审计](../../.scratch/stability-hardening/issues/11-completion-audit.md)
-- [ADR-0007：稳定资源修订与 item 身份](../adr/0007-stable-resource-revision-and-item-identity.md)
+本记录保留稳定性加固的范围、完成证据与收口结论；相关不可逆决策见
+[ADR-0007：稳定资源修订与 item 身份](../adr/0007-stable-resource-revision-and-item-identity.md)。
 
 ## 1. SH-S1–S9：九个稳定性竖切
 

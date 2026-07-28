@@ -1,7 +1,7 @@
 # Web Acquisition 基座开发记录
 
 > 记录日期：2026-07-21
-> 范围：`.scratch/web-acquisition/` 的 WA-S1–S3，以及 WA-S4 的 JavaGuide Fetch 预验收。
+> 范围：WA-S1–S3，以及 WA-S4 的 JavaGuide Fetch 预验收。
 > 当前边界：真实 SearXNG + ReAct 决策仍是 HITL；本轮没有写生产 `learning.db`、没有调用外部 LLM，也没有提交第三方文章正文。
 
 ## 1. 交付目标与架构位置

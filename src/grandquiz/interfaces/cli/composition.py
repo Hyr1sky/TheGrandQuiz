@@ -97,7 +97,7 @@ _TAVILY_API_KEY_ENV = "TAVILY_API_KEY"
 _TAVILY_TIMEOUT_ENV = "TAVILY_TIMEOUT_SECONDS"
 _WEB_SEARCH_PROVIDER_ENV = "WEB_SEARCH_PROVIDER"
 
-# Context compression（C-wire 增量 1，见 .scratch/context-compression/PRD.md + gap-review）：
+# Context compression（C-wire 增量 1；历史压缩只保留最终 assistant 回答）：
 # system 分区实测 ~925 token（react_system.md），memory 分区随薄弱点/资源目录增长；两个 budget
 # 都留数倍实测值的余量（防未来提示/目录膨胀被静默头截断，同时远低于 deepseek-chat 真实上下文窗口）。
 # total_budget 刻意设得比 system+memory+history 之和更保守：_enforce_total_budget 只在 build()

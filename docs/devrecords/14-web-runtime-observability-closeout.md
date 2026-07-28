@@ -2,7 +2,7 @@
 
 > 记录日期：2026-07-28
 >
-> 对应范围：`.scratch/web-runtime-observability/` 的 WR-O1–WR-O4
+> 对应范围：WR-O1–WR-O4
 >
 > 目标：修复真实 Web dogfood 暴露的当前材料、跨轮 SSE 与考核启动问题，并把既有 trace/event
 > 基座投影成运行中可用的安全观测界面。

@@ -1,7 +1,7 @@
 # 自然材料问答与 Agentic Search 成本收口开发记录
 
 > 记录日期：2026-07-19
-> 范围：`.scratch/grounded-answer-efficiency/` 的 GAS-S1–S4。
+> 范围：GAS-S1–S4。
 > 当前边界：GAS-S1–S4、真实 case14/case15 Replay、生产 current-revision dogfood、联合审计与五门均已完成；DS-S5 KnowledgeRelation 继续关闭。
 
 ## 1. 问题基线
