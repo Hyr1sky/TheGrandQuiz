@@ -1,8 +1,12 @@
 .chat-panel {
+  grid-area: chat;
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  border-left: 1px solid var(--line);
+  background: var(--panel-surface);
+  backdrop-filter: blur(7px);
 }
 
 .chat-messages {
@@ -36,7 +40,8 @@
   border-radius: 12px 12px 2px 12px;
   background: var(--evidence-soft);
   color: var(--text-strong);
-  font: 400 15px/1.7 var(--font-interface);
+  font: 400 15px/1.75 var(--font-reading);
+  letter-spacing: 0.015em;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -196,7 +201,8 @@
   align-items: end;
   padding: 12px 16px;
   border-top: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--composer-surface);
+  backdrop-filter: blur(15px) saturate(0.86);
 }
 
 .chat-input textarea {
@@ -208,7 +214,14 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--field);
-  font: 400 14px/1.6 var(--font-interface);
+  font: 400 15px/1.65 var(--font-reading);
+  letter-spacing: 0.01em;
+}
+
+.chat-input textarea::placeholder {
+  color: var(--muted);
+  font-family: var(--font-reading);
+  opacity: 0.72;
 }
 
 .chat-input button {

@@ -252,9 +252,6 @@
 .quiz-evidence__veil {
   min-height: 138px;
   background-color: var(--glass);
-  background-image: var(--background-image);
-  background-position: center;
-  background-size: 560px;
   filter: blur(8px);
   opacity: 0.38;
   color: transparent;

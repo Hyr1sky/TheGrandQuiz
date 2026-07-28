@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "assets:star-map": "node scripts/generate-observatory-map.mjs",
     "dev": "vite",
     "dev:fixture": "../.venv/bin/python ../scripts/run_web_fixture.py",
     "build": "vite build && node scripts/prepare-sites-build.mjs",

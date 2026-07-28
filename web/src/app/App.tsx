@@ -6,6 +6,7 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatPanel, type NavigationEvent } from "../features/chat/ChatPanel";
+import { ObservatoryDrawer } from "../features/observability/ObservatoryDrawer";
 import { AssessmentPanel } from "../features/assessment-workspace/AssessmentPanel";
 import {
   AssessmentProgress,
@@ -38,6 +39,8 @@ export function App() {
   const [outline, setOutline] = useState<DocumentNodeSummary[]>([]);
   const [node, setNode] = useState<DocumentNodeRead | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [chatTraceId, setChatTraceId] = useState<string | null>(null);
+  const [observatoryOpen, setObservatoryOpen] = useState(false);
 
   const [workspace, setWorkspace] = useState<WorkspaceMode>("reading");
   const [assessmentParams, setAssessmentParams] =
@@ -197,6 +200,10 @@ export function App() {
     );
   }, []);
 
+  const handleChatTraceChange = useCallback((traceId: string) => {
+    setChatTraceId(traceId);
+  }, []);
+
   const renderSidebar = () => {
     return (
       <nav className="app-sidebar" aria-label={sidebarView === "outline" ? "文档大纲" : "考核进度"}>
@@ -309,6 +316,11 @@ export function App() {
   return (
     <ThemeProvider>
       <div className="app-shell">
+        <div
+          className="star-map-backdrop"
+          data-visual="observatory"
+          aria-hidden="true"
+        />
         <header className="app-header" aria-label="顶栏">
           <p className="app-header__eyebrow">TheGrandQuiz · 本地模式</p>
           <div className="app-header__controls">
@@ -346,10 +358,23 @@ export function App() {
 
         {renderMainContent()}
 
-        <ChatPanel onNavigation={handleNavigation} />
+        <ChatPanel
+          activeResourceId={resource?.resource_id ?? null}
+          onNavigation={handleNavigation}
+          onTraceChange={handleChatTraceChange}
+        />
 
         <footer className="app-footer" aria-label="状态栏">
-          <div className="compass-nav">
+          <button
+            type="button"
+            className="compass-nav"
+            aria-label={
+              observatoryOpen ? "关闭运行观测" : "打开运行观测"
+            }
+            aria-expanded={observatoryOpen}
+            aria-controls="runtime-observatory"
+            onClick={() => setObservatoryOpen((value) => !value)}
+          >
             <CompassIcon aria-hidden size={16} className="compass-nav__icon" />
             <span className="compass-nav__separator" aria-hidden />
             <span className="compass-nav__state">
@@ -364,8 +389,14 @@ export function App() {
                   ? (resource.topic ?? resource.url)
                   : "就绪"}
             </span>
-          </div>
+          </button>
         </footer>
+
+        <ObservatoryDrawer
+          open={observatoryOpen}
+          traceId={assessment?.trace_id ?? chatTraceId}
+          onClose={() => setObservatoryOpen(false)}
+        />
       </div>
     </ThemeProvider>
   );

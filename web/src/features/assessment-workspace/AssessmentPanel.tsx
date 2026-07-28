@@ -59,7 +59,10 @@ export function AssessmentPanel({
   const nextCommand = useRef<{ roundIndex: number; requestId: string } | null>(
     null,
   );
-  const started = useRef(false);
+  const startRequest = useRef<{
+    key: string;
+    promise: Promise<AssessmentView>;
+  } | null>(null);
 
   // Notify parent of assessment state changes
   const onUpdateRef = useRef(onUpdate);
@@ -71,19 +74,20 @@ export function AssessmentPanel({
 
   // Start assessment on mount
   useEffect(() => {
-    if (started.current) {
-      return;
+    const key = `${resourceId}\u0000${rounds}\u0000${questionType ?? ""}`;
+    let request = startRequest.current;
+    if (request?.key !== key) {
+      request = {
+        key,
+        promise: startAssessment(resourceId, rounds, questionType ?? ""),
+      };
+      startRequest.current = request;
     }
-    started.current = true;
     let active = true;
     void (async () => {
       setBusy(true);
       try {
-        const result = await startAssessment(
-          resourceId,
-          rounds,
-          questionType ?? "",
-        );
+        const result = await request.promise;
         if (active) {
           notifyUpdate(result);
         }

@@ -89,6 +89,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chat/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Session */
+        post: operations["create_session_api_v1_chat_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/sessions/{session_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream Chat Events */
+        get: operations["stream_chat_events_api_v1_chat_sessions__session_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/sessions/{session_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send Message */
+        post: operations["send_message_api_v1_chat_sessions__session_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -98,6 +149,40 @@ export interface paths {
         };
         /** Health */
         get: operations["health_api_v1_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/observability/traces/{trace_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Trace Snapshot */
+        get: operations["get_trace_snapshot_api_v1_observability_traces__trace_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/observability/traces/{trace_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream Trace Events */
+        get: operations["stream_trace_events_api_v1_observability_traces__trace_id__events_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -319,6 +404,19 @@ export interface components {
             /** Trace Id */
             trace_id: string;
         };
+        /** ChatUiEvent */
+        ChatUiEvent: {
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+            /** Sequence */
+            sequence: number;
+            /** Session Id */
+            session_id: string;
+            /** Type */
+            type: string;
+        };
         /** DocumentNodeReadResponse */
         DocumentNodeReadResponse: {
             /** Content */
@@ -442,6 +540,18 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** MessageAccepted */
+        MessageAccepted: {
+            /** Turn Id */
+            turn_id: string;
+        };
+        /** MessageRequest */
+        MessageRequest: {
+            /** Active Resource Id */
+            active_resource_id?: string | null;
+            /** Text */
+            text: string;
+        };
         /** NextRoundRequest */
         NextRoundRequest: {
             /** Request Id */
@@ -514,6 +624,104 @@ export interface components {
             status: "queued" | "running" | "needs_input" | "succeeded" | "failed" | "cancelled";
             /** Trace Id */
             trace_id: string;
+        };
+        /** SessionView */
+        SessionView: {
+            /** Session Id */
+            session_id: string;
+            /** Trace Id */
+            trace_id: string;
+        };
+        /** TraceSnapshot */
+        TraceSnapshot: {
+            /** Events */
+            events: components["schemas"]["TraceUiEvent"][];
+            /** Spans */
+            spans: components["schemas"]["TraceSpanView"][];
+            summary: components["schemas"]["TraceSummary"];
+        };
+        /** TraceSpanView */
+        TraceSpanView: {
+            /** Ended At */
+            ended_at: number | null;
+            /** Latency Ms */
+            latency_ms: number | null;
+            /** Parent Span Id */
+            parent_span_id: string | null;
+            /** Span Id */
+            span_id: string;
+            /** Start Sequence */
+            start_sequence: number;
+            /** Started At */
+            started_at: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "completed" | "failed";
+            /** Tokens */
+            tokens: number | null;
+            /** Tool Name */
+            tool_name: string | null;
+            /** Type */
+            type: string;
+        };
+        /** TraceSummary */
+        TraceSummary: {
+            /** Error Count */
+            error_count: number;
+            /** Event Count */
+            event_count: number;
+            /** Latency Ms */
+            latency_ms: number | null;
+            /** Model Calls */
+            model_calls: number;
+            /** Recovery Count */
+            recovery_count: number;
+            /** Started At */
+            started_at: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "idle" | "running" | "waiting_input" | "completed" | "failed" | "cancelled";
+            /** Tool Calls */
+            tool_calls: number;
+            /** Total Tokens */
+            total_tokens: number;
+            /** Trace Id */
+            trace_id: string;
+            /** Updated At */
+            updated_at: number | null;
+        };
+        /** TraceUiEvent */
+        TraceUiEvent: {
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Parent Span Id */
+            parent_span_id: string | null;
+            /**
+             * Recovered
+             * @default false
+             */
+            recovered: boolean;
+            /** Sequence */
+            sequence: number;
+            /** Span Id */
+            span_id: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "started" | "completed" | "failed" | "event";
+            /** Timestamp */
+            timestamp: number;
+            /** Tokens */
+            tokens?: number | null;
+            /** Tool Name */
+            tool_name?: string | null;
+            /** Type */
+            type: string;
         };
         /** UiEvent */
         UiEvent: {
@@ -723,6 +931,95 @@ export interface operations {
             };
         };
     };
+    create_session_api_v1_chat_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionView"];
+                };
+            };
+        };
+    };
+    stream_chat_events_api_v1_chat_sessions__session_id__events_get: {
+        parameters: {
+            query?: {
+                after?: number;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatUiEvent"];
+                    "text/event-stream": components["schemas"]["ChatUiEvent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_message_api_v1_chat_sessions__session_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_api_v1_health_get: {
         parameters: {
             query?: never;
@@ -739,6 +1036,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    get_trace_snapshot_api_v1_observability_traces__trace_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_trace_events_api_v1_observability_traces__trace_id__events_get: {
+        parameters: {
+            query?: {
+                after?: number;
+                follow?: boolean;
+            };
+            header?: never;
+            path: {
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceUiEvent"];
+                    "text/event-stream": components["schemas"]["TraceUiEvent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

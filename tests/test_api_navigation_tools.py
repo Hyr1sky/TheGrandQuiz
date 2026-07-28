@@ -4,6 +4,7 @@ import json
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any, cast
 
 from fastapi.testclient import TestClient
 
@@ -103,14 +104,14 @@ def _wait_for_events(
     terminal_type: str = "chat.turn_ended",
     after: int = 0,
     max_polls: int = 80,
-) -> list[dict[str, object]]:
+) -> list[dict[str, Any]]:
     for _ in range(max_polls):
         response = client.get(
             f"/api/v1/chat/sessions/{session_id}/events",
             params={"after": after},
         )
         assert response.status_code == 200
-        events: list[dict[str, object]] = [
+        events: list[dict[str, Any]] = [
             json.loads(line.removeprefix("data: "))
             for line in response.text.splitlines()
             if line.startswith("data: ")
@@ -182,7 +183,7 @@ def test_start_assessment_projects_chat_navigation_event(tmp_path: Path) -> None
     data = nav_event["data"]
     assert isinstance(data, dict)
     assert data["target"] == "assessment"
-    params = data["params"]
+    params = cast("dict[str, Any]", data["params"])
     assert isinstance(params, dict)
     assert params["resource_id"] == "res-abc"
     assert params["rounds"] == 3
@@ -212,6 +213,6 @@ def test_open_article_projects_chat_navigation_event(tmp_path: Path) -> None:
     data = nav_event["data"]
     assert isinstance(data, dict)
     assert data["target"] == "reading"
-    params = data["params"]
+    params = cast("dict[str, Any]", data["params"])
     assert isinstance(params, dict)
     assert params["resource_id"] == "res-xyz"

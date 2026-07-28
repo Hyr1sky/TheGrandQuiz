@@ -76,6 +76,8 @@
   border-radius: 8px;
   background: transparent;
   color: var(--muted);
+  font: 400 13px/1.55 var(--font-reading);
+  letter-spacing: 0.015em;
   text-align: left;
 }
 
@@ -258,9 +260,6 @@
   place-items: center;
   color: var(--muted);
   background-color: var(--glass);
-  background-image: var(--background-image);
-  background-position: center;
-  background-size: 520px;
   box-shadow: inset 0 0 36px var(--glass-blur);
   font-size: 13px;
   letter-spacing: 0.06em;

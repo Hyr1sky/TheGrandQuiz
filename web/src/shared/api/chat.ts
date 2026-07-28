@@ -2,6 +2,7 @@
 
 export interface SessionView {
   session_id: string;
+  trace_id: string;
 }
 
 export interface MessageAccepted {
@@ -32,6 +33,7 @@ export async function createSession(): Promise<SessionView> {
 export async function sendMessage(
   sessionId: string,
   text: string,
+  activeResourceId: string | null = null,
 ): Promise<MessageAccepted> {
   const response = await globalThis.fetch(
     new Request(
@@ -39,7 +41,10 @@ export async function sendMessage(
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({
+          text,
+          active_resource_id: activeResourceId,
+        }),
       },
     ),
   );

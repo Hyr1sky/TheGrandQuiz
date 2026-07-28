@@ -4,9 +4,12 @@ import json
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 from fastapi.testclient import TestClient
 
+from grandquiz.domain.learning.models import LearningResource
+from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.interfaces.api.app import ApiSettings, create_app
 from grandquiz.providers.base import Completion, Message, Provider, Role, ToolCall, ToolSpec, Usage
 
@@ -98,6 +101,29 @@ class _FailingProvider:
         raise RuntimeError("provider boom")
 
 
+class _ActiveResourceAwareProvider:
+    """只通过公开 messages 判断 Web 当前材料是否进入受信 system context。"""
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        system_context = "\n".join(
+            message.content for message in messages if message.role == "system"
+        )
+        user_message = next(
+            (message.content for message in reversed(messages) if message.role == "user"),
+            "",
+        )
+        return Completion(
+            text=f"context={system_context} user={user_message}",
+            usage=Usage(prompt_tokens=50, completion_tokens=10),
+        )
+
+
 def _app(tmp_path: Path, provider: Provider | None = None):
     return create_app(
         settings=ApiSettings(
@@ -115,7 +141,7 @@ def _wait_for_events(
     terminal_type: str = "chat.turn_ended",
     after: int = 0,
     max_polls: int = 80,
-) -> list[dict[str, object]]:
+) -> list[dict[str, Any]]:
     for _ in range(max_polls):
         response = client.get(
             f"/api/v1/chat/sessions/{session_id}/events",
@@ -186,6 +212,45 @@ def test_blank_message_is_rejected(tmp_path: Path) -> None:
         )
 
     assert response.status_code == 422
+
+
+def test_message_active_resource_becomes_trusted_turn_context(tmp_path: Path) -> None:
+    persistence = LearningPersistence(tmp_path / "learning.db")
+    resource = LearningResource.create(url="file://local/active.md").model_copy(
+        update={"topic": "Active material", "status": "read"}
+    )
+    persistence.store.add_resource(resource)
+    persistence.close()
+
+    with TestClient(_app(tmp_path, _ActiveResourceAwareProvider())) as client:
+        session = client.post("/api/v1/chat/sessions").json()
+        sid = session["session_id"]
+        response = client.post(
+            f"/api/v1/chat/sessions/{sid}/messages",
+            json={
+                "text": "请基于当前材料考我",
+                "active_resource_id": resource.resource_id,
+            },
+        )
+        events = _wait_for_events(client, sid)
+
+    assert response.status_code == 202
+    ended = next(event for event in events if event["type"] == "chat.turn_ended")
+    output = str(ended["data"]["output"])
+    assert f"active_resource_id={resource.resource_id}" in output
+    assert "user=请基于当前材料考我" in output
+
+
+def test_message_unknown_active_resource_fails_closed(tmp_path: Path) -> None:
+    with TestClient(_app(tmp_path, _ActiveResourceAwareProvider())) as client:
+        session = client.post("/api/v1/chat/sessions").json()
+        response = client.post(
+            f"/api/v1/chat/sessions/{session['session_id']}/messages",
+            json={"text": "当前材料是什么", "active_resource_id": "missing"},
+        )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "resource_not_found"
 
 
 def test_sse_delivers_turn_started_and_ended_with_output(tmp_path: Path) -> None:

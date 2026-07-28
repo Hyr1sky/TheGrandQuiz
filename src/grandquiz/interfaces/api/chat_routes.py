@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
 from grandquiz.interfaces.api.chat import (
+    ActiveResourceNotFoundError,
     ChatManager,
     ChatUiEvent,
     MessageAccepted,
@@ -45,7 +46,18 @@ async def send_message(
             code="session_not_found",
             message=f"会话不存在：{session_id}",
         )
-    return manager.send_message(session_id, body.text)
+    try:
+        return manager.send_message(
+            session_id,
+            body.text,
+            active_resource_id=body.active_resource_id,
+        )
+    except ActiveResourceNotFoundError as exc:
+        raise ApiError(
+            status_code=404,
+            code="resource_not_found",
+            message=f"当前材料不存在：{body.active_resource_id}",
+        ) from exc
 
 
 @router.get(

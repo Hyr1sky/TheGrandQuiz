@@ -12,10 +12,10 @@ Eval Harness 现有 17 条用例：全部运行 Tier-1 确定性规则门，case
 
 Web Acquisition 的 WA-S1–S5 已完成：Trafilatura 正文抽取、结构化质量门、可选 Tavily / SearXNG `web_search`、Search/Fetch Record-Replay 均已接入原有事件脊柱与确定性 ingest workflow。Tavily 只需无需信用卡的免费 API key；SearXNG 提供 loopback-only 最小单容器配置，但 Docker 仍不是基础依赖。两种 provider 的真实搜索与 search → 用户选择 → ingest ReAct dogfood 均已验收。
 
-Local Web 的 LW-S1–S3 已完成：FastAPI 提供资源/大纲/有界节点读取、GroundedDocumentAnswer
-后台 run、稳定 SSE 投影、取消和精确 citation；React Article Workspace 采用“墨迹星图”亮/暗主题，
-支持材料选择、渐进阅读、运行轨迹、citation 定位与 Evidence reveal。完整执行仍进入 trace.db，
-浏览器事件不暴露 prompt、模型输出或节点全文。
+Local Web 的 LW-S1–S4 与 Web Runtime WR-O1–O4 已完成：FastAPI 提供资源/大纲/有界节点读取、
+GroundedDocumentAnswer、逐题考核与安全 trace observatory；React Article / Assessment Workspace
+采用“墨迹星图”亮/暗主题，支持 exact 当前材料、跨轮 Chat、Evidence reveal、精确 citation 与底部罗盘
+实时观测。完整执行仍进入 trace.db，浏览器事件不暴露 prompt、模型输出、工具参数或节点全文。
 
 ## 文档
 
@@ -29,6 +29,7 @@ Local Web 的 LW-S1–S3 已完成：FastAPI 提供资源/大纲/有界节点读
 | [.scratch/local-web/PRD.md](.scratch/local-web/PRD.md) | 进行中：FastAPI + React local-first Article Workspace 与 Web v0.1.0 |
 | [docs/devrecords/](docs/devrecords/) | 各轮长任务的实现、真实 dogfood、成本与门禁记录 |
 | [docs/guides/web-acquisition-dogfood.md](docs/guides/web-acquisition-dogfood.md) | Web Acquisition 独立终端 dogfood、trace 与 DB 验收指南 |
+| [docs/guides/web-runtime-observability-dogfood.md](docs/guides/web-runtime-observability-dogfood.md) | Local Web 当前材料、跨轮 Chat、考核与运行观测验收指南 |
 | [docs/open-source-release-checklist.md](docs/open-source-release-checklist.md) | v0.1.0 开源发布前的阻塞项、验收门与人工 dogfood 清单 |
 
 ## 开发

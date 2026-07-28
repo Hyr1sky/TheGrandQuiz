@@ -1,11 +1,16 @@
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --font-reading: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", serif;
-  --font-interface: "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  --font-reading: "Iowan Old Style", Charter, "Songti SC", "Noto Serif CJK SC",
+    "Source Han Serif SC", serif;
+  --font-interface: "Avenir Next", Avenir, "Helvetica Neue", "SF Pro Text",
+    "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif;
   --canvas: #071521;
   --surface: rgb(9 24 37 / 88%);
   --surface-quiet: rgb(8 21 33 / 68%);
+  --chrome-surface: rgb(6 19 31 / 62%);
+  --panel-surface: rgb(7 21 33 / 46%);
+  --composer-surface: rgb(8 23 35 / 72%);
   --field: rgb(12 30 43 / 82%);
   --text: #e9ddc5;
   --text-strong: #f3e7ce;
@@ -25,7 +30,8 @@
   --shadow-hover: 0 0 0 1px rgb(74 211 244 / 48%), 0 10px 26px rgb(0 0 0 / 32%);
   --shadow-pressed: inset 5px 5px 12px rgb(0 0 0 / 30%),
     inset -4px -4px 10px rgb(38 61 74 / 14%);
-  --background-image: url("/assets/star-map-dark.webp");
+  --background-image: url("/assets/star-map-observatory-dark.svg");
+  --background-opacity: 0.96;
 }
 
 :root[data-theme="light"] {
@@ -33,6 +39,9 @@
   --canvas: #f5efdf;
   --surface: rgb(250 246 235 / 86%);
   --surface-quiet: rgb(247 241 225 / 70%);
+  --chrome-surface: rgb(244 237 221 / 68%);
+  --panel-surface: rgb(246 240 226 / 52%);
+  --composer-surface: rgb(248 243 231 / 76%);
   --field: rgb(251 248 239 / 88%);
   --text: #263341;
   --text-strong: #142536;
@@ -53,5 +62,6 @@
   --shadow-hover: 0 0 0 1px rgb(8 124 161 / 42%), 0 10px 24px rgb(83 66 39 / 20%);
   --shadow-pressed: inset 5px 5px 12px rgb(137 116 77 / 14%),
     inset -4px -4px 10px rgb(255 255 255 / 70%);
-  --background-image: url("/assets/star-map-light.webp");
+  --background-image: url("/assets/star-map-observatory-light.svg");
+  --background-opacity: 0.84;
 }

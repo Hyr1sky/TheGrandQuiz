@@ -24,6 +24,8 @@ export interface NavigationEvent {
 
 interface ChatPanelProps {
   onNavigation?: (nav: NavigationEvent) => void;
+  onTraceChange?: (traceId: string) => void;
+  activeResourceId?: string | null;
 }
 
 interface ChatMessage {
@@ -48,7 +50,11 @@ function toolCallLabel(name: string): string {
   return TOOL_LABELS[name] ?? `正在调用 ${name}...`;
 }
 
-export function ChatPanel({ onNavigation }: ChatPanelProps) {
+export function ChatPanel({
+  onNavigation,
+  onTraceChange,
+  activeResourceId = null,
+}: ChatPanelProps) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -61,6 +67,7 @@ export function ChatPanel({ onNavigation }: ChatPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const stopStream = useRef<(() => void) | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastSequence = useRef(0);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -76,7 +83,9 @@ export function ChatPanel({ onNavigation }: ChatPanelProps) {
     void createSession()
       .then((view) => {
         if (active) {
+          lastSequence.current = 0;
           setSessionId(view.session_id);
+          onTraceChange?.(view.trace_id);
         }
       })
       .catch(() => {
@@ -88,13 +97,14 @@ export function ChatPanel({ onNavigation }: ChatPanelProps) {
       active = false;
       stopStream.current?.();
     };
-  }, []);
+  }, [onTraceChange]);
 
   // Stable ref to avoid re-creating the SSE callback when onNavigation changes
   const onNavigationRef = useRef(onNavigation);
   onNavigationRef.current = onNavigation;
 
   const onChatEvent = useCallback((event: ChatUiEvent) => {
+    lastSequence.current = Math.max(lastSequence.current, event.sequence);
     switch (event.type) {
       case "chat.turn_started":
         setLoading(true);
@@ -161,10 +171,11 @@ export function ChatPanel({ onNavigation }: ChatPanelProps) {
     setLoading(true);
 
     try {
-      await sendMessage(sessionId, text);
+      await sendMessage(sessionId, text, activeResourceId);
       stopStream.current?.();
       stopStream.current = streamChatEvents(
         sessionId,
+        lastSequence.current,
         onChatEvent,
         setConnection,
       );

@@ -19,6 +19,7 @@ from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.preference import PreferenceMemory
 from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import Store
+from grandquiz.interfaces.api.observability import TraceObservatory
 from grandquiz.kernel.clock import SystemClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
 from grandquiz.kernel.trace import TraceStore
@@ -199,6 +200,7 @@ class AssessmentManager:
         preferences: PreferenceMemory,
         difficulty: DifficultyLedger,
         trace_store: TraceStore,
+        trace_observatory: TraceObservatory | None = None,
     ) -> None:
         self._store = store
         self._provider = provider
@@ -207,14 +209,19 @@ class AssessmentManager:
         self._preferences = preferences
         self._difficulty = difficulty
         self._trace_store = trace_store
+        self._trace_observatory = trace_observatory
         self._records: dict[str, _AssessmentRecord] = {}
 
     def start(self, request: AssessmentStartRequest) -> AssessmentView:
         session_id = uuid.uuid4().hex
         trace_id = uuid.uuid4().hex
+        if self._trace_observatory is not None:
+            self._trace_observatory.register_trace(trace_id)
         responder = _WebResponder()
         sink = EventSink()
         sink.register_durable(self._trace_store)
+        if self._trace_observatory is not None:
+            sink.register(self._trace_observatory)
         emitter = EventEmitter(sink, SystemClock(), trace_id=trace_id)
         session = AssessmentSession(
             store=self._store,

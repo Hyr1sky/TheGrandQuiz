@@ -14,6 +14,8 @@ from grandquiz.interfaces.api.assessment_runs import AssessmentManager
 from grandquiz.interfaces.api.chat import ChatManager
 from grandquiz.interfaces.api.chat_routes import router as chat_router
 from grandquiz.interfaces.api.errors import install_error_handlers
+from grandquiz.interfaces.api.observability import TraceObservatory
+from grandquiz.interfaces.api.observability_routes import router as observability_router
 from grandquiz.interfaces.api.resources import router as resources_router
 from grandquiz.interfaces.api.run_routes import router as runs_router
 from grandquiz.interfaces.api.runs import RunManager
@@ -60,10 +62,12 @@ def create_app(
         settings.trace_db_path.parent.mkdir(parents=True, exist_ok=True)
         persistence = LearningPersistence(settings.learning_db_path)
         trace_store = TraceStore(settings.trace_db_path)
+        trace_observatory = TraceObservatory(trace_store)
         run_manager = RunManager(
             store=persistence.store,
             provider=provider,
             trace_store=trace_store,
+            trace_observatory=trace_observatory,
         )
         assessment_manager = AssessmentManager(
             store=persistence.store,
@@ -73,11 +77,13 @@ def create_app(
             preferences=persistence.preferences,
             difficulty=persistence.difficulty,
             trace_store=trace_store,
+            trace_observatory=trace_observatory,
         )
         chat_manager = ChatManager(
             persistence=persistence,
             provider=provider,
             trace_store=trace_store,
+            trace_observatory=trace_observatory,
         )
         app.state.persistence = persistence
         app.state.provider = provider
@@ -85,6 +91,7 @@ def create_app(
         app.state.run_manager = run_manager
         app.state.assessment_manager = assessment_manager
         app.state.chat_manager = chat_manager
+        app.state.trace_observatory = trace_observatory
         try:
             yield
         finally:
@@ -114,4 +121,5 @@ def create_app(
     app.include_router(runs_router)
     app.include_router(assessments_router)
     app.include_router(chat_router)
+    app.include_router(observability_router)
     return app

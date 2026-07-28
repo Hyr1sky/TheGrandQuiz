@@ -21,11 +21,12 @@ type ConnectionState = "connected" | "disconnected";
 
 export function streamChatEvents(
   sessionId: string,
+  after: number,
   onEvent: (event: ChatUiEvent) => void,
   onConnectionChange: (state: ConnectionState) => void,
 ): () => void {
   let closed = false;
-  let lastSequence = 0;
+  let lastSequence = after;
   let source: EventSource | null = null;
   let reconnectTimer: number | null = null;
 

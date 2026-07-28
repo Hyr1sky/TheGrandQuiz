@@ -16,6 +16,7 @@ from grandquiz.domain.learning.grounded_answer import (
 )
 from grandquiz.domain.learning.store import Store
 from grandquiz.interfaces.api.errors import ErrorResponse
+from grandquiz.interfaces.api.observability import TraceObservatory
 from grandquiz.kernel.clock import SystemClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.trace import TraceStore
@@ -92,10 +93,12 @@ class RunManager:
         store: Store,
         provider: Provider,
         trace_store: TraceStore,
+        trace_observatory: TraceObservatory | None = None,
     ) -> None:
         self._store = store
         self._provider = provider
         self._trace_store = trace_store
+        self._trace_observatory = trace_observatory
         self._records: dict[str, _RunRecord] = {}
 
     def start_grounded_answer(
@@ -106,8 +109,12 @@ class RunManager:
     ) -> RunView:
         record = _RunRecord(run_id=uuid.uuid4().hex, trace_id=uuid.uuid4().hex)
         self._records[record.run_id] = record
+        if self._trace_observatory is not None:
+            self._trace_observatory.register_trace(record.trace_id)
         sink = EventSink()
         sink.register_durable(self._trace_store)
+        if self._trace_observatory is not None:
+            sink.register(self._trace_observatory)
         sink.subscribe(lambda event: self._project_event(record, event))
         record.emitter = EventEmitter(sink, SystemClock(), trace_id=record.trace_id)
         record.span_id = record.emitter.new_span_id()

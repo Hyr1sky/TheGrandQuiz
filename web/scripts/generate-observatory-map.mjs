@@ -1,0 +1,201 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const OUTPUT_DIR = path.join(ROOT, "public", "assets");
+const SOURCE_ROOT =
+  "https://cdn.jsdelivr.net/gh/ofrohn/d3-celestial@master/data";
+
+const THEMES = {
+  dark: {
+    canvas: "#06131f",
+    wash: "#0b2030",
+    grid: "#8e7048",
+    instrument: "#c79b59",
+    star: "#f1e5ca",
+    starCool: "#96d9e8",
+    label: "#b89b6c",
+  },
+  light: {
+    canvas: "#f4eddd",
+    wash: "#e6dcc5",
+    grid: "#aa8d61",
+    instrument: "#8d6533",
+    star: "#5b4933",
+    starCool: "#28798e",
+    label: "#7c6648",
+  },
+};
+
+const CONSTELLATIONS = new Set([
+  "And",
+  "Cas",
+  "Cep",
+  "Cyg",
+  "Dra",
+  "Peg",
+  "UMa",
+  "UMi",
+]);
+
+async function loadJson(name) {
+  const response = await fetch(`${SOURCE_ROOT}/${name}`);
+  if (!response.ok) {
+    throw new Error(`Unable to fetch ${name}: ${response.status}`);
+  }
+  return response.json();
+}
+
+function project([longitude, latitude]) {
+  const angle = (longitude * Math.PI) / 180;
+  const radius = ((90 - latitude) / 180) * 630;
+  return [
+    750 + radius * Math.sin(angle),
+    420 - radius * Math.cos(angle),
+  ];
+}
+
+function point([x, y]) {
+  return `${x.toFixed(2)},${y.toFixed(2)}`;
+}
+
+function pathForLine(line) {
+  return line
+    .map((coordinate, index) => {
+      const [x, y] = project(coordinate);
+      return `${index === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(" ");
+}
+
+function constellationMarkup(lines) {
+  return lines.features
+    .filter((feature) => CONSTELLATIONS.has(feature.id))
+    .map((feature) => {
+      const paths = feature.geometry.coordinates
+        .map((line) => `<path d="${pathForLine(line)}"/>`)
+        .join("");
+      const coordinates = feature.geometry.coordinates.flat();
+      const projected = coordinates.map(project);
+      const center = projected.reduce(
+        ([x, y], [px, py]) => [x + px / projected.length, y + py / projected.length],
+        [0, 0],
+      );
+      return `<g data-constellation="${feature.id}">${paths}<text x="${center[0].toFixed(2)}" y="${center[1].toFixed(2)}">${feature.id.toUpperCase()}</text></g>`;
+    })
+    .join("");
+}
+
+function starMarkup(stars) {
+  return stars.features
+    .filter((feature) => feature.properties.mag <= 5.2)
+    .map((feature) => {
+      const [x, y] = project(feature.geometry.coordinates);
+      const magnitude = feature.properties.mag;
+      const radius = Math.max(0.48, 3.45 - (magnitude + 1.5) * 0.46);
+      const opacity = Math.max(0.34, 1 - (magnitude + 1.5) * 0.085);
+      const cool = Number(feature.properties.bv) < 0.15;
+      return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${radius.toFixed(2)}" opacity="${opacity.toFixed(2)}"${cool ? ' class="star-cool"' : ""}/>`;
+    })
+    .join("");
+}
+
+function gridMarkup() {
+  const rings = [104, 208, 312, 416, 520, 624]
+    .map((radius) => `<circle cx="750" cy="420" r="${radius}"/>`)
+    .join("");
+  const spokes = Array.from({ length: 24 }, (_, index) => {
+    const angle = (index * Math.PI) / 12;
+    const x = 750 + 624 * Math.sin(angle);
+    const y = 420 - 624 * Math.cos(angle);
+    return `<path d="M750 420L${x.toFixed(2)} ${y.toFixed(2)}"/>`;
+  }).join("");
+  const bearingLabels = Array.from({ length: 12 }, (_, index) => {
+    const angle = (index * Math.PI) / 6;
+    const x = 750 + 650 * Math.sin(angle);
+    const y = 420 - 650 * Math.cos(angle);
+    return `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}">${index * 30}°</text>`;
+  }).join("");
+  return `${rings}${spokes}${bearingLabels}`;
+}
+
+function observatoryMarkup() {
+  return `
+    <g class="armillary" transform="translate(1238 530) rotate(-12)">
+      <circle r="232"/>
+      <ellipse rx="232" ry="79"/>
+      <ellipse rx="79" ry="232"/>
+      <ellipse rx="218" ry="126" transform="rotate(32)"/>
+      <ellipse rx="218" ry="126" transform="rotate(-32)"/>
+      <path d="M-270 0H270M0-270V270"/>
+      <circle r="20"/>
+      <path d="M-12 0L0-31 12 0 0 31Z"/>
+    </g>
+    <g class="horizon">
+      <path d="M-120 925C260 770 532 790 750 924C968 790 1240 770 1560 925"/>
+      <path d="M-80 954C300 818 550 832 750 950C950 832 1200 818 1520 954"/>
+      <path d="M40 974H1400"/>
+      ${Array.from({ length: 25 }, (_, index) => {
+        const x = 60 + index * 55;
+        const height = index % 3 === 0 ? 20 : 11;
+        return `<path d="M${x} 974v-${height}"/>`;
+      }).join("")}
+    </g>
+    <g class="compass" transform="translate(90 895)">
+      <circle r="48"/>
+      <circle r="38"/>
+      <path d="M0-36L9-8 0 0-9-8ZM0 36L-7 8 0 0 7 8ZM-36 0L-8-7 0 0-8 7ZM36 0L8 7 0 0 8-7Z"/>
+      <text x="0" y="-55">N</text>
+    </g>`;
+}
+
+function svgForTheme(themeName, stars, lines) {
+  const palette = THEMES[themeName];
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Generated by web/scripts/generate-observatory-map.mjs.
+  Star and constellation positions: d3-celestial (BSD-3-Clause), J2000.
+  Source: https://github.com/ofrohn/d3-celestial
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 1024" role="img" aria-labelledby="title description">
+  <title id="title">TheGrandQuiz observatory star map</title>
+  <desc id="description">A polar projection of real bright-star positions with sparse constellation paths, an armillary instrument and bearing marks.</desc>
+  <defs>
+    <filter id="soft-glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="2.2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <radialGradient id="sky-wash" cx="52%" cy="42%" r="72%">
+      <stop offset="0" stop-color="${palette.wash}" stop-opacity=".96"/>
+      <stop offset=".62" stop-color="${palette.canvas}" stop-opacity=".9"/>
+      <stop offset="1" stop-color="${palette.canvas}"/>
+    </radialGradient>
+  </defs>
+  <rect width="1440" height="1024" fill="url(#sky-wash)"/>
+  <g class="grid" fill="none" stroke="${palette.grid}" stroke-width=".72" opacity=".25">${gridMarkup()}</g>
+  <g class="constellations" fill="none" stroke="${palette.instrument}" stroke-width=".8" opacity=".34">${constellationMarkup(lines)}</g>
+  <g class="stars" fill="${palette.star}" filter="url(#soft-glow)">${starMarkup(stars)}</g>
+  <style>.star-cool{fill:${palette.starCool}} .constellations text,.grid text,.compass text{fill:${palette.label};stroke:none;font:10px ui-monospace,monospace;letter-spacing:2px;text-anchor:middle}.armillary,.horizon,.compass{fill:none;stroke:${palette.instrument};stroke-width:1;opacity:.54}.armillary path,.compass path{fill:${palette.instrument};fill-opacity:.12}.compass text{font-size:12px}</style>
+${observatoryMarkup()}
+</svg>
+`;
+}
+
+const [stars, lines] = await Promise.all([
+  loadJson("stars.6.json"),
+  loadJson("constellations.lines.json"),
+]);
+
+await mkdir(OUTPUT_DIR, { recursive: true });
+await Promise.all(
+  Object.keys(THEMES).map((themeName) =>
+    writeFile(
+      path.join(OUTPUT_DIR, `star-map-observatory-${themeName}.svg`),
+      svgForTheme(themeName, stars, lines),
+      "utf8",
+    ),
+  ),
+);
+
+console.log("Generated observatory star maps for dark and light themes.");

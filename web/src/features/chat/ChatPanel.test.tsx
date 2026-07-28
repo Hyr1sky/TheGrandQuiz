@@ -45,6 +45,64 @@ afterEach(() => {
 });
 
 describe("ChatPanel", () => {
+  it("reports the durable trace id when the chat session is created", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request = input instanceof Request ? input : new Request(String(input));
+        if (request.url.endsWith("/api/v1/chat/sessions") && request.method === "POST") {
+          return Response.json(
+            { session_id: "session-traced", trace_id: "trace-chat-1" },
+            { status: 201 },
+          );
+        }
+        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+      }),
+    );
+    const handleTraceChange = vi.fn();
+
+    render(<ChatPanel onTraceChange={handleTraceChange} />);
+
+    await waitFor(() => {
+      expect(handleTraceChange).toHaveBeenCalledWith("trace-chat-1");
+    });
+  });
+
+  it("sends the active workspace resource with each user message", async () => {
+    let messageBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request = input instanceof Request ? input : new Request(String(input));
+        if (request.url.endsWith("/api/v1/chat/sessions") && request.method === "POST") {
+          return Response.json({ session_id: "session-context" }, { status: 201 });
+        }
+        if (request.url.includes("/messages") && request.method === "POST") {
+          messageBody = (await request.json()) as Record<string, unknown>;
+          return Response.json({ turn_id: "turn-context" }, { status: 202 });
+        }
+        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+      }),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const user = userEvent.setup();
+
+    render(<ChatPanel activeResourceId="resource-1" />);
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "发送消息" })).toBeEnabled();
+    });
+
+    await user.type(screen.getByRole("textbox", { name: "发送消息" }), "基于当前材料考我");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(messageBody).toEqual({
+        text: "基于当前材料考我",
+        active_resource_id: "resource-1",
+      });
+    });
+  });
+
   it("creates a session on mount and renders an input area", async () => {
     vi.stubGlobal(
       "fetch",
@@ -149,6 +207,72 @@ describe("ChatPanel", () => {
     // Markdown should render bold text
     expect(screen.getByText("状态变化")).toBeInTheDocument();
     expect(stream?.closed).toBe(true);
+  });
+
+  it("resumes the SSE stream after the previous turn sequence", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request = input instanceof Request ? input : new Request(String(input));
+        if (request.url.endsWith("/api/v1/chat/sessions") && request.method === "POST") {
+          return Response.json({ session_id: "session-multi" }, { status: 201 });
+        }
+        if (request.url.includes("/messages") && request.method === "POST") {
+          return Response.json({ turn_id: "turn" }, { status: 202 });
+        }
+        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+      }),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const user = userEvent.setup();
+
+    render(<ChatPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "发送消息" })).toBeEnabled();
+    });
+
+    await user.type(screen.getByRole("textbox", { name: "发送消息" }), "第一轮");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const firstStream = FakeEventSource.instances[0];
+    await act(async () => {
+      firstStream?.emit("chat.turn_started", {
+        sequence: 1,
+        type: "chat.turn_started",
+        session_id: "session-multi",
+        data: { turn_id: "turn-1" },
+      });
+      firstStream?.emit("chat.turn_ended", {
+        sequence: 2,
+        type: "chat.turn_ended",
+        session_id: "session-multi",
+        data: { turn_id: "turn-1", output: "第一轮回答" },
+      });
+    });
+
+    await user.type(screen.getByRole("textbox", { name: "发送消息" }), "第二轮");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+    const secondStream = FakeEventSource.instances[1];
+
+    expect(String(secondStream?.url)).toContain("events?after=2");
+    await act(async () => {
+      secondStream?.emit("chat.turn_started", {
+        sequence: 3,
+        type: "chat.turn_started",
+        session_id: "session-multi",
+        data: { turn_id: "turn-2" },
+      });
+      secondStream?.emit("chat.turn_ended", {
+        sequence: 4,
+        type: "chat.turn_ended",
+        session_id: "session-multi",
+        data: { turn_id: "turn-2", output: "第二轮回答" },
+      });
+    });
+
+    expect(screen.getAllByText("第一轮回答")).toHaveLength(1);
+    expect(screen.getAllByText("第二轮回答")).toHaveLength(1);
   });
 
   it("renders markdown with tables and lists in agent replies", async () => {

@@ -112,6 +112,8 @@ article:focus-visible {
    ================================================================ */
 
 .app-shell {
+  position: relative;
+  isolation: isolate;
   display: grid;
   height: 100dvh;
   grid-template:
@@ -120,11 +122,22 @@ article:focus-visible {
     "footer  footer  footer" auto
     / minmax(160px, 220px) minmax(400px, 1fr) minmax(300px, 380px);
   background-color: var(--canvas);
-  background-image: var(--background-image);
-  background-attachment: fixed;
-  background-position: center;
-  background-size: cover;
   transition: background-color 160ms ease, color 160ms ease;
+}
+
+.star-map-backdrop {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background-color: var(--canvas);
+  background-image: var(--background-image);
+  background-position: center 44%;
+  background-size: cover;
+  opacity: var(--background-opacity);
+  transition:
+    background-color 160ms ease,
+    opacity 160ms ease;
 }
 
 /* ---- Header ---- */
@@ -137,7 +150,9 @@ article:focus-visible {
   gap: 16px;
   padding: 12px 24px;
   border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--chrome-surface);
+  backdrop-filter: blur(14px) saturate(0.86);
+  font-family: var(--font-interface);
 }
 
 .app-header__eyebrow {
@@ -195,6 +210,8 @@ article:focus-visible {
   flex-direction: column;
   overflow-y: auto;
   border-right: 1px solid var(--line);
+  background: var(--panel-surface);
+  backdrop-filter: blur(7px);
 }
 
 .sidebar__header {
@@ -236,13 +253,14 @@ article:focus-visible {
   border-radius: 8px;
   background: transparent;
   color: var(--muted);
-  font: 400 13px/1.5 var(--font-interface);
+  font: 400 13px/1.55 var(--font-reading);
+  letter-spacing: 0.015em;
   text-align: left;
 }
 
 .outline__item span {
   color: var(--brass);
-  font-family: var(--font-interface);
+  font-family: var(--font-reading);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
 }
@@ -307,7 +325,9 @@ article:focus-visible {
   min-height: 36px;
   padding: 6px 24px;
   border-top: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--chrome-surface);
+  backdrop-filter: blur(14px) saturate(0.86);
+  font-family: var(--font-interface);
 }
 
 .compass-nav {
@@ -315,7 +335,35 @@ article:focus-visible {
   align-items: center;
   gap: 10px;
   width: 100%;
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
   font: 400 12px/1.4 var(--font-interface);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.compass-nav:hover {
+  border-color: var(--line);
+  background: var(--evidence-soft);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 10%);
+}
+
+.compass-nav:active {
+  box-shadow: var(--shadow-pressed);
+  transform: translateY(1px);
+}
+
+.compass-nav[aria-expanded="true"] {
+  border-color: var(--line-strong);
+  background: var(--evidence-soft);
 }
 
 .compass-nav__icon {

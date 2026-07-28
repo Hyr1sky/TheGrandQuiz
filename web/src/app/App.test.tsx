@@ -90,7 +90,7 @@ function baseFetchMock() {
       request.method === "POST"
     ) {
       return Response.json(
-        { session_id: "session-test" },
+        { session_id: "session-test", trace_id: "trace-chat-test" },
         { status: 201 },
       );
     }
@@ -107,6 +107,63 @@ afterEach(() => {
 });
 
 describe("Sidebar context switching", () => {
+  it("opens the live observatory from the compass status bar", async () => {
+    const fetchMock = baseFetchMock();
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const request =
+        input instanceof Request ? input : new Request(String(input));
+      if (
+        request.url.endsWith(
+          "/api/v1/observability/traces/trace-chat-test",
+        )
+      ) {
+        return Response.json({
+          summary: {
+            trace_id: "trace-chat-test",
+            status: "idle",
+            event_count: 0,
+            model_calls: 0,
+            tool_calls: 0,
+            error_count: 0,
+            recovery_count: 0,
+            total_tokens: 0,
+            started_at: null,
+            updated_at: null,
+            latency_ms: null,
+          },
+          spans: [],
+          events: [],
+        });
+      }
+      return baseFetchMock()(input);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Agent Runtime" });
+
+    await user.click(
+      screen.getByRole("button", { name: "打开运行观测" }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", { name: "运行观测" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the observatory map decorative and outside the interaction layer", async () => {
+    vi.stubGlobal("fetch", baseFetchMock());
+
+    const { container } = render(<App />);
+    await screen.findByRole("heading", { name: "Agent Runtime" });
+
+    const backdrop = container.querySelector(".star-map-backdrop");
+    expect(backdrop).toHaveAttribute("aria-hidden", "true");
+    expect(backdrop).toHaveAttribute("data-visual", "observatory");
+  });
+
   it("shows document outline by default in reading mode", async () => {
     vi.stubGlobal("fetch", baseFetchMock());
 
