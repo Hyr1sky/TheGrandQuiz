@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import "../styles.css";
 
 const resource = {
   resource_id: "resource-1",
@@ -185,6 +186,8 @@ describe("Sidebar context switching", () => {
   });
 
   it("renders selected document nodes as Markdown", async () => {
+    const longFlow =
+      "fetch_resource -> parse_document -> build_revision -> extract_nodes -> index_search -> resolve_evidence";
     const fetchMock = baseFetchMock();
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const request =
@@ -202,7 +205,7 @@ describe("Sidebar context switching", () => {
           start_offset: 0,
           end_offset: 128,
           content:
-            "# Runtime\n\n## 核心结构\n\n- 事件脊柱\n- 确定性 workflow\n\n| 模块 | 作用 |\n| --- | --- |\n| trace | 回放 |",
+            `# Runtime\n\n## 核心结构\n\n- 事件脊柱\n- 确定性 workflow\n\n![超宽流程图](https://example.com/wide-diagram.png)\n\n\`\`\`text\n${longFlow}\n\`\`\`\n\n| 模块 | 作用 |\n| --- | --- |\n| trace | 回放 |`,
           has_more: false,
           untrusted: true,
         });
@@ -225,6 +228,15 @@ describe("Sidebar context switching", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("list")).toHaveTextContent("事件脊柱");
     expect(screen.getByRole("table")).toHaveTextContent("trace");
+
+    const image = screen.getByRole("img", { name: "超宽流程图" });
+    const codeBlock = screen.getByText(longFlow).closest("pre");
+    expect(getComputedStyle(image).maxWidth).toBe("100%");
+    expect(getComputedStyle(image).height).toBe("auto");
+    expect(codeBlock).not.toBeNull();
+    expect(getComputedStyle(codeBlock as HTMLElement).overflowX).toBe(
+      "auto",
+    );
   });
 
   it("switches sidebar to progress view when user clicks toggle", async () => {
