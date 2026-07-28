@@ -3,7 +3,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/zhengkaoji-logo-primary-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/brand/zhengkaoji-logo-primary-light.png">
-  <img src="docs/assets/brand/zhengkaoji-logo-primary-light.png" alt="正考级" width="480">
+  <img src="docs/assets/brand/zhengkaoji-logo-primary-light.png" alt="正考级" width="400">
 </picture>
 
 <h1>正考级 · TheGrandQuiz</h1>
