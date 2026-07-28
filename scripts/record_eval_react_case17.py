@@ -12,7 +12,6 @@ Reader 与 ReAct 决策都走真实模型。只有规则门全绿时才保存 LL
 import asyncio
 import hashlib
 import os
-from pathlib import Path
 
 from grandquiz.domain.learning.ingest.acquisition_replay import (
     AcquisitionCassette,
@@ -29,11 +28,12 @@ from grandquiz.evals.harness import (
     Case,
     solve,
 )
+from grandquiz.evals.resources import eval_fixture_path
 from grandquiz.providers.llm import OpenAICompatProvider
 from grandquiz.providers.replay import Cassette, RecordingProvider
 
-_LLM_FIXTURE = Path("tests/fixtures/eval_case17_web_acquisition_react.cassette.json")
-_ACQUISITION_FIXTURE = Path("tests/fixtures/eval_case17_web_acquisition.cassette.json")
+_LLM_FIXTURE = eval_fixture_path("eval_case17_web_acquisition_react.cassette.json")
+_ACQUISITION_FIXTURE = eval_fixture_path("eval_case17_web_acquisition.cassette.json")
 _GOOD_URL = "https://javaguide.cn/database/mysql/mysql-questions-01.html"
 _BAD_URL = "https://example.com/login"
 _CONTENT = """# MySQL 面试高频考点

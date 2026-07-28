@@ -9,13 +9,13 @@ messages 组装漂移导致回放对不上）：真实 provider 包一层 ``Reco
 """
 
 import asyncio
-from pathlib import Path
 
 from grandquiz.evals.harness import Case, solve
+from grandquiz.evals.resources import eval_fixture_path
 from grandquiz.providers.llm import OpenAICompatProvider
 from grandquiz.providers.replay import Cassette, RecordingProvider
 
-_FIXTURE = Path("tests/fixtures/eval_case14_bulk_quiz.cassette.json")
+_FIXTURE = eval_fixture_path("eval_case14_bulk_quiz.cassette.json")
 
 # 必须与 evals/cases/case14_*.yaml 的 setup 逐字一致，否则 messages 对不上、回放落空。
 _CASE = Case(

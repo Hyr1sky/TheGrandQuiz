@@ -16,6 +16,7 @@ import pytest
 
 from grandquiz.evals.harness import export_html_report, load_cases, run_all
 from grandquiz.interfaces.cli.app import build_parser, export_trace_html
+from grandquiz.interfaces.cli.commands.trace import _run_report_cli
 from grandquiz.kernel.events import AgentEvent, EventType
 from grandquiz.kernel.trace import TraceStore
 
@@ -39,6 +40,23 @@ def _assert_self_contained(document: str) -> None:
     assert not re.search(r'(?:src|href)\s*=\s*["\']?\s*(?:https?:)?//', document), (
         "src/href 指向了外部资源"
     )
+
+
+def test_report_cli_exit_code_only_represents_artifact_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """报告命令是诊断出口；Eval 失败的非零契约属于 ``python -m grandquiz.evals``。"""
+
+    async def fake_export(out_dir: Path) -> Path:
+        out_dir.mkdir(parents=True)
+        index = out_dir / "index.html"
+        index.write_text("<h1>0/1 通过</h1>", encoding="utf-8")
+        return index
+
+    monkeypatch.setattr("grandquiz.evals.harness.export_html_report", fake_export)
+    _run_report_cli(out=tmp_path / "failed-report")
+
+    assert (tmp_path / "failed-report/index.html").is_file()
 
 
 async def test_report_export_index_and_per_case_details(tmp_path: Path) -> None:

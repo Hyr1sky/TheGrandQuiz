@@ -7,7 +7,6 @@
 """
 
 import asyncio
-from pathlib import Path
 
 from grandquiz.evals.harness import load_cases, run_case
 from grandquiz.evals.quality import QualityJudge
@@ -16,10 +15,11 @@ from grandquiz.evals.quality_calibration import (
     load_calibration_samples,
     run_calibration,
 )
+from grandquiz.evals.resources import eval_fixture_path
 from grandquiz.providers.llm import OpenAICompatProvider
 from grandquiz.providers.replay import Cassette, RecordingProvider
 
-_FIXTURE = Path("tests/fixtures/eval_quality_grounded_answer.cassette.json")
+_FIXTURE = eval_fixture_path("eval_quality_grounded_answer.cassette.json")
 
 
 async def main() -> None:

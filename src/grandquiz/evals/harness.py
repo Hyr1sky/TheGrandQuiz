@@ -67,6 +67,7 @@ from grandquiz.evals.fixture import (
 from grandquiz.evals.graders import GRADERS
 from grandquiz.evals.quality import QualityEvaluation, QualityRequest
 from grandquiz.evals.quality_calibration import CalibratedQualitySuite
+from grandquiz.evals.resources import eval_fixture_path
 from grandquiz.evals.result import SolveResult
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.context import ContextBuilder, Partition
@@ -78,8 +79,8 @@ from grandquiz.kernel.trace import Span, TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
 from grandquiz.providers.replay import Cassette, ReplayProvider
 
-_QUALITY_CASSETTE = Path("tests/fixtures/eval_quality_grounded_answer.cassette.json")
-_CASE17_ACQUISITION_CASSETTE = Path("tests/fixtures/eval_case17_web_acquisition.cassette.json")
+_QUALITY_CASSETTE = eval_fixture_path("eval_quality_grounded_answer.cassette.json")
+_CASE17_ACQUISITION_CASSETTE = eval_fixture_path("eval_case17_web_acquisition.cassette.json")
 CASE17_ACQUISITION_ADAPTER = "searxng"
 CASE17_SEARCH_FINGERPRINT = "wa-s4:searxng-2026.7.19-json-v1"
 CASE17_FETCH_FINGERPRINT = "eval:synthetic-mysql-web-v1"
@@ -588,7 +589,7 @@ async def _solve_web_acquisition(
 ) -> SolveResult:
     """case16：全程只读规范化 acquisition cassette，不触公网或真实搜索服务。"""
     cassette = AcquisitionCassette.load(
-        Path("tests/fixtures/eval_case16_web_acquisition.cassette.json")
+        eval_fixture_path("eval_case16_web_acquisition.cassette.json")
     )
     fingerprint = "eval:synthetic-web-v1"
     search = ReplaySearchProvider(
@@ -660,10 +661,10 @@ async def _solve_web_acquisition(
 
 
 def _load_react_cassette(name: str) -> ReplayProvider:
-    """从 ``tests/fixtures/<name>`` 建 ``ReplayProvider``（同 test_assess_replay 的复原套路）：从
+    """从包内 ``evals/fixtures/<name>`` 建 ``ReplayProvider``：从
     cassette 自带的 role→model 反推 ``model_for_role``，回放无需 ``.env``、不触网、不烧 token。
     """
-    path = Path("tests/fixtures") / name
+    path = eval_fixture_path(name)
     raw: dict[str, dict[str, str]] = json.loads(path.read_text(encoding="utf-8"))
     model_for_role = cast("dict[Role, str]", {e["role"]: e["model"] for e in raw.values()})
     return ReplayProvider(Cassette.load(path), model_for_role)
@@ -682,7 +683,7 @@ async def _solve_react(
     I/O）而非生产的 SQLite 实现——两者都满足 ``register_learning_tools`` 认的 ``Store``/``Memory``
     协议，装配等价。
 
-    ``provider_override`` 为 None 时按 ``case.cassette`` 从 ``tests/fixtures/`` 载入真录
+    ``provider_override`` 为 None 时按 ``case.cassette`` 从包内 ``evals/fixtures/`` 载入真录
     ``ReplayProvider``——react 用例**没有**"canned JSON 假件"这个选项：ReAct 决策本身就是被测行为，
     假 provider 会把它演成恒定正确、测不出真实模型是否偷懒编造。
     """

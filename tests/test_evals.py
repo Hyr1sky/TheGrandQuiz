@@ -6,7 +6,6 @@ harness 用与 test_assessment / test_ingest 相同的假 provider（canned JSON
 
 from collections.abc import Sequence
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 
@@ -29,6 +28,7 @@ from grandquiz.evals.harness import (
     run_case,
     solve,
 )
+from grandquiz.evals.resources import eval_fixture_path
 from grandquiz.kernel.events import AgentEvent, EventType
 from grandquiz.providers.base import Completion, Message, Role, ToolCall, ToolSpec, Usage
 from grandquiz.providers.replay import Cassette, ReplayMiss, ReplayProvider
@@ -175,7 +175,7 @@ async def test_web_acquisition_react_waits_for_selection_and_fails_closed() -> N
     )
 
     acquisition = AcquisitionCassette.load(
-        Path("tests/fixtures/eval_case16_web_acquisition.cassette.json")
+        eval_fixture_path("eval_case16_web_acquisition.cassette.json")
     )
     result = await solve(
         case,

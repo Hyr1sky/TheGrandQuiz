@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   getTraceSnapshot,
   type TraceSnapshot,
-  type TraceUiEvent,
 } from "./api";
 import { streamTraceEvents } from "./traceEvents";
 import "./observatory-drawer.css";
@@ -46,7 +45,10 @@ export function ObservatoryDrawer({
   onClose,
 }: ObservatoryDrawerProps) {
   const [snapshot, setSnapshot] = useState<TraceSnapshot | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{
+    traceId: string;
+    message: string;
+  } | null>(null);
   const [connection, setConnection] = useState<
     "connected" | "disconnected"
   >("connected");
@@ -70,13 +72,13 @@ export function ObservatoryDrawer({
         return next;
       } catch {
         if (active) {
-          setError("无法读取运行轨迹");
+          setError({ traceId, message: "无法读取运行轨迹" });
         }
         return null;
       }
     };
 
-    const scheduleRefresh = (_event: TraceUiEvent) => {
+    const scheduleRefresh = () => {
       if (refreshTimer.current !== null) {
         clearTimeout(refreshTimer.current);
       }
@@ -85,8 +87,6 @@ export function ObservatoryDrawer({
       }, 80);
     };
 
-    setSnapshot(null);
-    setError(null);
     void refresh().then((initial) => {
       if (!active || initial === null) {
         return;
@@ -108,6 +108,11 @@ export function ObservatoryDrawer({
       }
     };
   }, [open, traceId]);
+
+  const currentSnapshot =
+    snapshot?.summary.trace_id === traceId ? snapshot : null;
+  const currentError =
+    error !== null && error.traceId === traceId ? error.message : null;
 
   if (!open) {
     return null;
@@ -140,11 +145,11 @@ export function ObservatoryDrawer({
         <p className="observatory-drawer__empty">
           正在等待运行会话建立。
         </p>
-      ) : error !== null ? (
+      ) : currentError !== null ? (
         <p className="observatory-drawer__error" role="alert">
-          {error}
+          {currentError}
         </p>
-      ) : snapshot === null ? (
+      ) : currentSnapshot === null ? (
         <p className="observatory-drawer__empty">正在读取事件脊柱...</p>
       ) : (
         <>
@@ -154,12 +159,12 @@ export function ObservatoryDrawer({
           >
             <div>
               <span
-                className={`observatory-status__beacon observatory-status__beacon--${snapshot.summary.status}`}
+                className={`observatory-status__beacon observatory-status__beacon--${currentSnapshot.summary.status}`}
                 aria-hidden
               />
               <strong>
-                {STATUS_LABELS[snapshot.summary.status] ??
-                  snapshot.summary.status}
+                {STATUS_LABELS[currentSnapshot.summary.status] ??
+                  currentSnapshot.summary.status}
               </strong>
             </div>
             <span
@@ -175,31 +180,31 @@ export function ObservatoryDrawer({
           >
             <article>
               <span>事件</span>
-              <strong>{snapshot.summary.event_count}</strong>
+              <strong>{currentSnapshot.summary.event_count}</strong>
             </article>
             <article>
               <span>模型调用</span>
-              <strong>{snapshot.summary.model_calls}</strong>
+              <strong>{currentSnapshot.summary.model_calls}</strong>
             </article>
             <article>
               <span>工具调用</span>
-              <strong>{snapshot.summary.tool_calls}</strong>
+              <strong>{currentSnapshot.summary.tool_calls}</strong>
             </article>
             <article>
               <span>总 Token</span>
-              <strong>{snapshot.summary.total_tokens}</strong>
+              <strong>{currentSnapshot.summary.total_tokens}</strong>
             </article>
             <article>
               <span>错误 / 恢复</span>
               <strong>
-                {snapshot.summary.error_count} /{" "}
-                {snapshot.summary.recovery_count}
+                {currentSnapshot.summary.error_count} /{" "}
+                {currentSnapshot.summary.recovery_count}
               </strong>
             </article>
             <article>
               <span>总耗时</span>
               <strong>
-                {formatDuration(snapshot.summary.latency_ms)}
+                {formatDuration(currentSnapshot.summary.latency_ms)}
               </strong>
             </article>
           </section>
@@ -210,15 +215,15 @@ export function ObservatoryDrawer({
           >
             <div className="observatory-section-title">
               <h3>Span 时间线</h3>
-              <span>{snapshot.spans.length}</span>
+              <span>{currentSnapshot.spans.length}</span>
             </div>
-            {snapshot.spans.length === 0 ? (
+            {currentSnapshot.spans.length === 0 ? (
               <p className="observatory-drawer__empty">
                 尚未产生可展示的 span。
               </p>
             ) : (
               <ol>
-                {snapshot.spans.map((span) => (
+                {currentSnapshot.spans.map((span) => (
                   <li
                     key={span.span_id}
                     className={`observatory-span observatory-span--${span.status}`}

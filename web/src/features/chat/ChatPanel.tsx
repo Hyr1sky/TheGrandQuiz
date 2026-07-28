@@ -89,30 +89,6 @@ export function ChatPanel({
     }
   }, [messages, loading, toolCall, error]);
 
-  useEffect(() => {
-    if (assessmentStatus === null) {
-      return;
-    }
-    const content =
-      assessmentStatus === "completed"
-        ? "本轮考核已完成。"
-        : assessmentStatus === "refused" ||
-            assessmentStatus === "failed"
-          ? "本轮考核未能开始。"
-          : assessmentStatus === "cancelled"
-            ? "本轮考核已取消。"
-            : assessmentStatus === "preparing"
-              ? "正在为你准备考核..."
-              : "考核进行中，请在工作面板完成本轮题目。";
-    setMessages((previous) =>
-      previous.map((message) =>
-        message.kind === "assessment-status"
-          ? { ...message, content }
-          : message,
-      ),
-    );
-  }, [assessmentStatus]);
-
   // Create session on mount
   useEffect(() => {
     let active = true;
@@ -137,7 +113,9 @@ export function ChatPanel({
 
   // Stable ref to avoid re-creating the SSE callback when onNavigation changes
   const onNavigationRef = useRef(onNavigation);
-  onNavigationRef.current = onNavigation;
+  useEffect(() => {
+    onNavigationRef.current = onNavigation;
+  }, [onNavigation]);
 
   const onChatEvent = useCallback((event: ChatUiEvent) => {
     lastSequence.current = Math.max(lastSequence.current, event.sequence);
@@ -263,24 +241,40 @@ export function ChatPanel({
   return (
     <aside className="chat-panel" aria-label="Agent 对话">
       <div className="chat-messages" role="log" aria-live="polite">
-        {messages.map((message, index) => (
-          <div
-            key={index}
-            className={
-              message.role === "user"
-                ? "chat-bubble--user"
-                : message.role === "system"
-                  ? "chat-navigation-hint"
-                  : "chat-bubble--agent"
-            }
-          >
-            {message.role === "agent" ? (
-              <SafeMarkdown content={message.content} />
-            ) : (
-              <div>{message.content}</div>
-            )}
-          </div>
-        ))}
+        {messages.map((message, index) => {
+          const content =
+            message.kind === "assessment-status" &&
+            assessmentStatus !== null
+              ? assessmentStatus === "completed"
+                ? "本轮考核已完成。"
+                : assessmentStatus === "refused" ||
+                    assessmentStatus === "failed"
+                  ? "本轮考核未能开始。"
+                  : assessmentStatus === "cancelled"
+                    ? "本轮考核已取消。"
+                    : assessmentStatus === "preparing"
+                      ? "正在为你准备考核..."
+                      : "考核进行中，请在工作面板完成本轮题目。"
+              : message.content;
+          return (
+            <div
+              key={index}
+              className={
+                message.role === "user"
+                  ? "chat-bubble--user"
+                  : message.role === "system"
+                    ? "chat-navigation-hint"
+                    : "chat-bubble--agent"
+              }
+            >
+              {message.role === "agent" ? (
+                <SafeMarkdown content={content} />
+              ) : (
+                <div>{content}</div>
+              )}
+            </div>
+          );
+        })}
         {toolCall !== null ? (
           <div className="chat-tool-call" role="status">
             {toolCall.label}

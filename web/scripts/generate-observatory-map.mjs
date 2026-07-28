@@ -56,10 +56,6 @@ function project([longitude, latitude]) {
   ];
 }
 
-function point([x, y]) {
-  return `${x.toFixed(2)},${y.toFixed(2)}`;
-}
-
 function pathForLine(line) {
   return line
     .map((coordinate, index) => {

@@ -119,7 +119,7 @@ export const AssessmentPanel = forwardRef<
     return () => {
       active = false;
     };
-  }, [resourceId, rounds, questionType]);
+  }, [resourceId, rounds, questionType, notifyUpdate]);
 
   // Poll for status changes
   const pollDelay = useRef(1000);
@@ -155,7 +155,7 @@ export const AssessmentPanel = forwardRef<
       active = false;
       window.clearTimeout(timer);
     };
-  }, [assessment]);
+  }, [assessment, notifyUpdate]);
 
   const reveal = async (interaction: "hover" | "click" | "keyboard") => {
     const question = assessment?.question;

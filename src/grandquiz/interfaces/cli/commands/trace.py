@@ -72,6 +72,11 @@ def export_trace_html(
 
 
 def _run_report_cli(*, out: Path | None) -> None:
+    """生成诊断报告；退出码只表示产物是否生成，Eval 成败由报告和专用 gate 表达。
+
+    自动化门禁应运行 ``python -m grandquiz.evals``，它会在任一用例失败时返回非零。
+    ``grandquiz report`` 则即使包含失败用例也保留成功退出，方便用户打开失败报告排查。
+    """
     # 报告不碰真实 provider / learning 库：Tier-1 假件 + Tier-2 cassette 离线 Replay。
     from grandquiz.evals.harness import export_html_report
 

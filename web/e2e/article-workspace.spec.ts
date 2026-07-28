@@ -39,7 +39,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test.afterEach(async ({}, testInfo) => {
+test.afterEach(async ({ page: _page }, testInfo) => {
   if (testInfo.status === testInfo.expectedStatus) {
     return;
   }

@@ -4,13 +4,13 @@
 """
 
 import asyncio
-from pathlib import Path
 
 from grandquiz.evals.harness import Case, solve
+from grandquiz.evals.resources import eval_fixture_path
 from grandquiz.providers.llm import OpenAICompatProvider
 from grandquiz.providers.replay import Cassette, RecordingProvider
 
-_FIXTURE = Path("tests/fixtures/eval_case15_natural_grounded_answer.cassette.json")
+_FIXTURE = eval_fixture_path("eval_case15_natural_grounded_answer.cassette.json")
 _CASE = Case(
     id="case15",
     kind="react",
