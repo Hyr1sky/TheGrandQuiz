@@ -88,12 +88,11 @@ hook、recovery、eval 全部建在其上。
 - **SQLite 迁移**：版本号 + 顺序 SQL 文件，不上 alembic。
 - **Prompt 版本管理**：prompt 模板独立于代码存放，trace 记 prompt 版本号。
 
-## 代码出处与参考
+## 代码参考
 
-本仓库以提取式迁移自 scholarmate-digital-human 建立（[ADR-0001](docs/adr/0001-extract-not-slim.md)），
-旧仓库冻结为只读参考（本机 `~/桌面/DevStation/scholarmate-digital-human`）。
-[docs/reference-map.md](docs/reference-map.md) 记录每个待移植模块的出处、外部参考仓库，
-以及**明确不要带过来的旧坑**——移植前先查这份清单。移植不是照搬：runner 进新仓库时同步做事件化改造。
+[ADR-0001](docs/adr/0001-extract-not-slim.md) 记录为何使用独立骨架建立本仓库；
+[docs/reference-map.md](docs/reference-map.md) 只记录当前项目采用的公开外部参考。参考实现不是依赖，
+任何借鉴都必须重新适配本仓库的事件脊柱、分层守卫和确定性测试契约。
 
 ## 开发节奏与代码树约定
 

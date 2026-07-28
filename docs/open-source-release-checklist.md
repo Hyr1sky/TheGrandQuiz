@@ -42,12 +42,12 @@
 
 ### OR-S1：许可证与来源审计
 
-- [x] 选择许可证，并确认它与项目目标、旧仓库来源和依赖许可证兼容。
-- [x] 检查 ADR-0001 / `docs/reference-map.md` 中提取移植的代码，确认有权按所选许可证再发布。
+- [x] 选择许可证，并确认它与项目目标、作者权属和依赖许可证兼容。
+- [x] 检查 ADR-0001 记录的独立骨架边界，确认当前仓库内容可按所选许可证发布。
 - [x] 检查真实 LLM cassette、测试材料和 Web Acquisition fixture，确认没有不应再分发的第三方正文。
 - [x] 增加根目录 `LICENSE`。
 - [x] 在 `pyproject.toml` 增加 license、author、repository、issues 等项目元数据。
-- [x] 在 README 增加许可证和代码来源说明。
+- [x] 在 README 增加许可证与第三方资产说明。
 
 验收：
 

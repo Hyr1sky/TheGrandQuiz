@@ -49,8 +49,8 @@ hook、trace、流式输出、eval replay **不是四个独立模块，而是同
 src/grandquiz/
 ├── kernel/                  # 通用 Agent Runtime（禁止 import domain，import-linter 强制）
 │   ├── events.py            # AgentEvent 类型体系（整个系统的数据脊柱）
-│   ├── runner.py            # ReAct 循环（自 scholarmate 移植 + 事件化改造）
-│   ├── tools.py             # Tool / ToolRegistry（移植）
+│   ├── runner.py            # ReAct 循环（进入本仓库时完成事件化改造）
+│   ├── tools.py             # Tool / ToolRegistry
 │   ├── hooks.py             # HookManager：interceptor + observer 两类
 │   ├── context.py           # ContextBuilder：分区拼装 + token 预算
 │   ├── memory.py            # Memory 抽象接口（store / recall / policy）
@@ -59,14 +59,14 @@ src/grandquiz/
 │   ├── subagent.py          # Subagent 执行器（隔离上下文 + 并发控制 + 结构化输出契约）
 │   └── approval.py          # 人工审批门（计划：暂停 / 恢复 turn 的通用原语）
 ├── providers/
-│   ├── llm.py               # OpenAICompatProvider（移植）+ DemoEchoProvider
+│   ├── llm.py               # OpenAICompatProvider + DemoEchoProvider
 │   ├── replay.py            # Record/Replay Provider（eval 确定性的基石）
 │   └── usage.py             # token 用量 / 成本核算
 ├── domain/learning/         # 学习领域（roadmap.md 中 learning/ 的全部内容）
 ├── interfaces/              # 可插拔通道，产品形态不绑定 Web
 │   ├── api/                 # FastAPI（REST + SSE）
 │   ├── cli/                 # CLI REPL 聊天客户端 + trace 查看器（开发期主力界面）
-│   └── asr/                 # 语音（移植 asr_ws.py）
+│   └── asr/                 # 语音通道
 └── evals/
     ├── cases/               # 用例 DSL（YAML）
     ├── graders/             # 规则断言 + LLM judge
@@ -87,8 +87,8 @@ Hook 抛异常必须被隔离，不能炸掉整个 turn。
 ### 上下文管理
 
 1. ContextBuilder 按分区（system / persona / memory / knowledge / history）拼装，每区有 token 预算
-2. **跨轮次裁剪**：历史只保留最终 assistant 回答，丢弃 tool 调用中间过程（scholarmate 已知 TODO，新仓库第一天做对）
-3. 工具结果截断策略 + 渐进式披露：先给摘要，模型要详情再展开（scholarmate 的 catalog 模式已验证）
+2. **跨轮次裁剪**：历史只保留最终 assistant 回答，丢弃 tool 调用中间过程。
+3. 工具结果截断策略 + 渐进式披露：先给摘要，模型要详情再展开。
 
 ### 文档结构与精确溯源（ADR-0008，DS-S1–S4 已实现，真实回放已收口）
 

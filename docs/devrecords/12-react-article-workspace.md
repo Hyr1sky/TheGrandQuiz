@@ -60,7 +60,9 @@ provider，供浏览器 QA 和 Playwright 主路径复用。Playwright 同一场
 
 真实 fixture 中人工完成了选节点、提问、SSE 完成、citation 定位、Evidence reveal 和主题切换。
 第一轮发现并修复标题跨列换行与正文重复 Markdown heading；第二轮将暗/亮参考稿和实现稿放在同一张
-comparison 中检查，最终无 P0/P1/P2。完整记录见根 `design-qa.md`。
+comparison 中检查，最终无 P0/P1/P2。稳定视觉规范保留在
+[Web Visual Language](../design/web-visual-language.md)，后续运行时观测收口见
+[开发记录 14](14-web-runtime-observability-closeout.md)。
 
 ## 6. CI 与边界
 

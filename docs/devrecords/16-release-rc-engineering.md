@@ -117,9 +117,8 @@ README 现在提供从 clone、配置 `.env`、本地 ingest、react/quiz 到 We
 - `v0.1.0-rc.1` 发布说明草案。
 
 凭证模式扫描只命中了 `.env.example` 的 `sk-your-deepseek-key-here` 占位符及其历史提交，没有发现
-真实 Key 形态。仓库所有者随后明确选择 MIT；当前仓库提交作者均为 Hyr1sky，旧仓库迁移边界由
-ADR-0001 与 reference-map 记录。旧仓库公开 URL 当前不可访问，因此所有权依据是仓库所有者声明与
-本仓库迁移记录，而不是一次可复现的上游 LICENSE 检查。
+真实 Key 形态。仓库所有者随后明确选择 MIT；当前仓库提交作者均为 Hyr1sky，ADR-0001 记录了独立骨架
+与作者自有原型之间的边界。许可证判断以当前仓库的作者权属、依赖许可证和可分发内容审计为依据。
 
 Python 直接依赖使用 MIT、BSD 或 Apache-2.0；Web lock 未发现强 copyleft 依赖。打包后的 React
 license comments 与 d3-celestial 独立许可证仍保留，项目 MIT 不覆盖这些第三方条款。

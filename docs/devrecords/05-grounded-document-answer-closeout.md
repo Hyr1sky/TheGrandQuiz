@@ -105,7 +105,7 @@ pytest                      784 passed
 ```bash
 uv run grandquiz react "Grounded answer production verification" \
   --db ~/.grandquiz/learning.db \
-  --materials-dir /Users/hyriskyhe/Documents/TheGrandQuiz/agent-memory.md
+  --materials-dir <materials-dir>/agent-memory.md
 ```
 
 用户只用自然语言询问：“根据库存里的 Agent Memory 材料，Mem0 的记忆处理流程是什么？请给出原文出处。”，没有点名 `answer_from_documents`、search、read 或 citation。生产 trace 为 `01c64e58ba9949368a06a4693bc5ec26`，结果为：

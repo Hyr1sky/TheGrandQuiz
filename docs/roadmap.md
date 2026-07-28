@@ -1,14 +1,17 @@
-# Learning Digital Human Development Roadmap
+# TheGrandQuiz Development Roadmap
 
-> 初始路线图（2026-06 起草），记录基于 ScholarMate 数字人 demo 改造学习型数字人的架构讨论。
-> 执行顺序已按依赖关系调整，见 [architecture.md](architecture.md)。原始文档中已过时的章节
-> （指向旧仓库的代码树、日期已过的甘特图、已拍板的 Next Discussion Topics）已裁去或并入对应文档。
+> 初始路线图（2026-06 起草），记录学习型 Agent 从实验骨架走向考核驱动产品的架构讨论。
+> 执行顺序已按依赖关系调整，见 [architecture.md](architecture.md)。已经失效的代码树、日期甘特图和
+> 已拍板议题已裁去或并入对应文档。
 
-This document records the initial architecture discussion for building a learning-oriented digital human based on the current ScholarMate digital human demo.
+This document records the initial architecture discussion for building an assessment-driven,
+observable, recoverable, and evaluable learning agent.
 
 ## Overall Direction
 
-The learning digital human should not be treated as a simple reskin of the scholar digital human. The current repository is best used as a reference implementation for an Agent Runtime: a manually written ReAct loop, dynamic tool mounting, progressive context disclosure, subagent execution, task persistence, references, and conversation history.
+The product should not be treated as a chatbot reskin. Its engineering core is an Agent Runtime with
+a manually controlled ReAct loop, dynamic tool mounting, progressive context disclosure, subagent
+execution, task persistence, references, and conversation history.
 
 The learning scenario should get its own domain layer.
 

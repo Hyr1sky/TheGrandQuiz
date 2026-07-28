@@ -8,7 +8,7 @@
 
 <h1>正考级 · TheGrandQuiz</h1>
 
-<p><strong>把“我看懂了”，变成“我真的会了”。</strong></p>
+<p><strong>俺们老中最会的就是考</strong></p>
 
 <p>
   一个考核驱动、可追溯、local-first 的个人学习 Agent。<br>
@@ -26,17 +26,6 @@
 
 > **正考级不只是帮你读完材料。** 它通过有证据的对话和逐题考核，找出“以为会了、其实还没会”的
 > 地方，把薄弱概念记下来，并在下一轮优先复考。
-
-## 名字背后的产品承诺
-
-| 字 | 我们坚持的事 |
-| --- | --- |
-| **正** | 正面验证理解，不用“读过了”代替“学会了” |
-| **考** | 让考核驱动学习闭环，而不是把模型当成答案生成器 |
-| **级** | 每次暴露一个薄弱点、巩固一个知识点，让进步可以逐级发生 |
-
-“正考级”不是一套给人贴标签的分数系统，而是一种学习方法：**用考核校准理解，用证据建立信任，
-用记忆推动下一次进步。**
 
 ## 一条真正闭合的学习回路
 
@@ -233,14 +222,10 @@ PR 要求见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 | [docs/devrecords/](docs/devrecords/) | 实现、dogfood、成本与门禁记录 |
 | [docs/open-source-release-checklist.md](docs/open-source-release-checklist.md) | v0.1.0 发布门 |
 
-项目以提取式迁移自作者的旧 ScholarMate Digital Human 仓库建立，迁移边界与未带入的问题记录在
-[ADR-0001](docs/adr/0001-extract-not-slim.md) 和 [reference-map.md](docs/reference-map.md)。
 
 ## 许可证
 
 TheGrandQuiz 以 [MIT License](LICENSE) 发布，Copyright © 2026 Hyr1sky。允许个人与商业使用、
 修改、再发布和闭源集成，但必须保留原版权与许可证文本。
 
-项目由作者此前维护的 ScholarMate Digital Human 仓库提取式迁移而来；迁移边界记录在
-[ADR-0001](docs/adr/0001-extract-not-slim.md) 与 [reference-map.md](docs/reference-map.md)。
-依赖和打包资产继续适用各自许可证；例如 Web 星图资产的第三方声明随 wheel 一同分发。
+依赖与打包资产继续适用各自许可证；第三方声明随对应分发物一同提供。
