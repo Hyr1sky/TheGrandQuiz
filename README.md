@@ -1,23 +1,74 @@
-# TheGrandQuiz
+<div align="center">
 
-一个考核驱动、local-first 的个人学习 Agent：把材料变成带精确原文证据的知识库，通过逐题考核暴露
-薄弱概念，并在下一轮优先复考。
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/zhengkaoji-logo-primary-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/brand/zhengkaoji-logo-primary-light.png">
+  <img src="docs/assets/brand/zhengkaoji-logo-primary-light.png" alt="正考级" width="480">
+</picture>
+
+<h1>正考级 · TheGrandQuiz</h1>
+
+<p><strong>把“我看懂了”，变成“我真的会了”。</strong></p>
+
+<p>
+  一个考核驱动、可追溯、local-first 的个人学习 Agent。<br>
+  让材料成为知识，让薄弱点成为下一轮学习的起点。
+</p>
+
+<p>
+  <a href="https://github.com/Hyr1sky/TheGrandQuiz/actions/workflows/ci.yml"><img src="https://github.com/Hyr1sky/TheGrandQuiz/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&amp;logoColor=white" alt="Python 3.12+"></a>
+  <a href="#数据与外部服务"><img src="https://img.shields.io/badge/data-local--first-2F855A" alt="Local-first"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-F5A623.svg" alt="License: MIT"></a>
+</p>
+
+</div>
+
+> **正考级不只是帮你读完材料。** 它通过有证据的对话和逐题考核，找出“以为会了、其实还没会”的
+> 地方，把薄弱概念记下来，并在下一轮优先复考。
+
+## 名字背后的产品承诺
+
+| 字 | 我们坚持的事 |
+| --- | --- |
+| **正** | 正面验证理解，不用“读过了”代替“学会了” |
+| **考** | 让考核驱动学习闭环，而不是把模型当成答案生成器 |
+| **级** | 每次暴露一个薄弱点、巩固一个知识点，让进步可以逐级发生 |
+
+“正考级”不是一套给人贴标签的分数系统，而是一种学习方法：**用考核校准理解，用证据建立信任，
+用记忆推动下一次进步。**
+
+## 一条真正闭合的学习回路
+
+```mermaid
+flowchart LR
+    A["导入材料"] --> B["深读与筛选"]
+    B --> C["有据可查的对话"]
+    C --> D["逐题考核"]
+    D --> E["暴露薄弱概念"]
+    E --> F["写入学习记忆"]
+    F --> G["下一轮优先复考"]
+    G --> C
+```
 
 TheGrandQuiz 同时包含一套可观测、可恢复、可评测的 Agent Runtime。Runtime 是产品的工程内核，
 不是对外承诺稳定 API 的通用框架。
 
 ## v0.1.0 能做什么
 
-- 从本地 Markdown / Text 深读并人工筛选 KnowledgeItem；
-- 按修订化 DocumentNode 保存原文结构，Evidence 可精确回到 revision/node/source span；
-- 用 CLI ReAct 或 Local Web 针对当前材料 Chat，回答不能静默扩大到全库；
-- 逐题进行选择题、开放问答和薄弱复考，由代码负责状态转移与 Learning Memory 记账；
-- 用 trace、Record/Replay 和 17 条 Eval 离线审计工具顺序、scope、引用和回答质量；
-- 在浏览器阅读文章、查看大纲、揭示 Evidence、完成考核并观察安全投影后的运行状态。
+| 能力 | 当前体验 | 工程保证 |
+| --- | --- | --- |
+| **材料入库** | 深读本地 Markdown / Text，人工筛选知识点 | 拒绝或失败不会留下半份知识快照 |
+| **材料对话** | 通过 CLI ReAct 或 Local Web 围绕当前材料提问 | exact scope，不能静默扩大到全库 |
+| **逐题考核** | 选择题、开放问答、薄弱点复考 | LLM 判卷，代码负责状态转移与记账 |
+| **精确 Evidence** | 从答案和考题回到原文依据 | 定位到 revision / node / source span |
+| **学习记忆** | 记录暴露出的薄弱概念 | 下一轮选题优先复考，而非只存聊天记录 |
+| **可信运行** | 浏览 trace、执行树、token、错误与恢复状态 | Record/Replay + 17 条离线 Eval |
+| **Local Web** | 三栏 Chat、文章阅读、Evidence 揭示与考核 | 同源 SPA、安全 Markdown、稳定 SSE |
 
-首个版本是本机单用户候选版，不支持账号、多用户、云同步、公网服务、Web Acquisition/审批、
-Web 文章/知识点管理或连续“掌握度分数”。Web Acquisition 后端和 CLI 路径已存在，但浏览器中的
-可恢复审批属于 v0.1.0 后续功能。
+> [!NOTE]
+> 首个版本是**本机单用户候选版**，不支持账号、多用户、云同步或公网服务。Web Acquisition/审批、
+> 文章与知识点管理、连续“掌握度分数”属于后续版本；现有 Web 服务也不应直接暴露到局域网或公网。
 
 ## 数据与外部服务
 
