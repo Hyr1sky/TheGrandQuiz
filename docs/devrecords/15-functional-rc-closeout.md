@@ -50,6 +50,11 @@ provider 或用户输入的任务会收到取消，并写入 `cancelled`，不�
 发送幂等的 `DELETE /api/v1/assessments/{session_id}`，等待任务写完 `cancelled` 终态后才回到
 阅读页；即使第一题仍在生成，也会等 session 建立后再取消。
 
+更新后的 Standards 复审又沿着 Chat 导航找到同一问题的旁路：`open_article` 或再次
+`start_assessment` 会直接替换中间工作区。现在 `App` 在执行任何 Chat 工作区切换前，都会通过
+`AssessmentPanel` 暴露的统一取消句柄关闭旧 session；只有取消成功才切换，开始新考核时还会创建
+新的面板代次，避免复用旧题目与请求状态。
+
 ## 3. 为什么 Chat 选择“拒绝并发”
 
 一个 Chat session 复用同一个 Runner、history 和当前材料上下文。如果两次消息并发进入，第二次

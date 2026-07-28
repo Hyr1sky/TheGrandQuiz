@@ -7,7 +7,10 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatPanel, type NavigationEvent } from "../features/chat/ChatPanel";
 import { ObservatoryDrawer } from "../features/observability/ObservatoryDrawer";
-import { AssessmentPanel } from "../features/assessment-workspace/AssessmentPanel";
+import {
+  AssessmentPanel,
+  type AssessmentPanelHandle,
+} from "../features/assessment-workspace/AssessmentPanel";
 import {
   AssessmentProgress,
   type RoundRecord,
@@ -46,6 +49,9 @@ export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceMode>("reading");
   const [assessmentParams, setAssessmentParams] =
     useState<AssessmentParams | null>(null);
+  const [assessmentEpoch, setAssessmentEpoch] = useState(0);
+  const assessmentPanelRef = useRef<AssessmentPanelHandle>(null);
+  const navigationPendingRef = useRef(false);
 
   // Assessment state lifted for sidebar progress
   const [assessment, setAssessment] = useState<AssessmentView | null>(null);
@@ -160,27 +166,44 @@ export function App() {
 
   const handleNavigation = useCallback(
     (nav: NavigationEvent) => {
-      if (nav.target === "assessment") {
-        const params = nav.params;
-        setAssessmentParams({
-          resource_id:
-            typeof params.resource_id === "string" ? params.resource_id : "",
-          rounds:
-            typeof params.rounds === "number" ? params.rounds : 3,
-          question_type:
-            typeof params.question_type === "string"
-              ? params.question_type
-              : null,
-        });
-        setAssessment(null);
-        setRoundHistory([]);
-        setWorkspace("assessment");
-      } else {
-        setWorkspace("reading");
-        setAssessmentParams(null);
-        setAssessment(null);
-        setRoundHistory([]);
+      if (navigationPendingRef.current) {
+        return;
       }
+      navigationPendingRef.current = true;
+      void (async () => {
+        try {
+          const activePanel = assessmentPanelRef.current;
+          if (activePanel !== null && !(await activePanel.cancel())) {
+            return;
+          }
+          if (nav.target === "assessment") {
+            const params = nav.params;
+            setAssessmentParams({
+              resource_id:
+                typeof params.resource_id === "string"
+                  ? params.resource_id
+                  : "",
+              rounds:
+                typeof params.rounds === "number" ? params.rounds : 3,
+              question_type:
+                typeof params.question_type === "string"
+                  ? params.question_type
+                  : null,
+            });
+            setAssessmentEpoch((current) => current + 1);
+            setAssessment(null);
+            setRoundHistory([]);
+            setWorkspace("assessment");
+          } else {
+            setWorkspace("reading");
+            setAssessmentParams(null);
+            setAssessment(null);
+            setRoundHistory([]);
+          }
+        } finally {
+          navigationPendingRef.current = false;
+        }
+      })();
     },
     [],
   );
@@ -261,6 +284,8 @@ export function App() {
       return (
         <main className="app-content" aria-label="考核面板">
           <AssessmentPanel
+            key={assessmentEpoch}
+            ref={assessmentPanelRef}
             resourceId={assessmentParams.resource_id}
             rounds={assessmentParams.rounds}
             questionType={assessmentParams.question_type}

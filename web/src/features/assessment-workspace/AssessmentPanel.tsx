@@ -11,8 +11,10 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import {
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useRef,
   useState,
   type FormEvent,
@@ -36,18 +38,23 @@ interface AssessmentPanelProps {
   onUpdate?: (view: AssessmentView) => void;
 }
 
+export interface AssessmentPanelHandle {
+  cancel: () => Promise<boolean>;
+}
+
 function commandId(prefix: string): string {
   return `${prefix}-${globalThis.crypto.randomUUID()}`;
 }
 
-export function AssessmentPanel({
-  resourceId,
-  rounds,
-  questionType,
-  onClose,
-  onUpdate,
-}: AssessmentPanelProps) {
+export const AssessmentPanel = forwardRef<
+  AssessmentPanelHandle,
+  AssessmentPanelProps
+>(function AssessmentPanel(
+  { resourceId, rounds, questionType, onClose, onUpdate },
+  ref,
+) {
   const [assessment, setAssessment] = useState<AssessmentView | null>(null);
+  const assessmentRef = useRef<AssessmentView | null>(null);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +80,7 @@ export function AssessmentPanel({
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
   const notifyUpdate = useCallback((view: AssessmentView) => {
+    assessmentRef.current = view;
     setAssessment(view);
     onUpdateRef.current?.(view);
   }, []);
@@ -289,18 +297,13 @@ export function AssessmentPanel({
     }
   };
 
-  const close = async () => {
-    if (closeRequested.current) {
-      return;
-    }
-    closeRequested.current = true;
-    let current = assessment;
+  const cancelCurrent = useCallback(async (): Promise<boolean> => {
+    let current = assessmentRef.current;
     if (current === null && startRequest.current !== null) {
       try {
         current = await startRequest.current.promise;
       } catch {
-        onClose();
-        return;
+        return true;
       }
     }
     if (
@@ -310,14 +313,27 @@ export function AssessmentPanel({
       )
     ) {
       try {
-        await cancelAssessment(current.session_id);
+        notifyUpdate(await cancelAssessment(current.session_id));
       } catch (reason) {
-        closeRequested.current = false;
         setError(
           reason instanceof Error ? reason.message : "无法结束考核",
         );
-        return;
+        return false;
       }
+    }
+    return true;
+  }, [notifyUpdate]);
+
+  useImperativeHandle(ref, () => ({ cancel: cancelCurrent }), [cancelCurrent]);
+
+  const close = async () => {
+    if (closeRequested.current) {
+      return;
+    }
+    closeRequested.current = true;
+    if (!(await cancelCurrent())) {
+      closeRequested.current = false;
+      return;
     }
     onClose();
   };
@@ -572,4 +588,4 @@ export function AssessmentPanel({
       </p>
     </section>
   );
-}
+});

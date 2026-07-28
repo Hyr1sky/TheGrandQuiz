@@ -269,44 +269,55 @@ describe("Sidebar context switching", () => {
   });
 
   it("auto-switches sidebar to progress when workspace changes to assessment", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const request =
-          input instanceof Request
-            ? input
-            : new Request(String(input));
-        const url = request.url;
-        if (url.endsWith("/api/v1/resources")) {
-          return Response.json({ items: [resource] });
-        }
-        if (url.endsWith(`/api/v1/resources/${resource.resource_id}/outline`)) {
-          return Response.json(outline);
-        }
-        if (url.endsWith("/api/v1/chat/sessions") && request.method === "POST") {
-          return Response.json({ session_id: "session-auto" }, { status: 201 });
-        }
-        if (url.includes("/messages") && request.method === "POST") {
-          return Response.json({ turn_id: "turn-auto" }, { status: 202 });
-        }
-        if (url.endsWith("/api/v1/assessments") && request.method === "POST") {
-          return Response.json(
-            {
-              session_id: "assess-1",
-              status: "preparing",
-              rounds: 3,
-              round_index: 1,
-              trace_id: "trace-1",
-              question: null,
-              judgement: null,
-              error: null,
-            },
-            { status: 201 },
-          );
-        }
-        throw new Error(`Unexpected request: ${request.method} ${url}`);
-      }),
-    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const request =
+        input instanceof Request ? input : new Request(String(input));
+      const url = request.url;
+      if (url.endsWith("/api/v1/resources")) {
+        return Response.json({ items: [resource] });
+      }
+      if (url.endsWith(`/api/v1/resources/${resource.resource_id}/outline`)) {
+        return Response.json(outline);
+      }
+      if (url.endsWith("/api/v1/chat/sessions") && request.method === "POST") {
+        return Response.json({ session_id: "session-auto" }, { status: 201 });
+      }
+      if (url.includes("/messages") && request.method === "POST") {
+        return Response.json({ turn_id: "turn-auto" }, { status: 202 });
+      }
+      if (url.endsWith("/api/v1/assessments") && request.method === "POST") {
+        return Response.json(
+          {
+            session_id: "assess-1",
+            status: "preparing",
+            rounds: 3,
+            round_index: 1,
+            trace_id: "trace-1",
+            question: null,
+            judgement: null,
+            error: null,
+          },
+          { status: 201 },
+        );
+      }
+      if (
+        url.endsWith("/api/v1/assessments/assess-1") &&
+        request.method === "DELETE"
+      ) {
+        return Response.json({
+          session_id: "assess-1",
+          status: "cancelled",
+          rounds: 3,
+          round_index: 1,
+          trace_id: "trace-1",
+          question: null,
+          judgement: null,
+          error: null,
+        });
+      }
+      throw new Error(`Unexpected request: ${request.method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("EventSource", FakeEventSource);
     const user = userEvent.setup();
 
@@ -354,6 +365,37 @@ describe("Sidebar context switching", () => {
         screen.getByRole("navigation", { name: "考核进度" }),
       ).toBeInTheDocument();
     });
+
+    // A later Chat navigation must close the active backend run before
+    // replacing the Assessment workspace.
+    await act(async () => {
+      stream?.emit("chat.navigation", {
+        sequence: 2,
+        type: "chat.navigation",
+        session_id: "session-auto",
+        data: {
+          turn_id: "turn-auto",
+          target: "reading",
+          params: {},
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("main", { name: "文章内容" }),
+      ).toBeInTheDocument();
+    });
+    expect(
+      fetchMock.mock.calls.some(([input]) => {
+        const request =
+          input instanceof Request ? input : new Request(String(input));
+        return (
+          request.method === "DELETE" &&
+          request.url.endsWith("/api/v1/assessments/assess-1")
+        );
+      }),
+    ).toBe(true);
   });
 
   it("preserves manual override until next workspace change", async () => {
