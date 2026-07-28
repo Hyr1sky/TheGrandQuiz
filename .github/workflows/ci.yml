@@ -52,6 +52,10 @@ jobs:
         working-directory: web
         run: npm run api:check
 
+      - name: Web lint
+        working-directory: web
+        run: npm run lint
+
       - name: Web tests
         working-directory: web
         run: npm test
@@ -62,7 +66,9 @@ jobs:
 
       - name: Web build
         working-directory: web
-        run: npm run build
+        run: |
+          npm run build:package
+          git diff --exit-code -- ../src/grandquiz/interfaces/api/static
 
       - name: Web hosting adapter tests
         working-directory: web
@@ -85,3 +91,81 @@ jobs:
             web/playwright-report/
             web/test-results/
           if-no-files-found: ignore
+
+  package-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build production Web package assets
+        working-directory: web
+        run: |
+          npm ci
+          npm run build:package
+          git diff --exit-code -- ../src/grandquiz/interfaces/api/static
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Verify package assets
+        run: |
+          unzip -l dist/grandquiz-*.whl | grep -q "grandquiz/evals/cases/case17_web_acquisition_react.yaml"
+          unzip -l dist/grandquiz-*.whl | grep -q "grandquiz/evals/fixtures/eval_quality_grounded_answer.cassette.json"
+          unzip -l dist/grandquiz-*.whl | grep -q "grandquiz/interfaces/api/static/index.html"
+          unzip -l dist/grandquiz-*.whl | grep -q "grandquiz/interfaces/api/static/assets/.*\\.js"
+
+      - name: Install wheel outside the repository
+        working-directory: ${{ runner.temp }}
+        run: |
+          uv venv --python 3.12 grandquiz-release-venv
+          uv pip install --python grandquiz-release-venv/bin/python "$GITHUB_WORKSPACE"/dist/grandquiz-*.whl
+
+      - name: Run public CLI and offline Eval from installed wheel
+        working-directory: ${{ runner.temp }}
+        run: |
+          grandquiz-release-venv/bin/grandquiz --help
+          grandquiz-release-venv/bin/grandquiz report --out grandquiz-release-report
+          grep -q "17/17 通过" grandquiz-release-report/index.html
+
+      - name: Start packaged loopback Web
+        working-directory: ${{ runner.temp }}
+        env:
+          LLM_API_KEY: test-only
+          LLM_BASE_URL: http://127.0.0.1:9/v1
+          LLM_MODEL: test-basic
+          ENRICH_LLM_API_KEY: test-only
+          ENRICH_LLM_BASE_URL: http://127.0.0.1:9/v1
+          ENRICH_LLM_MODEL: test-enrich
+        run: |
+          grandquiz-release-venv/bin/grandquiz-web > grandquiz-web.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:8000/api/v1/health > health.json; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q '"status":"ok"' health.json
+          curl --fail --silent http://127.0.0.1:8000/ | grep -q "TheGrandQuiz"
+          curl --fail --silent http://127.0.0.1:8000/study/session | grep -q "TheGrandQuiz"
+
+      - name: Upload release candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-release-artifacts
+          path: |
+            dist/*.tar.gz
+            dist/*.whl
