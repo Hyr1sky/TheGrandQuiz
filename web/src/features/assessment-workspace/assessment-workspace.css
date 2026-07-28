@@ -12,7 +12,7 @@
   padding: clamp(28px, 5vw, 64px);
   border: 1px solid var(--line-strong);
   background: var(--surface-quiet);
-  box-shadow: 0 24px 70px rgb(0 0 0 / 13%);
+  box-shadow: var(--shadow-sheet);
 }
 
 .assessment-setup__intro {
@@ -93,7 +93,7 @@
   padding: clamp(28px, 5vw, 62px);
   border: 1px solid var(--line-strong);
   background: var(--surface-quiet);
-  box-shadow: 0 24px 70px rgb(0 0 0 / 13%);
+  box-shadow: var(--shadow-sheet);
 }
 
 .quiz-sheet__header {
@@ -179,7 +179,7 @@
 .quiz-option:has(input:checked) {
   border-color: var(--evidence);
   background: var(--evidence-soft);
-  box-shadow: inset 4px 0 0 var(--evidence), var(--shadow-hover);
+  box-shadow: var(--shadow-evidence-inset), var(--shadow-hover);
 }
 
 .quiz-option:active {

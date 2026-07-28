@@ -5,8 +5,6 @@ import {
   ListBulletsIcon,
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { ChatPanel, type NavigationEvent } from "../features/chat/ChatPanel";
 import { ObservatoryDrawer } from "../features/observability/ObservatoryDrawer";
 import { AssessmentPanel } from "../features/assessment-workspace/AssessmentPanel";
@@ -23,6 +21,7 @@ import {
   type DocumentNodeSummary,
   type ResourceSummary,
 } from "../features/article-workspace/api";
+import { SafeMarkdown } from "../shared/components/SafeMarkdown";
 import { ThemeToggle } from "../shared/components/ThemeToggle";
 import { ThemeProvider } from "./ThemeProvider";
 
@@ -159,9 +158,6 @@ export function App() {
     }
   };
 
-  const readingBody = (content: string): string =>
-    content.replace(/^#{1,6}\s+[^\n]+\n+/, "").trim();
-
   const handleNavigation = useCallback(
     (nav: NavigationEvent) => {
       if (nav.target === "assessment") {
@@ -297,11 +293,11 @@ export function App() {
               {node === null ? (
                 <p>从星图中选择一个章节开始阅读。</p>
               ) : (
-                <div className="reading-markdown">
-                  <Markdown remarkPlugins={[remarkGfm]}>
-                    {readingBody(node.content)}
-                  </Markdown>
-                </div>
+                <SafeMarkdown
+                  className="reading-markdown"
+                  content={node.content}
+                  stripLeadingHeading
+                />
               )}
             </article>
           </>

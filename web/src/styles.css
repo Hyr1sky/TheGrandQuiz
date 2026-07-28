@@ -145,6 +145,7 @@ article:focus-visible {
 .app-header {
   grid-area: header;
   display: flex;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -165,6 +166,7 @@ article:focus-visible {
 
 .app-header__controls {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 16px;
 }
@@ -272,7 +274,7 @@ article:focus-visible {
 }
 
 .outline__item[aria-current="location"] {
-  box-shadow: inset 3px 0 0 var(--evidence);
+  box-shadow: var(--shadow-active-inset);
 }
 
 /* ---- Main content ---- */
@@ -302,7 +304,7 @@ article:focus-visible {
   overflow: hidden;
   border: 1px solid var(--line);
   background: var(--surface-quiet);
-  box-shadow: 0 18px 45px rgb(0 0 0 / 8%);
+  box-shadow: var(--shadow-paper);
   font: 400 clamp(16px, 1.25vw, 18px) / 1.95 var(--font-reading);
   letter-spacing: 0.025em;
   white-space: pre-wrap;
@@ -349,6 +351,11 @@ article:focus-visible {
 
 .reading-markdown th,
 .reading-markdown td {
+  white-space: nowrap;
+}
+
+.reading-markdown th,
+.reading-markdown td {
   padding: 0.55em 0.7em;
   border: 1px solid var(--line);
   text-align: start;
@@ -361,12 +368,18 @@ article:focus-visible {
   word-break: break-word;
 }
 
-.reading-markdown img {
+.safe-markdown__blocked-image {
   display: block;
+  box-sizing: border-box;
   max-width: 100%;
-  height: auto;
-  margin: 1.4em auto;
-  object-fit: contain;
+  margin: 1.4em 0;
+  padding: 12px 14px;
+  overflow-wrap: anywhere;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--field);
+  font: 500 12px/1.6 var(--font-interface);
 }
 
 .reading-markdown pre {
@@ -402,6 +415,7 @@ article:focus-visible {
 .app-footer {
   grid-area: footer;
   display: flex;
+  min-width: 0;
   align-items: center;
   min-height: 36px;
   padding: 6px 24px;
@@ -434,7 +448,7 @@ article:focus-visible {
 .compass-nav:hover {
   border-color: var(--line);
   background: var(--evidence-soft);
-  box-shadow: 0 4px 14px rgb(0 0 0 / 10%);
+  box-shadow: var(--shadow-subtle);
 }
 
 .compass-nav:active {
@@ -507,7 +521,37 @@ article:focus-visible {
     display: none;
   }
 
+  .app-header {
+    gap: 8px;
+    padding-inline: 12px;
+  }
+
+  .app-header__eyebrow {
+    flex: 0 1 112px;
+    min-width: 0;
+  }
+
+  .app-header__controls {
+    flex: 1 1 auto;
+    gap: 8px;
+  }
+
+  .resource-picker {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .resource-picker > span {
+    display: none;
+  }
+
+  .resource-picker select {
+    width: 100%;
+    min-width: 0;
+  }
+
   .theme-toggle {
+    flex: 0 0 auto;
     padding: 6px 10px;
   }
 

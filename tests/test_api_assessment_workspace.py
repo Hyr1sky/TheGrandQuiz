@@ -1,7 +1,9 @@
 """Local Web 逐题考核：确定性 workflow 的可暂停 HTTP 投影。"""
 
+import asyncio
 import hashlib
 import json
+import threading
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -82,6 +84,35 @@ class _OpenAssessmentProvider:
             text=json.dumps(payload, ensure_ascii=False),
             usage=Usage(prompt_tokens=100, completion_tokens=30),
         )
+
+
+class _FailingAssessmentProvider:
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        del messages, role, tools
+        raise RuntimeError("assessment provider failed")
+
+
+class _BlockingAssessmentProvider:
+    def __init__(self) -> None:
+        self.started = threading.Event()
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        del messages, role, tools
+        self.started.set()
+        await asyncio.Event().wait()
+        return Completion(text="{}", usage=Usage())
 
 
 def _app(tmp_path: Path, provider: Provider | None = None):
@@ -259,6 +290,7 @@ def test_answer_submission_is_idempotent_and_records_one_judgement(tmp_path: Pat
             json=command,
         )
         completed = _wait_for_status(client, started["session_id"], "completed")
+        trace_snapshot = client.get(f"/api/v1/observability/traces/{started['trace_id']}").json()
 
     assert first.status_code == 202
     assert second.status_code == 202
@@ -268,6 +300,7 @@ def test_answer_submission_is_idempotent_and_records_one_judgement(tmp_path: Pat
         "concept_state": None,
         "correct_answer": None,
     }
+    assert trace_snapshot["summary"]["status"] == "completed"
 
     trace = TraceStore(tmp_path / "trace.db")
     try:
@@ -279,6 +312,56 @@ def test_answer_submission_is_idempotent_and_records_one_judgement(tmp_path: Pat
     finally:
         trace.close()
     assert len(judged) == 1
+
+
+def test_assessment_failure_projects_a_failed_terminal_trace(tmp_path: Path) -> None:
+    resource, _ = _seed_item(tmp_path)
+
+    with TestClient(_app(tmp_path, _FailingAssessmentProvider())) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "选择题",
+            },
+        ).json()
+        failed = _wait_for_status(client, started["session_id"], "failed")
+        trace_snapshot = client.get(f"/api/v1/observability/traces/{started['trace_id']}").json()
+
+    assert failed["error"] == "本轮考核失败，请通过 trace_id 查看详情"
+    assert trace_snapshot["summary"]["status"] == "failed"
+    assert trace_snapshot["summary"]["error_count"] == 1
+
+
+def test_shutdown_projects_a_cancelled_terminal_trace(tmp_path: Path) -> None:
+    resource, _ = _seed_item(tmp_path)
+    provider = _BlockingAssessmentProvider()
+    started: dict[str, Any]
+
+    with TestClient(_app(tmp_path, provider)) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "选择题",
+            },
+        ).json()
+        assert provider.started.wait(timeout=1)
+
+    trace = TraceStore(tmp_path / "trace.db")
+    try:
+        terminal = [
+            event
+            for event in trace.events(started["trace_id"])
+            if event.type == "web.assessment_run.ended"
+        ]
+    finally:
+        trace.close()
+
+    assert len(terminal) == 1
+    assert terminal[0].payload["status"] == "cancelled"
 
 
 def test_open_question_wrong_answer_waits_for_explicit_next_round(tmp_path: Path) -> None:

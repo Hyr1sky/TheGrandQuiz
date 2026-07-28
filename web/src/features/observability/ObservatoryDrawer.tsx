@@ -1,3 +1,4 @@
+import { XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import {
   getTraceSnapshot,
@@ -131,7 +132,7 @@ export function ObservatoryDrawer({
           aria-label="关闭运行观测"
           onClick={onClose}
         >
-          ×
+          <XIcon aria-hidden size={18} />
         </button>
       </header>
 

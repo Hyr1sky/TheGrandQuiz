@@ -663,8 +663,11 @@ export interface components {
             tokens: number | null;
             /** Tool Name */
             tool_name: string | null;
-            /** Type */
-            type: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "run" | "model" | "tool" | "assessment" | "approval" | "recovery" | "error" | "runtime";
         };
         /** TraceSummary */
         TraceSummary: {
@@ -720,8 +723,11 @@ export interface components {
             tokens?: number | null;
             /** Tool Name */
             tool_name?: string | null;
-            /** Type */
-            type: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "run" | "model" | "tool" | "assessment" | "approval" | "recovery" | "error" | "runtime";
         };
         /** UiEvent */
         UiEvent: {

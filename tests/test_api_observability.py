@@ -91,12 +91,12 @@ def test_completed_turn_snapshot_contains_only_safe_runtime_metrics(tmp_path: Pa
     assert snapshot["summary"]["tool_calls"] == 0
     assert snapshot["summary"]["error_count"] == 0
     assert snapshot["summary"]["total_tokens"] == 15
-    assert [span["type"] for span in snapshot["spans"]] == ["agent_turn", "model"]
+    assert [span["type"] for span in snapshot["spans"]] == ["run", "model"]
     assert [event["type"] for event in snapshot["events"]] == [
-        "agent_turn.started",
-        "model.started",
-        "model.ended",
-        "agent_turn.ended",
+        "run",
+        "model",
+        "model",
+        "run",
     ]
     serialized = response.text
     for forbidden in (
@@ -134,8 +134,8 @@ def test_observability_sse_resumes_after_known_sequence(tmp_path: Path) -> None:
     ]
     assert [event["sequence"] for event in projected] == [3, 4]
     assert [event["type"] for event in projected] == [
-        "model.ended",
-        "agent_turn.ended",
+        "model",
+        "run",
     ]
     assert "safe echo" not in response.text
 
@@ -162,5 +162,44 @@ async def test_observatory_live_iterator_wakes_on_agent_event(tmp_path: Path) ->
     store.close()
 
     assert projected.sequence == 1
-    assert projected.type == "model.started"
+    assert projected.type == "model"
     assert "secret" not in projected.model_dump_json()
+
+
+def test_observatory_recovers_historical_trace_after_store_restart(tmp_path: Path) -> None:
+    trace_id = "historical-trace"
+    path = tmp_path / "trace.db"
+    first_store = TraceStore(path)
+    first_store.record(
+        AgentEvent(
+            type="agent_turn.started",
+            seq=0,
+            ts=1.0,
+            trace_id=trace_id,
+            span_id=f"{trace_id}:s0",
+            payload={},
+        )
+    )
+    first_store.record(
+        AgentEvent(
+            type="agent_turn.ended",
+            seq=1,
+            ts=2.0,
+            trace_id=trace_id,
+            span_id=f"{trace_id}:s0",
+            payload={"ok": True},
+        )
+    )
+    first_store.close()
+
+    restarted_store = TraceStore(path)
+    restarted_observatory = TraceObservatory(restarted_store)
+    try:
+        assert restarted_observatory.exists(trace_id)
+        snapshot = restarted_observatory.snapshot(trace_id)
+    finally:
+        restarted_store.close()
+
+    assert snapshot.summary.status == "completed"
+    assert [event.type for event in snapshot.events] == ["run", "run"]
+    assert [span.type for span in snapshot.spans] == ["run"]

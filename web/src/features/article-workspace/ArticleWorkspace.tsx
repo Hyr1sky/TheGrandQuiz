@@ -9,8 +9,7 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { SafeMarkdown } from "../../shared/components/SafeMarkdown";
 import type {
   DocumentNodeRead,
   DocumentNodeSummary,
@@ -35,10 +34,6 @@ const STAGES = [
   { key: "citation.resolved", label: "引用解析", icon: LinkSimpleIcon },
   { key: "run.succeeded", label: "完成", icon: CheckCircleIcon },
 ] as const;
-
-function readingBody(content: string): string {
-  return content.replace(/^#{1,6}\s+[^\n]+\n+/, "").trim();
-}
 
 export function ArticleWorkspace() {
   const [resources, setResources] = useState<ResourceSummary[]>([]);
@@ -221,11 +216,11 @@ export function ArticleWorkspace() {
           {node === null ? (
             <p>从星图中选择一个章节开始阅读。</p>
           ) : (
-            <div className="reading-markdown">
-              <Markdown remarkPlugins={[remarkGfm]}>
-                {readingBody(node.content)}
-              </Markdown>
-            </div>
+            <SafeMarkdown
+              className="reading-markdown"
+              content={node.content}
+              stripLeadingHeading
+            />
           )}
         </article>
       </section>

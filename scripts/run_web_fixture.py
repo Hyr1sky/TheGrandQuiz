@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
@@ -15,7 +16,7 @@ from grandquiz.domain.learning.document import build_document_snapshot
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.interfaces.api.app import ApiSettings, create_app
-from grandquiz.providers.base import Completion, Message, Role, ToolSpec, Usage
+from grandquiz.providers.base import Completion, Message, Role, ToolCall, ToolSpec, Usage
 
 CONTENT = """\
 # Runtime
@@ -33,6 +34,16 @@ Runtime 负责管理智能体的执行循环与状态机转移。它通过事件
 durable processor 订阅事件并执行有状态逻辑。失败后继续当前 turn 会让后续副作用依赖不完整状态，
 破坏事件历史的因果一致性与可重放性，因此必须阻断当前 turn 并触发恢复流程。
 
+![不可信远程图片](https://attacker.invalid/should-not-load.png)
+
+```text
+receive_event -> persist_trace -> notify_observers -> checkpoint_state -> resume_from_sequence
+```
+
+| 输入事件 | 持久事务 | 通知阶段 | 成功快照 | 游标恢复 | 错误分类 | 恢复决策 | 回放评测 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| turn | 先写 | 后发 | 快照 | 续传 | 失败 | 阻断 | 一致 |
+
 ## Recovery
 
 恢复流程从事件日志和最近的成功快照重建状态，重放尚未完成的 turn，直到重新达到一致性边界。
@@ -40,8 +51,9 @@ durable processor 订阅事件并执行有状态逻辑。失败后继续当前 t
 
 
 class _FixtureProvider:
-    def __init__(self) -> None:
+    def __init__(self, resource_id: str) -> None:
         self._question_calls = 0
+        self._resource_id = resource_id
 
     async def complete(
         self,
@@ -72,9 +84,40 @@ class _FixtureProvider:
                 usage=Usage(prompt_tokens=180, completion_tokens=45),
             )
         if tools is not None:
-            user_text = messages[-1].content if messages else ""
+            user_text = next(
+                (message.content for message in reversed(messages) if message.role == "user"),
+                "",
+            )
+            has_tool_result = any(message.role == "tool" for message in messages)
+            if "考" in user_text and not has_tool_result:
+                return Completion(
+                    text="",
+                    tool_calls=[
+                        ToolCall(
+                            id="fixture-start-assessment",
+                            name="start_assessment",
+                            arguments={
+                                "resource_id": self._resource_id,
+                                "rounds": 1,
+                                "question_type": "选择题",
+                            },
+                        )
+                    ],
+                    usage=Usage(prompt_tokens=120, completion_tokens=20),
+                )
+            system_context = "\n".join(
+                message.content for message in messages if message.role == "system"
+            )
+            active_scope = next(
+                (
+                    line
+                    for line in system_context.splitlines()
+                    if line.startswith("active_resource_id=")
+                ),
+                "active_resource_id=missing",
+            )
             return Completion(
-                text=f"（fixture）你好，你刚才说的是：{user_text[:60]}",
+                text=f"（fixture）{active_scope}；收到：{user_text[:60]}",
                 usage=Usage(prompt_tokens=120, completion_tokens=30),
             )
         return Completion(
@@ -88,7 +131,7 @@ class _FixtureProvider:
         )
 
 
-def _seed(db_path: Path) -> None:
+def _seed(db_path: Path) -> str:
     resource = LearningResource.create(url="file://fixture/agent-runtime.md").model_copy(
         update={
             "raw_content": CONTENT,
@@ -110,21 +153,25 @@ def _seed(db_path: Path) -> None:
     item = ground_items(snapshot, [item])[0]
     with LearningPersistence(db_path) as persistence:
         persistence.store.replace_snapshot(resource, [item])
+    return resource.resource_id
 
 
 def main() -> None:
-    temp_dir = tempfile.TemporaryDirectory(prefix="grandquiz-web-fixture-")
-    root = Path(temp_dir.name)
+    artifact_root = Path(__file__).parents[1] / "web" / "test-results"
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    root = Path(tempfile.mkdtemp(prefix="fixture-runtime-", dir=artifact_root))
+    (artifact_root / "runtime-location.txt").write_text(str(root), encoding="utf-8")
     learning_db = root / "learning.db"
-    _seed(learning_db)
+    resource_id = _seed(learning_db)
     app = create_app(
         settings=ApiSettings(
             learning_db_path=learning_db,
             trace_db_path=root / "trace.db",
         ),
-        provider=_FixtureProvider(),
+        provider=_FixtureProvider(resource_id),
     )
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+    port = int(os.environ.get("GRANDQUIZ_FIXTURE_PORT", "8000"))
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 
 if __name__ == "__main__":

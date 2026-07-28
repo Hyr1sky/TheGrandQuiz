@@ -21,7 +21,7 @@ from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import Store
 from grandquiz.interfaces.api.observability import TraceObservatory
 from grandquiz.kernel.clock import SystemClock
-from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
+from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Provider
 
@@ -35,6 +35,9 @@ AssessmentStatus = Literal[
     "failed",
     "cancelled",
 ]
+
+ASSESSMENT_RUN_STARTED = "web.assessment_run.started"
+ASSESSMENT_RUN_ENDED = "web.assessment_run.ended"
 
 
 class AssessmentStartRequest(BaseModel):
@@ -143,6 +146,7 @@ class _AssessmentRecord:
     responder: _WebResponder
     session: AssessmentSession
     emitter: EventEmitter
+    run_span_id: str
     status: AssessmentStatus = "preparing"
     question_id: str | None = None
     item_id: str | None = None
@@ -157,6 +161,7 @@ class _AssessmentRecord:
     error: str | None = None
     task: asyncio.Task[None] | None = None
     next_request_ids: set[str] = field(default_factory=_empty_strings)
+    terminal_emitted: bool = False
 
     def view(self) -> AssessmentView:
         question = None
@@ -223,6 +228,7 @@ class AssessmentManager:
         if self._trace_observatory is not None:
             sink.register(self._trace_observatory)
         emitter = EventEmitter(sink, SystemClock(), trace_id=trace_id)
+        run_span_id = emitter.new_span_id()
         session = AssessmentSession(
             store=self._store,
             provider=self._provider,
@@ -243,9 +249,15 @@ class AssessmentManager:
             responder=responder,
             session=session,
             emitter=emitter,
+            run_span_id=run_span_id,
         )
         sink.subscribe(lambda event: self._project_event(record, event))
         self._records[session_id] = record
+        emitter.emit(
+            ASSESSMENT_RUN_STARTED,
+            span_id=run_span_id,
+            payload={"status": "running"},
+        )
         record.task = asyncio.create_task(
             self._run_round(record),
             name=f"grandquiz-api-assessment:{session_id}:1",
@@ -341,15 +353,39 @@ class AssessmentManager:
             )
             if result.status == "refused":
                 record.status = "refused"
+                self._emit_terminal(record, "failed")
             else:
                 record.status = "completed" if record.round_index == record.rounds else "judged"
+                if record.status == "completed":
+                    self._emit_terminal(record, "completed")
         except asyncio.CancelledError:
             record.status = "cancelled"
             record.responder.cancel()
+            self._emit_terminal(record, "cancelled")
             raise
-        except Exception:
+        except Exception as exc:
             record.status = "failed"
             record.error = "本轮考核失败，请通过 trace_id 查看详情"
+            record.emitter.emit(
+                EventType.ERROR,
+                span_id=record.run_span_id,
+                payload={"error_type": type(exc).__name__},
+            )
+            self._emit_terminal(record, "failed")
+
+    @staticmethod
+    def _emit_terminal(
+        record: _AssessmentRecord,
+        status: Literal["completed", "failed", "cancelled"],
+    ) -> None:
+        if record.terminal_emitted:
+            return
+        record.terminal_emitted = True
+        record.emitter.emit(
+            ASSESSMENT_RUN_ENDED,
+            span_id=record.run_span_id,
+            payload={"status": status, "ok": status == "completed"},
+        )
 
     @staticmethod
     def _project_event(record: _AssessmentRecord, event: AgentEvent) -> None:

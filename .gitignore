@@ -35,6 +35,8 @@ htmlcov/
 
 # Node (future frontend / pyright bundled runtime)
 node_modules/
+web/playwright-report/
+web/test-results/
 
 # Localdata
 localtemp

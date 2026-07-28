@@ -109,7 +109,7 @@
 .assessment-panel__option:has(input:checked) {
   border-color: var(--evidence);
   background: var(--evidence-soft);
-  box-shadow: inset 4px 0 0 var(--evidence);
+  box-shadow: var(--shadow-evidence-inset);
 }
 
 .assessment-panel__open {

@@ -10,7 +10,7 @@
   border: 1px solid var(--line-strong);
   border-radius: 14px;
   background: var(--surface);
-  box-shadow: 0 22px 60px rgb(0 0 0 / 34%);
+  box-shadow: var(--shadow-overlay);
   backdrop-filter: blur(24px) saturate(0.86);
   color: var(--text);
   font-family: var(--font-interface);
@@ -109,24 +109,24 @@
   height: 8px;
   border-radius: 50%;
   background: var(--muted);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 14%, transparent);
+  box-shadow: var(--shadow-status-muted);
 }
 
 .observatory-status__beacon--running {
   background: var(--evidence);
-  box-shadow: 0 0 0 4px var(--evidence-soft);
+  box-shadow: var(--shadow-status-active);
 }
 
 .observatory-status__beacon--completed,
 .observatory-status__beacon--waiting_input {
   background: var(--success);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 14%, transparent);
+  box-shadow: var(--shadow-status-success);
 }
 
 .observatory-status__beacon--failed,
 .observatory-status__beacon--cancelled {
   background: var(--danger);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 14%, transparent);
+  box-shadow: var(--shadow-status-danger);
 }
 
 .observatory-connection {

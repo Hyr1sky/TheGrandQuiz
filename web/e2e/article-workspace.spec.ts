@@ -1,52 +1,143 @@
 import { expect, test } from "@playwright/test";
 
-test("reads, asks, traces, reveals evidence, and changes theme", async ({ page }) => {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("grandquiz-theme", "dark");
+let browserErrors: string[] = [];
+let observedTraceIds: string[] = [];
+
+test.beforeEach(async ({ page }) => {
+  browserErrors = [];
+  observedTraceIds = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      browserErrors.push(`console: ${message.text()}`);
+    }
   });
-  await page.goto("/");
-
-  await expect(
-    page.getByRole("heading", { name: "Agent Runtime：事件总线与可恢复执行" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: /Durable processors/ }).click();
-  await expect(
-    page.getByText(/durable processor 订阅事件并执行有状态逻辑/),
-  ).toBeVisible();
-
-  await page
-    .getByRole("textbox", { name: "针对当前材料的问题" })
-    .fill("为什么 durable processor 失败必须阻断当前 turn？");
-  await page.getByRole("button", { name: "向材料提问" }).click();
-
-  await expect(page.getByText(/破坏事件历史的因果一致性与可重放性/)).toBeVisible();
-  await expect(page.getByRole("button", { name: /Runtime > Durable processors/ })).toBeVisible();
-  await page.getByRole("button", { name: "揭示证据" }).click();
-  await expect(
-    page.getByText("失败后继续当前 turn 会让后续副作用依赖不完整状态", {
-      exact: true,
-    }),
-  ).toBeVisible();
-
-  await page.getByRole("button", { name: "切换至亮色模式" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  page.on("requestfailed", (request) => {
+    browserErrors.push(
+      `network: ${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`,
+    );
+  });
+  page.on("response", (response) => {
+    if (!response.url().includes("/api/v1/assessments")) {
+      return;
+    }
+    void response
+      .json()
+      .then((payload: unknown) => {
+        if (
+          typeof payload === "object" &&
+          payload !== null &&
+          "trace_id" in payload &&
+          typeof payload.trace_id === "string"
+        ) {
+          observedTraceIds.push(payload.trace_id);
+        }
+      })
+      .catch(() => undefined);
+  });
 });
 
-test("starts a scoped assessment, reveals evidence, and judges one answer", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "进入考核模式" }).click();
+test.afterEach(async ({}, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus) {
+    return;
+  }
+  await testInfo.attach("browser-errors-and-trace-id", {
+    body: JSON.stringify({ traceIds: observedTraceIds, browserErrors }, null, 2),
+    contentType: "application/json",
+  });
+});
 
-  await expect(
-    page.getByRole("heading", { name: "开始一轮考核" }),
-  ).toBeVisible();
-  await page.getByRole("combobox", { name: "题目数量" }).selectOption("1");
-  await page.getByRole("combobox", { name: "题型" }).selectOption("选择题");
-  await page.getByRole("button", { name: "生成第一题" }).click();
-  // Keep the pointer away while the question replaces the setup form; otherwise the
-  // evidence veil can legitimately reveal as it renders underneath the last click.
-  await page.mouse.move(1, 1);
+test("blocks Markdown network images and contains truly wide content", async ({
+  page,
+}, testInfo) => {
+  const remoteRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("attacker.invalid")) {
+      remoteRequests.push(request.url());
+    }
+  });
+
+  await page.goto("/");
+  const durableNode = page
+    .locator(".outline__item")
+    .filter({ hasText: "Durable processors" });
+  if (testInfo.project.name === "mobile") {
+    await durableNode.evaluate((element: HTMLElement) => element.click());
+  } else {
+    await durableNode.click();
+  }
+
+  await expect(page.getByRole("note")).toContainText("不可信远程图片");
+  await expect(page.getByRole("img")).toHaveCount(0);
+  expect(remoteRequests).toEqual([]);
+
+  const table = page.getByRole("table");
+  const code = page.locator(".reading-markdown pre");
+  await expect(table).toBeVisible();
+  await expect(code).toBeVisible();
+  expect(
+    await table.evaluate((element) => element.scrollWidth > element.clientWidth),
+  ).toBe(true);
+  expect(
+    await code.evaluate((element) => element.scrollWidth > element.clientWidth),
+  ).toBe(true);
+  const viewportOverflow = await page.evaluate(() => {
+    const viewportWidth = document.documentElement.clientWidth;
+    return Array.from(document.querySelectorAll<HTMLElement>("body *"))
+      .filter((element) => {
+        const scrollOwner = element.closest(
+          ".reading-markdown table, .reading-markdown pre",
+        );
+        return scrollOwner === null || scrollOwner === element;
+      })
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          selector:
+            element.id ||
+            element.className ||
+            element.tagName.toLowerCase(),
+          left: Math.round(rect.left),
+          right: Math.round(rect.right),
+          width: Math.round(rect.width),
+        };
+      })
+      .filter(
+        ({ left, right, width }) =>
+          width > 0 && (left < -1 || right > viewportWidth + 1),
+      );
+  });
+  expect(viewportOverflow).toEqual([]);
+});
+
+test("keeps the exact material across two chat cursors", async ({ page }) => {
+  const eventCursors: number[] = [];
+  page.on("request", (request) => {
+    if (!request.url().includes("/api/v1/chat/sessions/") || !request.url().includes("/events")) {
+      return;
+    }
+    eventCursors.push(Number(new URL(request.url()).searchParams.get("after") ?? "0"));
+  });
+  await page.goto("/");
+  const resourceId = await page.getByRole("combobox", { name: "当前材料" }).inputValue();
+  const composer = page.getByRole("textbox", { name: "发送消息" });
+
+  await composer.fill("第一轮");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText(new RegExp(`active_resource_id=${resourceId}.*第一轮`))).toBeVisible();
+
+  await composer.fill("第二轮");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText(new RegExp(`active_resource_id=${resourceId}.*第二轮`))).toBeVisible();
+  await expect(page.locator(".chat-bubble--agent")).toHaveCount(2);
+  expect(eventCursors).toContain(0);
+  expect(eventCursors.some((cursor) => cursor > 0)).toBe(true);
+});
+
+test("navigates from Chat to Assessment and closes the trace", async ({ page }) => {
+  await page.goto("/");
+  const composer = page.getByRole("textbox", { name: "发送消息" });
+  await composer.fill("请结合当前材料考我一题");
+  await page.getByRole("button", { name: "发送" }).click();
 
   await expect(
     page.getByRole("heading", {
@@ -55,21 +146,27 @@ test("starts a scoped assessment, reveals evidence, and judges one answer", asyn
   ).toBeVisible();
 
   const evidence = page.getByRole("button", { name: "揭示本题材料证据" });
-  await expect(evidence).toHaveAttribute("aria-expanded", "false");
   await evidence.hover();
-  await expect(evidence).toHaveAttribute("aria-expanded", "true");
+  await page.waitForTimeout(2500);
+  await expect(evidence).toHaveAttribute("aria-expanded", "false");
   await expect(
     page.getByText("失败后继续当前 turn 会让后续副作用依赖不完整状态", {
       exact: true,
     }),
-  ).toBeVisible();
+  ).toHaveCount(0);
+  await expect(evidence).toHaveAttribute("aria-expanded", "true", {
+    timeout: 1500,
+  });
 
   await page
     .getByRole("radio", { name: "避免后续副作用依赖不完整状态" })
     .check();
-
   await page.getByRole("button", { name: "提交答案" }).click();
   await expect(page.getByText("判断：对")).toBeVisible();
   await expect(page.getByText("本轮完成")).toBeVisible();
-  await expect(page.getByText(/trace_id:/)).toBeVisible();
+
+  await page.getByRole("button", { name: "打开运行观测" }).click();
+  await expect(page.getByRole("dialog", { name: "运行观测" })).toContainText(
+    "已完成",
+  );
 });

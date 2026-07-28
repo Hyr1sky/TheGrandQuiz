@@ -205,7 +205,7 @@ describe("Sidebar context switching", () => {
           start_offset: 0,
           end_offset: 128,
           content:
-            `# Runtime\n\n## 核心结构\n\n- 事件脊柱\n- 确定性 workflow\n\n![超宽流程图](https://example.com/wide-diagram.png)\n\n\`\`\`text\n${longFlow}\n\`\`\`\n\n| 模块 | 作用 |\n| --- | --- |\n| trace | 回放 |`,
+            `# Runtime\n\n## 核心结构\n\n- 事件脊柱\n- 确定性 workflow\n\n![超宽流程图](https://example.com/wide-diagram.png)\n\n\`\`\`text\n${longFlow}\n\`\`\`\n\n| 模块 | 作用 | 输入 | 输出 | 状态 | 恢复 | 观测 | 评测 |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| trace | 回放 | 一段很长的事件输入 | 一段很长的事件输出 | completed | checkpoint | sequence | replay |`,
           has_more: false,
           untrusted: true,
         });
@@ -229,10 +229,15 @@ describe("Sidebar context switching", () => {
     expect(screen.getByRole("list")).toHaveTextContent("事件脊柱");
     expect(screen.getByRole("table")).toHaveTextContent("trace");
 
-    const image = screen.getByRole("img", { name: "超宽流程图" });
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent("超宽流程图");
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "https://example.com/wide-diagram.png",
+    );
+    const table = screen.getByRole("table");
     const codeBlock = screen.getByText(longFlow).closest("pre");
-    expect(getComputedStyle(image).maxWidth).toBe("100%");
-    expect(getComputedStyle(image).height).toBe("auto");
+    expect(getComputedStyle(table).display).toBe("block");
+    expect(getComputedStyle(table).overflowX).toBe("auto");
     expect(codeBlock).not.toBeNull();
     expect(getComputedStyle(codeBlock as HTMLElement).overflowX).toBe(
       "auto",

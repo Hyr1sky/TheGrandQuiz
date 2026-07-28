@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from grandquiz.interfaces.api.chat import (
     ActiveResourceNotFoundError,
     ChatManager,
+    ChatTurnInProgressError,
     ChatUiEvent,
     MessageAccepted,
     MessageRequest,
@@ -52,6 +53,13 @@ async def send_message(
             body.text,
             active_resource_id=body.active_resource_id,
         )
+    except ChatTurnInProgressError as exc:
+        raise ApiError(
+            status_code=409,
+            code="turn_in_progress",
+            message="当前会话仍有一轮消息正在处理",
+            retryable=True,
+        ) from exc
     except ActiveResourceNotFoundError as exc:
         raise ApiError(
             status_code=404,

@@ -1005,6 +1005,16 @@
             "title": "Tool Name"
           },
           "type": {
+            "enum": [
+              "run",
+              "model",
+              "tool",
+              "assessment",
+              "approval",
+              "recovery",
+              "error",
+              "runtime"
+            ],
             "title": "Type",
             "type": "string"
           }
@@ -1197,6 +1207,16 @@
             "title": "Tool Name"
           },
           "type": {
+            "enum": [
+              "run",
+              "model",
+              "tool",
+              "assessment",
+              "approval",
+              "recovery",
+              "error",
+              "runtime"
+            ],
             "title": "Type",
             "type": "string"
           }

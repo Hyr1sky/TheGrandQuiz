@@ -7,13 +7,12 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   createSession,
   sendMessage,
   type ChatUiEvent,
 } from "../../shared/api/chat";
+import { SafeMarkdown } from "../../shared/components/SafeMarkdown";
 import { streamChatEvents } from "./chatEvents";
 import "./chat-panel.css";
 
@@ -276,11 +275,7 @@ export function ChatPanel({
             }
           >
             {message.role === "agent" ? (
-              <div>
-                <Markdown remarkPlugins={[remarkGfm]}>
-                  {message.content}
-                </Markdown>
-              </div>
+              <SafeMarkdown content={message.content} />
             ) : (
               <div>{message.content}</div>
             )}

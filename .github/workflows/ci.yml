@@ -67,3 +67,21 @@ jobs:
       - name: Web hosting adapter tests
         working-directory: web
         run: npm run test:sites
+
+      - name: Install Playwright browser
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Web scenario tests
+        working-directory: web
+        run: npm run test:e2e
+
+      - name: Upload Web scenario evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-scenario-evidence
+          path: |
+            web/playwright-report/
+            web/test-results/
+          if-no-files-found: ignore

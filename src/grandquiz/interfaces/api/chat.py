@@ -53,6 +53,10 @@ class ActiveResourceNotFoundError(LookupError):
     """Web turn 声明了不存在的当前资源。"""
 
 
+class ChatTurnInProgressError(RuntimeError):
+    """当前 session 已有未完成 turn；共享 Runner 不接受并发驱动。"""
+
+
 class MessageRequest(BaseModel):
     text: str = Field(min_length=1)
     active_resource_id: str | None = None
@@ -233,6 +237,10 @@ class ChatManager:
         session = self.get_session(session_id)
         if session is None:
             raise KeyError(session_id)
+        if session.status == "running" or (
+            session.current_task is not None and not session.current_task.done()
+        ):
+            raise ChatTurnInProgressError(session_id)
         if (
             active_resource_id is not None
             and self._persistence.store.get_resource(active_resource_id) is None
@@ -282,6 +290,7 @@ class ChatManager:
             )
         finally:
             session.status = "idle"
+            session.current_task = None
 
     @staticmethod
     def _append_event(

@@ -1,12 +1,12 @@
 # TheGrandQuiz Web Visual Language
 
-Status: selected（2026-07-24）
+Status: selected and synchronized（2026-07-28）
 
 ## Direction
 
-The selected Article Workspace direction is **墨迹星图**. It treats document structure,
-search progress, and citations as a navigable evidence constellation without turning the
-product into a science-fiction dashboard.
+The selected Local Web direction is **墨迹星图** with a **three-column learning workspace**.
+It treats document structure, reading evidence, assessment state, and Agent orchestration as
+one evidence constellation without turning the product into a science-fiction dashboard.
 
 - [Dark reference](assets/article-workspace-dark.webp)
 - [Light reference](assets/article-workspace-light.webp)
@@ -16,15 +16,19 @@ is not a decorative alternate page.
 
 ## Product hierarchy
 
-1. The article is the dominant reading surface.
-2. The document outline is a compact constellation map at the paper edge.
-3. The user question and grounded answer are editorial margin annotations, not chat bubbles.
-4. A citation visibly connects the answer to `section_path`, quote, and context.
-5. The Agentic Search projection is a restrained four-stage trail, not a KPI panel.
-6. Evidence is initially masked by frosted glass and can be deliberately revealed.
+1. The middle column is the dominant evidence surface: article while reading, question sheet
+   while assessing.
+2. The left column is the compact document outline or assessment-progress rail.
+3. The right column is a first-class, material-scoped Agent conversation rail. It may navigate
+   the middle surface, but never replaces exact citations or assessment state.
+4. The three columns form one task workspace, not a generic support-chat split.
+5. A citation visibly connects an answer to `section_path`, quote, and context.
+6. Evidence is initially masked by frosted glass and can be deliberately revealed after the
+   approved three-second hover, or immediately by click/keyboard.
+7. Observability is a live drawer projected from the event spine, not a dashboard home page.
 
-No screen may default to a dashboard grid, a generic chat split, or a collection of nested
-cards.
+No screen may default to a KPI grid or a collection of nested cards. Chat bubbles remain
+restrained; long-form evidence keeps editorial hierarchy.
 
 ## Semantic theme tokens
 
@@ -46,8 +50,12 @@ use copy and iconography.
 
 ## Typography
 
-- Reading: `"Songti SC"`, `"Noto Serif CJK SC"`, `"Source Han Serif SC"`, serif.
-- Interface: `"PingFang SC"`, `"Noto Sans CJK SC"`, `"Microsoft YaHei"`, sans-serif.
+The approved direction is Anthropic-like in tone—humanist, editorial, calm—not a brand clone.
+
+- Reading: `"Iowan Old Style"`, `Charter`, `"Songti SC"`, `"Noto Serif CJK SC"`,
+  `"Source Han Serif SC"`, serif.
+- Interface: `"Avenir Next"`, `Avenir`, `"Helvetica Neue"`, `"SF Pro Text"`,
+  `"PingFang SC"`, `"Noto Sans CJK SC"`, `"Microsoft YaHei"`, system-ui, sans-serif.
 - Long-form body: 15–17px, line height 1.8–2.0, comfortable line length around 60 Chinese
   characters.
 - No more than these two families appear on a screen.
@@ -55,6 +63,8 @@ use copy and iconography.
 ## Surfaces and controls
 
 - Separation order: whitespace → alignment → fine rule → subtle tint → border → shadow.
+- Colors, elevations, inset states, and status halos consume semantic theme tokens; component
+  CSS does not introduce raw shadow recipes.
 - Embossed or inset treatment is reserved for ask, reveal, theme, and compact run controls.
 - Decorative constellation lines remain low-contrast and never cross long-form body text.
 - Use a maintained icon library for functional icons. Do not encode meaning with emoji or
@@ -67,15 +77,15 @@ use copy and iconography.
 - Evidence reveal is a real button, supports `Enter`/`Space`, and exposes `aria-expanded`.
 - Every control has a visible `:focus-visible` ring.
 - Body and control text target WCAG AA contrast in both themes.
-- At narrow widths the outline becomes a horizontal section map and the annotation follows the
-  article; persistent controls must remain visible without horizontal page scrolling.
+- At narrow widths the persistent outline rail collapses out, article/assessment and Chat stack
+  vertically, and the current-material control remains visible without horizontal page scrolling.
 
 ## Responsive intent
 
-- `>= 1180px`: outline / article / annotation three-track editorial composition.
-- `760–1179px`: compact outline rail, article and annotation remain related.
-- `< 760px`: single reading column; outline becomes a scrollable section map, answer follows the
-  current section, and the run trail may wrap vertically.
+- `>= 1180px`: outline/progress / article-or-assessment / Chat three-column workspace.
+- `760–1179px`: compact outline rail above a full-width Chat row.
+- `< 760px`: article-or-assessment and Chat stack vertically; the outline rail is not persistent,
+  and no header, table, code block, or composer may widen the page viewport.
 
 ## Interaction states
 

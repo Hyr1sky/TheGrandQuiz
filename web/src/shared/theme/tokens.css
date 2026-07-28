@@ -30,6 +30,17 @@
   --shadow-hover: 0 0 0 1px rgb(74 211 244 / 48%), 0 10px 26px rgb(0 0 0 / 32%);
   --shadow-pressed: inset 5px 5px 12px rgb(0 0 0 / 30%),
     inset -4px -4px 10px rgb(38 61 74 / 14%);
+  --shadow-paper: 0 18px 45px rgb(0 0 0 / 22%);
+  --shadow-sheet: 0 24px 70px rgb(0 0 0 / 26%);
+  --shadow-overlay: 0 22px 60px rgb(0 0 0 / 34%);
+  --shadow-subtle: 0 4px 14px rgb(0 0 0 / 18%);
+  --shadow-active-inset: inset 3px 0 0 var(--evidence);
+  --shadow-evidence-inset: inset 4px 0 0 var(--evidence);
+  --shadow-glass-inset: inset 0 0 36px var(--glass-blur);
+  --shadow-status-muted: 0 0 0 4px color-mix(in srgb, var(--muted) 14%, transparent);
+  --shadow-status-active: 0 0 0 4px var(--evidence-soft);
+  --shadow-status-success: 0 0 0 4px color-mix(in srgb, var(--success) 14%, transparent);
+  --shadow-status-danger: 0 0 0 4px color-mix(in srgb, var(--danger) 14%, transparent);
   --background-image: url("/assets/star-map-observatory-dark.svg");
   --background-opacity: 0.96;
 }
@@ -62,6 +73,17 @@
   --shadow-hover: 0 0 0 1px rgb(8 124 161 / 42%), 0 10px 24px rgb(83 66 39 / 20%);
   --shadow-pressed: inset 5px 5px 12px rgb(137 116 77 / 14%),
     inset -4px -4px 10px rgb(255 255 255 / 70%);
+  --shadow-paper: 0 18px 45px rgb(83 66 39 / 8%);
+  --shadow-sheet: 0 24px 70px rgb(83 66 39 / 13%);
+  --shadow-overlay: 0 22px 60px rgb(83 66 39 / 22%);
+  --shadow-subtle: 0 4px 14px rgb(83 66 39 / 10%);
+  --shadow-active-inset: inset 3px 0 0 var(--evidence);
+  --shadow-evidence-inset: inset 4px 0 0 var(--evidence);
+  --shadow-glass-inset: inset 0 0 36px var(--glass-blur);
+  --shadow-status-muted: 0 0 0 4px color-mix(in srgb, var(--muted) 14%, transparent);
+  --shadow-status-active: 0 0 0 4px var(--evidence-soft);
+  --shadow-status-success: 0 0 0 4px color-mix(in srgb, var(--success) 14%, transparent);
+  --shadow-status-danger: 0 0 0 4px color-mix(in srgb, var(--danger) 14%, transparent);
   --background-image: url("/assets/star-map-observatory-light.svg");
   --background-opacity: 0.84;
 }

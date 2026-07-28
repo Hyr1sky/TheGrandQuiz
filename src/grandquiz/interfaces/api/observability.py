@@ -19,6 +19,16 @@ TraceStatus = Literal[
     "failed",
     "cancelled",
 ]
+TraceUiType = Literal[
+    "run",
+    "model",
+    "tool",
+    "assessment",
+    "approval",
+    "recovery",
+    "error",
+    "runtime",
+]
 
 
 class TraceSummary(BaseModel):
@@ -38,7 +48,7 @@ class TraceSummary(BaseModel):
 class TraceSpanView(BaseModel):
     span_id: str
     parent_span_id: str | None
-    type: str
+    type: TraceUiType
     status: Literal["running", "completed", "failed"]
     start_sequence: int
     started_at: float
@@ -50,7 +60,7 @@ class TraceSpanView(BaseModel):
 
 class TraceUiEvent(BaseModel):
     sequence: int
-    type: str
+    type: TraceUiType
     timestamp: float
     span_id: str | None
     parent_span_id: str | None
@@ -160,6 +170,24 @@ def _event_failed(event: AgentEvent) -> bool:
     return event.payload.get("status") in {"failed", "cancelled"}
 
 
+def _ui_type(internal_type: str) -> TraceUiType:
+    if internal_type == EventType.ERROR:
+        return "error"
+    if internal_type.startswith("model"):
+        return "model"
+    if internal_type.startswith("tool_call"):
+        return "tool"
+    if internal_type.startswith(("learning.", "web.assessment")):
+        return "assessment"
+    if internal_type.startswith("approval"):
+        return "approval"
+    if internal_type.startswith("recovery"):
+        return "recovery"
+    if internal_type.startswith(("agent_turn", "turn")) or ".run." in internal_type:
+        return "run"
+    return "runtime"
+
+
 def _project_events(events: Iterable[AgentEvent]) -> list[TraceUiEvent]:
     starts: dict[str, float] = {}
     projected: list[TraceUiEvent] = []
@@ -187,7 +215,7 @@ def _project_events(events: Iterable[AgentEvent]) -> list[TraceUiEvent]:
         projected.append(
             TraceUiEvent(
                 sequence=event.seq + 1,
-                type=event.type,
+                type=_ui_type(event.type),
                 timestamp=event.ts,
                 span_id=event.span_id,
                 parent_span_id=event.parent_span_id,
@@ -216,7 +244,7 @@ def _project_spans(roots: Iterable[Span]) -> list[TraceSpanView]:
             TraceSpanView(
                 span_id=span.span_id,
                 parent_span_id=span.parent_span_id,
-                type=span.type,
+                type=_ui_type(span.type),
                 status=status,
                 start_sequence=span.start_seq + 1,
                 started_at=span.start_ts,

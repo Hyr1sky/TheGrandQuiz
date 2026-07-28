@@ -1,6 +1,8 @@
 """ChatManager + ReAct session endpoint 的 TestClient 验证。"""
 
+import asyncio
 import json
+import threading
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -120,6 +122,40 @@ class _ActiveResourceAwareProvider:
         )
         return Completion(
             text=f"context={system_context} user={user_message}",
+            usage=Usage(prompt_tokens=50, completion_tokens=10),
+        )
+
+
+class _BlockingActiveResourceProvider:
+    """让第一轮保持 running，以验证并发请求不能覆盖 exact scope。"""
+
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        del role, tools
+        system_context = "\n".join(
+            message.content for message in messages if message.role == "system"
+        )
+        active_scope = next(
+            (
+                line
+                for line in system_context.splitlines()
+                if line.startswith("active_resource_id=")
+            ),
+            "",
+        )
+        self.started.set()
+        await asyncio.to_thread(self.release.wait)
+        return Completion(
+            text=active_scope,
             usage=Usage(prompt_tokens=50, completion_tokens=10),
         )
 
@@ -251,6 +287,52 @@ def test_message_unknown_active_resource_fails_closed(tmp_path: Path) -> None:
 
     assert response.status_code == 404
     assert response.json()["code"] == "resource_not_found"
+
+
+def test_concurrent_message_is_rejected_without_overwriting_active_resource(
+    tmp_path: Path,
+) -> None:
+    persistence = LearningPersistence(tmp_path / "learning.db")
+    first_resource = LearningResource.create(url="file://local/first.md").model_copy(
+        update={"topic": "First", "status": "read"}
+    )
+    second_resource = LearningResource.create(url="file://local/second.md").model_copy(
+        update={"topic": "Second", "status": "read"}
+    )
+    persistence.store.add_resource(first_resource)
+    persistence.store.add_resource(second_resource)
+    persistence.close()
+    provider = _BlockingActiveResourceProvider()
+
+    with TestClient(_app(tmp_path, provider)) as client:
+        session = client.post("/api/v1/chat/sessions").json()
+        sid = session["session_id"]
+        first = client.post(
+            f"/api/v1/chat/sessions/{sid}/messages",
+            json={
+                "text": "first turn",
+                "active_resource_id": first_resource.resource_id,
+            },
+        )
+        assert provider.started.wait(timeout=1)
+        second = client.post(
+            f"/api/v1/chat/sessions/{sid}/messages",
+            json={
+                "text": "second turn",
+                "active_resource_id": second_resource.resource_id,
+            },
+        )
+        provider.release.set()
+        events = _wait_for_events(client, sid)
+
+    assert first.status_code == 202
+    assert second.status_code == 409
+    assert second.json()["code"] == "turn_in_progress"
+    assert second.json()["retryable"] is True
+    ended = next(event for event in events if event["type"] == "chat.turn_ended")
+    output = str(ended["data"]["output"])
+    assert f"active_resource_id={first_resource.resource_id}" in output
+    assert second_resource.resource_id not in output
 
 
 def test_sse_delivers_turn_started_and_ended_with_output(tmp_path: Path) -> None:
