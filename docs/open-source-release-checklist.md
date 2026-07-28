@@ -13,8 +13,8 @@
   ruff / format / pyright / import-linter / Web lint 与 typecheck 全绿。
 - `uv build` 可以生成 sdist 与 wheel；macOS / Python 3.12 仓库外安装 smoke 为 17/17。
 - Replay cassette 与生产 Web bundle 已进入 wheel，不再依赖仓库工作目录或 `tests/fixtures/`。
-- SECURITY、CONTRIBUTING、issue/PR 模板与 RC 草案已就绪；LICENSE、Ubuntu CI、人工 dogfood
-  与发布 tag 仍是阻塞项。
+- MIT LICENSE、SECURITY、CONTRIBUTING、issue/PR 模板与 RC 草案已就绪；Ubuntu CI、人工
+  dogfood 与发布 tag 仍是阻塞项。
 
 ## 2. 发布目标与非目标
 
@@ -42,12 +42,12 @@
 
 ### OR-S1：许可证与来源审计
 
-- [ ] 选择许可证，并确认它与项目目标、旧仓库来源和依赖许可证兼容。
-- [ ] 检查 ADR-0001 / `docs/reference-map.md` 中提取移植的代码，确认有权按所选许可证再发布。
-- [ ] 检查真实 LLM cassette、测试材料和 Web Acquisition fixture，确认没有不应再分发的第三方正文。
-- [ ] 增加根目录 `LICENSE`。
-- [ ] 在 `pyproject.toml` 增加 license、author、repository、issues 等项目元数据。
-- [ ] 在 README 增加许可证和代码来源说明。
+- [x] 选择许可证，并确认它与项目目标、旧仓库来源和依赖许可证兼容。
+- [x] 检查 ADR-0001 / `docs/reference-map.md` 中提取移植的代码，确认有权按所选许可证再发布。
+- [x] 检查真实 LLM cassette、测试材料和 Web Acquisition fixture，确认没有不应再分发的第三方正文。
+- [x] 增加根目录 `LICENSE`。
+- [x] 在 `pyproject.toml` 增加 license、author、repository、issues 等项目元数据。
+- [x] 在 README 增加许可证和代码来源说明。
 
 验收：
 
@@ -59,7 +59,7 @@ unzip -p /tmp/grandquiz-dist/grandquiz-0.1.0-py3-none-any.whl \
 
 wheel metadata 必须出现正确许可证与项目链接，sdist / wheel 必须包含许可证文件。
 
-人工决策点：许可证类型必须由仓库所有者最终确认，维护会话不能自行替用户选择。
+人工决策记录：仓库所有者于 2026-07-28 明确选择 MIT。
 
 ### OR-S2：安装包运行资产自包含
 
@@ -202,7 +202,7 @@ Notes 必须逐项写明限制，不能用空入口占位。
 - [ ] 五道静态/测试门全绿。
 - [ ] Eval 17/17，HTML 报告可从已安装 wheel 离线生成。
 - [ ] sdist / wheel 均可构建，包内资源完整。
-- [ ] LICENSE、README、SECURITY、CONTRIBUTING 与 package metadata 一致。
+- [x] LICENSE、README、SECURITY、CONTRIBUTING 与 package metadata 一致。
 - [ ] 凭证与个人路径扫描无阻塞发现。
 - [ ] 两轮人工 dogfood 通过，trace_id 已记录在发布开发日志。
 - [ ] 已写 Release Notes：能力、限制、外部服务、数据位置、已知问题、升级/备份说明。

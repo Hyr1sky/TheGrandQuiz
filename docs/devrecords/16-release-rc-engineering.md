@@ -1,7 +1,7 @@
 # v0.1.0 可分发 RC：把“仓库里能跑”深化为“安装后也能跑”
 
 日期：2026-07-28  
-状态：自动化收口完成；等待许可证、Ubuntu CI 与人工 dogfood
+状态：自动化与 MIT 许可证收口完成；等待 Ubuntu CI 与人工 dogfood
 
 ## 这一步解决的是什么
 
@@ -117,7 +117,12 @@ README 现在提供从 clone、配置 `.env`、本地 ingest、react/quiz 到 We
 - `v0.1.0-rc.1` 发布说明草案。
 
 凭证模式扫描只命中了 `.env.example` 的 `sk-your-deepseek-key-here` 占位符及其历史提交，没有发现
-真实 Key 形态。许可证和来源再发布审计仍需在仓库所有者选择 MIT 或 Apache-2.0 后闭合。
+真实 Key 形态。仓库所有者随后明确选择 MIT；当前仓库提交作者均为 Hyr1sky，旧仓库迁移边界由
+ADR-0001 与 reference-map 记录。旧仓库公开 URL 当前不可访问，因此所有权依据是仓库所有者声明与
+本仓库迁移记录，而不是一次可复现的上游 LICENSE 检查。
+
+Python 直接依赖使用 MIT、BSD 或 Apache-2.0；Web lock 未发现强 copyleft 依赖。打包后的 React
+license comments 与 d3-celestial 独立许可证仍保留，项目 MIT 不覆盖这些第三方条款。
 
 ## 5. 本轮证据
 
@@ -134,11 +139,10 @@ README 现在提供从 clone、配置 `.env`、本地 ingest、react/quiz 到 We
 
 ## 6. 还不能做什么
 
-自动化完成不等于可以发布。当前还剩四个人工门：
+自动化完成不等于可以发布。当前还剩三个人工门：
 
-1. 仓库所有者选择许可证，并完成来源/fixture 再分发审计；
-2. push 后确认 GitHub Ubuntu CI；
-3. 用真实模型和真实材料完成 dogfood A/B，记录 trace_id、DB 增量、成本和主观结论；
-4. 3–5 名测试者完成 7–14 天小范围 RC，再决定 `v0.1.0` tag。
+1. push 后确认 GitHub Ubuntu CI；
+2. 用真实模型和真实材料完成 dogfood A/B，记录 trace_id、DB 增量、成本和主观结论；
+3. 3–5 名测试者完成 7–14 天小范围 RC，再决定 `v0.1.0` tag。
 
-因此本轮不会擅自添加 LICENSE、创建 tag、GitHub Release 或推送远程。
+因此本轮已添加仓库所有者批准的 MIT LICENSE，但不会擅自创建 tag、GitHub Release 或推送远程。

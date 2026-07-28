@@ -10,4 +10,4 @@ Type: AFK
 - [x] 说明 Web Search、Fetch、审批与 v0.1.0 Web 限制
 - [x] 增加 SECURITY.md 与 CONTRIBUTING.md
 - [x] 增加 issue / PR 模板，要求复现、trace_id、测试和架构影响
-- [ ] LICENSE 相关段落等待 RC-S1 后闭合
+- [x] LICENSE 相关段落等待 RC-S1 后闭合

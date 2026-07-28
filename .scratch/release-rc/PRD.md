@@ -20,7 +20,7 @@ v0.1.0 承诺本地材料 ingest、精确 Evidence、当前材料 Chat、逐题�
 3. README/SECURITY 对外部 LLM、Web untrusted、learning.db/trace.db、备份与清除给出一致说明。
 4. CONTRIBUTING 与 issue/PR 模板固定五道门、trace_id、cassette 和密钥纪律。
 5. CI 构建产物并在仓库外安装 smoke；不依赖 `.env`、真实 API、Docker 或生产 DB。
-6. LICENSE、package metadata 与来源说明在仓库所有者选择许可证后闭合。
+6. LICENSE、package metadata 与来源说明采用仓库所有者批准的 MIT 并保持一致。
 7. 自动门与两轮人工 dogfood 通过后，才准备 RC tag 和 GitHub Pre-release。
 
 ## Non-goals
@@ -45,6 +45,6 @@ scope freeze
 
 ## Human gates
 
-- 许可证由仓库所有者选择：MIT 或 Apache-2.0。
+- 许可证已由仓库所有者于 2026-07-28 选择为 MIT。
 - 真实模型、真实 Web Fetch 与生产 DB dogfood 需仓库所有者显式执行或授权。
 - RC/final tag 与 GitHub Release 需最终批准。

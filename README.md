@@ -187,5 +187,9 @@ PR 要求见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 许可证
 
-v0.1.0 RC 发布前由仓库所有者在 MIT 与 Apache-2.0 之间完成来源审计和最终选择。在根目录出现正式
-`LICENSE` 之前，不应把当前仓库内容视为已经授予开源许可。
+TheGrandQuiz 以 [MIT License](LICENSE) 发布，Copyright © 2026 Hyr1sky。允许个人与商业使用、
+修改、再发布和闭源集成，但必须保留原版权与许可证文本。
+
+项目由作者此前维护的 ScholarMate Digital Human 仓库提取式迁移而来；迁移边界记录在
+[ADR-0001](docs/adr/0001-extract-not-slim.md) 与 [reference-map.md](docs/reference-map.md)。
+依赖和打包资产继续适用各自许可证；例如 Web 星图资产的第三方声明随 wheel 一同分发。
