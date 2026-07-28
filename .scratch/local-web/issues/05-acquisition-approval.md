@@ -1,6 +1,6 @@
 # LW-S5 — Web Acquisition 与可恢复审批
 
-Status: blocked
+Status: post-v0.1 backlog
 Type: HITL
 
 ## Parent
@@ -26,3 +26,5 @@ FastAPI request 阻塞。
 ## Blocked by
 
 LW-S3。真实外部 LLM、Web Fetch 和生产 DB 写入需用户在验收阶段授权。
+
+本项不阻塞首次 v0.1.0；该版本在 README 与 Release Notes 中明确 Web 尚不提供 Acquisition/审批。

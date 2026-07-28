@@ -1,0 +1,46 @@
+name: Bug report
+description: 报告可复现的运行、数据、Web 或安装问题
+title: "[Bug] "
+labels: ["needs-triage"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 问题与影响
+      description: 发生了什么，阻断了哪个用户行为？
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 最小复现步骤
+      placeholder: "1. …\n2. …\n3. …"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit / tag 与环境
+      placeholder: "v0.1.0-rc.1, macOS 15, Python 3.12"
+    validations:
+      required: true
+  - type: input
+    id: trace
+    attributes:
+      label: 脱敏 trace_id
+      description: 没有则写 N/A；不要上传数据库、API Key 或私人材料。
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 错误、截图与网络/控制台证据
+      description: 请删除 secret、私人正文和完整 prompt。
+  - type: dropdown
+    id: regression
+    attributes:
+      label: 是否是回归
+      options:
+        - 不确定
+        - 是，之前版本可用
+        - 否，首次使用即失败
+    validations:
+      required: true

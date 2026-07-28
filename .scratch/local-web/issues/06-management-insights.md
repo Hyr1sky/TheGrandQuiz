@@ -1,6 +1,6 @@
 # LW-S6 — 资源、知识点、设置与学习轨迹
 
-Status: blocked
+Status: post-v0.1 backlog
 Type: AFK
 
 ## Parent
@@ -24,3 +24,5 @@ Type: AFK
 ## Blocked by
 
 LW-S3 and LW-S4.
+
+本项不阻塞首次 v0.1.0；管理与学习轨迹只在真实 RC 反馈证明优先级后进入下一轮。

@@ -1,0 +1,36 @@
+name: Feature request
+description: 从真实学习问题出发提出范围明确的能力
+title: "[Feature] "
+labels: ["needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 用户问题
+      description: 不描述实现，先说明谁在什么情境下遇到什么问题。
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 可验收结果
+      description: 什么行为发生时可以认为问题解决？
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 使用证据
+      description: 可提供脱敏 trace_id、频率或当前 workaround。
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: 非目标
+      description: 本次明确不解决什么？
+    validations:
+      required: true
+  - type: textarea
+    id: architecture
+    attributes:
+      label: 可能影响的架构边界
+      description: Event spine、workflow、scope、Evidence、persistence、API 或安全边界。

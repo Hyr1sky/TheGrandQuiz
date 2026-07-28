@@ -9,12 +9,12 @@
 
 - `main` 已完成稳定性加固、Document Structure、Agentic Search、GroundedDocumentAnswer、
   Tier-2 Eval 与 Web Acquisition WA-S1–S5。
-- 当前工程基线为 17 条 Eval、831 项 pytest、ruff / format / pyright / import-linter 全绿。
-- `uv build` 可以生成 sdist 与 wheel。
-- 已确认一个安装包缺陷：从仓库外运行当前 wheel 的 `grandquiz report` 只有 13/17 通过；
-  case14–17 因 Replay cassette 仍从 `tests/fixtures/` 仓库相对路径读取而报
-  `FileNotFoundError`。
-- 当前仓库没有 LICENSE、发布 tag、SECURITY 或面向贡献者的最小指南。
+- 当前工程基线为 17 条 Eval、899 项 pytest、37 项 Web unit、8 项 Playwright 场景；
+  ruff / format / pyright / import-linter / Web lint 与 typecheck 全绿。
+- `uv build` 可以生成 sdist 与 wheel；macOS / Python 3.12 仓库外安装 smoke 为 17/17。
+- Replay cassette 与生产 Web bundle 已进入 wheel，不再依赖仓库工作目录或 `tests/fixtures/`。
+- SECURITY、CONTRIBUTING、issue/PR 模板与 RC 草案已就绪；LICENSE、Ubuntu CI、人工 dogfood
+  与发布 tag 仍是阻塞项。
 
 ## 2. 发布目标与非目标
 
@@ -63,12 +63,12 @@ wheel metadata 必须出现正确许可证与项目链接，sdist / wheel 必须
 
 ### OR-S2：安装包运行资产自包含
 
-- [ ] 把 case14–17、Tier-2 judge 与 Acquisition Replay 所需 cassette 移入明确的 package resource
+- [x] 把 case14–17、Tier-2 judge 与 Acquisition Replay 所需 cassette 移入明确的 package resource
   目录，或把 `grandquiz report` 明确降为仅源码开发命令。
-- [ ] 所有运行资产通过 `importlib.resources` 或等价包内定位读取，禁止依赖当前工作目录。
-- [ ] 保持 cassette 内容、请求键、token 统计与 Replay 行为不变。
-- [ ] 增加“从仓库外运行已安装 wheel”的回归测试。
-- [ ] 决定 `grandquiz report` 存在 Eval 失败时的 CLI exit-code 契约，并加测试固定。
+- [x] 所有运行资产通过 `importlib.resources` 或等价包内定位读取，禁止依赖当前工作目录。
+- [x] 保持 cassette 内容、请求键、token 统计与 Replay 行为不变。
+- [x] 增加“从仓库外运行已安装 wheel”的回归测试。
+- [x] 决定 `grandquiz report` 存在 Eval 失败时的 CLI exit-code 契约，并加测试固定。
 
 首选验收：
 
@@ -88,13 +88,13 @@ cd /tmp
 
 ### OR-S3：新用户最短可用路径
 
-- [ ] README 增加面向用户的 Quickstart，而不仅是开发命令。
-- [ ] 说明 Python 3.12+、uv、可选 Docker 的关系；Docker 不能写成基础依赖。
-- [ ] 说明 basic / enrich 两个 LLM 角色，可否使用同一个 OpenAI-compatible provider。
-- [ ] 给出从 `.env.example` 到首次本地材料 ingest 的完整命令。
-- [ ] 给出 `react`、`quiz`、`trace` 和 `report` 的最小示例。
-- [ ] 说明 Tavily / SearXNG 都是可选 Search adapter，不配置时核心本地材料流程仍可用。
-- [ ] 给出常见配置错误和排查入口。
+- [x] README 增加面向用户的 Quickstart，而不仅是开发命令。
+- [x] 说明 Python 3.12+、uv、可选 Docker 的关系；Docker 不能写成基础依赖。
+- [x] 说明 basic / enrich 两个 LLM 角色，可否使用同一个 OpenAI-compatible provider。
+- [x] 给出从 `.env.example` 到首次本地材料 ingest 的完整命令。
+- [x] 给出 `react`、`quiz`、`trace` 和 `report` 的最小示例。
+- [x] 说明 Tavily / SearXNG 都是可选 Search adapter，不配置时核心本地材料流程仍可用。
+- [x] 给出常见配置错误和排查入口。
 
 Quickstart 最低验收路径：
 
@@ -108,14 +108,14 @@ clone → uv sync → cp .env.example .env → 配置 LLM
 
 ### OR-S4：数据、隐私与安全说明
 
-- [ ] 在 README 顶层明确：真实 LLM 调用会把 system prompt、用户消息、选定材料节点和工具上下文发送给
+- [x] 在 README 顶层明确：真实 LLM 调用会把 system prompt、用户消息、选定材料节点和工具上下文发送给
   `.env` 配置的外部服务。
-- [ ] 说明 Web 内容始终按 untrusted 输入处理，Search 不等于授权抓取或入库。
-- [ ] 说明人工审批发生在 KnowledgeItem 写入前。
-- [ ] 说明默认 learning DB / trace DB 路径、备份方法和删除方法。
-- [ ] 说明 trace 不存完整网页正文，但可能包含用户消息、工具参数和模型输出。
-- [ ] 增加 `SECURITY.md`，包含密钥泄漏、prompt injection、恶意网页和漏洞报告方式。
-- [ ] 对 `.env.example`、cassette、文档和 git 历史做一次凭证扫描。
+- [x] 说明 Web 内容始终按 untrusted 输入处理，Search 不等于授权抓取或入库。
+- [x] 说明人工审批发生在 KnowledgeItem 写入前。
+- [x] 说明默认 learning DB / trace DB 路径、备份方法和删除方法。
+- [x] 说明 trace 不存完整网页正文，但可能包含用户消息、工具参数和模型输出。
+- [x] 增加 `SECURITY.md`，包含密钥泄漏、prompt injection、恶意网页和漏洞报告方式。
+- [x] 对 `.env.example`、cassette、文档和 git 历史做一次凭证扫描。
 
 验收：README 与 SECURITY 对“哪些内容会离开本机、哪些内容会持久化、用户如何拒绝写入”给出一致答案。
 
@@ -134,31 +134,31 @@ clone → uv sync → cp .env.example .env → 配置 LLM
 
 ### OR-S6：仓库协作入口
 
-- [ ] 增加最小 `CONTRIBUTING.md`：环境安装、五道门、issue/PR 约定、cassette 重录规则和密钥纪律。
-- [ ] 说明 `.scratch/` 是本仓库的本地 Markdown issue tracker。
-- [ ] 增加 issue / PR 模板，至少要求复现、trace_id、测试与架构影响。
-- [ ] 决定是否增加 `CODE_OF_CONDUCT.md`；若不增加，在 Release Notes 说明当前为个人维护 alpha。
+- [x] 增加最小 `CONTRIBUTING.md`：环境安装、五道门、issue/PR 约定、cassette 重录规则和密钥纪律。
+- [x] 说明 `.scratch/` 是本仓库的本地 Markdown issue tracker。
+- [x] 增加 issue / PR 模板，至少要求复现、trace_id、测试与架构影响。
+- [x] 决定是否增加 `CODE_OF_CONDUCT.md`；若不增加，在 Release Notes 说明当前为个人维护 alpha。
 - [ ] 检查 GitHub 仓库描述、Topics、默认分支和私有贡献显示设置。
 
 ### OR-S7：构建与 CI 发布门
 
-- [ ] CI 保留 ruff、format、pyright、import-linter、pytest 与 Eval 17/17。
-- [ ] 新增 build job：构建 sdist / wheel，并检查产物内容。
-- [ ] 新增 installed-wheel smoke：在仓库外运行 `grandquiz --help` 和离线 `grandquiz report`。
-- [ ] 确认 CI 不依赖 `.env`、真实 API key、Docker 或本地生产 DB。
+- [x] CI 保留 ruff、format、pyright、import-linter、pytest 与 Eval 17/17。
+- [x] 新增 build job：构建 sdist / wheel，并检查产物内容。
+- [x] 新增 installed-wheel smoke：在仓库外运行 `grandquiz --help` 和离线 `grandquiz report`。
+- [x] 确认 CI 不依赖 `.env`、真实 API key、Docker 或本地生产 DB。
 - [ ] 至少在 Ubuntu CI 和作者 macOS 上完成验收；Windows 未验证则明确标注。
-- [ ] 检查最低 Python 3.12 与当前开发 Python 的兼容性。
+- [x] 检查最低 Python 3.12 与当前开发 Python 的兼容性。
 
 ### OR-S8：Local Web 最小产品闭环
 
-- [ ] 完成 `.scratch/local-web/PRD.md` 的 LW-S1–S3：FastAPI contract、稳定 SSE 投影和 React
+- [x] 完成 `.scratch/local-web/PRD.md` 的 LW-S1–S3：FastAPI contract、稳定 SSE 投影和 React
   Article Workspace。
-- [ ] 默认只监听 `127.0.0.1`，production build 与 API 同源，不默认开放宽松 CORS。
-- [ ] OpenAPI 生成 TypeScript client，CI 检查 schema/client 无 drift。
-- [ ] 资源列表不默认返回 raw_content；SSE 不泄露 system prompt、完整模型上下文、secret 或节点全文。
-- [ ] fake/replay provider + 临时 SQLite 下，资源 → outline → question → citation 主路径离线可验收。
-- [ ] 前端 lint、typecheck、unit test、production build 进入 CI。
-- [ ] README 说明 Web 启动、DB/trace 位置、外部 LLM 数据发送和 CLI 恢复入口。
+- [x] 默认只监听 `127.0.0.1`，production build 与 API 同源，不默认开放宽松 CORS。
+- [x] OpenAPI 生成 TypeScript client，CI 检查 schema/client 无 drift。
+- [x] 资源列表不默认返回 raw_content；SSE 不泄露 system prompt、完整模型上下文、secret 或节点全文。
+- [x] fake/replay provider + 临时 SQLite 下，资源 → outline → question → citation 主路径离线可验收。
+- [x] 前端 lint、typecheck、unit test、production build 进入 CI。
+- [x] README 说明 Web 启动、DB/trace 位置、外部 LLM 数据发送和 CLI 恢复入口。
 
 首个 v0.1.0 Web release 不强制 LW-S4–S6 全部完成；若考核、Acquisition/审批或管理页未交付，Release
 Notes 必须逐项写明限制，不能用空入口占位。

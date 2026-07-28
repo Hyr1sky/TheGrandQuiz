@@ -1,6 +1,6 @@
 # LW-S7 — Local Web 构建、同源启动与 v0.1.0 发布门
 
-Status: blocked
+Status: in progress
 Type: AFK
 
 ## Parent
@@ -25,4 +25,5 @@ Type: AFK
 
 ## Blocked by
 
-LW-S3–LW-S6 and the open-source release checklist.
+LW-S3–LW-S4 已完成；LW-S5/LW-S6 明确移到 v0.1.0 后。本项当前只受
+`docs/open-source-release-checklist.md` 的许可证、安装包、文档、CI 与人工 dogfood 发布门约束。

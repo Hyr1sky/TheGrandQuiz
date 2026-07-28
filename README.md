@@ -1,83 +1,191 @@
 # TheGrandQuiz
 
-学习型数字人：一个**可观测、可恢复、可评测**的学习 Agent Runtime。
+一个考核驱动、local-first 的个人学习 Agent：把材料变成带精确原文证据的知识库，通过逐题考核暴露
+薄弱概念，并在下一轮优先复考。
 
-用户输入学习目标 → Agent 发现资源 → 用户审批 → 构建知识库 → 追踪学习行为 → 调度技能（测验 / 面试 / 总结 / 路线规划）→ trace 与 eval 持续改进系统。产品形态不绑定 Web——Runtime 是核心，REST / CLI / 语音都是可插拔通道。
+TheGrandQuiz 同时包含一套可观测、可恢复、可评测的 Agent Runtime。Runtime 是产品的工程内核，
+不是对外承诺稳定 API 的通用框架。
 
-## 项目状态
+## v0.1.0 能做什么
 
-🟢 稳定性加固、修订化文档树、Agentic Search 与 GroundedDocumentAnswer 已收口（2026-07-19）。Runtime 以 `AgentEvent` 为唯一事件脊柱，具备 trace、恢复、Record/Replay、持久全局知识库、精确 DocumentNode citation、考核 workflow 与开放 ReAct 编排。
+- 从本地 Markdown / Text 深读并人工筛选 KnowledgeItem；
+- 按修订化 DocumentNode 保存原文结构，Evidence 可精确回到 revision/node/source span；
+- 用 CLI ReAct 或 Local Web 针对当前材料 Chat，回答不能静默扩大到全库；
+- 逐题进行选择题、开放问答和薄弱复考，由代码负责状态转移与 Learning Memory 记账；
+- 用 trace、Record/Replay 和 17 条 Eval 离线审计工具顺序、scope、引用和回答质量；
+- 在浏览器阅读文章、查看大纲、揭示 Evidence、完成考核并观察安全投影后的运行状态。
 
-Eval Harness 现有 17 条用例：全部运行 Tier-1 确定性规则门，case15 额外运行校准优先的 Tier-2 `grounded_answer` LLM grader；case16 离线保护 Acquisition 接口，case17 回放真实模型的 search → 用户选择 → ingest 决策与质量失败零 KB 污染。真实响应已录入 cassette；日常 pytest 和 `grandquiz report` 只做离线 Replay，分别显示 Rule/Quality、execution/judge tokens、rubric、逐维理由和逐字审计依据。
+首个版本是本机单用户候选版，不支持账号、多用户、云同步、公网服务、Web Acquisition/审批、
+Web 文章/知识点管理或连续“掌握度分数”。Web Acquisition 后端和 CLI 路径已存在，但浏览器中的
+可恢复审批属于 v0.1.0 后续功能。
 
-Web Acquisition 的 WA-S1–S5 已完成：Trafilatura 正文抽取、结构化质量门、可选 Tavily / SearXNG `web_search`、Search/Fetch Record-Replay 均已接入原有事件脊柱与确定性 ingest workflow。Tavily 只需无需信用卡的免费 API key；SearXNG 提供 loopback-only 最小单容器配置，但 Docker 仍不是基础依赖。两种 provider 的真实搜索与 search → 用户选择 → ingest ReAct dogfood 均已验收。
+## 数据与外部服务
 
-Local Web 的 LW-S1–S4 与 Web Runtime WR-O1–O4 已完成：FastAPI 提供资源/大纲/有界节点读取、
-GroundedDocumentAnswer、逐题考核与安全 trace observatory；React Article / Assessment Workspace
-采用“墨迹星图”亮/暗主题，支持 exact 当前材料、跨轮 Chat、Evidence reveal、精确 citation 与底部罗盘
-实时观测。完整执行仍进入 trace.db，浏览器事件不暴露 prompt、模型输出、工具参数或节点全文。
+TheGrandQuiz 默认把数据保存在本机：
 
-## 文档
-
-| 文档 | 内容 |
-| --- | --- |
-| [docs/roadmap.md](docs/roadmap.md) | 初始产品与架构路线图（领域模型 / Subagent / 工具 / 开发阶段） |
-| [docs/architecture.md](docs/architecture.md) | 目标架构：四层分层 + 事件总线脊柱，五大基建模块设计要点 |
-| [docs/reference-map.md](docs/reference-map.md) | 参考实现映射（scholarmate-digital-human 移植清单 + 外部参考仓库） |
-| [docs/adr/](docs/adr/) | 架构决策记录 |
-| [.scratch/tier2-eval-judge/PRD.md](.scratch/tier2-eval-judge/PRD.md) | 已完成：校准优先的 Tier-2 LLM grader 与质量报告闭环 |
-| [.scratch/local-web/PRD.md](.scratch/local-web/PRD.md) | 进行中：FastAPI + React local-first Article Workspace 与 Web v0.1.0 |
-| [docs/devrecords/](docs/devrecords/) | 各轮长任务的实现、真实 dogfood、成本与门禁记录 |
-| [docs/guides/web-acquisition-dogfood.md](docs/guides/web-acquisition-dogfood.md) | Web Acquisition 独立终端 dogfood、trace 与 DB 验收指南 |
-| [docs/guides/web-runtime-observability-dogfood.md](docs/guides/web-runtime-observability-dogfood.md) | Local Web 当前材料、跨轮 Chat、考核与运行观测验收指南 |
-| [docs/open-source-release-checklist.md](docs/open-source-release-checklist.md) | v0.1.0 开源发布前的阻塞项、验收门与人工 dogfood 清单 |
-
-## 开发
-
-依赖 [uv](https://docs.astral.sh/uv/)：
-
-```bash
-uv sync --dev          # 创建 venv 并安装依赖（自动获取 Python 3.12）
-uv run pytest          # 测试
-uv run ruff check .    # lint
-uv run ruff format .   # 格式化
-uv run pyright         # 类型检查（strict）
-uv run pre-commit install  # 安装提交钩子
-uv run grandquiz search "MySQL 面试高频考点"  # 不经 LLM 验证已配置的搜索 provider
-uv run grandquiz report    # 离线 Replay 全部 Eval，导出 ~/.grandquiz/eval-report/index.html
-uv run grandquiz-web       # API，仅监听 127.0.0.1:8000
-open ~/.grandquiz/eval-report/index.html
+```text
+~/.grandquiz/learning.db   # 材料、revision、KnowledgeItem、Evidence、Learning Memory
+~/.grandquiz/trace.db      # 用户消息、模型/工具事件、token、错误与执行树
+~/.grandquiz/eval-report/  # 离线 Eval HTML
 ```
 
-本地 Web 开发使用两个终端，均只监听 loopback：
+配置真实 LLM 后，system prompt、用户消息、选定材料节点和工具上下文会发送给 `.env` 中配置的
+OpenAI-compatible 服务。不要导入无权发送给该服务的私人、受限或机密材料。
+
+Web Search 只是返回候选，不代表允许抓取或入库；选中 URL 后的内容仍按不可信输入处理，并经过
+大小、域名、质量、prompt-injection 和人工审批边界。Trace 不保存完整抓取网页正文，但可能包含
+用户消息、工具参数、模型输出和引用片段，因此也应按敏感数据保护。
+
+默认 Web 服务只监听 `127.0.0.1`，没有账号或鉴权。不要把它直接暴露到局域网或公网。完整安全模型、
+漏洞报告和密钥处理见 [SECURITY.md](SECURITY.md)。
+
+## Quickstart
+
+### 1. 准备环境
+
+需要 Python 3.12+、[uv](https://docs.astral.sh/uv/) 和一个 OpenAI-compatible LLM。Docker 不是基础依赖；
+只有选择自托管 SearXNG 时才需要。
+
+```bash
+git clone https://github.com/Hyr1sky/TheGrandQuiz.git
+cd TheGrandQuiz
+uv sync
+cp .env.example .env
+```
+
+编辑 `.env`。`LLM_*` 是 basic 角色（判卷、基础判断），`ENRICH_LLM_*` 是 enrich 角色（Reader、出题）。
+两个角色可以指向同一个 provider/model，但仍需分别填写两组变量，避免隐藏 fallback。
+
+### 2. 导入第一份材料
+
+建议先用你有权处理的本地 Markdown 或纯文本：
+
+```bash
+uv run grandquiz ingest ./notes/agent-runtime.md --task "Agent Runtime"
+```
+
+Reader 会展示候选 KnowledgeItem；只有你确认保留的条目才会原子写入知识库。拒绝或失败不会留下半份
+知识快照。
+
+### 3. 对话或考核
+
+```bash
+uv run grandquiz react "Agent Runtime 学习"
+uv run grandquiz quiz "Agent Runtime 复习" --rounds 3
+```
+
+`title` 只是本次会话横幅，不划分知识库或材料范围。需要指定材料时，在 ReAct 中明确选择，Web 中以顶栏
+“当前材料”为 exact scope。
+
+### 4. 查看 Trace 与离线 Eval
+
+每次运行结束会打印 `trace_id`：
+
+```bash
+uv run grandquiz trace <trace_id>
+uv run grandquiz report
+```
+
+`report` 使用安装包自带的 Replay cassette，默认不读取 `.env`、不访问公网、不调用真实模型。
+
+### 5. 启动 Local Web
+
+已安装的 package 或仓库环境都可以用一条命令启动同源生产工作台：
 
 ```bash
 uv run grandquiz-web
-cd web
-npm ci
-npm run dev               # http://127.0.0.1:5173
 ```
 
-前端契约和自动门：
+浏览器打开 `http://127.0.0.1:8000`。服务同时提供打包后的 React 页面与 `/api/v1`，并且只监听
+loopback。CLI 继续作为 ingest、恢复和 trace 审计入口；v0.1.0 的 Web 尚不提供 Acquisition/审批或
+资源管理。
+
+修改前端源码时再使用两个终端进入开发模式：
 
 ```bash
+# terminal 1
+uv run grandquiz-web
+
+# terminal 2
 cd web
-npm run api:check         # OpenAPI / TypeScript 生成物无 drift
-npm test                  # Vitest + Testing Library
-npm run typecheck
-npm run build
-npm run test:sites
+npm ci
+npm run dev
 ```
 
-Web Search 默认不启用。在 `.env` 配置 `TAVILY_API_KEY` 即可使用 Tavily；也可按
-[`deploy/searxng/README.md`](deploy/searxng/README.md) 启动本机 SearXNG。两者同时存在时必须用
-`WEB_SEARCH_PROVIDER=tavily|searxng` 显式选择，避免静默改变供应商。
+开发页面位于 `http://127.0.0.1:5173`，Vite 把 API 请求代理到本地后端。
 
-CI 在每次 push / PR 上同时跑 Python 静态门/测试/Eval 与 Web 契约、测试、类型、构建门，全绿才能合并。
+## 可选 Web Search
 
-## 工程规范
+不配置 Search provider 时，本地材料、Chat、Quiz 和 Eval 都可正常使用。
 
-- **分层守卫**：`kernel/` 禁止 import `domain/`（已由 import-linter 在 CI 强制，第 5 道门）
-- **提交规范**：conventional commits；issue 驱动开发，每个 issue 对应一个独立可验收的 PR
-- **决策记录**：架构级决策写入 `docs/adr/`（现 9 篇），领域术语沉淀在 [CONTEXT.md](CONTEXT.md)
-- **密钥纪律**：凭证只走 `.env`（已 gitignore），任何 key 不进 git 历史
+- Tavily：在 `.env` 设置 `TAVILY_API_KEY`；
+- SearXNG：按 [deploy/searxng/README.md](deploy/searxng/README.md) 启动本机服务并设置
+  `SEARXNG_URL`；
+- 两者同时存在时必须设置 `WEB_SEARCH_PROVIDER=tavily|searxng`，避免静默切换供应商。
+
+可先只搜索候选，不调用 LLM、不抓取或入库：
+
+```bash
+uv run grandquiz search "MySQL 面试高频考点"
+```
+
+## 备份、恢复与清除
+
+操作数据库前先停止 CLI/Web 进程。备份整个数据目录可以同时保留学习状态与 trace：
+
+```bash
+cp -a ~/.grandquiz ~/.grandquiz-backup
+```
+
+恢复时先保留当前目录，再把备份复制回来。需要清除本地数据时，优先把目录移动到一个可恢复的位置，
+确认无误后再由操作系统删除：
+
+```bash
+mv ~/.grandquiz ~/.grandquiz-retired
+```
+
+删除 `.env` 只会移除本机配置，不会撤销已经发送给外部服务的数据；外部服务的数据保留规则由其供应商决定。
+
+## 开发与质量门
+
+```bash
+uv sync --dev
+uv run ruff check .
+uv run ruff format --check .
+uv run pyright
+uv run lint-imports
+uv run pytest
+uv run python -m grandquiz.evals
+
+cd web
+npm ci
+npm run lint
+npm run api:check
+npm test
+npm run typecheck
+npm run build:package
+npm run test:sites
+npm run test:e2e
+```
+
+CI 在每次 push / PR 上运行 Python、Eval、Web、OpenAPI 和 Playwright 门。贡献约定、cassette 重录纪律和
+PR 要求见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## 架构与项目资料
+
+| 文档 | 内容 |
+| --- | --- |
+| [CONTEXT.md](CONTEXT.md) | 产品领域语言权威表 |
+| [docs/architecture.md](docs/architecture.md) | 分层、事件脊柱与核心设计判断 |
+| [docs/roadmap.md](docs/roadmap.md) | 发展路线与 walking skeleton |
+| [docs/adr/](docs/adr/) | 不可逆架构决策 |
+| [docs/devrecords/](docs/devrecords/) | 实现、dogfood、成本与门禁记录 |
+| [docs/open-source-release-checklist.md](docs/open-source-release-checklist.md) | v0.1.0 发布门 |
+
+项目以提取式迁移自作者的旧 ScholarMate Digital Human 仓库建立，迁移边界与未带入的问题记录在
+[ADR-0001](docs/adr/0001-extract-not-slim.md) 和 [reference-map.md](docs/reference-map.md)。
+
+## 许可证
+
+v0.1.0 RC 发布前由仓库所有者在 MIT 与 Apache-2.0 之间完成来源审计和最终选择。在根目录出现正式
+`LICENSE` 之前，不应把当前仓库内容视为已经授予开源许可。
