@@ -372,8 +372,9 @@ eval extension points before adding many tools.
 
 ## Local Web 后续竖切
 
-LW-S1–S4 已交付 Article、Chat、Assessment 与 Trace Observatory 主路径。后续只保留三条稳定方向，
-具体执行项进入 GitHub Issues：
+LW-S1–S4 已交付 Article、Chat、Assessment 与 Trace Observatory 主路径。后续只保留三条稳定方向；
+个人开发的具体执行项默认记录在 gitignored 的 `.scratch/`，有协作者参与时再把稳定事项发布为
+GitHub Issues：
 
 1. **LW-S7：v0.1.0 发布门**——把生产 React build 作为明确的 package/release artifact，由 FastAPI
    同源托管；验证 loopback 启动、静态资源打包、OpenAPI drift、前后端 CI、installed-wheel smoke、

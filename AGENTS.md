@@ -144,8 +144,9 @@ hook、recovery、eval 全部建在其上。
 
 ### Issue tracker
 
-公开 backlog 以 GitHub Issues 为准；稳定产品方向进入 `docs/roadmap.md`，不可逆决策进入
-`docs/adr/`。本地草稿不得成为代码或公开文档的依赖。See `docs/agents/issue-tracker.md`.
+个人开发的 PRD 与 issues 默认放在 gitignored 的 `.scratch/<feature-slug>/`；协作者参与或仓库所有者明确
+要求公开跟踪后，才把稳定、可执行的事项发布到 GitHub Issues。稳定产品方向进入 `docs/roadmap.md`，
+不可逆决策进入 `docs/adr/`。See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
