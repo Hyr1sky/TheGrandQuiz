@@ -24,8 +24,9 @@
 
 </div>
 
-> **正考级不只是帮你读完材料。** 它通过有证据的对话和逐题考核，找出“以为会了、其实还没会”的
+> **正考级不只是帮你读完材料。** 它通过有证据的对话和逐题考核，找出掌握得似是而非的
 > 地方，把薄弱概念记下来，并在下一轮优先复考。
+> 非常遗憾的灵感来源，在经历了这么多年的教育之后，最高效的记忆方法可能还是考。
 
 ## 一条真正闭合的学习回路
 
@@ -224,6 +225,12 @@ PR 要求见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 | [docs/devrecords/](docs/devrecords/) | 实现、dogfood、成本与门禁记录 |
 | [docs/open-source-release-checklist.md](docs/open-source-release-checklist.md) | v0.1.0 发布门 |
 
+## 反馈与合作
+
+目前项目还处于一个半成品的状态，很多细节还没有打磨。同时这个 Eval Harness 的架子我并没有发挥出完整的作用，距离所
+谓的“自进化”还有些距离，同时数据飞轮也还没有建立。
+
+如果有好的 idea 或者不佳体验的话，欢迎在 issue 中讨论。
 
 ## 许可证
 
@@ -231,3 +238,5 @@ TheGrandQuiz 以 [MIT License](LICENSE) 发布，Copyright © 2026 Hyr1sky。允
 修改、再发布和闭源集成，但必须保留原版权与许可证文本。
 
 依赖与打包资产继续适用各自许可证；第三方声明随对应分发物一同提供。
+
+> Powered by Codex, Claude Code and Hyr1sky's 🧠.
