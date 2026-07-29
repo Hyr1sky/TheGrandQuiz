@@ -354,6 +354,60 @@ async def test_stream_complete_assembles_tool_argument_fragments_inside_provider
     ]
 
 
+async def test_stream_complete_preserves_text_that_precedes_a_tool_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_streaming_client(
+        monkeypatch,
+        [
+            _FakeChunk("我先查一下。"),
+            _FakeChunk(
+                tool_calls=[
+                    _FakeDeltaToolCall(
+                        0,
+                        id="call_1",
+                        name="echo",
+                        arguments='{"text":"hi"}',
+                    )
+                ]
+            ),
+        ],
+    )
+    provider = OpenAICompatProvider(
+        {
+            "basic": RoleConfig(
+                api_key="k",
+                base_url="u",
+                model="m-basic",
+            )
+        }
+    )
+
+    events = [
+        event
+        async for event in provider.stream_complete(
+            [Message(role="user", content="hi")],
+            role="basic",
+        )
+    ]
+
+    assert events == [
+        TextDelta(text="我先查一下。"),
+        CompletionFinished(
+            completion=Completion(
+                text="我先查一下。",
+                tool_calls=[
+                    ToolCall(
+                        id="call_1",
+                        name="echo",
+                        arguments={"text": "hi"},
+                    )
+                ],
+            )
+        ),
+    ]
+
+
 async def test_complete_omits_extra_body_when_thinking_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

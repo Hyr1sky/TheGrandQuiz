@@ -4,7 +4,7 @@ import asyncio
 import uuid
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal, cast
+from typing import Literal, cast
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -306,26 +306,12 @@ class ChatManager:
 
     async def _run_turn(self, session: _ChatSession, text: str, turn_id: str) -> None:
         try:
-            output = await session.runner.run_agent_turn(text)
-            self._append_event(
-                session,
-                "chat.turn_ended",
-                {"turn_id": turn_id, "output": output},
-            )
+            await session.runner.run_agent_turn(text)
         except asyncio.CancelledError:
-            session.cancelled_turn_ids.add(turn_id)
-            self._append_event(
-                session,
-                "chat.turn_cancelled",
-                {"turn_id": turn_id},
-            )
             raise
-        except Exception as exc:
-            self._append_event(
-                session,
-                "chat.error",
-                {"turn_id": turn_id, "error": type(exc).__name__},
-            )
+        except Exception:
+            # Runner 已在同一 AgentEvent 脊柱上发出失败终态；SSE 只消费该投影。
+            pass
         finally:
             if session.current_turn_id == turn_id:
                 session.status = "idle"
@@ -356,6 +342,30 @@ class ChatManager:
                 "chat.turn_started",
                 {"turn_id": turn_id},
             )
+        elif event.type == EventType.AGENT_TURN_ENDED:
+            if event.payload.get("cancelled") is True:
+                session.cancelled_turn_ids.add(turn_id)
+                self._append_event(
+                    session,
+                    "chat.turn_cancelled",
+                    {"turn_id": turn_id},
+                )
+            elif event.payload.get("ok") is True:
+                output = event.payload.get("output")
+                self._append_event(
+                    session,
+                    "chat.turn_ended",
+                    {
+                        "turn_id": turn_id,
+                        "output": output if isinstance(output, str) else "",
+                    },
+                )
+            else:
+                self._append_event(
+                    session,
+                    "chat.error",
+                    {"turn_id": turn_id, "error": "turn_failed"},
+                )
         elif event.type == EventType.MODEL_OUTPUT_DELTA:
             text = event.payload.get("text")
             if isinstance(text, str) and text:
@@ -397,15 +407,11 @@ class ChatManager:
             )
 
     @staticmethod
-    def _tool_call_data(payload: Mapping[str, Any], turn_id: str) -> dict[str, object]:
+    def _tool_call_data(payload: Mapping[str, object], turn_id: str) -> dict[str, object]:
         name = payload.get("tool_name")
-        arguments = payload.get("arguments")
         return {
             "turn_id": turn_id,
             "name": name if isinstance(name, str) else "",
-            "arguments": dict(cast("dict[str, object]", arguments))
-            if isinstance(arguments, dict)
-            else {},
         }
 
     def _destroy_session_sync(self) -> None:

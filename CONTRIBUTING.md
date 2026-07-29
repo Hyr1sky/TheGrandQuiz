@@ -21,11 +21,11 @@ cd web && npm ci
 1. [CONTEXT.md](CONTEXT.md)；
 2. [docs/architecture.md](docs/architecture.md)；
 3. 对应 [ADR](docs/adr/)；
-4. 相关 GitHub Issue 与 [roadmap](docs/roadmap.md)。
+4. 相关公开 GitHub Issue（若已有协作者参与）与 [roadmap](docs/roadmap.md)。
 
-GitHub Issues 是公开 backlog 与协作状态的唯一权威。一个 PR 对应一个可验收行为；稳定产品方向写入
-roadmap，架构级决策写 ADR，领域术语只在 `CONTEXT.md` 维护权威定义。本地草稿不得成为代码或公开文档
-的依赖。
+维护者个人规划默认放在 gitignored 的 `.scratch/`，不提交；有协作者参与后，GitHub Issues 才是公开 backlog
+与协作状态的权威。一个 PR 对应一个可验收行为；稳定产品方向写入 roadmap，架构级决策写 ADR，领域术语
+只在 `CONTEXT.md` 维护权威定义。协作者不得依赖尚未发布的本地草稿。
 
 ## Architecture rules
 

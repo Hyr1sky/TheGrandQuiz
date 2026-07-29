@@ -15,7 +15,7 @@ import json
 import os
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from openai import AsyncOpenAI, Omit, omit
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
@@ -88,6 +88,17 @@ def _to_oai_tools(tools: Sequence[ToolSpec]) -> list[ChatCompletionToolParam]:
     return cast("list[ChatCompletionToolParam]", specs)
 
 
+def _decode_tool_arguments(arguments_json: str) -> dict[str, Any]:
+    """把厂商 JSON 参数归一为内部 dict；畸形值进入统一的可恢复标记态。"""
+    try:
+        decoded: Any = json.loads(arguments_json)
+    except json.JSONDecodeError:
+        decoded = None
+    if isinstance(decoded, dict):
+        return cast("dict[str, Any]", decoded)
+    return mark_malformed_arguments(arguments_json)
+
+
 def _parse_tool_calls(message: Any) -> list[ToolCall] | None:
     """OpenAI ``response.choices[0].message.tool_calls`` → 内部 ``ToolCall`` 列表（无则 None）。
 
@@ -106,30 +117,14 @@ def _parse_tool_calls(message: Any) -> list[ToolCall] | None:
     parsed: list[ToolCall] = []
     for tc in raw:
         arguments_json: str = tc.function.arguments or "{}"
-        try:
-            decoded: Any = json.loads(arguments_json)
-        except json.JSONDecodeError:
-            decoded = None
-            is_object = False
-        else:
-            is_object = isinstance(decoded, dict)
-        arguments = (
-            cast("dict[str, Any]", decoded)
-            if is_object
-            else mark_malformed_arguments(arguments_json)
+        parsed.append(
+            ToolCall(
+                id=tc.id,
+                name=tc.function.name,
+                arguments=_decode_tool_arguments(arguments_json),
+            )
         )
-        parsed.append(ToolCall(id=tc.id, name=tc.function.name, arguments=arguments))
     return parsed
-
-
-def _decode_tool_arguments(arguments_json: str) -> dict[str, Any]:
-    try:
-        decoded: Any = json.loads(arguments_json)
-    except json.JSONDecodeError:
-        decoded = None
-    if isinstance(decoded, dict):
-        return cast("dict[str, Any]", decoded)
-    return mark_malformed_arguments(arguments_json)
 
 
 @dataclass(frozen=True)
@@ -143,6 +138,17 @@ class RoleConfig:
     # 思考模式开关。Qwen3/DashScope 用 extra_body 的 enable_thinking=False 关（非流式往往必须关）；
     # deepseek 侧是否认同名参数由 smoke 验证（见 scripts/smoke_llm.py）。
     disable_thinking: bool = False
+
+
+@dataclass(frozen=True)
+class _PreparedChatRequest:
+    """complete 与 stream 共用的厂商请求准备结果。"""
+
+    client: AsyncOpenAI
+    model: str
+    messages: list[ChatCompletionMessageParam]
+    extra_body: dict[str, object] | None
+    tools: list[ChatCompletionToolParam] | Omit
 
 
 def _read_role(prefix: str) -> RoleConfig:
@@ -183,6 +189,25 @@ class OpenAICompatProvider:
         """各角色解析后的 model id——喂 Recording/Replay 算 replay 键（防跨模型串键）。"""
         return {role: cfg.model for role, cfg in self._configs.items()}
 
+    def _prepare_request(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role,
+        tools: Sequence[ToolSpec] | None,
+    ) -> _PreparedChatRequest:
+        config = self._configs[role]
+        extra_body: dict[str, object] = {}
+        if config.disable_thinking:
+            extra_body["enable_thinking"] = False
+        return _PreparedChatRequest(
+            client=self._clients[role],
+            model=config.model,
+            messages=_to_oai_messages(messages),
+            extra_body=extra_body or None,
+            tools=_to_oai_tools(tools) if tools else omit,
+        )
+
     async def complete(
         self,
         messages: Sequence[Message],
@@ -190,24 +215,18 @@ class OpenAICompatProvider:
         role: Role = "basic",
         tools: Sequence[ToolSpec] | None = None,
     ) -> Completion:
-        config = self._configs[role]
-        client = self._clients[role]
-        oai_messages = _to_oai_messages(messages)
-        extra_body: dict[str, object] = {}
-        if config.disable_thinking:
-            extra_body["enable_thinking"] = False
+        request = self._prepare_request(messages, role=role, tools=tools)
         # tools 走 omit 哨兵：无工具 → 与"不传该参数"等价（线上请求逐字节不变），既有纯文本
         # completion 路径与 golden cassette 完全不受影响（replay_key 也不含 tools）。
-        oai_tools: list[ChatCompletionToolParam] | Omit = _to_oai_tools(tools) if tools else omit
-        response = await client.chat.completions.create(
-            model=config.model,
-            messages=oai_messages,
+        response = await request.client.chat.completions.create(
+            model=request.model,
+            messages=request.messages,
             # temperature=0：出题（enrich）必须贪心解码——温度采样会让同一 message 每次录出不同题，
             # 毁掉 record/replay 的可复现（replay_key 只按 message 算、不含温度，故这不改键、只稳定
             # 录制输出）；判卷 / ReAct（basic）同样设 0 求判决稳定。
             temperature=0,
-            extra_body=extra_body or None,
-            tools=oai_tools,
+            extra_body=request.extra_body,
+            tools=request.tools,
         )
         message = response.choices[0].message
         tool_calls = _parse_tool_calls(message)
@@ -226,18 +245,13 @@ class OpenAICompatProvider:
         tools: Sequence[ToolSpec] | None = None,
     ) -> AsyncIterator[ProviderStreamEvent]:
         """把 OpenAI chunk 归一成文本增量，并在边界内组装完整 tool calls。"""
-        config = self._configs[role]
-        client = self._clients[role]
-        extra_body: dict[str, object] = {}
-        if config.disable_thinking:
-            extra_body["enable_thinking"] = False
-        oai_tools: list[ChatCompletionToolParam] | Omit = _to_oai_tools(tools) if tools else omit
-        raw_stream = await client.chat.completions.create(
-            model=config.model,
-            messages=_to_oai_messages(messages),
+        request = self._prepare_request(messages, role=role, tools=tools)
+        raw_stream = await request.client.chat.completions.create(
+            model=request.model,
+            messages=request.messages,
             temperature=0,
-            extra_body=extra_body or None,
-            tools=oai_tools,
+            extra_body=request.extra_body,
+            tools=request.tools,
             stream=True,
             stream_options={"include_usage": True},
         )
@@ -247,7 +261,6 @@ class OpenAICompatProvider:
         tool_fragments: dict[int, dict[str, str]] = {}
         prompt_tokens = 0
         completion_tokens = 0
-        mode: Literal["text", "tools"] | None = None
 
         async for chunk in stream:
             chunk_usage = getattr(chunk, "usage", None)
@@ -265,23 +278,11 @@ class OpenAICompatProvider:
                 getattr(delta, "tool_calls", None) or [],
             )
 
-            if content and raw_tool_calls:
-                raise ProviderStreamProtocolError("同一个上游 chunk 同时包含文本与 tool call")
             if content:
-                if mode == "tools":
-                    raise ProviderStreamProtocolError(
-                        "一次 completion 不能同时产出文本与 tool calls"
-                    )
-                mode = "text"
                 text_parts.append(content)
                 yield TextDelta(text=content)
 
             for raw_tool_call in raw_tool_calls:
-                if mode == "text":
-                    raise ProviderStreamProtocolError(
-                        "一次 completion 不能同时产出文本与 tool calls"
-                    )
-                mode = "tools"
                 index = int(raw_tool_call.index)
                 fragment = tool_fragments.setdefault(
                     index,

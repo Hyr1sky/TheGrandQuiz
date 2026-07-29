@@ -9,7 +9,7 @@
 
 - `main` 已完成稳定性加固、Document Structure、Agentic Search、GroundedDocumentAnswer、
   Tier-2 Eval 与 Web Acquisition WA-S1–S5。
-- 当前工程基线为 17 条 Eval、905 项 pytest、41 项 Web unit、12 项 Playwright 场景；
+- 当前工程基线为 17 条 Eval、906 项 pytest、41 项 Web unit、12 项 Playwright 场景；
   ruff / format / pyright / import-linter / Web lint 与 typecheck 全绿。
 - `uv build` 可以生成 sdist 与 wheel；macOS / Python 3.12 仓库外安装 smoke 为 17/17。
 - Replay cassette 与生产 Web bundle 已进入 wheel，不再依赖仓库工作目录或 `tests/fixtures/`。
@@ -135,7 +135,7 @@ clone → uv sync → cp .env.example .env → 配置 LLM
 ### OR-S6：仓库协作入口
 
 - [x] 增加最小 `CONTRIBUTING.md`：环境安装、五道门、issue/PR 约定、cassette 重录规则和密钥纪律。
-- [x] 明确 GitHub Issues 是公开 backlog；本地草稿不构成代码或公开文档依赖。
+- [x] 明确个人规划默认进入 gitignored 的 `.scratch/`；协作者参与后，GitHub Issues 才成为公开协作权威。
 - [x] 增加 issue / PR 模板，至少要求复现、trace_id、测试与架构影响。
 - [x] 决定是否增加 `CODE_OF_CONDUCT.md`；若不增加，在 Release Notes 说明当前为个人维护 alpha。
 - [ ] 检查 GitHub 仓库描述、Topics、默认分支和私有贡献显示设置。

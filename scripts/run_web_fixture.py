@@ -173,7 +173,8 @@ class _FixtureProvider:
         )
         for offset in range(0, len(completion.text), 8):
             yield TextDelta(text=completion.text[offset : offset + 8])
-            await asyncio.sleep(0.01)
+            # 给浏览器验收一个确定性窗口：必须先观察到 partial delta，再收到 authoritative final。
+            await asyncio.sleep(0.15 if offset == 0 else 0.01)
         yield CompletionFinished(completion=completion)
 
 

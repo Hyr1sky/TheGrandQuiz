@@ -40,7 +40,7 @@ class _EchoProvider:
 
 
 class _ToolCallingProvider:
-    """第一次调用返回 tool_call（query_weak_concepts），第二次返回 final 文本。"""
+    """第一次调用返回带参导航 tool_call，第二次返回 final 文本。"""
 
     def __init__(self) -> None:
         self._call_count = 0
@@ -59,8 +59,8 @@ class _ToolCallingProvider:
                 tool_calls=[
                     ToolCall(
                         id="tc_1",
-                        name="query_weak_concepts",
-                        arguments={},
+                        name="open_article",
+                        arguments={"resource_id": "private-resource-id"},
                     )
                 ],
                 usage=Usage(prompt_tokens=80, completion_tokens=20),
@@ -546,14 +546,15 @@ def test_tool_call_projects_as_chat_tool_call_event(tmp_path: Path) -> None:
         sid = session["session_id"]
         client.post(
             f"/api/v1/chat/sessions/{sid}/messages",
-            json={"text": "show me weak concepts"},
+            json={"text": "open the article"},
         )
         events = _wait_for_events(client, sid)
 
     types = [e["type"] for e in events]
     assert "chat.tool_call" in types
     tool_event = next(e for e in events if e["type"] == "chat.tool_call")
-    assert tool_event["data"]["name"] == "query_weak_concepts"
+    assert tool_event["data"]["name"] == "open_article"
+    assert "arguments" not in tool_event["data"]
     assert "chat.tool_result" in types
     assert "chat.turn_ended" in types
     ended = next(e for e in events if e["type"] == "chat.turn_ended")
@@ -590,7 +591,7 @@ def test_provider_failure_projects_as_chat_error(tmp_path: Path) -> None:
     types = [e["type"] for e in events]
     assert "chat.error" in types
     error_event = next(e for e in events if e["type"] == "chat.error")
-    assert error_event["data"]["error"] == "RuntimeError"
+    assert error_event["data"]["error"] == "turn_failed"
 
 
 def test_events_stream_for_unknown_session_returns_404(tmp_path: Path) -> None:
