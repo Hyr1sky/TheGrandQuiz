@@ -8,14 +8,20 @@ import type { ChatUiEvent } from "../../shared/api/chat";
 
 const EVENT_TYPES = [
   "chat.turn_started",
+  "chat.message_delta",
   "chat.tool_call",
   "chat.tool_result",
   "chat.navigation",
   "chat.turn_ended",
+  "chat.turn_cancelled",
   "chat.error",
 ] as const;
 
-const TERMINAL_EVENTS = new Set<string>(["chat.turn_ended", "chat.error"]);
+const TERMINAL_EVENTS = new Set<string>([
+  "chat.turn_ended",
+  "chat.turn_cancelled",
+  "chat.error",
+]);
 
 type ConnectionState = "connected" | "disconnected";
 

@@ -9,6 +9,11 @@ export interface MessageAccepted {
   turn_id: string;
 }
 
+export interface TurnCancelled {
+  turn_id: string;
+  status: "cancelled";
+}
+
 export interface ChatUiEvent {
   sequence: number;
   type: string;
@@ -52,4 +57,20 @@ export async function sendMessage(
     throw new Error("无法发送消息");
   }
   return (await response.json()) as MessageAccepted;
+}
+
+export async function cancelTurn(
+  sessionId: string,
+  turnId: string,
+): Promise<TurnCancelled> {
+  const response = await globalThis.fetch(
+    new Request(
+      `${baseUrl()}/api/v1/chat/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/cancel`,
+      { method: "POST" },
+    ),
+  );
+  if (!response.ok) {
+    throw new Error("无法停止生成");
+  }
+  return (await response.json()) as TurnCancelled;
 }

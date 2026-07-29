@@ -6,6 +6,17 @@ const ASSESSMENT_QUESTION =
 let browserErrors: string[] = [];
 let observedTraceIds: string[] = [];
 
+async function dismissOnboarding(
+  page: import("@playwright/test").Page,
+) {
+  const tour = page.getByRole("dialog", {
+    name: "正考级新手指南",
+  });
+  if (await tour.isVisible()) {
+    await page.getByRole("button", { name: "跳过指南" }).click();
+  }
+}
+
 test.beforeEach(async ({ page }) => {
   browserErrors = [];
   observedTraceIds = [];
@@ -49,6 +60,23 @@ test.afterEach(async ({ page: _page }, testInfo) => {
   });
 });
 
+test("guides the first run and can be reopened", async ({ page }) => {
+  await page.goto("/");
+  const tour = page.getByRole("dialog", {
+    name: "正考级新手指南",
+  });
+  await expect(tour).toContainText("1 / 4");
+  await expect(tour).toContainText("选择当前材料");
+  await page.getByRole("button", { name: "下一步" }).click();
+  await expect(tour).toContainText("2 / 4");
+  await page.getByRole("button", { name: "跳过指南" }).click();
+  await expect(tour).toBeHidden();
+
+  await page.getByRole("button", { name: "打开新手指南" }).click();
+  await expect(tour).toContainText("1 / 4");
+  await page.getByRole("button", { name: "跳过指南" }).click();
+});
+
 test("blocks Markdown network images and contains truly wide content", async ({
   page,
 }, testInfo) => {
@@ -60,6 +88,7 @@ test("blocks Markdown network images and contains truly wide content", async ({
   });
 
   await page.goto("/");
+  await dismissOnboarding(page);
   const durableNode = page
     .locator(".outline__item")
     .filter({ hasText: "Durable processors" });
@@ -121,6 +150,7 @@ test("keeps the exact material across two chat cursors", async ({ page }) => {
     eventCursors.push(Number(new URL(request.url()).searchParams.get("after") ?? "0"));
   });
   await page.goto("/");
+  await dismissOnboarding(page);
   const resourceId = await page.getByRole("combobox", { name: "当前材料" }).inputValue();
   const composer = page.getByRole("textbox", { name: "发送消息" });
 
@@ -136,8 +166,25 @@ test("keeps the exact material across two chat cursors", async ({ page }) => {
   expect(eventCursors.some((cursor) => cursor > 0)).toBe(true);
 });
 
+test("stops an active Chat turn at the backend", async ({ page }) => {
+  await page.goto("/");
+  await dismissOnboarding(page);
+  const composer = page.getByRole("textbox", { name: "发送消息" });
+  await composer.fill("请保持生成，等待我停止");
+  await page.getByRole("button", { name: "发送" }).click();
+
+  await page.getByRole("button", { name: "停止生成" }).click();
+
+  await expect(page.getByText("已停止生成。")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "停止生成" }),
+  ).toBeHidden();
+  await expect(page.getByRole("button", { name: "发送" })).toBeVisible();
+});
+
 test("navigates from Chat to Assessment and closes the trace", async ({ page }) => {
   await page.goto("/");
+  await dismissOnboarding(page);
   const composer = page.getByRole("textbox", { name: "发送消息" });
   await composer.fill("请结合当前材料考我一题");
   await page.getByRole("button", { name: "发送" }).click();
@@ -178,6 +225,7 @@ test("cancels an abandoned Assessment before returning to reading", async ({
   page,
 }) => {
   await page.goto("/");
+  await dismissOnboarding(page);
   const assessmentStarted = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&

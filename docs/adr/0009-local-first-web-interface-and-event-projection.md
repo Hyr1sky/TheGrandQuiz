@@ -34,6 +34,9 @@ CLI 已经能够完整驱动 ingest、ReAct、quiz、trace 和 eval，但文章�
 - API 从 `/api/v1` 开始，OpenAPI 是生成 TypeScript client 的契约源。
 - 长操作创建有身份的 run，返回 `run_id`、`trace_id` 与状态；普通 HTTP 承担创建、查询、取消、审批恢复。
 - 单向执行进度使用 SSE，不引入 WebSocket。
+- Provider 原生 delta 先归一为 kernel `AgentEvent`，再投影为 SSE；不得让 SDK chunk 绕过事件脊柱。
+- Chat 取消是按 `turn_id` 的幂等 HTTP command，必须等待后端 task 与活动 span 进入 cancelled 终态；
+  关闭浏览器 SSE 连接不等于取消。
 - run 状态固定为 `queued/running/needs_input/succeeded/failed/cancelled`。
 
 ### 4. 浏览器只看到稳定 UI event
@@ -41,6 +44,7 @@ CLI 已经能够完整驱动 ingest、ReAct、quiz、trace 和 eval，但文章�
 - 内部 `AgentEvent` 仍是 trace/hook/eval/CLI 的唯一事实流。
 - API 订阅同一 `EventSink`，把明确白名单事件投影为版本化 UI event；不得把任意 payload 原样透传。
 - UI event 带 run/trace/sequence/type/data，支持 backlog 后继续实时订阅。
+- 文本流只暴露稳定 `chat.message_delta`；tool 参数碎片在 Provider 边界完成组装，不成为浏览器契约。
 - system prompt、完整模型 messages/output、完整网页/节点正文和 secret 不进入默认 SSE。
 
 ### 5. v0.1.0 第一条竖切是 Article Workspace

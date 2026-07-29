@@ -5,7 +5,7 @@ env 缺变量即报错、messages / response 映射、disable_thinking → extra
 """
 
 import json
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any, cast
 
 import pytest
@@ -19,10 +19,13 @@ from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import Tool, ToolRegistry
 from grandquiz.providers.base import (
     Completion,
+    CompletionFinished,
     Message,
     Role,
+    TextDelta,
     ToolCall,
     ToolSpec,
+    Usage,
     malformed_arguments_raw,
 )
 from grandquiz.providers.llm import OpenAICompatProvider, RoleConfig
@@ -93,6 +96,92 @@ class _FakeClient:
         return None
 
 
+class _FakeStream:
+    def __init__(self, chunks: list[object]) -> None:
+        self._chunks = chunks
+
+    async def __aiter__(self) -> AsyncIterator[object]:
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _FakeDelta:
+    def __init__(
+        self,
+        content: str | None,
+        tool_calls: list[object] | None = None,
+    ) -> None:
+        self.content = content
+        self.tool_calls = tool_calls
+
+
+class _FakeStreamChoice:
+    def __init__(
+        self,
+        content: str | None,
+        tool_calls: list[object] | None = None,
+    ) -> None:
+        self.delta = _FakeDelta(content, tool_calls)
+
+
+class _FakeDeltaFunction:
+    def __init__(
+        self,
+        name: str | None,
+        arguments: str | None,
+    ) -> None:
+        self.name = name
+        self.arguments = arguments
+
+
+class _FakeDeltaToolCall:
+    def __init__(
+        self,
+        index: int,
+        *,
+        id: str | None,
+        name: str | None,
+        arguments: str | None,
+    ) -> None:
+        self.index = index
+        self.id = id
+        self.function = _FakeDeltaFunction(name, arguments)
+
+
+class _FakeChunk:
+    def __init__(
+        self,
+        content: str | None = None,
+        *,
+        tool_calls: list[object] | None = None,
+        usage: _FakeUsage | None = None,
+    ) -> None:
+        self.choices = (
+            []
+            if content is None and tool_calls is None
+            else [_FakeStreamChoice(content, tool_calls)]
+        )
+        self.usage = usage
+
+
+class _FakeStreamingCompletions:
+    def __init__(self, chunks: list[object]) -> None:
+        self._stream = _FakeStream(chunks)
+        self.calls: list[dict[str, object]] = []
+
+    async def create(self, **kwargs: object) -> object:
+        self.calls.append(kwargs)
+        return self._stream
+
+
+class _FakeStreamingClient:
+    def __init__(self, chunks: list[object]) -> None:
+        self.chat = _FakeChat(_FakeStreamingCompletions(chunks))  # type: ignore[arg-type]
+
+    async def close(self) -> None:
+        return None
+
+
 def _patch_client(
     monkeypatch: pytest.MonkeyPatch, response: _FakeResponse
 ) -> dict[str, _FakeClient]:
@@ -101,6 +190,21 @@ def _patch_client(
 
     def _factory(**_kwargs: object) -> _FakeClient:
         client = _FakeClient(response)
+        captured["client"] = client
+        return client
+
+    monkeypatch.setattr(llm_mod, "AsyncOpenAI", _factory)
+    return captured
+
+
+def _patch_streaming_client(
+    monkeypatch: pytest.MonkeyPatch,
+    chunks: list[object],
+) -> dict[str, _FakeStreamingClient]:
+    captured: dict[str, _FakeStreamingClient] = {}
+
+    def _factory(**_kwargs: object) -> _FakeStreamingClient:
+        client = _FakeStreamingClient(chunks)
         captured["client"] = client
         return client
 
@@ -134,6 +238,120 @@ async def test_complete_maps_messages_and_response_and_disables_thinking(
     assert call["model"] == "m-basic"
     assert call["messages"] == [{"role": "user", "content": "hi"}]
     assert call["extra_body"] == {"enable_thinking": False}
+
+
+async def test_stream_complete_yields_text_deltas_and_authoritative_completion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _patch_streaming_client(
+        monkeypatch,
+        [
+            _FakeChunk("正"),
+            _FakeChunk("考级"),
+            _FakeChunk(
+                usage=_FakeUsage(
+                    prompt_tokens=11,
+                    completion_tokens=3,
+                )
+            ),
+        ],
+    )
+    provider = OpenAICompatProvider(
+        {
+            "basic": RoleConfig(
+                api_key="k",
+                base_url="u",
+                model="m-basic",
+            )
+        }
+    )
+
+    events = [
+        event
+        async for event in provider.stream_complete(
+            [Message(role="user", content="hi")],
+            role="basic",
+        )
+    ]
+
+    assert events[:2] == [
+        TextDelta(text="正"),
+        TextDelta(text="考级"),
+    ]
+    assert events[2] == CompletionFinished(
+        completion=Completion(
+            text="正考级",
+            usage=Usage(
+                prompt_tokens=11,
+                completion_tokens=3,
+            ),
+        )
+    )
+    call = captured["client"].chat.completions.calls[0]
+    assert call["stream"] is True
+    assert call["stream_options"] == {"include_usage": True}
+
+
+async def test_stream_complete_assembles_tool_argument_fragments_inside_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_streaming_client(
+        monkeypatch,
+        [
+            _FakeChunk(
+                tool_calls=[
+                    _FakeDeltaToolCall(
+                        0,
+                        id="call_1",
+                        name="echo",
+                        arguments='{"text":',
+                    )
+                ]
+            ),
+            _FakeChunk(
+                tool_calls=[
+                    _FakeDeltaToolCall(
+                        0,
+                        id=None,
+                        name=None,
+                        arguments='"hi"}',
+                    )
+                ]
+            ),
+        ],
+    )
+    provider = OpenAICompatProvider(
+        {
+            "basic": RoleConfig(
+                api_key="k",
+                base_url="u",
+                model="m-basic",
+            )
+        }
+    )
+
+    events = [
+        event
+        async for event in provider.stream_complete(
+            [Message(role="user", content="hi")],
+            role="basic",
+        )
+    ]
+
+    assert events == [
+        CompletionFinished(
+            completion=Completion(
+                text="",
+                tool_calls=[
+                    ToolCall(
+                        id="call_1",
+                        name="echo",
+                        arguments={"text": "hi"},
+                    )
+                ],
+            )
+        )
+    ]
 
 
 async def test_complete_omits_extra_body_when_thinking_enabled(

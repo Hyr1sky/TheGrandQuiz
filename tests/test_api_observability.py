@@ -86,7 +86,7 @@ def test_completed_turn_snapshot_contains_only_safe_runtime_metrics(tmp_path: Pa
     assert response.status_code == 200
     snapshot = response.json()
     assert snapshot["summary"]["status"] == "completed"
-    assert snapshot["summary"]["event_count"] == 4
+    assert snapshot["summary"]["event_count"] == 5
     assert snapshot["summary"]["model_calls"] == 1
     assert snapshot["summary"]["tool_calls"] == 0
     assert snapshot["summary"]["error_count"] == 0
@@ -94,6 +94,7 @@ def test_completed_turn_snapshot_contains_only_safe_runtime_metrics(tmp_path: Pa
     assert [span["type"] for span in snapshot["spans"]] == ["run", "model"]
     assert [event["type"] for event in snapshot["events"]] == [
         "run",
+        "model",
         "model",
         "model",
         "run",
@@ -132,8 +133,9 @@ def test_observability_sse_resumes_after_known_sequence(tmp_path: Path) -> None:
         for line in response.text.splitlines()
         if line.startswith("data: ")
     ]
-    assert [event["sequence"] for event in projected] == [3, 4]
+    assert [event["sequence"] for event in projected] == [3, 4, 5]
     assert [event["type"] for event in projected] == [
+        "model",
         "model",
         "run",
     ]

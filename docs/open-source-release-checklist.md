@@ -9,7 +9,7 @@
 
 - `main` 已完成稳定性加固、Document Structure、Agentic Search、GroundedDocumentAnswer、
   Tier-2 Eval 与 Web Acquisition WA-S1–S5。
-- 当前工程基线为 17 条 Eval、899 项 pytest、37 项 Web unit、8 项 Playwright 场景；
+- 当前工程基线为 17 条 Eval、905 项 pytest、41 项 Web unit、12 项 Playwright 场景；
   ruff / format / pyright / import-linter / Web lint 与 typecheck 全绿。
 - `uv build` 可以生成 sdist 与 wheel；macOS / Python 3.12 仓库外安装 smoke 为 17/17。
 - Replay cassette 与生产 Web bundle 已进入 wheel，不再依赖仓库工作目录或 `tests/fixtures/`。
@@ -156,6 +156,8 @@ clone → uv sync → cp .env.example .env → 配置 LLM
 - [x] OpenAPI 生成 TypeScript client，CI 检查 schema/client 无 drift。
 - [x] 资源列表不默认返回 raw_content；SSE 不泄露 system prompt、完整模型上下文、secret 或节点全文。
 - [x] fake/replay provider + 临时 SQLite 下，资源 → outline → question → citation 主路径离线可验收。
+- [x] Chat 支持 Provider 原生 delta 的稳定 SSE 投影、turn-scoped 真取消与取消后继续对话。
+- [x] 首次进入提供可跳过、可重开的四步指南，Chat 空状态提供不会自动发送的示例 prompt。
 - [x] 前端 lint、typecheck、unit test、production build 进入 CI。
 - [x] README 说明 Web 启动、DB/trace 位置、外部 LLM 数据发送和 CLI 恢复入口。
 

@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 from grandquiz.domain.learning.models import LearningResource
 from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.interfaces.api.app import ApiSettings, create_app
+from grandquiz.kernel.events import EventType
+from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, ToolCall, ToolSpec, Usage
 
 
@@ -158,6 +160,64 @@ class _BlockingActiveResourceProvider:
             text=active_scope,
             usage=Usage(prompt_tokens=50, completion_tokens=10),
         )
+
+
+class _CancellableThenEchoProvider:
+    """第一轮等待取消，第二轮正常返回，用于验证取消后的 session 仍可复用。"""
+
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.cancelled = threading.Event()
+        self._call_count = 0
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        del messages, role, tools
+        self._call_count += 1
+        if self._call_count == 1:
+            self.started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                self.cancelled.set()
+                raise
+        return Completion(
+            text="second turn completed",
+            usage=Usage(prompt_tokens=50, completion_tokens=10),
+        )
+
+
+class _EchoThenCancellableProvider:
+    """第一轮完成、第二轮等待取消，用于锁住 stale turn 的取消边界。"""
+
+    def __init__(self) -> None:
+        self.second_started = threading.Event()
+        self.second_cancelled = threading.Event()
+        self._call_count = 0
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        del messages, role, tools
+        self._call_count += 1
+        if self._call_count == 1:
+            return Completion(text="first completed")
+        self.second_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.second_cancelled.set()
+            raise
+        raise AssertionError("unreachable")
 
 
 def _app(tmp_path: Path, provider: Provider | None = None):
@@ -335,6 +395,106 @@ def test_concurrent_message_is_rejected_without_overwriting_active_resource(
     assert second_resource.resource_id not in output
 
 
+def test_cancel_active_turn_is_idempotent_and_session_accepts_next_turn(
+    tmp_path: Path,
+) -> None:
+    provider = _CancellableThenEchoProvider()
+
+    with TestClient(_app(tmp_path, provider)) as client:
+        session = client.post("/api/v1/chat/sessions").json()
+        sid = session["session_id"]
+        accepted = client.post(
+            f"/api/v1/chat/sessions/{sid}/messages",
+            json={"text": "cancel me"},
+        ).json()
+        turn_id = accepted["turn_id"]
+        assert provider.started.wait(timeout=1)
+
+        first_cancel = client.post(f"/api/v1/chat/sessions/{sid}/turns/{turn_id}/cancel")
+        assert first_cancel.status_code == 200
+        repeated_cancel = client.post(f"/api/v1/chat/sessions/{sid}/turns/{turn_id}/cancel")
+        cancelled_events = _wait_for_events(
+            client,
+            sid,
+            terminal_type="chat.turn_cancelled",
+        )
+        cancelled_snapshot = client.get(
+            f"/api/v1/observability/traces/{session['trace_id']}"
+        ).json()
+        cancelled_cursor = max(event["sequence"] for event in cancelled_events)
+
+        next_message = client.post(
+            f"/api/v1/chat/sessions/{sid}/messages",
+            json={"text": "continue"},
+        )
+        next_events = _wait_for_events(client, sid, after=cancelled_cursor)
+
+    assert first_cancel.json() == {"turn_id": turn_id, "status": "cancelled"}
+    assert repeated_cancel.status_code == 200
+    assert repeated_cancel.json() == {"turn_id": turn_id, "status": "cancelled"}
+    assert provider.cancelled.wait(timeout=1)
+    assert any(event["type"] == "chat.turn_cancelled" for event in cancelled_events)
+    assert not any(event["type"] == "chat.turn_ended" for event in cancelled_events)
+    assert cancelled_snapshot["summary"]["status"] == "cancelled"
+    assert next_message.status_code == 202
+    assert any(
+        event["type"] == "chat.turn_ended" and event["data"]["output"] == "second turn completed"
+        for event in next_events
+    )
+    trace_store = TraceStore(tmp_path / "trace.db")
+    trace_events = trace_store.events(session["trace_id"])
+    trace_store.close()
+    cancelled_ends = [
+        event
+        for event in trace_events
+        if event.type in {EventType.MODEL_ENDED, EventType.AGENT_TURN_ENDED}
+        and event.payload.get("cancelled") is True
+    ]
+    assert {event.type for event in cancelled_ends} == {
+        EventType.MODEL_ENDED,
+        EventType.AGENT_TURN_ENDED,
+    }
+
+
+def test_cancelling_stale_turn_does_not_cancel_newer_turn(
+    tmp_path: Path,
+) -> None:
+    provider = _EchoThenCancellableProvider()
+
+    with TestClient(_app(tmp_path, provider)) as client:
+        session = client.post("/api/v1/chat/sessions").json()
+        sid = session["session_id"]
+        first_turn = client.post(
+            f"/api/v1/chat/sessions/{sid}/messages",
+            json={"text": "first"},
+        ).json()["turn_id"]
+        first_events = _wait_for_events(client, sid)
+        cursor = max(event["sequence"] for event in first_events)
+
+        second_turn = client.post(
+            f"/api/v1/chat/sessions/{sid}/messages",
+            json={"text": "second"},
+        ).json()["turn_id"]
+        assert provider.second_started.wait(timeout=1)
+        stale_cancel = client.post(f"/api/v1/chat/sessions/{sid}/turns/{first_turn}/cancel")
+        current_cancel = client.post(f"/api/v1/chat/sessions/{sid}/turns/{second_turn}/cancel")
+        second_events = _wait_for_events(
+            client,
+            sid,
+            terminal_type="chat.turn_cancelled",
+            after=cursor,
+        )
+
+    assert stale_cancel.status_code == 404
+    assert stale_cancel.json()["code"] == "turn_not_found"
+    assert current_cancel.status_code == 200
+    assert provider.second_cancelled.wait(timeout=1)
+    assert any(
+        event["type"] == "chat.turn_cancelled" and event["data"]["turn_id"] == second_turn
+        for event in second_events
+    )
+
+
 def test_sse_delivers_turn_started_and_ended_with_output(tmp_path: Path) -> None:
     with TestClient(_app(tmp_path, _EchoProvider())) as client:
         session = client.post("/api/v1/chat/sessions").json()
@@ -344,7 +504,14 @@ def test_sse_delivers_turn_started_and_ended_with_output(tmp_path: Path) -> None
 
     types = [e["type"] for e in events]
     assert "chat.turn_started" in types
+    assert "chat.message_delta" in types
     assert "chat.turn_ended" in types
+    assert (
+        "".join(
+            str(event["data"]["text"]) for event in events if event["type"] == "chat.message_delta"
+        )
+        == "echo: hello agent"
+    )
     ended = next(e for e in events if e["type"] == "chat.turn_ended")
     assert "echo: hello agent" in str(ended["data"]["output"])
 

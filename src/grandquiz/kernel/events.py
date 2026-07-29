@@ -31,6 +31,7 @@ class EventType:
     TOOL_CALL_STARTED = "tool_call.started"
     TOOL_CALL_ENDED = "tool_call.ended"
     MODEL_STARTED = "model.started"
+    MODEL_OUTPUT_DELTA = "model.output_delta"
     MODEL_ENDED = "model.ended"
     RECOVERY_DECIDED = "recovery.decided"
     HOOK_INVOKED = "hook.invoked"

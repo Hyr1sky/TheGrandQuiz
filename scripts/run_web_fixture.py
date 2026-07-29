@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
 import tempfile
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 
 import uvicorn
@@ -16,7 +17,17 @@ from grandquiz.domain.learning.document import build_document_snapshot
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.interfaces.api.app import ApiSettings, create_app
-from grandquiz.providers.base import Completion, Message, Role, ToolCall, ToolSpec, Usage
+from grandquiz.providers.base import (
+    Completion,
+    CompletionFinished,
+    Message,
+    ProviderStreamEvent,
+    Role,
+    TextDelta,
+    ToolCall,
+    ToolSpec,
+    Usage,
+)
 
 CONTENT = """\
 # Runtime
@@ -104,6 +115,8 @@ class _FixtureProvider:
                 (message.content for message in reversed(messages) if message.role == "user"),
                 "",
             )
+            if "保持生成" in user_text:
+                await asyncio.Event().wait()
             has_tool_result = any(message.role == "tool" for message in messages)
             if "考" in user_text and not has_tool_result:
                 return Completion(
@@ -145,6 +158,23 @@ class _FixtureProvider:
             ),
             usage=Usage(prompt_tokens=180, completion_tokens=45),
         )
+
+    async def stream_complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        completion = await self.complete(
+            messages,
+            role=role,
+            tools=tools,
+        )
+        for offset in range(0, len(completion.text), 8):
+            yield TextDelta(text=completion.text[offset : offset + 8])
+            await asyncio.sleep(0.01)
+        yield CompletionFinished(completion=completion)
 
 
 def _seed(db_path: Path) -> str:

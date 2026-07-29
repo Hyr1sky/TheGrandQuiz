@@ -5,7 +5,7 @@ DEGRADED 回灌 vs FATAL 冒泡 / 记放一致。LLM 的"选工具"决策走 Rep
 性代码、每趟重跑。这里唯一的工具是平凡确定的 echo（不进 kernel、不碰 domain）。
 """
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -21,8 +21,11 @@ from grandquiz.kernel.tools import ModelRetry, Tool, ToolRegistry
 from grandquiz.kernel.trace import Span, TraceStore
 from grandquiz.providers.base import (
     Completion,
+    CompletionFinished,
     Message,
+    ProviderStreamEvent,
     Role,
+    TextDelta,
     ToolCall,
     Usage,
     mark_malformed_arguments,
@@ -104,6 +107,43 @@ class _FinalOnlyProvider:
         self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
     ) -> Completion:
         return Completion(text="just an answer", usage=Usage(prompt_tokens=2, completion_tokens=2))
+
+
+class _StreamingFinalProvider:
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: object = None,
+    ) -> Completion:
+        del messages, role, tools
+        raise AssertionError("Runner 应优先使用原生 stream_complete")
+
+    def stream_complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: object = None,
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        del messages, role, tools
+
+        async def stream() -> AsyncIterator[ProviderStreamEvent]:
+            yield TextDelta(text="正")
+            yield TextDelta(text="考")
+            yield TextDelta(text="级")
+            yield CompletionFinished(
+                completion=Completion(
+                    text="正考级",
+                    usage=Usage(
+                        prompt_tokens=4,
+                        completion_tokens=2,
+                    ),
+                )
+            )
+
+        return stream()
 
 
 def _emitter_with_events() -> tuple[EventEmitter, list[AgentEvent]]:
@@ -192,6 +232,26 @@ async def test_final_text_without_tools_terminates() -> None:
         EventType.MODEL_ENDED,
         EventType.AGENT_TURN_ENDED,
     ]
+
+
+async def test_native_stream_emits_model_output_deltas_before_final_completion() -> None:
+    emitter, events = _emitter_with_events()
+    runner = Runner(provider=_StreamingFinalProvider(), emitter=emitter)
+
+    reply = await runner.run_agent_turn("q")
+
+    assert reply == "正考级"
+    assert [event.type for event in events] == [
+        EventType.AGENT_TURN_STARTED,
+        EventType.MODEL_STARTED,
+        EventType.MODEL_OUTPUT_DELTA,
+        EventType.MODEL_OUTPUT_DELTA,
+        EventType.MODEL_ENDED,
+        EventType.AGENT_TURN_ENDED,
+    ]
+    assert [
+        event.payload["text"] for event in events if event.type == EventType.MODEL_OUTPUT_DELTA
+    ] == ["正", "考级"]
 
 
 async def test_tool_loop_calls_tool_then_terminates() -> None:

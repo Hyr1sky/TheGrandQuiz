@@ -16,13 +16,41 @@
   scroll-behavior: smooth;
 }
 
-.chat-messages:empty::after {
-  display: block;
-  margin-top: 48px;
-  color: var(--muted);
-  font: 400 14px/1.8 var(--font-interface);
+.chat-empty {
+  margin: 44px 4px 24px;
   text-align: center;
-  content: "和 agent 开始对话...";
+}
+
+.chat-empty > p {
+  margin: 0 0 6px;
+  color: var(--text-strong);
+  font: 600 17px/1.4 var(--font-interface);
+}
+
+.chat-empty > span {
+  color: var(--muted);
+  font: 400 13px/1.5 var(--font-interface);
+}
+
+.chat-empty__examples {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.chat-empty__examples button {
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-quiet);
+  color: var(--text);
+  font: 400 13px/1.45 var(--font-interface);
+  text-align: left;
+}
+
+.chat-empty__examples button:hover {
+  border-color: var(--line-strong);
+  color: var(--text-strong);
 }
 
 /* ---- User bubble ---- */

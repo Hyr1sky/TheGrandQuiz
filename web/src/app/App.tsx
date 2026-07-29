@@ -3,10 +3,12 @@ import {
   CompassIcon,
   ExamIcon,
   ListBulletsIcon,
+  QuestionIcon,
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatPanel, type NavigationEvent } from "../features/chat/ChatPanel";
 import { ObservatoryDrawer } from "../features/observability/ObservatoryDrawer";
+import { OnboardingTour } from "../features/onboarding/OnboardingTour";
 import {
   AssessmentPanel,
   type AssessmentPanelHandle,
@@ -30,6 +32,7 @@ import { ThemeProvider } from "./ThemeProvider";
 
 type WorkspaceMode = "reading" | "assessment";
 type SidebarView = "outline" | "progress";
+const ONBOARDING_STORAGE_KEY = "grandquiz.onboarding.v1";
 
 interface AssessmentParams {
   resource_id: string;
@@ -45,6 +48,11 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [chatTraceId, setChatTraceId] = useState<string | null>(null);
   const [observatoryOpen, setObservatoryOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(
+    () =>
+      globalThis.localStorage?.getItem(ONBOARDING_STORAGE_KEY) !==
+      "completed",
+  );
 
   const [workspace, setWorkspace] = useState<WorkspaceMode>("reading");
   const [assessmentParams, setAssessmentParams] =
@@ -225,9 +233,21 @@ export function App() {
     setChatTraceId(traceId);
   }, []);
 
+  const completeOnboarding = useCallback(() => {
+    globalThis.localStorage?.setItem(
+      ONBOARDING_STORAGE_KEY,
+      "completed",
+    );
+    setOnboardingOpen(false);
+  }, []);
+
   const renderSidebar = () => {
     return (
-      <nav className="app-sidebar" aria-label={sidebarView === "outline" ? "文档大纲" : "考核进度"}>
+      <nav
+        className="app-sidebar"
+        data-onboarding="sidebar"
+        aria-label={sidebarView === "outline" ? "文档大纲" : "考核进度"}
+      >
         <div className="sidebar__header">
           <button
             type="button"
@@ -350,7 +370,10 @@ export function App() {
         />
         <header className="app-header" aria-label="顶栏">
           <p className="app-header__eyebrow">TheGrandQuiz · 本地模式</p>
-          <div className="app-header__controls">
+          <div
+            className="app-header__controls"
+            data-onboarding="resource"
+          >
             {resource !== null ? (
               <label className="resource-picker">
                 <span>当前材料</span>
@@ -377,6 +400,14 @@ export function App() {
                 </select>
               </label>
             ) : null}
+            <button
+              type="button"
+              className="onboarding-help"
+              aria-label="打开新手指南"
+              onClick={() => setOnboardingOpen(true)}
+            >
+              <QuestionIcon aria-hidden size={17} />
+            </button>
             <ThemeToggle />
           </div>
         </header>
@@ -396,6 +427,7 @@ export function App() {
           <button
             type="button"
             className="compass-nav"
+            data-onboarding="observatory"
             aria-label={
               observatoryOpen ? "关闭运行观测" : "打开运行观测"
             }
@@ -425,6 +457,9 @@ export function App() {
           traceId={assessment?.trace_id ?? chatTraceId}
           onClose={() => setObservatoryOpen(false)}
         />
+        {onboardingOpen ? (
+          <OnboardingTour onComplete={completeOnboarding} />
+        ) : null}
       </div>
     </ThemeProvider>
   );

@@ -1,8 +1,8 @@
 """Provider 协议 + 所有 LLM provider 共享的 message / usage 类型。"""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -98,6 +98,27 @@ class Completion(BaseModel):
     usage: Usage = Field(default_factory=Usage)
 
 
+class TextDelta(BaseModel):
+    """厂商无关的可展示文本增量。"""
+
+    kind: Literal["text_delta"] = "text_delta"
+    text: str
+
+
+class CompletionFinished(BaseModel):
+    """流的唯一终点；携带与 ``complete()`` 相同的权威结果。"""
+
+    kind: Literal["completion_finished"] = "completion_finished"
+    completion: Completion
+
+
+type ProviderStreamEvent = TextDelta | CompletionFinished
+
+
+class ProviderStreamProtocolError(RuntimeError):
+    """上游流违反归一化契约，不能安全组装成一次 Completion。"""
+
+
 class Provider(Protocol):
     """两个命名角色（basic / enrich）对应 .env 的两套 LLM 配置；角色间路由后续再加。
 
@@ -113,3 +134,16 @@ class Provider(Protocol):
         role: Role = "basic",
         tools: Sequence[ToolSpec] | None = None,
     ) -> Completion: ...
+
+
+@runtime_checkable
+class StreamingProvider(Provider, Protocol):
+    """可选的原生流能力；completion-only provider 仍只需实现 ``Provider``。"""
+
+    def stream_complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> AsyncIterator[ProviderStreamEvent]: ...

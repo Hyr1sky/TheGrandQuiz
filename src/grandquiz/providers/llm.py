@@ -13,17 +13,21 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from openai import AsyncOpenAI, Omit, omit
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 
 from grandquiz.providers.base import (
     Completion,
+    CompletionFinished,
     Message,
+    ProviderStreamEvent,
+    ProviderStreamProtocolError,
     Role,
+    TextDelta,
     ToolCall,
     ToolSpec,
     Usage,
@@ -118,6 +122,16 @@ def _parse_tool_calls(message: Any) -> list[ToolCall] | None:
     return parsed
 
 
+def _decode_tool_arguments(arguments_json: str) -> dict[str, Any]:
+    try:
+        decoded: Any = json.loads(arguments_json)
+    except json.JSONDecodeError:
+        decoded = None
+    if isinstance(decoded, dict):
+        return cast("dict[str, Any]", decoded)
+    return mark_malformed_arguments(arguments_json)
+
+
 @dataclass(frozen=True)
 class RoleConfig:
     """一个命名角色的 LLM 配置（对应 .env 的一组 ``<PREFIX>*`` 变量）。"""
@@ -203,6 +217,117 @@ class OpenAICompatProvider:
             completion_tokens=response.usage.completion_tokens if response.usage else 0,
         )
         return Completion(text=text, tool_calls=tool_calls, usage=usage)
+
+    async def stream_complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        """把 OpenAI chunk 归一成文本增量，并在边界内组装完整 tool calls。"""
+        config = self._configs[role]
+        client = self._clients[role]
+        extra_body: dict[str, object] = {}
+        if config.disable_thinking:
+            extra_body["enable_thinking"] = False
+        oai_tools: list[ChatCompletionToolParam] | Omit = _to_oai_tools(tools) if tools else omit
+        raw_stream = await client.chat.completions.create(
+            model=config.model,
+            messages=_to_oai_messages(messages),
+            temperature=0,
+            extra_body=extra_body or None,
+            tools=oai_tools,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        stream = cast("Any", raw_stream)
+
+        text_parts: list[str] = []
+        tool_fragments: dict[int, dict[str, str]] = {}
+        prompt_tokens = 0
+        completion_tokens = 0
+        mode: Literal["text", "tools"] | None = None
+
+        async for chunk in stream:
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                prompt_tokens = int(getattr(chunk_usage, "prompt_tokens", 0))
+                completion_tokens = int(getattr(chunk_usage, "completion_tokens", 0))
+
+            choices = getattr(chunk, "choices", None)
+            if not choices:
+                continue
+            delta = choices[0].delta
+            content = getattr(delta, "content", None) or ""
+            raw_tool_calls = cast(
+                "list[Any]",
+                getattr(delta, "tool_calls", None) or [],
+            )
+
+            if content and raw_tool_calls:
+                raise ProviderStreamProtocolError("同一个上游 chunk 同时包含文本与 tool call")
+            if content:
+                if mode == "tools":
+                    raise ProviderStreamProtocolError(
+                        "一次 completion 不能同时产出文本与 tool calls"
+                    )
+                mode = "text"
+                text_parts.append(content)
+                yield TextDelta(text=content)
+
+            for raw_tool_call in raw_tool_calls:
+                if mode == "text":
+                    raise ProviderStreamProtocolError(
+                        "一次 completion 不能同时产出文本与 tool calls"
+                    )
+                mode = "tools"
+                index = int(raw_tool_call.index)
+                fragment = tool_fragments.setdefault(
+                    index,
+                    {"id": "", "name": "", "arguments": ""},
+                )
+                tool_call_id = getattr(raw_tool_call, "id", None)
+                if tool_call_id:
+                    fragment["id"] = str(tool_call_id)
+                function = getattr(raw_tool_call, "function", None)
+                if function is None:
+                    continue
+                name = getattr(function, "name", None)
+                arguments = getattr(function, "arguments", None)
+                if name:
+                    fragment["name"] += str(name)
+                if arguments:
+                    fragment["arguments"] += str(arguments)
+
+        tool_calls: list[ToolCall] | None = None
+        if tool_fragments:
+            tool_calls = []
+            for index in sorted(tool_fragments):
+                fragment = tool_fragments[index]
+                if not fragment["id"] or not fragment["name"]:
+                    raise ProviderStreamProtocolError(
+                        f"tool call #{index} 缺少 id 或 function name"
+                    )
+                arguments_json = fragment["arguments"] or "{}"
+                tool_calls.append(
+                    ToolCall(
+                        id=fragment["id"],
+                        name=fragment["name"],
+                        arguments=_decode_tool_arguments(arguments_json),
+                    )
+                )
+
+        yield CompletionFinished(
+            completion=Completion(
+                text="".join(text_parts),
+                tool_calls=tool_calls,
+                usage=Usage(
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                ),
+            )
+        )
 
     async def aclose(self) -> None:
         """关闭底层 HTTP 客户端（长生命周期 provider 退出时调用）。"""

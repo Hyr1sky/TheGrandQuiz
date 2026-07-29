@@ -11,10 +11,12 @@ from grandquiz.interfaces.api.chat import (
     ActiveResourceNotFoundError,
     ChatManager,
     ChatTurnInProgressError,
+    ChatTurnNotFoundError,
     ChatUiEvent,
     MessageAccepted,
     MessageRequest,
     SessionView,
+    TurnCancelled,
 )
 from grandquiz.interfaces.api.errors import ApiError
 
@@ -65,6 +67,32 @@ async def send_message(
             status_code=404,
             code="resource_not_found",
             message=f"当前材料不存在：{body.active_resource_id}",
+        ) from exc
+
+
+@router.post(
+    "/sessions/{session_id}/turns/{turn_id}/cancel",
+    response_model=TurnCancelled,
+)
+async def cancel_turn(
+    session_id: str,
+    turn_id: str,
+    request: Request,
+) -> TurnCancelled:
+    manager = chat_manager_from(request)
+    if manager.get_session(session_id) is None:
+        raise ApiError(
+            status_code=404,
+            code="session_not_found",
+            message=f"会话不存在：{session_id}",
+        )
+    try:
+        return await manager.cancel_turn(session_id, turn_id)
+    except ChatTurnNotFoundError as exc:
+        raise ApiError(
+            status_code=404,
+            code="turn_not_found",
+            message=f"当前会话中没有可取消的轮次：{turn_id}",
         ) from exc
 
 

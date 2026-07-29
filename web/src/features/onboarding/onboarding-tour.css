@@ -1,0 +1,85 @@
+[data-onboarding-active="true"] {
+  position: relative;
+  z-index: 31;
+  outline: 2px solid var(--brass);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
+.onboarding-tour {
+  position: fixed;
+  z-index: 40;
+  width: min(336px, calc(100vw - 32px));
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--panel-surface);
+  box-shadow: var(--shadow-raised);
+  backdrop-filter: blur(18px) saturate(0.9);
+}
+
+.onboarding-tour__meta,
+.onboarding-tour__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.onboarding-tour__meta {
+  color: var(--muted);
+  font: 500 12px/1 var(--font-interface);
+  letter-spacing: 0.08em;
+}
+
+.onboarding-tour h2 {
+  margin: 14px 0 8px;
+  color: var(--text-strong);
+  font: 600 18px/1.35 var(--font-interface);
+}
+
+.onboarding-tour p {
+  margin: 0 0 18px;
+  color: var(--text);
+  font: 400 14px/1.7 var(--font-reading);
+}
+
+.onboarding-tour button,
+.onboarding-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: 500 12px/1 var(--font-interface);
+}
+
+.onboarding-tour button:disabled {
+  opacity: 0.4;
+}
+
+.onboarding-tour__icon-button,
+.onboarding-help {
+  width: 34px;
+  padding: 0;
+}
+
+.onboarding-tour .onboarding-tour__primary {
+  border-color: var(--line-strong);
+  color: var(--text-strong);
+  box-shadow: var(--shadow-raised);
+}
+
+@media (max-width: 720px) {
+  .onboarding-tour {
+    top: auto !important;
+    right: 12px;
+    bottom: 12px;
+    left: 12px !important;
+    width: auto;
+  }
+}

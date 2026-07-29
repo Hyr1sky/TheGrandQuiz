@@ -57,6 +57,10 @@ class ChatTurnInProgressError(RuntimeError):
     """当前 session 已有未完成 turn；共享 Runner 不接受并发驱动。"""
 
 
+class ChatTurnNotFoundError(LookupError):
+    """指定 turn 不属于当前 session，或已不再是可取消的活动 turn。"""
+
+
 class MessageRequest(BaseModel):
     text: str = Field(min_length=1)
     active_resource_id: str | None = None
@@ -79,6 +83,11 @@ class MessageAccepted(BaseModel):
     turn_id: str
 
 
+class TurnCancelled(BaseModel):
+    turn_id: str
+    status: Literal["cancelled"] = "cancelled"
+
+
 class ChatUiEvent(BaseModel):
     sequence: int = Field(ge=1)
     type: str
@@ -88,6 +97,10 @@ class ChatUiEvent(BaseModel):
 
 def _empty_chat_events() -> list[ChatUiEvent]:
     return []
+
+
+def _empty_turn_ids() -> set[str]:
+    return set()
 
 
 @dataclass
@@ -120,6 +133,7 @@ class _ChatSession:
     changed: asyncio.Event = field(default_factory=asyncio.Event)
     current_task: asyncio.Task[None] | None = None
     current_turn_id: str | None = None
+    cancelled_turn_ids: set[str] = field(default_factory=_empty_turn_ids)
 
 
 class ChatManager:
@@ -256,6 +270,22 @@ class ChatManager:
         )
         return MessageAccepted(turn_id=turn_id)
 
+    async def cancel_turn(self, session_id: str, turn_id: str) -> TurnCancelled:
+        session = self.get_session(session_id)
+        if session is None:
+            raise KeyError(session_id)
+        if turn_id in session.cancelled_turn_ids:
+            return TurnCancelled(turn_id=turn_id)
+        task = session.current_task
+        if session.current_turn_id != turn_id or task is None or task.done():
+            raise ChatTurnNotFoundError(turn_id)
+
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        if turn_id not in session.cancelled_turn_ids:
+            raise ChatTurnNotFoundError(turn_id)
+        return TurnCancelled(turn_id=turn_id)
+
     async def iter_events(self, session_id: str, *, after: int = 0) -> AsyncIterator[ChatUiEvent]:
         session = self.get_session(session_id)
         if session is None:
@@ -267,7 +297,7 @@ class ChatManager:
                 cursor = event.sequence
                 yield event
             terminal_types = {e.type for e in session.events if e.sequence == cursor}
-            if terminal_types & {"chat.turn_ended", "chat.error"}:
+            if terminal_types & {"chat.turn_ended", "chat.turn_cancelled", "chat.error"}:
                 return
             session.changed.clear()
             if any(e.sequence > cursor for e in session.events):
@@ -282,6 +312,14 @@ class ChatManager:
                 "chat.turn_ended",
                 {"turn_id": turn_id, "output": output},
             )
+        except asyncio.CancelledError:
+            session.cancelled_turn_ids.add(turn_id)
+            self._append_event(
+                session,
+                "chat.turn_cancelled",
+                {"turn_id": turn_id},
+            )
+            raise
         except Exception as exc:
             self._append_event(
                 session,
@@ -289,8 +327,10 @@ class ChatManager:
                 {"turn_id": turn_id, "error": type(exc).__name__},
             )
         finally:
-            session.status = "idle"
-            session.current_task = None
+            if session.current_turn_id == turn_id:
+                session.status = "idle"
+                session.current_task = None
+                session.current_turn_id = None
 
     @staticmethod
     def _append_event(
@@ -316,6 +356,14 @@ class ChatManager:
                 "chat.turn_started",
                 {"turn_id": turn_id},
             )
+        elif event.type == EventType.MODEL_OUTPUT_DELTA:
+            text = event.payload.get("text")
+            if isinstance(text, str) and text:
+                self._append_event(
+                    session,
+                    "chat.message_delta",
+                    {"turn_id": turn_id, "text": text},
+                )
         elif event.type == EventType.TOOL_CALL_STARTED:
             self._append_event(
                 session,

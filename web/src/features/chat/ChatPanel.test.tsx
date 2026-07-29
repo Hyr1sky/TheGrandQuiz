@@ -45,6 +45,42 @@ afterEach(() => {
 });
 
 describe("ChatPanel", () => {
+  it("offers honest example prompts in the empty state", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request =
+          input instanceof Request ? input : new Request(String(input));
+        if (
+          request.url.endsWith("/api/v1/chat/sessions") &&
+          request.method === "POST"
+        ) {
+          return Response.json(
+            { session_id: "session-examples" },
+            { status: 201 },
+          );
+        }
+        throw new Error(
+          `Unexpected request: ${request.method} ${request.url}`,
+        );
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<ChatPanel />);
+    const example = await screen.findByRole("button", {
+      name: "请结合当前材料解释核心观点",
+    });
+    await user.click(example);
+
+    expect(
+      screen.getByRole("textbox", { name: "发送消息" }),
+    ).toHaveValue("请结合当前材料解释核心观点");
+    expect(
+      screen.getByRole("button", { name: "怎样查看本次运行过程？" }),
+    ).toBeInTheDocument();
+  });
+
   it("reports the durable trace id when the chat session is created", async () => {
     vi.stubGlobal(
       "fetch",
@@ -207,6 +243,81 @@ describe("ChatPanel", () => {
     // Markdown should render bold text
     expect(screen.getByText("状态变化")).toBeInTheDocument();
     expect(stream?.closed).toBe(true);
+  });
+
+  it("builds one agent bubble from deltas and finalizes it without duplication", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request =
+          input instanceof Request ? input : new Request(String(input));
+        if (
+          request.url.endsWith("/api/v1/chat/sessions") &&
+          request.method === "POST"
+        ) {
+          return Response.json(
+            { session_id: "session-stream" },
+            { status: 201 },
+          );
+        }
+        if (
+          request.url.includes("/messages") &&
+          request.method === "POST"
+        ) {
+          return Response.json(
+            { turn_id: "turn-stream" },
+            { status: 202 },
+          );
+        }
+        throw new Error(
+          `Unexpected request: ${request.method} ${request.url}`,
+        );
+      }),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const user = userEvent.setup();
+
+    render(<ChatPanel />);
+    await waitFor(() => {
+      expect(
+        screen.getByRole("textbox", { name: "发送消息" }),
+      ).toBeEnabled();
+    });
+    await user.type(
+      screen.getByRole("textbox", { name: "发送消息" }),
+      "介绍一下",
+    );
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() =>
+      expect(FakeEventSource.instances).toHaveLength(1),
+    );
+    const stream = FakeEventSource.instances[0];
+
+    await act(async () => {
+      stream?.emit("chat.message_delta", {
+        sequence: 1,
+        type: "chat.message_delta",
+        session_id: "session-stream",
+        data: { turn_id: "turn-stream", text: "正" },
+      });
+      stream?.emit("chat.message_delta", {
+        sequence: 2,
+        type: "chat.message_delta",
+        session_id: "session-stream",
+        data: { turn_id: "turn-stream", text: "考级" },
+      });
+    });
+    expect(screen.getByText("正考级")).toBeInTheDocument();
+
+    await act(async () => {
+      stream?.emit("chat.turn_ended", {
+        sequence: 3,
+        type: "chat.turn_ended",
+        session_id: "session-stream",
+        data: { turn_id: "turn-stream", output: "正考级" },
+      });
+    });
+    expect(screen.getAllByText("正考级")).toHaveLength(1);
   });
 
   it("resumes the SSE stream after the previous turn sequence", async () => {
@@ -395,8 +506,10 @@ describe("ChatPanel", () => {
     await user.type(screen.getByRole("textbox", { name: "发送消息" }), "测试加载");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
-    // Send button should be disabled while loading
-    expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
+    // Running turn exposes a real cancellation control.
+    expect(
+      await screen.findByRole("button", { name: "停止生成" }),
+    ).toBeEnabled();
 
     // After turn ends, send button becomes enabled again
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
@@ -410,6 +523,92 @@ describe("ChatPanel", () => {
     });
 
     expect(screen.getByText("完成")).toBeInTheDocument();
+  });
+
+  it("cancels the active backend turn and waits for its terminal event", async () => {
+    let cancelledUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request =
+          input instanceof Request ? input : new Request(String(input));
+        if (
+          request.url.endsWith("/api/v1/chat/sessions") &&
+          request.method === "POST"
+        ) {
+          return Response.json(
+            { session_id: "session-cancel" },
+            { status: 201 },
+          );
+        }
+        if (
+          request.url.includes("/messages") &&
+          request.method === "POST"
+        ) {
+          return Response.json(
+            { turn_id: "turn-cancel" },
+            { status: 202 },
+          );
+        }
+        if (
+          request.url.endsWith(
+            "/sessions/session-cancel/turns/turn-cancel/cancel",
+          ) &&
+          request.method === "POST"
+        ) {
+          cancelledUrl = request.url;
+          return Response.json({
+            turn_id: "turn-cancel",
+            status: "cancelled",
+          });
+        }
+        throw new Error(
+          `Unexpected request: ${request.method} ${request.url}`,
+        );
+      }),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const user = userEvent.setup();
+
+    render(<ChatPanel />);
+    await waitFor(() => {
+      expect(
+        screen.getByRole("textbox", { name: "发送消息" }),
+      ).toBeEnabled();
+    });
+    await user.type(
+      screen.getByRole("textbox", { name: "发送消息" }),
+      "这条发错了",
+    );
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    const stopButton = await screen.findByRole("button", {
+      name: "停止生成",
+    });
+    await user.click(stopButton);
+    expect(cancelledUrl).toContain(
+      "/sessions/session-cancel/turns/turn-cancel/cancel",
+    );
+
+    await waitFor(() =>
+      expect(FakeEventSource.instances).toHaveLength(1),
+    );
+    const stream = FakeEventSource.instances[0];
+    expect(stream?.closed).toBe(false);
+    await act(async () => {
+      stream?.emit("chat.turn_cancelled", {
+        sequence: 1,
+        type: "chat.turn_cancelled",
+        session_id: "session-cancel",
+        data: { turn_id: "turn-cancel" },
+      });
+    });
+
+    expect(screen.getByText("已停止生成。")).toBeInTheDocument();
+    expect(stream?.closed).toBe(true);
+    expect(
+      screen.queryByRole("button", { name: "停止生成" }),
+    ).not.toBeInTheDocument();
   });
 
   it("calls onNavigation when a chat.navigation event is received", async () => {

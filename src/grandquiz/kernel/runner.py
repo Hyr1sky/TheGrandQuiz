@@ -16,11 +16,21 @@ from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.kernel.hooks import HookManager, HookVeto
 from grandquiz.kernel.recovery import Decision, RecoveryPolicy
 from grandquiz.kernel.tools import ToolContext, ToolRegistry
-from grandquiz.providers.base import Completion, Message, Provider, Role, ToolCall
+from grandquiz.providers.base import (
+    Completion,
+    Message,
+    Provider,
+    ProviderStreamProtocolError,
+    Role,
+    StreamingProvider,
+    TextDelta,
+    ToolCall,
+)
 
 _TOOL_CALL_HOOK = "tool_call"
 # ReAct 编排固定走 basic 角色（已确认 deepseek 支持 function-calling）；显式常量避免散落字面量。
 _REACT_ROLE: Role = "basic"
+_STREAM_DELTA_BATCH_CHARS = 48
 
 
 class MaxIterationsExceeded(RuntimeError):
@@ -194,6 +204,17 @@ class Runner:
                         tool_call, parent_span_id=turn_span, recovery=recovery
                     )
                     call_messages.append(result_message)
+        except asyncio.CancelledError:
+            self._emitter.emit(
+                EventType.AGENT_TURN_ENDED,
+                span_id=turn_span,
+                payload={
+                    "ok": False,
+                    "cancelled": True,
+                    "status": "cancelled",
+                },
+            )
+            raise
         except Exception:
             # 任何冒泡（FATAL 工具错 / veto / model 错）先封口 AGENT_TURN（started/ended 成对）。
             self._emitter.emit(EventType.AGENT_TURN_ENDED, span_id=turn_span, payload={"ok": False})
@@ -268,9 +289,74 @@ class Runner:
             },
         )
         try:
-            completion = await self._provider.complete(
-                call_messages, role=_REACT_ROLE, tools=self._tools.tool_specs()
+            tools = self._tools.tool_specs()
+            if isinstance(self._provider, StreamingProvider):
+                text_parts: list[str] = []
+                pending_delta_parts: list[str] = []
+                pending_delta_chars = 0
+                first_delta_emitted = False
+                completion: Completion | None = None
+
+                def emit_delta(text: str) -> None:
+                    self._emitter.emit(
+                        EventType.MODEL_OUTPUT_DELTA,
+                        span_id=model_span,
+                        parent_span_id=parent_span_id,
+                        payload={"text": text},
+                    )
+
+                async for stream_event in self._provider.stream_complete(
+                    call_messages,
+                    role=_REACT_ROLE,
+                    tools=tools,
+                ):
+                    if isinstance(stream_event, TextDelta):
+                        if completion is not None:
+                            raise ProviderStreamProtocolError(
+                                "CompletionFinished 之后仍收到文本增量"
+                            )
+                        if stream_event.text:
+                            text_parts.append(stream_event.text)
+                            if not first_delta_emitted:
+                                emit_delta(stream_event.text)
+                                first_delta_emitted = True
+                            else:
+                                pending_delta_parts.append(stream_event.text)
+                                pending_delta_chars += len(stream_event.text)
+                                if pending_delta_chars >= _STREAM_DELTA_BATCH_CHARS:
+                                    emit_delta("".join(pending_delta_parts))
+                                    pending_delta_parts.clear()
+                                    pending_delta_chars = 0
+                    else:
+                        if completion is not None:
+                            raise ProviderStreamProtocolError("一次流包含多个 CompletionFinished")
+                        if pending_delta_parts:
+                            emit_delta("".join(pending_delta_parts))
+                            pending_delta_parts.clear()
+                            pending_delta_chars = 0
+                        completion = stream_event.completion
+                if completion is None:
+                    raise ProviderStreamProtocolError("Provider stream 缺少 CompletionFinished")
+                if "".join(text_parts) != completion.text:
+                    raise ProviderStreamProtocolError("文本增量与最终 Completion.text 不一致")
+            else:
+                completion = await self._provider.complete(
+                    call_messages,
+                    role=_REACT_ROLE,
+                    tools=tools,
+                )
+        except asyncio.CancelledError:
+            self._emitter.emit(
+                EventType.MODEL_ENDED,
+                span_id=model_span,
+                parent_span_id=parent_span_id,
+                payload={
+                    "ok": False,
+                    "cancelled": True,
+                    "status": "cancelled",
+                },
             )
+            raise
         except Exception as exc:
             self._emitter.emit(
                 EventType.ERROR,
@@ -331,6 +417,18 @@ class Runner:
             # 让工具内部事件挂在 TOOL_CALL 之下。kernel 不认识工具拿它做的领域事情。
             ctx = ToolContext(emitter=self._emitter, parent_span_id=tool_span)
             result = await self._tools.dispatch(tool_call.name, arguments, ctx=ctx)
+        except asyncio.CancelledError:
+            self._emitter.emit(
+                EventType.TOOL_CALL_ENDED,
+                span_id=tool_span,
+                parent_span_id=parent_span_id,
+                payload={
+                    "ok": False,
+                    "cancelled": True,
+                    "status": "cancelled",
+                },
+            )
+            raise
         except HookVeto as exc:
             # 安全门阻断：fail-closed，闭合 span 后冒泡（绝不放行未中和的调用）。
             self._emitter.emit(

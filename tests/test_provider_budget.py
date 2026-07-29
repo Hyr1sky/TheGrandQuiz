@@ -1,6 +1,6 @@
 """SH-S7：完整 messages + tool specs 在每次 Provider 出站前受硬预算。"""
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 
 import pytest
 from pydantic import BaseModel
@@ -9,7 +9,16 @@ from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import EventEmitter, EventSink
 from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import Tool, ToolRegistry
-from grandquiz.providers.base import Completion, Message, Role, ToolCall, ToolSpec
+from grandquiz.providers.base import (
+    Completion,
+    CompletionFinished,
+    Message,
+    ProviderStreamEvent,
+    Role,
+    TextDelta,
+    ToolCall,
+    ToolSpec,
+)
 from grandquiz.providers.budget import BudgetedProvider, ProviderRequestBudgetExceeded
 
 
@@ -33,6 +42,24 @@ class _CountingProvider:
         return Completion(text="ok")
 
 
+class _StreamingCountingProvider(_CountingProvider):
+    def stream_complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        del messages, role, tools
+
+        async def stream() -> AsyncIterator[ProviderStreamEvent]:
+            self.calls += 1
+            yield TextDelta(text="o")
+            yield CompletionFinished(completion=Completion(text="ok"))
+
+        return stream()
+
+
 async def test_tool_schema_is_counted_before_provider_call() -> None:
     inner = _CountingProvider()
     provider = BudgetedProvider(inner=inner, counter=_CharCounter(), ceiling=100)
@@ -47,6 +74,25 @@ async def test_tool_schema_is_counted_before_provider_call() -> None:
 
     assert captured.value.tools > 100
     assert inner.calls == 0
+
+
+async def test_budgeted_provider_preserves_native_streaming_capability() -> None:
+    inner = _StreamingCountingProvider()
+    provider = BudgetedProvider(
+        inner=inner,
+        counter=_CharCounter(),
+        ceiling=1_000,
+    )
+
+    events = [
+        event async for event in provider.stream_complete([Message(role="user", content="hi")])
+    ]
+
+    assert events == [
+        TextDelta(text="o"),
+        CompletionFinished(completion=Completion(text="ok")),
+    ]
+    assert inner.calls == 1
 
 
 class _NoParams(BaseModel):

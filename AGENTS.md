@@ -8,7 +8,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 作者本人是用户 #1，同时作为 AI/Agent 工程师方向的简历项目。核心循环是"考核"：学完材料 → 被拷问
 → 暴露薄弱概念 → 记入记忆 → 下次优先考薄弱点。
 
-**当前状态（2026-07-28）**：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel/`（events/runner/tools/
+**当前状态（2026-07-29）**：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel/`（events/runner/tools/
 hooks/context/clock/recovery/trace/db）+ `providers/`（OpenAI 兼容 + Record/Replay）+ `domain/learning/`
 （考核竖切 ingest→深读→出题→判卷→薄弱记账）+ `interfaces/cli/`（ingest/quiz/react/report/trace 子命令）
 + `evals/`（17 条 Tier-1 规则用例 + case15 校准优先 Tier-2 质量门）。**最小 ReAct 对话核（R1）与全局 KB 重构均已落地**（`grandquiz react`
@@ -17,7 +17,7 @@ hooks/context/clock/recovery/trace/db）+ `providers/`（OpenAI 兼容 + Record/
 [修订化文档结构](docs/devrecords/04-revisioned-document-search-foundation.md) DS-S1–S4 代码也已落地：不可变 revision/tree、精确
 Evidence、自然节点 Reader、FTS5 与有界 Agentic Search。生产 DB 已备份并迁移到 schema v11；新增真实材料后现为
 4 resources / 122 items / 4 revisions / 1723 nodes / 1723 FTS rows / 169 evidence（117 resolved / 52 unresolved）。
-Reader、ReAct case14/case15/case17 与 Tier-2 judge 已用真实模型录制；Web Acquisition WA-S1–S5 已落地（Trafilatura、质量门、可选 Tavily / SearXNG、Search/Fetch Replay、case16/case17），免信用卡 Key、loopback-only 单容器、两种 provider 真实连通与 search → 用户选择 → ingest ReAct dogfood 均已验收。Local Web 的 LW-S1–S4 与 Web Runtime WR-O1–O4 也已落地：FastAPI 资源/大纲/有界节点、GroundedDocumentAnswer run、稳定 SSE、取消、精确 citation 与 loopback 启动，“墨迹星图”亮/暗 React Article/Assessment Workspace，复用 `AssessmentSession` 的逐题考核、可审计 Evidence reveal、幂等提交/下一题，以及 exact 当前材料、跨轮 Chat cursor 和安全实时 `TraceObservatory`。v0.1.0 功能 RC 已完成安全 Markdown、Assessment trace 终态、Chat 并发拒绝、稳定观测投影与确定性 Web Scenario Bot 收口；当前收口为 LW-S7 发布门，LW-S5 Acquisition / 可恢复审批与 LW-S6 管理入口进入 v0.1.0 后 backlog。默认 Eval/HTML 只做离线 Replay，Rule/Quality 与 execution/judge 成本分列；静态四门全绿，全量 pytest 当前为 `899 passed`，Web unit 为 `37 passed`，Playwright 桌面/移动端为 `8 passed`。Reader 真实基线为
+Reader、ReAct case14/case15/case17 与 Tier-2 judge 已用真实模型录制；Web Acquisition WA-S1–S5 已落地（Trafilatura、质量门、可选 Tavily / SearXNG、Search/Fetch Replay、case16/case17），免信用卡 Key、loopback-only 单容器、两种 provider 真实连通与 search → 用户选择 → ingest ReAct dogfood 均已验收。Local Web 的 LW-S1–S4 与 Web Runtime WR-O1–O4 也已落地：FastAPI 资源/大纲/有界节点、GroundedDocumentAnswer run、稳定 SSE、取消、精确 citation 与 loopback 启动，“墨迹星图”亮/暗 React Article/Assessment Workspace，复用 `AssessmentSession` 的逐题考核、可审计 Evidence reveal、幂等提交/下一题，以及 exact 当前材料、跨轮 Chat cursor 和安全实时 `TraceObservatory`。v0.1.0 功能 RC 已完成安全 Markdown、Assessment trace 终态、Chat 并发拒绝、Provider 原生 delta 流式 Chat、turn-scoped 真取消、版本化首次引导、稳定观测投影与确定性 Web Scenario Bot 收口；当前收口为 LW-S7 发布门，LW-S5 Acquisition / 可恢复审批与 LW-S6 管理入口进入 v0.1.0 后 backlog。默认 Eval/HTML 只做离线 Replay，Rule/Quality 与 execution/judge 成本分列；静态四门全绿，全量 pytest 当前为 `905 passed`，Web unit 为 `41 passed`，Playwright 桌面/移动端为 `12 passed`。Reader 真实基线为
 105/105 个可考节点 exactly-once 覆盖、12 个候选、0 重复、单次请求 8715 prompt tokens。DS-S3 的生产 ingest/
 人工筛选已由 trace `2515ec1af79a4a0a9860993b4a35beb9` 通过只读审计（141 个可考节点、2 批、34 条 exact
 evidence）。DS-S4 生产 trace `46b91c61c1c24ebabc94be97db31bb16` 也已通过 selected search → 3 次 bounded

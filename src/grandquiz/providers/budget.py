@@ -1,11 +1,21 @@
 """完整 Provider 请求预算装饰器。"""
 
 import json
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from grandquiz.providers.base import Completion, Message, Provider, Role, ToolSpec
+from grandquiz.providers.base import (
+    Completion,
+    CompletionFinished,
+    Message,
+    Provider,
+    ProviderStreamEvent,
+    Role,
+    StreamingProvider,
+    TextDelta,
+    ToolSpec,
+)
 
 
 class TokenEstimator(Protocol):
@@ -37,6 +47,40 @@ class BudgetedProvider:
         role: Role = "basic",
         tools: Sequence[ToolSpec] | None = None,
     ) -> Completion:
+        self._ensure_within_budget(messages, tools)
+        return await self.inner.complete(messages, role=role, tools=tools)
+
+    async def stream_complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        self._ensure_within_budget(messages, tools)
+        if isinstance(self.inner, StreamingProvider):
+            async for event in self.inner.stream_complete(
+                messages,
+                role=role,
+                tools=tools,
+            ):
+                yield event
+            return
+
+        completion = await self.inner.complete(
+            messages,
+            role=role,
+            tools=tools,
+        )
+        if completion.text:
+            yield TextDelta(text=completion.text)
+        yield CompletionFinished(completion=completion)
+
+    def _ensure_within_budget(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec] | None,
+    ) -> None:
         message_tokens = self.counter.count(
             json.dumps(
                 [message.model_dump(exclude_none=True) for message in messages],
@@ -66,4 +110,3 @@ class BudgetedProvider:
                 tools=tool_tokens,
                 ceiling=self.ceiling,
             )
-        return await self.inner.complete(messages, role=role, tools=tools)

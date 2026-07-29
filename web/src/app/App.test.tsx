@@ -108,6 +108,40 @@ afterEach(() => {
 });
 
 describe("Sidebar context switching", () => {
+  it("shows a versioned first-run tour that can be dismissed and reopened", async () => {
+    vi.stubGlobal("fetch", baseFetchMock());
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Agent Runtime" });
+
+    const tour = screen.getByRole("dialog", {
+      name: "正考级新手指南",
+    });
+    expect(tour).toHaveTextContent("1 / 4");
+    expect(tour).toHaveTextContent("选择当前材料");
+
+    await user.click(screen.getByRole("button", { name: "下一步" }));
+    expect(tour).toHaveTextContent("2 / 4");
+    expect(tour).toHaveTextContent("浏览大纲与进度");
+    expect(
+      screen.getByRole("navigation", { name: "文档大纲" }),
+    ).toHaveAttribute("data-onboarding-active", "true");
+
+    await user.click(screen.getByRole("button", { name: "跳过指南" }));
+    expect(
+      screen.queryByRole("dialog", { name: "正考级新手指南" }),
+    ).not.toBeInTheDocument();
+    expect(localStorage.getItem("grandquiz.onboarding.v1")).toBe(
+      "completed",
+    );
+
+    await user.click(screen.getByRole("button", { name: "打开新手指南" }));
+    expect(
+      screen.getByRole("dialog", { name: "正考级新手指南" }),
+    ).toBeInTheDocument();
+  });
+
   it("opens the live observatory from the compass status bar", async () => {
     const fetchMock = baseFetchMock();
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {

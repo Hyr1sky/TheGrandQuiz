@@ -377,7 +377,8 @@ LW-S1–S4 已交付 Article、Chat、Assessment 与 Trace Observatory 主路径
 
 1. **LW-S7：v0.1.0 发布门**——把生产 React build 作为明确的 package/release artifact，由 FastAPI
    同源托管；验证 loopback 启动、静态资源打包、OpenAPI drift、前后端 CI、installed-wheel smoke、
-   隐私说明与真实 dogfood。它是当前发布收口，不依赖下面两项。
+   隐私说明与真实 dogfood。功能 RC 已补齐 Provider 原生 delta → AgentEvent → Chat SSE 的流式链、
+   turn-scoped 取消、空状态示例和版本化首次引导；它们不依赖下面两项。
 2. **LW-S5：Web Acquisition 与可恢复审批（v0.1.0 后）**——把既有 Search → 用户选择 → Fetch →
    Reader 投影到 Web；审批 run 必须持久化为 `needs_input`，服务重启后仍可凭单次、可过期 token
    恢复并原子提交。质量失败不能触发 Reader、审批或 KB 写入。
