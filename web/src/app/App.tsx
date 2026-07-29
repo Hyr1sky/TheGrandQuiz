@@ -2,11 +2,13 @@ import {
   BookOpenTextIcon,
   CompassIcon,
   ExamIcon,
+  FolderPlusIcon,
   ListBulletsIcon,
   QuestionIcon,
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatPanel, type NavigationEvent } from "../features/chat/ChatPanel";
+import { AcquisitionDrawer } from "../features/acquisition/AcquisitionDrawer";
 import { ObservatoryDrawer } from "../features/observability/ObservatoryDrawer";
 import { OnboardingTour } from "../features/onboarding/OnboardingTour";
 import {
@@ -48,6 +50,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [chatTraceId, setChatTraceId] = useState<string | null>(null);
   const [observatoryOpen, setObservatoryOpen] = useState(false);
+  const [acquisitionOpen, setAcquisitionOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(
     () =>
       globalThis.localStorage?.getItem(ONBOARDING_STORAGE_KEY) !==
@@ -155,6 +158,23 @@ export function App() {
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "无法读取文档大纲",
+      );
+    }
+  };
+
+  const handleAcquisitionCompleted = async (resourceId: string) => {
+    try {
+      const loaded = await listResources();
+      setResources(loaded);
+      const imported = loaded.find(
+        (candidate) => candidate.resource_id === resourceId,
+      );
+      if (imported !== undefined) {
+        await changeResource(imported);
+      }
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "材料已入库，但刷新列表失败",
       );
     }
   };
@@ -321,11 +341,17 @@ export function App() {
         {error !== null && resource === null ? (
           <p>{error}</p>
         ) : resource === null ? (
-          <p>
-            {resources.length === 0
-              ? "正在打开本地材料..."
-              : "知识库中还没有材料。"}
-          </p>
+          <div className="empty-library">
+            <FolderPlusIcon aria-hidden size={34} weight="duotone" />
+            <h1>知识星图还没有材料</h1>
+            <p>上传 Markdown、纯文本，或从公开网页开始第一次深读。</p>
+            <button
+              type="button"
+              onClick={() => setAcquisitionOpen(true)}
+            >
+              添加第一份材料
+            </button>
+          </div>
         ) : (
           <>
             {resource.topic ? (
@@ -402,6 +428,16 @@ export function App() {
             ) : null}
             <button
               type="button"
+              className="acquisition-launcher"
+              aria-label="添加与管理材料"
+              aria-expanded={acquisitionOpen}
+              onClick={() => setAcquisitionOpen(true)}
+            >
+              <FolderPlusIcon aria-hidden size={17} />
+              <span>添加材料</span>
+            </button>
+            <button
+              type="button"
               className="onboarding-help"
               aria-label="打开新手指南"
               onClick={() => setOnboardingOpen(true)}
@@ -456,6 +492,13 @@ export function App() {
           open={observatoryOpen}
           traceId={assessment?.trace_id ?? chatTraceId}
           onClose={() => setObservatoryOpen(false)}
+        />
+        <AcquisitionDrawer
+          open={acquisitionOpen}
+          onClose={() => setAcquisitionOpen(false)}
+          onCompleted={(resourceId) => {
+            void handleAcquisitionCompleted(resourceId);
+          }}
         />
         {onboardingOpen ? (
           <OnboardingTour onComplete={completeOnboarding} />

@@ -14,6 +14,12 @@ RC 测试不是收集“喜欢/不喜欢”，而是回答三个问题：
 
 - 使用 Release 提供的 wheel，不共享维护者的开发目录；
 - 使用独立 `.env` 和测试供应商 key，设置可接受的额度；
+- 若通过 OpenRouter BYOK 发放临时 key：为每位测试者创建独立、限额、可过期的 key；在两个 BYOK
+  provider 上开启 `Always use for this provider`，并设置
+  `LLM_ONLY_PROVIDER=deepseek` / `ENRICH_LLM_ONLY_PROVIDER=alibaba`，使上游失败时直接报错而不走
+  OpenRouter 共享端点；
+- 给临时 key 单独分配 Guardrail，只允许本次 RC 使用的两个模型与两个 provider；不要修改整个
+  workspace 的默认 Guardrail，以免影响维护者自己的其他 key；
 - 优先使用公开文档或测试者有权发送给 LLM 的非敏感材料；
 - 测试前备份 `~/.grandquiz`，或使用没有生产数据的新设备/账户；
 - 不把 Local Web 暴露到局域网或公网；

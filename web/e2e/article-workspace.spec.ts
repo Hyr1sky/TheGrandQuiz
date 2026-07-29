@@ -80,6 +80,30 @@ test("guides the first run and can be reopened", async ({ page }) => {
   await page.getByRole("button", { name: "跳过指南" }).click();
 });
 
+test("uploads, approves, and switches to a new material", async ({ page }) => {
+  await page.goto("/");
+  await dismissOnboarding(page);
+  await page.getByRole("button", { name: "添加与管理材料" }).click();
+  const drawer = page.getByRole("dialog", { name: "添加与管理材料" });
+  await drawer
+    .locator('input[type="file"]')
+    .setInputFiles("e2e/fixtures/event-spine.md");
+  await drawer.getByRole("button", { name: "开始解析" }).click();
+
+  await expect(drawer.getByText("事件事实源", { exact: true })).toBeVisible();
+  await expect(
+    drawer.getByText("事件是系统唯一的事实来源", { exact: true }),
+  ).toBeVisible();
+  await drawer.getByRole("button", { name: "批准 1 个知识点" }).click();
+  await expect(drawer.getByText("材料已经进入知识星图")).toBeVisible();
+  await drawer.getByRole("button", { name: "关闭材料管理" }).click();
+
+  await expect(page.getByRole("combobox", { name: "当前材料" })).toHaveValue(
+    /.+/,
+  );
+  await expect(page.getByRole("heading", { name: "上传材料：事件脊柱" })).toBeVisible();
+});
+
 test("blocks Markdown network images and contains truly wide content", async ({
   page,
 }, testInfo) => {

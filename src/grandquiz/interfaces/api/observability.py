@@ -271,6 +271,8 @@ def _trace_status(events: list[AgentEvent]) -> TraceStatus:
             return "cancelled"
         if status == "failed":
             return "failed"
+        if status == "completed":
+            return "completed"
         if event.type in {EventType.AGENT_TURN_ENDED, EventType.TURN_ENDED}:
             return "failed" if event.payload.get("ok") is False else "completed"
         if event.type.endswith("run.ended"):

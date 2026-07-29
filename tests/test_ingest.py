@@ -18,7 +18,12 @@ from grandquiz.domain.learning.approval import (
     ScriptedApprovalGate,
 )
 from grandquiz.domain.learning.events import LearningEvent
-from grandquiz.domain.learning.ingest import ingest_resource
+from grandquiz.domain.learning.ingest import (
+    PreparedIngest,
+    commit_prepared_ingest,
+    ingest_resource,
+    prepare_ingest,
+)
 from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.evals.harness import build_event_harness as _harness
@@ -199,6 +204,52 @@ async def test_happy_path_only_approved_items_enter_store() -> None:
         point = next(e for e in events if e.type == etype)
         assert point.span_id is None
         assert point.parent_span_id == ingest_root
+    trace.close()
+
+
+async def test_prepare_and_commit_keep_unapproved_candidates_out_of_store() -> None:
+    emitter, events, trace = _harness()
+    store = LearningStore()
+
+    prepared = await prepare_ingest(
+        _URL,
+        source=lambda _url: _CONTENT,
+        provider=_FixedProvider(_READER_JSON),
+        store=store,
+        emitter=emitter,
+        max_bytes=4096,
+        allowed_domains=_ALLOWED,
+        persist_failed_resource=False,
+    )
+
+    assert isinstance(prepared, PreparedIngest)
+    assert store.get_resource(prepared.resource.resource_id) is None
+    assert store.all_items() == []
+    assert {item.concept for item in prepared.candidates} == {
+        "闭包",
+        "变量提升",
+        "事件循环",
+    }
+
+    approved = [item for item in prepared.candidates if _keep_two(item)]
+    result = commit_prepared_ingest(
+        prepared,
+        approved=approved,
+        store=store,
+        emitter=emitter,
+    )
+
+    assert result.status == "read"
+    assert {item.concept for item in store.items_for_resource(result.resource_id)} == {
+        "闭包",
+        "事件循环",
+    }
+    assert [event.type for event in events][-4:] == [
+        LearningEvent.RESOURCE_APPROVED,
+        LearningEvent.ITEM_CREATED,
+        LearningEvent.ITEM_CREATED,
+        _INGEST_ENDED,
+    ]
     trace.close()
 
 

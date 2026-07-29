@@ -135,6 +135,8 @@ class RoleConfig:
     base_url: str
     model: str
     timeout_seconds: float = 60.0
+    # OpenRouter BYOK 可选约束：指定后只允许该 provider，且禁用共享端点 fallback。
+    only_provider: str | None = None
     # 思考模式开关。Qwen3/DashScope 用 extra_body 的 enable_thinking=False 关（非流式往往必须关）；
     # deepseek 侧是否认同名参数由 smoke 验证（见 scripts/smoke_llm.py）。
     disable_thinking: bool = False
@@ -163,6 +165,7 @@ def _read_role(prefix: str) -> RoleConfig:
         base_url=required(f"{prefix}BASE_URL"),
         model=required(f"{prefix}MODEL"),
         timeout_seconds=float(os.environ.get(f"{prefix}TIMEOUT_SECONDS", "60")),
+        only_provider=os.environ.get(f"{prefix}ONLY_PROVIDER", "").strip() or None,
         disable_thinking=os.environ.get(f"{prefix}DISABLE_THINKING", "").strip().lower() in _TRUTHY,
     )
 
@@ -200,6 +203,11 @@ class OpenAICompatProvider:
         extra_body: dict[str, object] = {}
         if config.disable_thinking:
             extra_body["enable_thinking"] = False
+        if config.only_provider is not None:
+            extra_body["provider"] = {
+                "only": [config.only_provider],
+                "allow_fallbacks": False,
+            }
         return _PreparedChatRequest(
             client=self._clients[role],
             model=config.model,

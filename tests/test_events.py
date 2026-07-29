@@ -25,6 +25,24 @@ def test_new_span_id_is_unique_and_deterministic() -> None:
     assert emitter.new_span_id() == "t:s1"
 
 
+def test_emitter_can_resume_a_persisted_trace_without_reusing_ids() -> None:
+    events: list[AgentEvent] = []
+    sink = EventSink()
+    sink.subscribe(events.append)
+    emitter = EventEmitter(
+        sink,
+        ManualClock(),
+        trace_id="t",
+        initial_seq=7,
+        initial_span_counter=3,
+    )
+
+    assert emitter.new_span_id() == "t:s3"
+    emitter.emit("approval.decided")
+
+    assert events[0].seq == 7
+
+
 def test_emit_returns_event_with_payload_and_span_links() -> None:
     emitter = EventEmitter(EventSink(), ManualClock(), trace_id="t")
     event = emitter.emit(

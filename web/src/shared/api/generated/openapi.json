@@ -1,6 +1,319 @@
 {
   "components": {
     "schemas": {
+      "AcquisitionCandidateView": {
+        "properties": {
+          "concept": {
+            "title": "Concept",
+            "type": "string"
+          },
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "concept",
+          "summary",
+          "confidence",
+          "evidence"
+        ],
+        "title": "AcquisitionCandidateView",
+        "type": "object"
+      },
+      "AcquisitionCreated": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/AcquisitionCandidateView"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "kind": {
+            "enum": [
+              "upload",
+              "url"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "resume_token": {
+            "title": "Resume Token",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "needs_input",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "token_expires_at": {
+            "title": "Token Expires At",
+            "type": "number"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "run_id",
+          "trace_id",
+          "kind",
+          "display_name",
+          "status",
+          "created_at",
+          "updated_at",
+          "resume_token",
+          "token_expires_at"
+        ],
+        "title": "AcquisitionCreated",
+        "type": "object"
+      },
+      "AcquisitionList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AcquisitionView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AcquisitionList",
+        "type": "object"
+      },
+      "AcquisitionUiEvent": {
+        "properties": {
+          "data": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Data",
+            "type": "object"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "acquisition.queued",
+              "acquisition.started",
+              "acquisition.fetched",
+              "acquisition.candidates_ready",
+              "acquisition.needs_input",
+              "acquisition.succeeded",
+              "acquisition.failed",
+              "acquisition.cancelled"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sequence",
+          "type",
+          "run_id",
+          "trace_id"
+        ],
+        "title": "AcquisitionUiEvent",
+        "type": "object"
+      },
+      "AcquisitionView": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/AcquisitionCandidateView"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "kind": {
+            "enum": [
+              "upload",
+              "url"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "needs_input",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "run_id",
+          "trace_id",
+          "kind",
+          "display_name",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AcquisitionView",
+        "type": "object"
+      },
       "AnswerSubmissionRequest": {
         "properties": {
           "answer": {
@@ -19,6 +332,27 @@
           "answer"
         ],
         "title": "AnswerSubmissionRequest",
+        "type": "object"
+      },
+      "ApprovalRequest": {
+        "properties": {
+          "approved_item_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Approved Item Ids",
+            "type": "array"
+          },
+          "resume_token": {
+            "title": "Resume Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resume_token",
+          "approved_item_ids"
+        ],
+        "title": "ApprovalRequest",
         "type": "object"
       },
       "AssessmentJudgementView": {
@@ -231,6 +565,19 @@
         "title": "AssessmentView",
         "type": "object"
       },
+      "CancelRequest": {
+        "properties": {
+          "resume_token": {
+            "title": "Resume Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resume_token"
+        ],
+        "title": "CancelRequest",
+        "type": "object"
+      },
       "ChatUiEvent": {
         "properties": {
           "data": {
@@ -258,6 +605,56 @@
           "session_id"
         ],
         "title": "ChatUiEvent",
+        "type": "object"
+      },
+      "CreateAcquisitionRequest": {
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "kind": {
+            "enum": [
+              "upload",
+              "url"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "CreateAcquisitionRequest",
         "type": "object"
       },
       "DocumentNodeReadResponse": {
@@ -1333,6 +1730,294 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/acquisitions": {
+      "get": {
+        "operationId": "list_acquisitions_api_v1_acquisitions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcquisitionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Acquisitions",
+        "tags": [
+          "acquisitions"
+        ]
+      },
+      "post": {
+        "operationId": "create_acquisition_api_v1_acquisitions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAcquisitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcquisitionCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Acquisition",
+        "tags": [
+          "acquisitions"
+        ]
+      }
+    },
+    "/api/v1/acquisitions/{run_id}": {
+      "get": {
+        "operationId": "get_acquisition_api_v1_acquisitions__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcquisitionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Acquisition",
+        "tags": [
+          "acquisitions"
+        ]
+      }
+    },
+    "/api/v1/acquisitions/{run_id}/approval": {
+      "post": {
+        "operationId": "approve_acquisition_api_v1_acquisitions__run_id__approval_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcquisitionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Acquisition",
+        "tags": [
+          "acquisitions"
+        ]
+      }
+    },
+    "/api/v1/acquisitions/{run_id}/cancel": {
+      "post": {
+        "operationId": "cancel_acquisition_api_v1_acquisitions__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcquisitionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Acquisition",
+        "tags": [
+          "acquisitions"
+        ]
+      }
+    },
+    "/api/v1/acquisitions/{run_id}/events": {
+      "get": {
+        "operationId": "stream_acquisition_events_api_v1_acquisitions__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcquisitionUiEvent"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcquisitionUiEvent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Acquisition Events",
+        "tags": [
+          "acquisitions"
+        ]
+      }
+    },
     "/api/v1/assessments": {
       "post": {
         "operationId": "start_assessment_api_v1_assessments_post",

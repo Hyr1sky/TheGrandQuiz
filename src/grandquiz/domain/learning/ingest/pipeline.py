@@ -53,21 +53,32 @@ class IngestResult(BaseModel):
     items: list[KnowledgeItem]
 
 
-async def ingest_resource(
+class PreparedIngest(BaseModel):
+    """已抓取、深读并通过证据门，但尚未进入知识库的可持久化快照。"""
+
+    resource: LearningResource
+    candidates: list[KnowledgeItem]
+    revision_id: str
+    node_count: int
+    ingest_span_id: str
+
+
+async def prepare_ingest(
     url: str,
     *,
     source: FetchSource,
     provider: Provider,
     store: Store,
-    approval: ApprovalGate,
     emitter: EventEmitter,
     max_bytes: int,
     allowed_domains: Collection[str] | Literal["*"],
-) -> IngestResult:
-    """把一个 URL 喂入全局 KB，深读 → 审批 → 入库，全程发事件。见模块 docstring。
+    persist_failed_resource: bool = True,
+) -> PreparedIngest | IngestResult:
+    """抓取并深读材料，返回可审批快照；成功时绝不修改知识库。
 
     ``resource_id`` 从稳定 locator 确定性派生（locator-addressed，ADR-0007）：同一 locator 重
-    ingest 仍定位同一资源；审批成功后以原子快照提交切换 current revision（不按标题分库）。
+    ingest 仍定位同一资源。``persist_failed_resource=False`` 供 Web 管理态使用，确保失败或取消
+    不留下半成品；CLI/ReAct 的兼容入口保留既有失败诊断记录语义。
     """
     # a. 开 ingest span（根）。此后任何未预期异常都必须闭合它（见末尾 except）。
     ingest_span = emitter.new_span_id()
@@ -81,7 +92,7 @@ async def ingest_resource(
 
     def fail(reason: str, *, classification: str | None = None) -> IngestResult:
         # 首次 ingest 失败留下 failed 诊断记录；刷新失败不覆盖既有获批 read 快照。
-        if previous is None or previous.status != "read":
+        if persist_failed_resource and (previous is None or previous.status != "read"):
             failed = resource.model_copy(update={"status": "failed"})
             store.add_resource(failed)
         failure_payload = {"resource_id": resource.resource_id, "url": url, "reason": reason}
@@ -226,50 +237,141 @@ async def ingest_resource(
             },
         )
 
-        # f. 审批门：内部发 requested/decided 两个事件，再返回获批子集。
-        approved = approval.request_approval(
-            candidates, emitter=emitter, parent_span_id=ingest_span
+        return PreparedIngest(
+            resource=resource,
+            candidates=candidates,
+            revision_id=document.revision.revision_id,
+            node_count=len(document.nodes),
+            ingest_span_id=ingest_span,
         )
-
-        # g. 审批完成后一次原子替换 resource revision + 获批 KnowledgeItem 快照。
-        store.replace_snapshot(resource, approved)
-        committed_revision = store.current_revision(resource.resource_id)
-        if (
-            committed_revision is None
-            or committed_revision.revision_id != document.revision.revision_id
-        ):
-            raise RuntimeError("获批 revision/tree 未成为当前快照")
-        emitter.emit(
-            LearningEvent.REVISION_COMMITTED,
-            parent_span_id=ingest_span,
-            payload={
-                "resource_id": resource.resource_id,
-                "revision_id": committed_revision.revision_id,
-                "node_count": len(document.nodes),
-            },
-        )
-        emitter.emit(
-            LearningEvent.RESOURCE_APPROVED,
-            parent_span_id=ingest_span,
-            payload={
-                "resource_id": resource.resource_id,
-                "approved_item_ids": [item.item_id for item in approved],
-            },
-        )
-        for item in approved:
-            emitter.emit(
-                LearningEvent.ITEM_CREATED,
-                parent_span_id=ingest_span,
-                payload=item.model_dump(),
-            )
-
-        # h. 闭合 ingest span。
-        emitter.emit(
-            _INGEST_ENDED, span_id=ingest_span, payload={"ok": True, "item_count": len(approved)}
-        )
-        return IngestResult(status="read", resource_id=resource.resource_id, items=approved)
     except Exception as exc:
         # 非领域异常（ReplayMiss / provider 基础设施错误 / bug）：闭合 ingest span 后原样冒泡。
         # 不吞成 "failed"——那会掩盖 harness / 基础设施错误；优雅降级的恢复语义属 M6 RecoveryPolicy。
         emitter.emit(_INGEST_ENDED, span_id=ingest_span, payload={"ok": False, "error": repr(exc)})
         raise
+
+
+def persist_prepared_ingest(
+    prepared: PreparedIngest,
+    *,
+    approved: list[KnowledgeItem],
+    store: Store,
+) -> IngestResult:
+    """只提交获批快照，不发事件；调用方可把它纳入更大的原子事务。"""
+    candidate_ids = {item.item_id for item in prepared.candidates}
+    if any(item.item_id not in candidate_ids for item in approved):
+        raise ValueError("approved 必须是 prepared candidates 的子集")
+
+    store.replace_snapshot(prepared.resource, approved)
+    committed_revision = store.current_revision(prepared.resource.resource_id)
+    if committed_revision is None or committed_revision.revision_id != prepared.revision_id:
+        raise RuntimeError("获批 revision/tree 未成为当前快照")
+    return IngestResult(
+        status="read",
+        resource_id=prepared.resource.resource_id,
+        items=approved,
+    )
+
+
+def emit_prepared_ingest_committed(
+    prepared: PreparedIngest,
+    result: IngestResult,
+    *,
+    emitter: EventEmitter,
+) -> None:
+    """持久事务提交后，把已经成立的 ingest 事实写入事件脊柱。"""
+    emitter.emit(
+        LearningEvent.REVISION_COMMITTED,
+        parent_span_id=prepared.ingest_span_id,
+        payload={
+            "resource_id": prepared.resource.resource_id,
+            "revision_id": prepared.revision_id,
+            "node_count": prepared.node_count,
+        },
+    )
+    emitter.emit(
+        LearningEvent.RESOURCE_APPROVED,
+        parent_span_id=prepared.ingest_span_id,
+        payload={
+            "resource_id": prepared.resource.resource_id,
+            "approved_item_ids": [item.item_id for item in result.items],
+        },
+    )
+    for item in result.items:
+        emitter.emit(
+            LearningEvent.ITEM_CREATED,
+            parent_span_id=prepared.ingest_span_id,
+            payload=item.model_dump(),
+        )
+    emitter.emit(
+        _INGEST_ENDED,
+        span_id=prepared.ingest_span_id,
+        payload={"ok": True, "item_count": len(result.items)},
+    )
+
+
+def commit_prepared_ingest(
+    prepared: PreparedIngest,
+    *,
+    approved: list[KnowledgeItem],
+    store: Store,
+    emitter: EventEmitter,
+) -> IngestResult:
+    """兼容同步入口：提交获批快照，并在提交成功后闭合 ingest span。"""
+    result = persist_prepared_ingest(
+        prepared,
+        approved=approved,
+        store=store,
+    )
+    emit_prepared_ingest_committed(prepared, result, emitter=emitter)
+    return result
+
+
+def abort_ingest(
+    ingest_span_id: str,
+    *,
+    reason: str,
+    emitter: EventEmitter,
+) -> None:
+    """取消或进程中断时闭合尚未提交的 ingest span；不触碰知识库。"""
+    emitter.emit(
+        _INGEST_ENDED,
+        span_id=ingest_span_id,
+        payload={"ok": False, "reason": reason},
+    )
+
+
+async def ingest_resource(
+    url: str,
+    *,
+    source: FetchSource,
+    provider: Provider,
+    store: Store,
+    approval: ApprovalGate,
+    emitter: EventEmitter,
+    max_bytes: int,
+    allowed_domains: Collection[str] | Literal["*"],
+) -> IngestResult:
+    """兼容 CLI/ReAct 的单次工作流：准备 → 同步审批 → 原子提交。"""
+    prepared = await prepare_ingest(
+        url,
+        source=source,
+        provider=provider,
+        store=store,
+        emitter=emitter,
+        max_bytes=max_bytes,
+        allowed_domains=allowed_domains,
+    )
+    if isinstance(prepared, IngestResult):
+        return prepared
+    approved = approval.request_approval(
+        prepared.candidates,
+        emitter=emitter,
+        parent_span_id=prepared.ingest_span_id,
+    )
+    return commit_prepared_ingest(
+        prepared,
+        approved=approved,
+        store=store,
+        emitter=emitter,
+    )

@@ -187,6 +187,25 @@ article:focus-visible {
   background: var(--field);
 }
 
+.acquisition-launcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-quiet);
+  color: var(--brass-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.acquisition-launcher[aria-expanded="true"] {
+  border-color: var(--evidence);
+  background: var(--evidence-soft);
+  color: var(--evidence);
+}
+
 .theme-toggle {
   position: static;
   z-index: auto;
@@ -408,6 +427,48 @@ article:focus-visible {
   border-bottom: 1px solid var(--line-strong);
   color: var(--brass-strong);
   font: 500 20px/1.4 var(--font-reading);
+}
+
+.empty-library {
+  display: flex;
+  width: min(100%, 620px);
+  min-height: 420px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  margin-inline: auto;
+  padding: 40px;
+  border: 1px dashed var(--line-strong);
+  background:
+    radial-gradient(circle at 50% 25%, var(--evidence-soft), transparent 42%),
+    var(--surface-quiet);
+  text-align: center;
+}
+
+.empty-library > svg {
+  color: var(--brass-strong);
+}
+
+.empty-library h1 {
+  margin: 18px 0 7px;
+  color: var(--text-strong);
+  font: 500 27px/1.35 var(--font-reading);
+}
+
+.empty-library p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.empty-library button {
+  margin-top: 22px;
+  padding: 8px 18px;
+  border: 1px solid var(--evidence);
+  border-radius: 9px;
+  background: var(--evidence-soft);
+  color: var(--text-strong);
 }
 
 /* ---- Footer / Compass Navigation ---- */

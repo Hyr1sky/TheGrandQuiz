@@ -9,7 +9,7 @@
 
 - `main` 已完成稳定性加固、Document Structure、Agentic Search、GroundedDocumentAnswer、
   Tier-2 Eval 与 Web Acquisition WA-S1–S5。
-- 当前工程基线为 17 条 Eval、906 项 pytest、41 项 Web unit、12 项 Playwright 场景；
+- 当前工程基线为 17 条 Eval、908 项 pytest、41 项 Web unit、12 项 Playwright 场景；
   ruff / format / pyright / import-linter / Web lint 与 typecheck 全绿。
 - `uv build` 可以生成 sdist 与 wheel；macOS / Python 3.12 仓库外安装 smoke 为 17/17。
 - Replay cassette 与生产 Web bundle 已进入 wheel，不再依赖仓库工作目录或 `tests/fixtures/`。
@@ -30,8 +30,8 @@
 ### 本次非目标
 
 - 不新增语音、多用户、鉴权或云部署；Web 只承诺 loopback local-first 使用。
-- Web Acquisition 审批若进入 v0.1.0，必须实现跨进程 suspend/resume；否则在 Web 中明确不可用，
-  不能用阻塞 HTTP request 冒充。
+- Web Acquisition 已进入 v0.1.0：必须保持跨进程 suspend/resume、单次过期 token、审批前零 KB
+  污染，不能回退成阻塞 HTTP request。
 - 不提前抽取只有 Reader 一个消费者的通用 subagent executor。
 - 不把架构审查 Candidate 01/02 的大型重构塞入发布收口。
 - 不强制发布到 PyPI；GitHub Release 与源码安装可先构成 v0.1.0。
@@ -160,9 +160,10 @@ clone → uv sync → cp .env.example .env → 配置 LLM
 - [x] 首次进入提供可跳过、可重开的四步指南，Chat 空状态提供不会自动发送的示例 prompt。
 - [x] 前端 lint、typecheck、unit test、production build 进入 CI。
 - [x] README 说明 Web 启动、DB/trace 位置、外部 LLM 数据发送和 CLI 恢复入口。
+- [x] Web 支持 Markdown/Text 上传与公开 URL 导入，完整投影状态、可取消、可恢复审批和稳定错误。
 
-首个 v0.1.0 Web release 不强制 LW-S4–S6 全部完成；若考核、Acquisition/审批或管理页未交付，Release
-Notes 必须逐项写明限制，不能用空入口占位。
+首个 v0.1.0 Web release 已完成 LW-S1–S5；LW-S6 的完整资源/知识点维护仍须在 Release Notes 明示为
+后续范围，不能用空入口占位。
 
 ## 5. 人工 dogfood 发布门
 
@@ -179,7 +180,8 @@ Notes 必须逐项写明限制，不能用空入口占位。
 ### Dogfood B：Web Acquisition 闭环
 
 - [ ] Search 返回有界候选，并在当前回合结束等待用户选择。
-- [ ] 选择一个真实 URL，完成 Fetch → Reader → 人工筛选 → 原子入库。
+- [x] 选择一个真实 URL，完成 Fetch → Reader → 人工筛选 → 原子入库（JavaGuide RAG 基础，
+  trace `34b6f8c3e2084c0c90ccac27ac6d79fe`，11/11 候选获批）。
 - [ ] 对新材料立即做一次 grounded question 或 quiz。
 - [ ] 测试一个低质量页，确认结构化失败且零 KB 污染。
 - [ ] 按 [Web Acquisition Dogfood 指南](guides/web-acquisition-dogfood.md) 导出 trace 并审计 DB。

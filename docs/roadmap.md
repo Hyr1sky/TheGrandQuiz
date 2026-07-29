@@ -372,7 +372,8 @@ eval extension points before adding many tools.
 
 ## Local Web 后续竖切
 
-LW-S1–S4 已交付 Article、Chat、Assessment 与 Trace Observatory 主路径。后续只保留三条稳定方向；
+LW-S1–S5 已交付 Article、Chat、Assessment、Trace Observatory 与 Web Acquisition 主路径。后续只保留
+两条稳定方向；
 个人开发的具体执行项默认记录在 gitignored 的 `.scratch/`，有协作者参与时再把稳定事项发布为
 GitHub Issues：
 
@@ -380,14 +381,15 @@ GitHub Issues：
    同源托管；验证 loopback 启动、静态资源打包、OpenAPI drift、前后端 CI、installed-wheel smoke、
    隐私说明与真实 dogfood。功能 RC 已补齐 Provider 原生 delta → AgentEvent → Chat SSE 的流式链、
    turn-scoped 取消、空状态示例和版本化首次引导；它们不依赖下面两项。
-2. **LW-S5：Web Acquisition 与可恢复审批（v0.1.0 后）**——把既有 Search → 用户选择 → Fetch →
-   Reader 投影到 Web；审批 run 必须持久化为 `needs_input`，服务重启后仍可凭单次、可过期 token
-   恢复并原子提交。质量失败不能触发 Reader、审批或 KB 写入。
+2. **LW-S5：Web Acquisition 与可恢复审批（✅ v0.1.0）**——上传 Markdown/Text 或输入公开 URL →
+   Fetch → Reader → 候选审批已投影到 Web；run 持久化为固定六态，`needs_input` 可在服务重启后凭单次、
+   可过期 token 恢复并原子提交。失败、取消和审批前均保持零 KB 污染；网络搜索候选继续由 ReAct
+   `web_search` 承担，不在管理抽屉重复造搜索产品。
 3. **LW-S6：资源、知识点与学习轨迹管理（v0.1.0 后）**——提供 article/revision/KnowledgeItem/
    Evidence 浏览、安全资源操作、三态学习轨迹、配置状态和数据备份说明。页面是领域行为与 trace 的
    投影，不做 SQLite 表格管理器，也不通过 API 回传 secret value。
 
-LW-S5/LW-S6 是否进入下一版本，由首轮小范围体验反馈决定；在证据出现前不阻塞 v0.1.0。
+LW-S6 是否进入下一版本，由首轮小范围体验反馈决定；在证据出现前不阻塞 v0.1.0。
 
 ## 未来方向（潜在扩展，"可达不堵死"，非 MVP）
 

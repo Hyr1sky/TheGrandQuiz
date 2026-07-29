@@ -1,0 +1,614 @@
+.acquisition-layer {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.acquisition-layer__scrim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--scrim);
+  backdrop-filter: blur(5px);
+}
+
+.acquisition-drawer {
+  position: relative;
+  display: flex;
+  width: min(620px, calc(100vw - 40px));
+  height: 100%;
+  flex-direction: column;
+  border-left: 1px solid var(--line-strong);
+  background:
+    linear-gradient(150deg, var(--glass-blur), transparent 28%),
+    var(--surface);
+  box-shadow: var(--shadow-sheet);
+  backdrop-filter: blur(26px) saturate(1.1);
+  animation: acquisition-enter 180ms ease-out;
+}
+
+@keyframes acquisition-enter {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+.acquisition-drawer__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 25px 28px 21px;
+  border-bottom: 1px solid var(--line);
+}
+
+.acquisition-drawer__header p,
+.acquisition-drawer__header h2 {
+  margin: 0;
+}
+
+.acquisition-drawer__header p {
+  color: var(--brass);
+  font: 600 10px/1.5 var(--font-interface);
+  letter-spacing: 0.18em;
+}
+
+.acquisition-drawer__header h2 {
+  margin-top: 5px;
+  color: var(--text-strong);
+  font: 500 25px/1.3 var(--font-reading);
+  letter-spacing: 0.025em;
+}
+
+.acquisition-icon-button {
+  display: inline-flex;
+  width: 40px;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--field);
+}
+
+.acquisition-drawer__body {
+  min-height: 0;
+  flex: 1;
+  padding: 24px 28px 36px;
+  overflow-y: auto;
+}
+
+.acquisition-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-quiet);
+}
+
+.acquisition-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.acquisition-tabs button[aria-selected="true"] {
+  border-color: var(--line);
+  background: var(--field);
+  box-shadow: var(--shadow-subtle);
+  color: var(--evidence);
+}
+
+.acquisition-dropzone {
+  display: flex;
+  min-height: 260px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 20px;
+  padding: 30px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 50% 20%, var(--evidence-soft), transparent 48%),
+    var(--surface-quiet);
+  text-align: center;
+}
+
+.acquisition-dropzone > svg {
+  color: var(--brass-strong);
+}
+
+.acquisition-dropzone input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.acquisition-dropzone strong {
+  color: var(--text-strong);
+  font: 600 17px/1.4 var(--font-interface);
+}
+
+.acquisition-dropzone span {
+  max-width: 370px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.acquisition-dropzone button,
+.acquisition-secondary {
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--field);
+}
+
+.acquisition-url-field {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 22px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-quiet);
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.acquisition-url-field input {
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--field);
+  color: var(--text);
+  font: 400 14px/1.5 var(--font-interface);
+}
+
+.acquisition-url-field small {
+  color: var(--muted);
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.acquisition-primary {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border: 1px solid color-mix(in srgb, var(--evidence) 70%, var(--line));
+  border-radius: 10px;
+  background: var(--evidence-soft);
+  box-shadow: var(--shadow-raised);
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.acquisition-drawer__body > .acquisition-primary {
+  width: 100%;
+  margin-top: 18px;
+}
+
+.acquisition-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 11px 13px;
+  border: 1px solid color-mix(in srgb, var(--danger) 42%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.acquisition-error svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.acquisition-history {
+  margin-top: 30px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.acquisition-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.acquisition-section-title h3,
+.acquisition-section-title p {
+  margin: 0;
+}
+
+.acquisition-section-title h3 {
+  color: var(--text-strong);
+  font: 600 14px/1.5 var(--font-interface);
+}
+
+.acquisition-section-title p,
+.acquisition-section-title > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.acquisition-section-title button {
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--evidence);
+  font-size: 12px;
+}
+
+.acquisition-history > button {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 12px;
+  width: 100%;
+  align-items: center;
+  padding: 11px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  text-align: left;
+}
+
+.acquisition-history > button > span:last-child {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.acquisition-history strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acquisition-history small {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: var(--shadow-status-muted);
+}
+
+.status-dot--running,
+.status-dot--queued,
+.status-dot--needs_input {
+  background: var(--evidence);
+  box-shadow: var(--shadow-status-active);
+}
+
+.status-dot--succeeded {
+  background: var(--success);
+  box-shadow: var(--shadow-status-success);
+}
+
+.status-dot--failed,
+.status-dot--cancelled {
+  background: var(--danger);
+  box-shadow: var(--shadow-status-danger);
+}
+
+.acquisition-run-title,
+.acquisition-run-title > div {
+  display: flex;
+  align-items: center;
+}
+
+.acquisition-run-title {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.acquisition-run-title > div {
+  min-width: 0;
+  gap: 11px;
+}
+
+.acquisition-run-title svg {
+  color: var(--brass);
+}
+
+.acquisition-run-title strong,
+.acquisition-run-title small {
+  display: block;
+}
+
+.acquisition-run-title strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acquisition-run-title small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.acquisition-status {
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.acquisition-status--needs_input,
+.acquisition-status--running {
+  border-color: color-mix(in srgb, var(--evidence) 48%, transparent);
+  color: var(--evidence);
+}
+
+.acquisition-status--succeeded {
+  color: var(--success);
+}
+
+.acquisition-status--failed,
+.acquisition-status--cancelled {
+  color: var(--danger);
+}
+
+.acquisition-progress {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 25px 0 28px;
+  padding: 0;
+  list-style: none;
+}
+
+.acquisition-progress li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.acquisition-progress li::before {
+  position: absolute;
+  z-index: -1;
+  top: 14px;
+  right: 50%;
+  width: 100%;
+  height: 1px;
+  background: var(--line);
+  content: "";
+}
+
+.acquisition-progress li:first-child::before {
+  display: none;
+}
+
+.acquisition-progress li > span {
+  display: inline-flex;
+  width: 29px;
+  height: 29px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  font-size: 11px;
+}
+
+.acquisition-progress li[data-state="done"],
+.acquisition-progress li[data-state="active"] {
+  color: var(--text);
+}
+
+.acquisition-progress li[data-state="done"] > span {
+  border-color: transparent;
+  color: var(--success);
+}
+
+.acquisition-progress li[data-state="active"] > span {
+  border-color: var(--evidence);
+  box-shadow: var(--shadow-status-active);
+  color: var(--evidence);
+}
+
+.acquisition-processing,
+.acquisition-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-quiet);
+}
+
+.acquisition-processing > svg {
+  flex: 0 0 auto;
+  color: var(--evidence);
+}
+
+.acquisition-processing strong,
+.acquisition-result strong {
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.acquisition-processing p,
+.acquisition-result p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.acquisition-approval {
+  margin-top: 6px;
+}
+
+.acquisition-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.acquisition-candidate {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: start;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-quiet);
+  cursor: pointer;
+}
+
+.acquisition-candidate[data-selected="true"] {
+  border-color: color-mix(in srgb, var(--evidence) 54%, transparent);
+  background: var(--evidence-soft);
+}
+
+.acquisition-candidate > input {
+  position: absolute;
+  opacity: 0;
+}
+
+.acquisition-candidate__check {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  color: var(--canvas);
+  font-size: 12px;
+}
+
+.acquisition-candidate[data-selected="true"] .acquisition-candidate__check {
+  border-color: var(--evidence);
+  background: var(--evidence);
+}
+
+.acquisition-candidate__content strong {
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.acquisition-candidate__content p {
+  margin: 5px 0 9px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.acquisition-candidate__content q {
+  display: block;
+  margin-top: 6px;
+  padding: 7px 9px;
+  border-left: 2px solid var(--evidence);
+  background: var(--field);
+  color: var(--text);
+  font: 400 11px/1.55 var(--font-reading);
+}
+
+.acquisition-confidence {
+  color: var(--brass);
+  font-size: 11px;
+}
+
+.acquisition-result {
+  margin-top: 8px;
+}
+
+.acquisition-result--success > svg {
+  color: var(--success);
+}
+
+.acquisition-result--error > svg {
+  color: var(--danger);
+}
+
+.acquisition-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.is-spinning {
+  animation: acquisition-spin 900ms linear infinite;
+}
+
+@keyframes acquisition-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 680px) {
+  .acquisition-drawer {
+    width: 100vw;
+  }
+
+  .acquisition-drawer__header,
+  .acquisition-drawer__body {
+    padding-inline: 20px;
+  }
+
+  .acquisition-progress {
+    grid-template-columns: repeat(4, minmax(58px, 1fr));
+    overflow-x: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acquisition-drawer {
+    animation: none;
+  }
+
+  .is-spinning {
+    animation-duration: 1.8s;
+  }
+}

@@ -147,7 +147,7 @@ schema v11；受 prompt/tool schema 影响的真实 cassette 已重录，生产�
 | --- | --- |
 | **注入防护** | 学习 agent 读网页 / GitHub，抓回内容是不可信输入。工具结果打"不可信"标记 + system prompt 硬约束 + fetch 层做大小 / 超时 / 域名限制。学习场景相对学者场景**新增的攻击面**，进 MVP |
 | **结构化输出契约** | subagent 与 LLM 工具（出题 / 判卷）的返回结果用 pydantic schema 强制校验，失败自动重试——"output can be verified" 的落地机制 |
-| **中断与取消 / 审批挂起** | 长 turn（深度阅读 40s+）的用户中断、优雅终止、半成品落 trace。当前已交付阻塞 CLI 筛选，并发 `approval.requested/decided`；目标形态仍是可挂起 / 可恢复 turn（持久待决状态 + token），该能力尚未实现，不能把同步协议当成 suspend/resume |
+| **中断与取消 / 审批挂起** | 长 turn（深度阅读 40s+）的用户中断、优雅终止、半成品落 trace。CLI 保留同步筛选；Web Acquisition 已用持久六态、单次过期 token 与同 trace sequence 实现跨进程 suspend/resume。后续长 turn 继续复用这套形状，不另起阻塞协议 |
 | **确定性基建** | 时钟 / 随机数走注入（`Clock` 抽象 + 种子化 RNG），否则 replay 永远对不齐。第一天避开这个坑 |
 | **Token / 成本核算** | 每 turn 用量进 trace，eval 报告带成本列 |
 | **SQLite 迁移** | 版本号 + 顺序 SQL 文件，不上 alembic |

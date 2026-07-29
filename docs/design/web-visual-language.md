@@ -26,6 +26,8 @@ is not a decorative alternate page.
 6. Evidence is initially masked by frosted glass and can be deliberately revealed after the
    approved three-second hover, or immediately by click/keyboard.
 7. Observability is a live drawer projected from the event spine, not a dashboard home page.
+8. Acquisition is a right-side glass sheet: input, deterministic progress, candidate evidence,
+   approval, and recovery live in one management state instead of scattered modal dialogs.
 
 No screen may default to a KPI grid or a collection of nested cards. Chat bubbles remain
 restrained; long-form evidence keeps editorial hierarchy.
@@ -96,3 +98,7 @@ The approved direction is Anthropic-like in tone—humanist, editorial, calm—n
 - Disconnected SSE: keep received stages, state that the live connection is interrupted, and
   resume from the last event sequence.
 - Cancelled: terminal run state; keep trace link and question visible.
+- Acquisition `needs_input`: keep concept, summary, confidence, and short exact-evidence previews
+  together; selection is explicit, and no candidate appears as already committed.
+- Acquisition failure: state that the formal knowledge base was not changed, expose the redacted
+  failure class, and make retry the next clear action.

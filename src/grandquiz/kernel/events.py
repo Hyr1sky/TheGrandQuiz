@@ -144,12 +144,22 @@ class EventEmitter:
     ``trace_id`` 是每次 run 的输入。
     """
 
-    def __init__(self, sink: EventSink, clock: Clock, trace_id: str) -> None:
+    def __init__(
+        self,
+        sink: EventSink,
+        clock: Clock,
+        trace_id: str,
+        *,
+        initial_seq: int = 0,
+        initial_span_counter: int = 0,
+    ) -> None:
+        if initial_seq < 0 or initial_span_counter < 0:
+            raise ValueError("事件与 span 计数器不能为负数")
         self._sink = sink
         self._clock = clock
         self._trace_id = trace_id
-        self._seq = 0
-        self._span_counter = 0
+        self._seq = initial_seq
+        self._span_counter = initial_span_counter
 
     @property
     def trace_id(self) -> str:

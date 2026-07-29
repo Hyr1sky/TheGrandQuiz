@@ -47,7 +47,7 @@ TheGrandQuiz 同时包含一套可观测、可恢复、可评测的 Agent Runtim
 
 | 能力 | 当前体验 | 工程保证 |
 | --- | --- | --- |
-| **材料入库** | 深读本地 Markdown / Text，人工筛选知识点 | 拒绝或失败不会留下半份知识快照 |
+| **材料入库** | CLI 或 Web 上传 Markdown / Text，也可导入公开 URL | 深读后人工筛选；拒绝或失败不会留下半份知识快照 |
 | **材料对话** | 通过 CLI ReAct 或 Local Web 围绕当前材料提问 | exact scope，不能静默扩大到全库 |
 | **逐题考核** | 选择题、开放问答、薄弱点复考 | LLM 判卷，代码负责状态转移与记账 |
 | **精确 Evidence** | 从答案和考题回到原文依据 | 定位到 revision / node / source span |
@@ -56,8 +56,9 @@ TheGrandQuiz 同时包含一套可观测、可恢复、可评测的 Agent Runtim
 | **Local Web** | 三栏 Chat、文章阅读、Evidence 揭示与考核 | 同源 SPA、安全 Markdown、稳定 SSE |
 
 > [!NOTE]
-> 首个版本是**本机单用户候选版**，不支持账号、多用户、云同步或公网服务。Web Acquisition/审批、
-> 文章与知识点管理、连续“掌握度分数”属于后续版本；现有 Web 服务也不应直接暴露到局域网或公网。
+> 首个版本是**本机单用户候选版**，不支持账号、多用户、云同步或公网服务。Web 已提供材料导入与
+> 可恢复审批，但完整的文章/知识点维护操作和连续“掌握度分数”仍属于后续版本；现有 Web 服务也
+> 不应直接暴露到局域网或公网。
 
 ## 数据与外部服务
 
@@ -105,7 +106,8 @@ uv run grandquiz ingest ./notes/agent-runtime.md --task "Agent Runtime"
 ```
 
 Reader 会展示候选 KnowledgeItem；只有你确认保留的条目才会原子写入知识库。拒绝或失败不会留下半份
-知识快照。
+知识快照。也可以先启动 Local Web，再从顶栏“添加材料”上传 `.md` / `.markdown` / `.txt` 或输入公开
+网页 URL；处理状态和候选审批会保存在 `learning.db`，服务重启后仍可在原浏览器恢复。
 
 ### 3. 对话或考核
 
@@ -137,8 +139,8 @@ uv run grandquiz-web
 ```
 
 浏览器打开 `http://127.0.0.1:8000`。服务同时提供打包后的 React 页面与 `/api/v1`，并且只监听
-loopback。CLI 继续作为 ingest、恢复和 trace 审计入口；v0.1.0 的 Web 尚不提供 Acquisition/审批或
-资源管理。
+loopback。Web 可完成上传/URL 导入、状态观察、候选知识点审批与失败/取消重试；CLI 继续作为批量 ingest、
+恢复和 trace 审计入口。完整的资源删除、revision/知识点维护仍不在 v0.1.0 范围内。
 
 修改前端源码时再使用两个终端进入开发模式：
 

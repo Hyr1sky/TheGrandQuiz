@@ -61,6 +61,7 @@ class LearningPersistence:
 
     def __init__(self, db_path: str | Path) -> None:
         # 延迟导入避免 Adapter 模块导入 ``persistence`` 基础类型时形成循环。
+        from grandquiz.domain.learning.acquisition import AcquisitionLedger
         from grandquiz.domain.learning.asked_questions import SqliteAskedQuestionsLedger
         from grandquiz.domain.learning.difficulty import SqliteDifficultyLedger
         from grandquiz.domain.learning.memory import SqliteLearningMemory
@@ -75,6 +76,7 @@ class LearningPersistence:
             self._database
         )
         self.difficulty: SqliteDifficultyLedger = SqliteDifficultyLedger(self._database)
+        self.acquisitions: AcquisitionLedger = AcquisitionLedger(self._database)
         self._closed = False
 
     @property

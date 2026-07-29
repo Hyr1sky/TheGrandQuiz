@@ -73,6 +73,56 @@ class _FixtureProvider:
         role: Role = "basic",
         tools: Sequence[ToolSpec] | None = None,
     ) -> Completion:
+        reader_payload: dict[str, object] = {}
+        for message in reversed(messages):
+            if message.role != "user":
+                continue
+            try:
+                payload = json.loads(message.content)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict) and "untrusted_document_nodes" in payload:
+                reader_payload = payload
+                break
+        nodes = reader_payload.get("untrusted_document_nodes")
+        if isinstance(nodes, list):
+            source = next(
+                (
+                    node
+                    for node in nodes
+                    if isinstance(node, dict)
+                    and "事件是系统唯一的事实来源" in str(node.get("content", ""))
+                ),
+                None,
+            )
+            if isinstance(source, dict):
+                content = str(source["content"])
+                quote = "事件是系统唯一的事实来源"
+                start = content.index(quote)
+                return Completion(
+                    text=json.dumps(
+                        {
+                            "topic": "上传材料：事件脊柱",
+                            "candidates": [
+                                {
+                                    "concept": "事件事实源",
+                                    "summary": "事件不可变追加，并作为系统唯一事实来源。",
+                                    "confidence": 0.97,
+                                    "evidence": [
+                                        {
+                                            "node_key": source["node_key"],
+                                            "start_offset": start,
+                                            "end_offset": start + len(quote),
+                                            "quote": quote,
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    usage=Usage(prompt_tokens=120, completion_tokens=30),
+                )
         if role == "enrich":
             self._question_calls += 1
             questions = [

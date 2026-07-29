@@ -319,6 +319,15 @@ class SqliteLearningStore:
             validate_exact_evidence(document, items)
         previous = self.get_resource(resource.resource_id)
         previous_revision_id = previous.current_revision_id if previous is not None else None
+        existing_revision = (
+            self.get_revision(document.revision.revision_id) if document is not None else None
+        )
+        if (
+            document is not None
+            and existing_revision is not None
+            and existing_revision != document.revision
+        ):
+            raise RuntimeError("相同 revision_id 对应了不同的不可变修订")
         with self._db.transaction():
             staged_resource = resource.model_copy(
                 update={"current_revision_id": previous_revision_id}
@@ -326,7 +335,11 @@ class SqliteLearningStore:
             self._upsert_resource(staged_resource)
             if document is not None:
                 self._upsert_revision(document.revision)
-                self._replace_document_nodes(document.revision.revision_id, document.nodes)
+                if existing_revision is None:
+                    self._replace_document_nodes(
+                        document.revision.revision_id,
+                        document.nodes,
+                    )
                 self._conn.execute(
                     "UPDATE resources SET current_revision_id = ? WHERE resource_id = ?",
                     (document.revision.revision_id, resource.resource_id),

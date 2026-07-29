@@ -1,10 +1,9 @@
 """审批门原语——展示候选预览、返回获批子集（未获批的候选绝不入库，eval case 1）。
 
-# SKELETON: 持久 suspend/resume 待决状态见 docs/skeleton-ledger.md #3
-
 当前协议是同步批决策：Scripted adapter 供测试，CLI adapter 阻塞询问；两者都发
-``approval.requested`` + ``approval.decided``。真正跨进程的 suspend/resume 仍需持久待决状态与恢复
-token，不能把当前同步返回值冒充成已实现。审批事件是通用类型串，kernel 只做泛型分发。
+``approval.requested`` + ``approval.decided``。Web 的跨进程 suspend/resume 由
+``AcquisitionLedger`` + API manager 持有，复用本模块的事件函数；同步 CLI 协议不冒充跨进程状态机。
+审批事件是通用类型串，kernel 只做泛型分发。
 """
 
 from collections.abc import Callable
@@ -17,7 +16,7 @@ from grandquiz.kernel.events import EventEmitter
 APPROVAL_REQUESTED = "approval.requested"
 APPROVAL_DECIDED = "approval.decided"
 ApprovalOutcome = Literal["approved", "rejected_all", "cancelled"]
-ApprovalDecisionSource = Literal["scripted", "human_cli"]
+ApprovalDecisionSource = Literal["scripted", "human_cli", "human_web"]
 
 
 class ApprovalCancelled(RuntimeError):

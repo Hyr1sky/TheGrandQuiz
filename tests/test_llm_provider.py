@@ -1,7 +1,7 @@
 """OpenAICompatProvider 测试——mock 掉 AsyncOpenAI，确定性、零网络、不烧 token。
 
 真实连通性由 scripts/smoke_llm.py 手动验（那才碰活 API）；这里只钉住可确定化的行为：
-env 缺变量即报错、messages / response 映射、disable_thinking → extra_body 的开关逻辑。
+env 缺变量即报错、messages / response 映射、BYOK provider pin 与 disable_thinking → extra_body。
 """
 
 import json
@@ -212,11 +212,91 @@ def _patch_streaming_client(
     return captured
 
 
+def _set_openrouter_role_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in {
+        "LLM_API_KEY": "basic-key",
+        "LLM_BASE_URL": "https://openrouter.ai/api/v1",
+        "LLM_MODEL": "deepseek/deepseek-v4-flash",
+        "LLM_ONLY_PROVIDER": "deepseek",
+        "ENRICH_LLM_API_KEY": "enrich-key",
+        "ENRICH_LLM_BASE_URL": "https://openrouter.ai/api/v1",
+        "ENRICH_LLM_MODEL": "qwen/qwen3.7-plus",
+        "ENRICH_LLM_ONLY_PROVIDER": "alibaba",
+    }.items():
+        monkeypatch.setenv(name, value)
+
+
 def test_from_env_raises_on_missing_required_var(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in ("LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL"):
         monkeypatch.delenv(key, raising=False)
     with pytest.raises(RuntimeError):
         OpenAICompatProvider.from_env()
+
+
+async def test_from_env_pins_basic_provider_without_shared_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clients: list[_FakeClient] = []
+
+    def _factory(**_kwargs: object) -> _FakeClient:
+        client = _FakeClient(_FakeResponse("ok", prompt_tokens=1, completion_tokens=1))
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(llm_mod, "AsyncOpenAI", _factory)
+    _set_openrouter_role_env(monkeypatch)
+
+    provider = OpenAICompatProvider.from_env()
+    await provider.complete([Message(role="user", content="hi")], role="basic")
+
+    called_client = next(client for client in clients if client.chat.completions.calls)
+    call = called_client.chat.completions.calls[0]
+    extra_body = cast("dict[str, object]", call["extra_body"])
+    assert extra_body["provider"] == {
+        "only": ["deepseek"],
+        "allow_fallbacks": False,
+    }
+
+
+async def test_from_env_pins_enrich_provider_for_streaming_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clients: list[_FakeStreamingClient] = []
+
+    def _factory(**_kwargs: object) -> _FakeStreamingClient:
+        client = _FakeStreamingClient(
+            [_FakeChunk(usage=_FakeUsage(prompt_tokens=1, completion_tokens=1))]
+        )
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(llm_mod, "AsyncOpenAI", _factory)
+    _set_openrouter_role_env(monkeypatch)
+
+    provider = OpenAICompatProvider.from_env()
+    events = [
+        event
+        async for event in provider.stream_complete(
+            [Message(role="user", content="hi")],
+            role="enrich",
+        )
+    ]
+
+    called_client = next(client for client in clients if client.chat.completions.calls)
+    call = called_client.chat.completions.calls[0]
+    assert events == [
+        CompletionFinished(
+            completion=Completion(
+                text="",
+                usage=Usage(prompt_tokens=1, completion_tokens=1),
+            )
+        )
+    ]
+    extra_body = cast("dict[str, object]", call["extra_body"])
+    assert extra_body["provider"] == {
+        "only": ["alibaba"],
+        "allow_fallbacks": False,
+    }
 
 
 async def test_complete_maps_messages_and_response_and_disables_thinking(

@@ -67,14 +67,17 @@ _Avoid_: 点名失败后扩大到全库、未读取正文就引用、一次倾�
 学习材料进入 Reader 之前的外部发现与规范化边界。`web_search` 只返回 `SearchResult[]` 候选，用户或开放 ReAct 选择 URL 后，Fetch 才产生 `FetchedDocument`；随后仍走确定性的 Reader → KnowledgeItem 审批 → 全局 KB workflow。SearchProvider 可拔插：Tavily 提供无需信用卡的免费 Key 路径，SearXNG 提供可选自托管路径；不配置时工具不注册，SearXNG 服务或 Docker 不是基础运行依赖。两者同时配置必须显式选择 provider，不做隐藏 fallback。`web_search` 的结构化结果显式要求用户选择，真实 case17 证明开放 ReAct 会先结束发现回合，再对选中 URL 进入确定性 Reader / 审批 workflow；登录页失败保持零 KB 污染。
 _Avoid_: 搜索结果自动批量抓取/入库、让 search adapter 直接写 KB、把 SearXNG/Docker 变成强依赖、把 Web Search 与库内 DocumentNode Agentic Search 混为一谈
 
-**Local Web Interface**（ADR-0009，LW-S1–S4 + WR-O1–O4 已实现）:
+**Local Web Interface**（ADR-0009，LW-S1–S5 + WR-O1–O4 已实现）:
 面向本机单用户的正式产品通道：React Article / Assessment Workspace 通过版本化 REST + SSE 调用 FastAPI
 interface adapter；长操作形成可查询 run，进度是同一 `AgentEvent` 脊柱的安全 UI projection。它已把资源 →
 DocumentNode 大纲/节点 → GroundedDocumentAnswer → 精确 citation 变成空间化阅读体验，并把既有
 `AssessmentSession` 投影成显式 scope、一题一步、Evidence reveal 可审计、提交/下一题幂等的考核交互；
 顶栏 exact material 已进入 Chat turn context，跨轮 SSE 使用单调 cursor，底部罗盘通过
 `TraceObservatory` 安全投影当前 Chat/Assessment 的状态、耗时、token、model/tool/error/recovery 与 span。
-Acquisition/审批与历史 trace 浏览仍属后续竖切。默认只监听 loopback，CLI 继续作为调试、恢复和审计入口。
+Web Acquisition 通过上传 Markdown/Text 或公开 URL 创建持久 run，`queued/running/needs_input/succeeded/
+failed/cancelled` 全生命周期与安全 SSE 投影共用事件脊柱；`needs_input` 候选和单次过期 token 可跨服务重启
+恢复，审批后才原子提交知识快照。历史 trace 浏览和完整资源/知识点管理仍属后续竖切。默认只监听 loopback，
+CLI 继续作为调试、恢复和审计入口。
 _Avoid_: 通用数据库 dashboard、浏览器直连 SQLite、把完整内部 AgentEvent/prompt/正文推给浏览器、把
 核心考核改成自由 ReAct、在 v0.1.0 假装支持多用户或公网部署
 
@@ -126,7 +129,7 @@ _Avoid_: 单一题型、随机题型
 _Avoid_: 评分、分数（无分数概念，三值即全部语义）
 
 **审批门**:
-人工决策点。当前 CLI 在"深读产出 → 入库"之间阻塞展示 KnowledgeItem 的概念、摘要、证据与置信度，
-用户逐项剔除后才原子替换知识快照；请求与决策都进入事件脊柱。跨进程形态的目标是暂停 turn、持久待决
-状态并凭 token 恢复，但该 suspend/resume 原语尚未交付。二期 discovery 回归后资源级审批复用同一语义。
-_Avoid_: 把阻塞 CLI prompt 冒充成已实现的可暂停/恢复 turn；把审批退化成固定 keep-all
+人工决策点。CLI adapter 可阻塞展示候选；Web adapter 把深读后的 `PreparedIngest` 持久为
+`needs_input`，浏览器凭单次、可过期 token 在服务重启后继续逐项筛选。两者都只在决策后原子替换知识快照，
+请求与决策都进入事件脊柱。同步 CLI 与可恢复 Web 是同一领域语义的两种 interface adapter。
+_Avoid_: 让 HTTP 请求一直阻塞等待人工输入；在审批前写入资源或 KnowledgeItem；把审批退化成固定 keep-all

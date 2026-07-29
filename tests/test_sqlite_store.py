@@ -8,10 +8,13 @@
 足够；跨会话验收见 test_sqlite_persistence.py）。
 """
 
+import hashlib
 from pathlib import Path
 
 from grandquiz.domain.learning.asked_questions import SqliteAskedQuestionsLedger
+from grandquiz.domain.learning.citations import ground_items
 from grandquiz.domain.learning.difficulty import SqliteDifficultyLedger
+from grandquiz.domain.learning.document import build_document_snapshot
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.store import LearningStore, SqliteLearningStore, Store
@@ -118,6 +121,27 @@ def test_replace_snapshot_matches_dict_and_removes_stale_items() -> None:
     assert stores[0].get_resource(resource.resource_id) == stores[1].get_resource(
         resource.resource_id
     )
+
+
+def test_replace_same_immutable_revision_is_idempotent() -> None:
+    store = _sqlite()
+    content = "# A\n\n原文片段\n"
+    resource = LearningResource.create(url="file://local/repeated.md").model_copy(
+        update={
+            "raw_content": content,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+            "status": "read",
+            "topic": "重复导入",
+        }
+    )
+    document = build_document_snapshot(resource)
+    assert document is not None
+    items = ground_items(document, [_item(resource.resource_id, 0, "幂等快照")])
+
+    store.replace_snapshot(resource, items)
+    store.replace_snapshot(resource, items)
+
+    assert store.items_for_resource(resource.resource_id) == items
 
 
 def test_all_resources_matches_dict_and_uses_stable_order() -> None:
