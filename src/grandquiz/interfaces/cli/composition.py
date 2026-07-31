@@ -28,12 +28,14 @@ from grandquiz.domain.learning.ingest.fetch import (
     FetchResult,
     FetchSource,
 )
+from grandquiz.domain.learning.ingest.pipeline import IngestClassificationRepository
 from grandquiz.domain.learning.ingest.web_fetch import create_http_source
 from grandquiz.domain.learning.ingest.web_search import (
     SearchProvider,
     SearXNGSearchProvider,
     TavilySearchProvider,
 )
+from grandquiz.domain.learning.learning_facts import LearningFactJournal
 from grandquiz.domain.learning.memory import SqliteLearningMemory
 from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.domain.learning.preference import SqlitePreferenceMemory
@@ -262,6 +264,8 @@ def build_react_runner(
     seed: int,
     max_iterations: int,
     search_provider: SearchProvider | None = None,
+    learning_facts: LearningFactJournal | None = None,
+    classifications: IngestClassificationRepository | None = None,
 ) -> Runner:
     """装配真机 ReAct 的 ``Runner``：工具注册 + 版本化系统提示 + ContextBuilder 分区 + Runner 接线。
 
@@ -300,6 +304,8 @@ def build_react_runner(
         asked_questions=asked_questions,  # 跨会话去重台账（skeleton-ledger.md #8）
         difficulty=difficulty,  # 跨会话难度台账（SE-S3）：销账那刻据三路信号跨档
         search_provider=search_provider,  # 未配置时不注册 web_search，既有 tool schema 不变
+        learning_facts=learning_facts,
+        classifications=classifications,
     )
     prompt = load_prompt(_REACT_PROMPT_NAME)
     # ContextBuilder（M5）分区装配：system 前言区（版本化 react 系统提示）+ 学情注入分区

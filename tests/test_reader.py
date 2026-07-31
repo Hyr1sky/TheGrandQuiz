@@ -700,6 +700,47 @@ class _WrongStartOffsetProvider:
         )
 
 
+class _MarkdownVisibleQuoteProvider:
+    """复现真实反馈：模型引用可见文本，Markdown source 保留反斜杠转义。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        self.calls += 1
+        payload = json.loads(
+            next(message.content for message in messages if message.role == "user")
+        )
+        node = payload["untrusted_document_nodes"][0]
+        quote = "do_inter_process_publish"
+        return Completion(
+            text=json.dumps(
+                {
+                    "topic": "进程发布",
+                    "candidates": [
+                        {
+                            "concept": "进程发布方法",
+                            "summary": "发布函数使用可见的下划线标识符。",
+                            "evidence": [
+                                {
+                                    "node_key": node["node_key"],
+                                    "start_offset": 0,
+                                    "end_offset": len(quote),
+                                    "quote": quote,
+                                }
+                            ],
+                            "confidence": 0.9,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            usage=Usage(),
+        )
+
+
 async def test_document_reader_canonicalizes_end_offset_from_exact_quote() -> None:
     content = "Agent evals are not just answer checks. They inspect outcomes."
     resource = LearningResource.create(url="https://example.com/end-offset").model_copy(
@@ -755,6 +796,66 @@ async def test_document_reader_canonicalizes_wrong_start_for_unique_exact_quote(
     assert isinstance(locator, EvidenceLocator)
     assert locator.start_offset == content.index(quote)
     assert content[locator.start_offset : locator.end_offset] == quote
+
+
+async def test_document_reader_maps_unique_markdown_visible_quote_to_raw_source_slice() -> None:
+    raw_quote = r"do\_inter\_process\_publish"
+    content = f"调用 {raw_quote} 完成跨进程发布。\n"
+    resource = LearningResource.create(url="https://example.com/markdown-visible-quote").model_copy(
+        update={
+            "raw_content": content,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+            "status": "read",
+        }
+    )
+    document = build_document_snapshot(resource)
+    assert document is not None
+    provider = _MarkdownVisibleQuoteProvider()
+    emitter, _ = _emitter()
+
+    result = await _reader(max_attempts=1).read_document(
+        resource,
+        document,
+        provider=provider,
+        emitter=emitter,
+        parent_span_id="ig",
+    )
+
+    evidence = result.items[0].evidence[0]
+    locator = evidence.locator
+    assert isinstance(locator, EvidenceLocator)
+    assert provider.calls == 1
+    assert evidence.quote == raw_quote
+    assert content[locator.start_offset : locator.end_offset] == raw_quote
+    assert locator.quote_hash == hashlib.sha256(raw_quote.encode()).hexdigest()
+
+
+async def test_document_reader_does_not_unescape_markdown_inside_code_nodes() -> None:
+    content = "```text\ndo\\_inter\\_process\\_publish\n```\n"
+    resource = LearningResource.create(
+        url="https://example.com/code-backslash-is-literal"
+    ).model_copy(
+        update={
+            "raw_content": content,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+            "status": "read",
+        }
+    )
+    document = build_document_snapshot(resource)
+    assert document is not None
+    assert any(node.kind == "code" for node in document.nodes)
+    emitter, _ = _emitter()
+
+    with pytest.raises(ReaderEvidenceError) as error:
+        await _reader(max_attempts=1).read_document(
+            resource,
+            document,
+            provider=_MarkdownVisibleQuoteProvider(),
+            emitter=emitter,
+            parent_span_id="ig",
+        )
+
+    assert error.value.classification == "quote_mismatch"
 
 
 async def test_document_reader_rejects_wrong_start_for_repeated_exact_quote() -> None:

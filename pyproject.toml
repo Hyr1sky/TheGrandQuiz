@@ -49,6 +49,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/grandquiz"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"docs/vocabulary.v1.yaml" = "grandquiz/domain/learning/vocabulary.v1.yaml"
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

@@ -11,6 +11,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from grandquiz.domain.learning.assessment.plan import (
+    AssessmentPlan,
+    QuestionTypeSegment,
+)
 from grandquiz.kernel.tools import Tool, ToolContext, ToolRegistry
 
 # ---- 事件类型常量 ---- #
@@ -27,15 +31,23 @@ class _StartAssessmentParams(BaseModel):
         default=None,
         description="题型（'选择题' 或 '简答题'），不填则自适应",
     )
+    segments: list[QuestionTypeSegment] | None = Field(
+        default=None,
+        description="按顺序指定不同题型的分段；设置后忽略 rounds/question_type",
+    )
 
 
 async def _start_assessment_handler(params: _StartAssessmentParams, ctx: ToolContext) -> str:
+    plan = AssessmentPlan.create(
+        rounds=params.rounds,
+        question_type=params.question_type,
+        segments=params.segments,
+    )
     payload: dict[str, Any] = {
         "target": "assessment",
         "params": {
             "resource_id": params.resource_id,
-            "rounds": params.rounds,
-            "question_type": params.question_type,
+            "question_type_plan": list(plan.question_type_intents),
         },
     }
     ctx.emitter.emit(NAVIGATION_REQUESTED, payload=payload)
@@ -73,6 +85,9 @@ def register_navigation_tools(registry: ToolRegistry) -> None:
                 "为用户启动考核——在工作面板打开试卷式考核界面。"
                 "需要 resource_id（材料 ID）；可选 rounds（题数，默认 3）"
                 "和 question_type（'选择题' / '简答题'，默认自适应）。"
+                "若用户要求多种题型及数量，必须使用 segments 按用户顺序填写"
+                " [{'count': 2, 'question_type': '选择题'},"
+                " {'count': 1, 'question_type': '简答题'}]，不要省略为自适应。"
             ),
             params=_StartAssessmentParams,
             handler=_start_assessment_handler,

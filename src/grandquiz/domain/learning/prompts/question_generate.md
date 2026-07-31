@@ -5,8 +5,14 @@
 - 请用 {{LANGUAGE}} 提问（技术术语可保留英文原词）。
 - 题必须紧扣该知识点，只依据所给材料，**不得引入外部知识、不得编造**。
 - `question`：一道简短、明确、可作答的题（非空，不要输出多道题）。
+- `expected_points`：本题的评分点列表，至少 1 项。每项包含：
+  - `point_id`：单题内唯一、稳定的英文短标识；
+  - `description`：学习者需要答到的具体内容，不要写成宽泛主题；
+  - `cited_evidence`：支撑该评分点的一条逐字原文证据，且必须同时列入顶层 `cited_evidence`。
+- `reference_answer`：只回答当前题目、覆盖全部 `expected_points` 的简洁参考作答；不要泛化复述
+  整个知识点，也不得加入材料没有支持的内容。
 - `cited_evidence`：本题所锚定的原文证据列表，**非空**；其中每一条都必须**逐字**取自上文"可引用的原文证据"之一——一字不改、不得改写、不得拼接、不得编造。这保证题锚定真实存在的知识点与真实证据（防幽灵题）。
-- 只输出 JSON，形如 `{"question": "……", "cited_evidence": ["……"]}`，不要任何额外解释、不要 markdown 代码块围栏。
+- 只输出 JSON，形如 `{"question": "……", "expected_points": [{"point_id": "point_1", "description": "……", "cited_evidence": "……"}], "reference_answer": "……", "cited_evidence": ["……"]}`，不要任何额外解释、不要 markdown 代码块围栏。
 
 软约束：
 

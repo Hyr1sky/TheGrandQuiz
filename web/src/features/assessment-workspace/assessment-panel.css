@@ -242,6 +242,36 @@
   color: var(--danger);
 }
 
+.assessment-panel__point-feedback {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.assessment-panel__point-feedback section {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-quiet);
+}
+
+.assessment-panel__point-feedback h3 {
+  margin: 0 0 8px;
+  color: var(--text-strong);
+  font: 650 13px/1.4 var(--font-interface);
+}
+
+.assessment-panel__point-feedback ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+}
+
+.assessment-panel__point-feedback li + li {
+  margin-top: 6px;
+}
+
 .assessment-panel__judgement button {
   display: inline-flex;
   align-items: center;

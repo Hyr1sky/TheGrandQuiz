@@ -57,6 +57,7 @@ const baseRun = {
   candidates: [],
   resource_id: null,
   error_code: null,
+  error_stage: null,
   error_message: null,
   created_at: 1,
   updated_at: 1,
@@ -156,4 +157,35 @@ it("uploads, reviews exact candidates, and commits only the selected items", asy
   );
 
   await waitFor(() => expect(completed).toHaveBeenCalledWith("resource-1"));
+});
+
+it("shows the stable stage and code for a failed acquisition", async () => {
+  const failedRun = {
+    ...baseRun,
+    status: "failed" as const,
+    error_code: "quote_mismatch",
+    error_stage: "evidence_validation",
+    error_message: "Evidence 引文无法精确定位到原文节点",
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({ items: [failedRun] })),
+  );
+  const user = userEvent.setup();
+
+  render(
+    <AcquisitionDrawer
+      open
+      onClose={() => undefined}
+      onCompleted={() => undefined}
+    />,
+  );
+  await user.click(await screen.findByRole("button", { name: /runtime\.md/ }));
+
+  expect(
+    screen.getByText("Evidence 引文无法精确定位到原文节点"),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText("evidence_validation / quote_mismatch"),
+  ).toBeInTheDocument();
 });

@@ -7,6 +7,7 @@ from typing import Protocol, runtime_checkable
 
 from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
 from grandquiz.domain.learning.assessment.grading import VerdictLabel
+from grandquiz.domain.learning.assessment_history import with_committed_state
 from grandquiz.domain.learning.difficulty import (
     DifficultyEvidence,
     DifficultyLedger,
@@ -18,6 +19,7 @@ from grandquiz.domain.learning.difficulty import (
     difficulty_evolution_reason,
     evolve_difficulty,
 )
+from grandquiz.domain.learning.learning_facts import LearningFactEnvelope, LearningFactJournal
 from grandquiz.domain.learning.memory import ConceptRecord, Memory, Transition
 from grandquiz.domain.learning.persistence import LearningDatabase, TransactionParticipant
 
@@ -39,6 +41,7 @@ class DifficultyChange:
 class JudgementCommit:
     transition: Transition
     difficulty_change: DifficultyChange | None
+    learning_fact: LearningFactEnvelope | None = None
 
 
 class LearningStateWriter:
@@ -50,13 +53,15 @@ class LearningStateWriter:
         memory: Memory,
         asked_questions: AskedQuestionsLedger | None,
         difficulty: DifficultyLedger | None,
+        learning_facts: LearningFactJournal | None = None,
     ) -> None:
         self._memory = memory
         self._asked_questions = asked_questions
         self._difficulty = difficulty
+        self._learning_facts = learning_facts
         self._participants = [
             participant
-            for participant in (memory, asked_questions, difficulty)
+            for participant in (memory, asked_questions, difficulty, learning_facts)
             if participant is not None
         ]
         transaction_owners = {
@@ -75,6 +80,7 @@ class LearningStateWriter:
         question: str,
         verdict: VerdictLabel,
         elapsed_ms: int,
+        learning_fact: LearningFactEnvelope | None = None,
     ) -> JudgementCommit:
         with self._transaction():
             if self._asked_questions is not None:
@@ -88,7 +94,26 @@ class LearningStateWriter:
                 before=before,
                 elapsed_ms=elapsed_ms,
             )
-        return JudgementCommit(transition=transition, difficulty_change=change)
+            committed_fact = (
+                with_committed_state(
+                    learning_fact,
+                    concept_state=transition.to_state,
+                    difficulty_tier=(
+                        self._difficulty.tier_of(item_id) if self._difficulty is not None else None
+                    ),
+                )
+                if learning_fact is not None
+                else None
+            )
+            if committed_fact is not None:
+                if self._learning_facts is None:
+                    raise ValueError("提交 learning_fact 必须配置 LearningFactJournal")
+                self._learning_facts.append(committed_fact)
+        return JudgementCommit(
+            transition=transition,
+            difficulty_change=change,
+            learning_fact=committed_fact,
+        )
 
     def _update_difficulty(
         self,

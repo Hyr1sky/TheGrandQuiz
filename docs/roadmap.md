@@ -1,13 +1,45 @@
 # TheGrandQuiz Development Roadmap
 
-> 初始路线图（2026-06 起草），记录学习型 Agent 从实验骨架走向考核驱动产品的架构讨论。
-> 执行顺序已按依赖关系调整，见 [architecture.md](architecture.md)。已经失效的代码树、日期甘特图和
-> 已拍板议题已裁去或并入对应文档。
+> 文档职责：本文件记录未来阶段与验收顺序。产品定义以 [product.md](product.md) 为准，领域实体以
+> [domain-model.md](domain-model.md) 为准，架构边界以 [architecture.md](architecture.md) 和
+> [ADR](adr/) 为准。本文保留的早期方案用于解释路线来源，不覆盖这些当前权威文档；已完成工作的
+> 详细证据进入 [devrecords/](devrecords/)。
+
+## 已完成：Learning Model v2 基础闭环
+
+设计基线与基础实现已完成，当前事实如下：
+
+1. `LearningFactJournal + transactional outbox` 已落地，完整 Trace 可独立删除。
+2. `AssessmentAttemptV1`、append-only 判决纠正与确定性 reconciliation 已落地。
+3. v1 受控词表、分类 proposal/审核、TagCandidate/TagAssignment 与入库原子接线已作为 foundation 落地；
+   规则输出默认 proposed，尚不驱动筛选或选题。
+4. 窄版 `LearnerProjectionV1`、只读 API 与稳定本地审查导出已落地；销账/复发、信心校准与错因统计后置。
+5. 人工 DemandValidation 已落地；自动 Judge 仍须先通过 calibration gate。
+6. AnswerDiagnosis/Misconception 晋升和新指标驱动选题仍由 Eval gate 阻挡。
+
+ApplicabilityAssertion 仅保留契约；CompetencyBlueprint、复习排期、主动发现、知识关系与 ASR 继续后置。
+详细字段见 [domain-model.md](domain-model.md)，长期事实边界见
+[ADR-0010](adr/0010-durable-learning-facts-separate-from-operational-trace.md)。
+
+## 已完成：v0.2 功能 RC 收口
+
+本轮完成了可靠性与既有契约收口：CommonMark 可见 Evidence 唯一映射回 raw source，Acquisition
+失败以安全 `code / stage / reason` 贯通 Trace、API、CLI 与 Web。多题考核统一为
+`AssessmentPlan`，开放题已统一为带评分点与题目级参考作答的 `QuestionSpec`；CLI/Web/FastAPI
+conformance tests 防止题型与判卷反馈再次漂移。功能 RC 已关闭，不再追加功能；正式版本号、tag、
+GitHub Release 与安装包发布由独立发布动作完成。完整证据见
+[v0.2 功能 RC 收口](devrecords/24-v020-functional-rc-closeout.md)。
+
+## 下一阶段：v0.3 先证明消费者与质量收益
+
+批量入库、Reader batch 并发、candidate-level LLM repair、Trace explain 与新学习指标没有进入 v0.2。
+下一阶段优先用真实样本校准逐评分点判卷、测量分类审核成本，并证明受控词表至少存在一个稳定产品消费者；
+未达到 gate 的字段、关系和自动 Judge 继续只保留在文档或 proposal 层。
 
 This document records the initial architecture discussion for building an assessment-driven,
 observable, recoverable, and evaluable learning agent.
 
-## Overall Direction
+## 历史方向基线
 
 The product should not be treated as a chatbot reskin. Its engineering core is an Agent Runtime with
 a manually controlled ReAct loop, dynamic tool mounting, progressive context disclosure, subagent

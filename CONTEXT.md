@@ -2,6 +2,10 @@
 
 个人学习辅助工具（作者本人是用户 #1），同时以较为全面的技术栈和工程深度作为简历项目。场景与 Runtime 是同一产品的两面：学习场景提供真实使用价值，Runtime 提供工程展示价值。
 
+> 文档职责：本文件是领域用词的权威表，回答“这个词在项目里是什么意思”。完整字段与状态不变量见
+> [docs/domain-model.md](docs/domain-model.md)，产品边界见 [docs/product.md](docs/product.md)，实现完成证据
+> 见 [docs/devrecords/](docs/devrecords/)。条目中的实现状态只是帮助识别语义，不替代 roadmap 或开发记录。
+
 ## Language
 
 **产品**:
@@ -54,7 +58,10 @@ _Avoid_: chunk（任意 token 窗口）、把章节父子关系称为概念上�
 **Evidence**（ADR-0008，DS-S2 已实现）:
 KnowledgeItem 对原文的可验证引用，保存 revision_id、node_id、section_path、全局 source span、quote 与
 quote hash。新证据必须由代码逐字验证后才能随 snapshot 提交；历史 citation 始终读取声明的 revision，不能
-静默跳到 current。旧 quote 无法唯一定位时保留为 unresolved 审计项，不猜测、不让既有 item 从考核池消失。
+静默跳到 current。Reader 允许把非代码 Markdown 节点中 CommonMark 反斜杠转义后的唯一可见 quote 映射回
+raw source offsets，但 Evidence 始终保存原始 source slice；代码节点不做转义映射，零匹配或多匹配仍
+fail closed。旧 quote 无法唯一定位时保留为
+unresolved 审计项，不猜测、不让既有 item 从考核池消失。
 _Avoid_: 只有 quote 的幽灵引文、LLM 自报数据库身份、用模糊匹配伪造精确 locator
 
 **Agentic Search**（ADR-0008，DS-S4 已实现开放查询基座）:
@@ -76,7 +83,9 @@ DocumentNode 大纲/节点 → GroundedDocumentAnswer → 精确 citation 变成
 `TraceObservatory` 安全投影当前 Chat/Assessment 的状态、耗时、token、model/tool/error/recovery 与 span。
 Web Acquisition 通过上传 Markdown/Text 或公开 URL 创建持久 run，`queued/running/needs_input/succeeded/
 failed/cancelled` 全生命周期与安全 SSE 投影共用事件脊柱；`needs_input` 候选和单次过期 token 可跨服务重启
-恢复，审批后才原子提交知识快照。历史 trace 浏览和完整资源/知识点管理仍属后续竖切。默认只监听 loopback，
+恢复，审批后才原子提交知识快照。失败以稳定、安全的 `code / stage / reason` 进入 ledger、AgentEvent、
+Trace error 统计、CLI 与 Web 管理态，raw exception/quote/正文不进入浏览器投影。历史 trace 浏览和完整
+资源/知识点管理仍属后续竖切。默认只监听 loopback，
 CLI 继续作为调试、恢复和审计入口。
 _Avoid_: 通用数据库 dashboard、浏览器直连 SQLite、把完整内部 AgentEvent/prompt/正文推给浏览器、把
 核心考核改成自由 ReAct、在 v0.1.0 假装支持多用户或公网部署
@@ -106,6 +115,31 @@ _Avoid_: 任务、待办；"标题锁库"；把 title 当知识范围（scope �
 工具内发生的学习动作记录：审批资源、深读完成、答题对错、跳过、要求重考。答题记录是最高置信信号——"会不会"由考核结果说话，"学没学"不采集。
 _Avoid_: 学习时长、阅读进度等任何工具外行为指标
 
+**Learning Fact Journal**（ADR-0010，Learning Model v2 基础闭环已实现）:
+同一 AgentEvent 脊柱面向长期学习数据的白名单持久消费者，写入 learning.db。只保留重建
+AssessmentAttempt、判决纠正、分类与学习投影所需的 committed facts；完整 prompt、工具 payload、
+普通 Chat、token 和无关错误仍只属于 trace.db。它与 Learning Memory / Difficulty / AskedQuestions 的
+提交使用 transaction/outbox 边界，防止半状态。
+_Avoid_: 第二条事件总线、完整 Trace 副本、把 JSONL 当数据库
+
+**AssessmentAttempt**（Learning Model v2 基础闭环已实现）:
+从 Learning Fact Journal 按 trace_id + assessment_span_id 确定性重建的一次考核事实投影，记录题目路由、
+输入媒介、答案形态、initial/final verdict、Evidence reveal、耗时、生成/判卷版本及当前已批准的 demand
+validation 引用。它可删除重建，不是判卷 workflow 的第二个写入口。尚无生产者或消费者的信心、提示、
+intended demand 与 diagnosis 只留在未来蓝图，不进入当前 Attempt。
+_Avoid_: 直接双写的领域表、修改历史判决、把未来字段提前塞进当前契约
+
+**Learning Vocabulary**（Learning Model v2 v1 已实现）:
+封闭行为维度、受控增长 term 和开放 candidate 三层词表。稳定身份是 namespace + key；模型候选在审核前
+不驱动选题或状态机。领域/技术标签只经 TagAssignment 关联，seed 在仓库，用户扩展存 learning.db。
+_Avoid_: 自由 tag 直接控制行为、按显示名寻址、同义词自动合并、把 tag 当概念同一性
+
+**LearnerProjection**（Learning Model v2 v1 已实现）:
+从 committed attempts、Learning Memory 和 DifficultyLedger 重建的分析读模型，汇总考核次数、判决分布、
+闭卷次数、当前薄弱状态、难度和经独立 DemandValidator 验证的能力证据。销账/复发、自信校准
+和错因指标仍是未来蓝图。它不生成单一 mastery_score，也不反写状态机。
+_Avoid_: 第二套 Learning Memory、用 intended demand 自证能力、把 not_in_memory 解释成已经掌握
+
 **Learning Memory**:
 考核循环的持久层：薄弱概念 × 最近表现（概念锚定 KnowledgeItem，三值判决历史）。MVP 仅有的领域记忆，选题优先级的唯一数据源。
 _Avoid_: 进度记忆、掌握度（无独立掌握度模型，由判决历史推断）
@@ -124,8 +158,22 @@ _Avoid_: 数字人形象、虚拟人
 考核中按概念状态选择题型的规则：首次接触的概念用选择题热身，默认开放问答，薄弱概念复考用追问深挖。
 _Avoid_: 单一题型、随机题型
 
+**AssessmentPlan**:
+一次多题考核的规范化有序计划：每个位置只保存一个用户题型意图。Chat、CLI 与 FastAPI adapter 都必须
+先把“轮数 / 单题型 / 分段题型”收敛为该计划，再由 workflow 逐题调用同一个
+`resolve_question_type`；interface 不得自行展开或压扁题型序列。
+_Avoid_: Web 只传 rounds + 单一 question_type；CLI/Web 分别维护题型展开规则
+
+**QuestionSpec**:
+一道开放题或追问的唯一题目规格：题干、至少一个带原文锚点的 `ExpectedPoint`、只回答本题的
+`reference_answer` 与题目 Evidence。Grader 只能依据该规格判卷，不能重新从整个 KnowledgeItem
+猜测本题想考什么。
+_Avoid_: 出题看 summary、判卷看另一组 Evidence、参考答案再拼整个 item
+
 **判决**:
-判卷的结构化产出：对 / 勉强 / 错三值 + 薄弱概念指认（指向 KnowledgeItem）+ 所引证据。选择题为确定性比对；开放问答与追问由 LLM 判卷且必须引用出题锚定的 evidence 比对，判决依据进 trace。
+判卷的结构化产出：对 / 勉强 / 错三值 + 命中/缺失评分点 + 受控诊断 + 所引证据。选择题为确定性比对；
+开放问答与追问由 LLM 对 QuestionSpec 的评分点逐项判断，代码校验评分点完整覆盖、互不重叠且与三值
+结论一致。薄弱概念指认和状态转移仍由代码完成；判决依据进 trace，并由 CLI/Web 使用同一事件投影。
 _Avoid_: 评分、分数（无分数概念，三值即全部语义）
 
 **审批门**:

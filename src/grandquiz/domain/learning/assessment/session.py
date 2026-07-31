@@ -10,6 +10,7 @@ from grandquiz.domain.learning.assessment.engine import AssessmentResult, assess
 from grandquiz.domain.learning.assessment.scope import ALL_SCOPE, QuizScope
 from grandquiz.domain.learning.assessment.selection import Focus
 from grandquiz.domain.learning.difficulty import DifficultyLedger
+from grandquiz.domain.learning.learning_facts import LearningFactJournal
 from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.preference import PreferenceMemory
 from grandquiz.domain.learning.responder import Responder
@@ -33,6 +34,7 @@ class AssessmentSession:
         asked_questions: AskedQuestionsLedger | None = None,
         preferences: PreferenceMemory | None = None,
         difficulty: DifficultyLedger | None = None,
+        learning_facts: LearningFactJournal | None = None,
     ) -> None:
         self._store = store
         self._provider = provider
@@ -43,6 +45,7 @@ class AssessmentSession:
         self._asked_questions = asked_questions
         self._preferences = preferences
         self._difficulty = difficulty
+        self._learning_facts = learning_facts
 
     async def assess(
         self,
@@ -69,4 +72,5 @@ class AssessmentSession:
             scope=scope,
             question_type=question_type,
             difficulty=self._difficulty,
+            learning_facts=self._learning_facts,
         )

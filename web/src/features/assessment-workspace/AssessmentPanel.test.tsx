@@ -28,6 +28,7 @@ afterEach(() => {
 
 describe("AssessmentPanel", () => {
   it("shows the generated question when mounted in React StrictMode", async () => {
+    const startBodies: unknown[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const request =
         input instanceof Request ? input : new Request(String(input));
@@ -35,6 +36,7 @@ describe("AssessmentPanel", () => {
         request.method === "POST" &&
         request.url.endsWith("/api/v1/assessments")
       ) {
+        startBodies.push(await request.clone().json());
         return Response.json(readyAssessment, { status: 201 });
       }
       throw new Error(`Unexpected request: ${request.method} ${request.url}`);
@@ -45,8 +47,7 @@ describe("AssessmentPanel", () => {
       <StrictMode>
         <AssessmentPanel
           resourceId="resource-1"
-          rounds={2}
-          questionType="选择题"
+          questionTypePlan={["选择题", "选择题"]}
           onClose={() => undefined}
         />
       </StrictMode>,
@@ -56,6 +57,14 @@ describe("AssessmentPanel", () => {
       await screen.findByRole("heading", { name: "哪项最符合材料？" }),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(startBodies).toEqual([
+      {
+        resource_ids: ["resource-1"],
+        rounds: 2,
+        question_type_plan: ["选择题", "选择题"],
+        focus: "mixed",
+      },
+    ]);
   });
 
   it("keeps evidence hidden until hover is sustained for three seconds", async () => {
@@ -88,8 +97,7 @@ describe("AssessmentPanel", () => {
     render(
       <AssessmentPanel
         resourceId="resource-1"
-        rounds={2}
-        questionType="选择题"
+        questionTypePlan={["选择题", "选择题"]}
         onClose={() => undefined}
       />,
     );
@@ -148,8 +156,7 @@ describe("AssessmentPanel", () => {
     render(
       <AssessmentPanel
         resourceId="resource-1"
-        rounds={2}
-        questionType="选择题"
+        questionTypePlan={["选择题", "选择题"]}
         onClose={() => undefined}
       />,
     );
@@ -211,8 +218,7 @@ describe("AssessmentPanel", () => {
     render(
       <AssessmentPanel
         resourceId="resource-1"
-        rounds={2}
-        questionType="选择题"
+        questionTypePlan={["选择题", "选择题"]}
         onClose={onClose}
       />,
     );
@@ -224,5 +230,43 @@ describe("AssessmentPanel", () => {
     const lastRequest = fetchMock.mock.calls.at(-1)?.[0];
     expect(lastRequest).toBeInstanceOf(Request);
     expect((lastRequest as Request).method).toBe("DELETE");
+  });
+
+  it("explains a partial judgement with matched and missing points", async () => {
+    const judgedAssessment = {
+      ...readyAssessment,
+      status: "judged",
+      judgement: {
+        verdict: "勉强",
+        reason: "方向正确，但遗漏了连接建立成本。",
+        diagnosis: "missing_key_point",
+        matched_points: [
+          { point_id: "short-connection", description: "指出短连接重复建立" },
+        ],
+        missing_points: [
+          { point_id: "handshake-cost", description: "说明握手会产生额外成本" },
+        ],
+        concept_state: "薄弱",
+        correct_answer: "HTTP/1.0 短连接会反复建立连接，因此产生额外握手成本。",
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(judgedAssessment, { status: 201 })),
+    );
+
+    render(
+      <AssessmentPanel
+        resourceId="resource-1"
+        questionTypePlan={["简答题"]}
+        onClose={() => undefined}
+      />,
+    );
+
+    expect(await screen.findByText("答到了")).toBeInTheDocument();
+    expect(screen.getByText("指出短连接重复建立")).toBeInTheDocument();
+    expect(screen.getByText("还缺")).toBeInTheDocument();
+    expect(screen.getByText("说明握手会产生额外成本")).toBeInTheDocument();
+    expect(screen.getByText("方向正确，但遗漏了连接建立成本。")).toBeInTheDocument();
   });
 });

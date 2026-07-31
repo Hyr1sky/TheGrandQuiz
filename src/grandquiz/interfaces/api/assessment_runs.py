@@ -10,14 +10,20 @@ from typing import Any, Literal, cast
 from pydantic import BaseModel, Field, field_validator
 
 from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
+from grandquiz.domain.learning.assessment.grading import AssessmentDiagnosisKind
+from grandquiz.domain.learning.assessment.plan import AssessmentPlan
 from grandquiz.domain.learning.assessment.scope import SelectedScope
 from grandquiz.domain.learning.assessment.selection import Focus
 from grandquiz.domain.learning.assessment.session import AssessmentSession
 from grandquiz.domain.learning.difficulty import DifficultyLedger
 from grandquiz.domain.learning.events import LearningEvent
+from grandquiz.domain.learning.learning_facts import LearningFactJournal
 from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.preference import PreferenceMemory
-from grandquiz.domain.learning.responder import Responder
+from grandquiz.domain.learning.responder import (
+    AnswerSubmissionMetadata,
+    Responder,
+)
 from grandquiz.domain.learning.store import Store
 from grandquiz.interfaces.api.observability import TraceObservatory
 from grandquiz.kernel.clock import SystemClock
@@ -38,12 +44,35 @@ AssessmentStatus = Literal[
 
 ASSESSMENT_RUN_STARTED = "web.assessment_run.started"
 ASSESSMENT_RUN_ENDED = "web.assessment_run.ended"
+_PUBLIC_ASSESSMENT_DIAGNOSES = frozenset(
+    {
+        "complete",
+        "missing_key_point",
+        "wrong_focus",
+        "concept_confusion",
+        "off_topic",
+        "uncertain",
+        "incorrect_choice",
+    }
+)
+
+
+def project_assessment_diagnosis(value: object) -> AssessmentDiagnosisKind | None:
+    """把内部事件值投影到有限 Web 契约；未知值按无诊断安全降级。"""
+    if isinstance(value, str) and value in _PUBLIC_ASSESSMENT_DIAGNOSES:
+        return cast("AssessmentDiagnosisKind", value)
+    return None
 
 
 class AssessmentStartRequest(BaseModel):
     resource_ids: list[str] = Field(min_length=1)
     rounds: int = Field(default=3, ge=1, le=20)
     question_type: str | None = None
+    question_type_plan: list[str | None] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=20,
+    )
     focus: Focus = "mixed"
 
 
@@ -54,6 +83,7 @@ class EvidenceRevealRequest(BaseModel):
 class AnswerSubmissionRequest(BaseModel):
     request_id: str = Field(min_length=1)
     answer: str = Field(min_length=1)
+    input_modality: Literal["text", "voice"] = "text"
 
     @field_validator("request_id", "answer")
     @classmethod
@@ -94,9 +124,21 @@ class AssessmentQuestionView(BaseModel):
     evidence: list[str]
 
 
+class AssessmentPointFeedbackView(BaseModel):
+    point_id: str
+    description: str
+
+
 class AssessmentJudgementView(BaseModel):
     verdict: str
     reason: str
+    diagnosis: AssessmentDiagnosisKind | None = None
+    matched_points: list[AssessmentPointFeedbackView] = Field(
+        default_factory=list[AssessmentPointFeedbackView]
+    )
+    missing_points: list[AssessmentPointFeedbackView] = Field(
+        default_factory=list[AssessmentPointFeedbackView]
+    )
     concept_state: str | None = None
     correct_answer: str | None = None
 
@@ -117,6 +159,7 @@ class _WebResponder(Responder):
 
     def __init__(self) -> None:
         self._answer: asyncio.Future[str] | None = None
+        self._metadata: AnswerSubmissionMetadata | None = None
 
     async def answer(self, prompt: str, *, options: Sequence[str] | None = None) -> str:
         del prompt, options
@@ -127,20 +170,25 @@ class _WebResponder(Responder):
         if self._answer is not None and not self._answer.done():
             self._answer.cancel()
 
-    def submit(self, answer: str) -> bool:
+    def submit(self, answer: str, metadata: AnswerSubmissionMetadata) -> bool:
         if self._answer is None or self._answer.done():
             return False
+        self._metadata = metadata
         self._answer.set_result(answer)
         return True
+
+    def last_submission_metadata(self) -> AnswerSubmissionMetadata:
+        if self._metadata is None:
+            raise RuntimeError("答案尚未提交")
+        return self._metadata
 
 
 @dataclass
 class _AssessmentRecord:
     session_id: str
     trace_id: str
-    rounds: int
+    plan: AssessmentPlan
     round_index: int
-    question_type: str | None
     focus: Focus
     scope: SelectedScope
     responder: _WebResponder
@@ -185,7 +233,7 @@ class _AssessmentRecord:
             trace_id=self.trace_id,
             status=self.status,
             round_index=self.round_index,
-            rounds=self.rounds,
+            rounds=self.plan.rounds,
             question=question,
             judgement=self.judgement,
             error=self.error,
@@ -204,6 +252,7 @@ class AssessmentManager:
         asked_questions: AskedQuestionsLedger,
         preferences: PreferenceMemory,
         difficulty: DifficultyLedger,
+        learning_facts: LearningFactJournal,
         trace_store: TraceStore,
         trace_observatory: TraceObservatory | None = None,
     ) -> None:
@@ -213,6 +262,7 @@ class AssessmentManager:
         self._asked_questions = asked_questions
         self._preferences = preferences
         self._difficulty = difficulty
+        self._learning_facts = learning_facts
         self._trace_store = trace_store
         self._trace_observatory = trace_observatory
         self._records: dict[str, _AssessmentRecord] = {}
@@ -237,13 +287,21 @@ class AssessmentManager:
             asked_questions=self._asked_questions,
             preferences=self._preferences,
             difficulty=self._difficulty,
+            learning_facts=self._learning_facts,
+        )
+        plan = (
+            AssessmentPlan(question_type_intents=tuple(request.question_type_plan))
+            if request.question_type_plan is not None
+            else AssessmentPlan.create(
+                rounds=request.rounds,
+                question_type=request.question_type,
+            )
         )
         record = _AssessmentRecord(
             session_id=session_id,
             trace_id=trace_id,
-            rounds=request.rounds,
+            plan=plan,
             round_index=1,
-            question_type=request.question_type,
             focus=request.focus,
             scope=SelectedScope(resource_ids=request.resource_ids),
             responder=responder,
@@ -256,7 +314,11 @@ class AssessmentManager:
         emitter.emit(
             ASSESSMENT_RUN_STARTED,
             span_id=run_span_id,
-            payload={"status": "running"},
+            payload={
+                "status": "running",
+                "rounds": plan.rounds,
+                "question_type_plan": list(plan.question_type_intents),
+            },
         )
         record.task = asyncio.create_task(
             self._run_round(record),
@@ -305,7 +367,14 @@ class AssessmentManager:
             ):
                 return record.view()
             raise AssessmentCommandConflict("当前题目已经提交过答案")
-        if record.status != "awaiting_answer" or not record.responder.submit(command.answer):
+        metadata = AnswerSubmissionMetadata(
+            input_modality=command.input_modality,
+            answer_format="choice" if record.options else "natural_language",
+            evidence_revealed_before_answer=record.evidence_revealed,
+        )
+        if record.status != "awaiting_answer" or not record.responder.submit(
+            command.answer, metadata
+        ):
             raise AssessmentCommandConflict("当前题目不再接受答案")
         record.answer_request_id = command.request_id
         record.submitted_answer = command.answer
@@ -322,7 +391,7 @@ class AssessmentManager:
             return None
         if command.request_id in record.next_request_ids:
             return record.view()
-        if record.status != "judged" or record.round_index >= record.rounds:
+        if record.status != "judged" or record.round_index >= record.plan.rounds:
             raise AssessmentCommandConflict("当前考核不能进入下一题")
         record.next_request_ids.add(command.request_id)
         record.round_index += 1
@@ -349,13 +418,15 @@ class AssessmentManager:
                 emitter=record.emitter,
                 focus=record.focus,
                 scope=record.scope,
-                question_type=record.question_type,
+                question_type=record.plan.intent_for(record.round_index),
             )
             if result.status == "refused":
                 record.status = "refused"
                 self._emit_terminal(record, "failed")
             else:
-                record.status = "completed" if record.round_index == record.rounds else "judged"
+                record.status = (
+                    "completed" if record.round_index == record.plan.rounds else "judged"
+                )
                 if record.status == "completed":
                     self._emit_terminal(record, "completed")
         except asyncio.CancelledError:
@@ -403,7 +474,18 @@ class AssessmentManager:
             verdict = payload.get("verdict")
             reason = payload.get("reason")
             if isinstance(verdict, str) and isinstance(reason, str):
-                record.judgement = AssessmentJudgementView(verdict=verdict, reason=reason)
+                diagnosis = payload.get("diagnosis")
+                record.judgement = AssessmentJudgementView(
+                    verdict=verdict,
+                    reason=reason,
+                    diagnosis=project_assessment_diagnosis(diagnosis),
+                    matched_points=AssessmentManager._project_point_feedback(
+                        payload.get("matched_points")
+                    ),
+                    missing_points=AssessmentManager._project_point_feedback(
+                        payload.get("missing_points")
+                    ),
+                )
         elif event.type == LearningEvent.CONCEPT_STATE_CHANGED and record.judgement is not None:
             to_state = payload.get("to_state")
             record.judgement = record.judgement.model_copy(
@@ -415,6 +497,26 @@ class AssessmentManager:
                 record.judgement = record.judgement.model_copy(
                     update={"correct_answer": correct_answer}
                 )
+
+    @staticmethod
+    def _project_point_feedback(value: object) -> list[AssessmentPointFeedbackView]:
+        if not isinstance(value, list):
+            return []
+        projected: list[AssessmentPointFeedbackView] = []
+        for item in cast("list[object]", value):
+            if not isinstance(item, Mapping):
+                continue
+            point = cast("Mapping[str, object]", item)
+            point_id = point.get("point_id")
+            description = point.get("description")
+            if isinstance(point_id, str) and isinstance(description, str):
+                projected.append(
+                    AssessmentPointFeedbackView(
+                        point_id=point_id,
+                        description=description,
+                    )
+                )
+        return projected
 
     @staticmethod
     def _project_question(record: _AssessmentRecord, payload: Mapping[str, Any]) -> None:

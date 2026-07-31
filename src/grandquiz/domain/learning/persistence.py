@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol, Self, runtime_checkable
 
+from grandquiz.kernel.clock import Clock
 from grandquiz.kernel.db import connect, migrate, transaction
 
 _LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
@@ -59,14 +60,19 @@ class LearningPersistence:
     位置敏感元组或记住每新增一个账本就多关一次共享连接。
     """
 
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(self, db_path: str | Path, *, clock: Clock | None = None) -> None:
         # 延迟导入避免 Adapter 模块导入 ``persistence`` 基础类型时形成循环。
         from grandquiz.domain.learning.acquisition import AcquisitionLedger
         from grandquiz.domain.learning.asked_questions import SqliteAskedQuestionsLedger
+        from grandquiz.domain.learning.classification_store import (
+            SqliteClassificationRepository,
+        )
         from grandquiz.domain.learning.difficulty import SqliteDifficultyLedger
+        from grandquiz.domain.learning.learning_facts import SqliteLearningFactJournal
         from grandquiz.domain.learning.memory import SqliteLearningMemory
         from grandquiz.domain.learning.preference import SqlitePreferenceMemory
         from grandquiz.domain.learning.store import SqliteLearningStore
+        from grandquiz.domain.learning.vocabulary import load_vocabulary
 
         self._database = LearningDatabase(db_path)
         self.store: SqliteLearningStore = SqliteLearningStore(self._database)
@@ -76,6 +82,13 @@ class LearningPersistence:
             self._database
         )
         self.difficulty: SqliteDifficultyLedger = SqliteDifficultyLedger(self._database)
+        self.learning_facts: SqliteLearningFactJournal = SqliteLearningFactJournal(self._database)
+        self.classifications: SqliteClassificationRepository = SqliteClassificationRepository(
+            self._database,
+            vocabulary=load_vocabulary(),
+            learning_facts=self.learning_facts,
+            clock=clock,
+        )
         self.acquisitions: AcquisitionLedger = AcquisitionLedger(self._database)
         self._closed = False
 

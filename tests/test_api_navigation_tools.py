@@ -84,6 +84,44 @@ class _OpenArticleProvider:
         )
 
 
+class _MixedAssessmentProvider:
+    """复现实机请求：两道选择题后接一道简答题。"""
+
+    def __init__(self) -> None:
+        self._call_count = 0
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        self._call_count += 1
+        if tools is not None and self._call_count == 1:
+            return Completion(
+                text="",
+                tool_calls=[
+                    ToolCall(
+                        id="tc_nav_mixed",
+                        name="start_assessment",
+                        arguments={
+                            "resource_id": "res-http",
+                            "segments": [
+                                {"count": 2, "question_type": "选择题"},
+                                {"count": 1, "question_type": "简答题"},
+                            ],
+                        },
+                    )
+                ],
+                usage=Usage(prompt_tokens=80, completion_tokens=20),
+            )
+        return Completion(
+            text="已按顺序启动混合题型考核。",
+            usage=Usage(prompt_tokens=100, completion_tokens=15),
+        )
+
+
 # ---- Helpers ---- #
 
 
@@ -185,15 +223,36 @@ def test_start_assessment_projects_chat_navigation_event(tmp_path: Path) -> None
     assert data["target"] == "assessment"
     params = cast("dict[str, Any]", data["params"])
     assert isinstance(params, dict)
-    assert params["resource_id"] == "res-abc"
-    assert params["rounds"] == 3
-    assert params["question_type"] == "选择题"
+    assert params == {
+        "resource_id": "res-abc",
+        "question_type_plan": ["选择题", "选择题", "选择题"],
+    }
 
     # Turn should also complete normally
     assert "chat.turn_ended" in types
     ended = next(e for e in events if e["type"] == "chat.turn_ended")
     assert isinstance(ended["data"], dict)
     assert ended["data"]["output"] == "好的，已为你启动考核。"
+
+
+def test_start_assessment_projects_one_normalized_mixed_question_type_plan(
+    tmp_path: Path,
+) -> None:
+    with TestClient(_app(tmp_path, _MixedAssessmentProvider())) as client:
+        session = client.post("/api/v1/chat/sessions").json()
+        sid = session["session_id"]
+        client.post(
+            f"/api/v1/chat/sessions/{sid}/messages",
+            json={"text": "考我两道选择题和一道简答题"},
+        )
+        events = _wait_for_events(client, sid)
+
+    nav_event = next(event for event in events if event["type"] == "chat.navigation")
+    params = cast("dict[str, Any]", nav_event["data"]["params"])
+    assert params == {
+        "resource_id": "res-http",
+        "question_type_plan": ["选择题", "选择题", "简答题"],
+    }
 
 
 def test_open_article_projects_chat_navigation_event(tmp_path: Path) -> None:

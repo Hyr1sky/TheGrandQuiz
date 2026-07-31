@@ -15,13 +15,63 @@ from grandquiz.domain.learning.assessment.grading import (
     grade_answer,
     grade_multiple_choice,
 )
-from grandquiz.domain.learning.assessment.question import MultipleChoiceQuestion
+from grandquiz.domain.learning.assessment.question import (
+    ExpectedPoint,
+    MultipleChoiceQuestion,
+    QuestionSpec,
+)
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Completion, Message, Role, Usage
 
 _QUOTE = "闭包捕获的是变量而非值"
+_POINT_CAPTURE = "capture"
+_POINT_CONTRAST = "contrast"
+
+
+def _question_spec() -> QuestionSpec:
+    return QuestionSpec(
+        question="什么是闭包？",
+        expected_points=[
+            ExpectedPoint(
+                point_id=_POINT_CAPTURE,
+                description="说明闭包捕获变量本身",
+                cited_evidence=_QUOTE,
+            ),
+            ExpectedPoint(
+                point_id=_POINT_CONTRAST,
+                description="明确不是捕获值快照",
+                cited_evidence=_QUOTE,
+            ),
+        ],
+        reference_answer="闭包捕获变量本身，而不是值快照。",
+        cited_evidence=[_QUOTE],
+    )
+
+
+def _verdict_json(
+    verdict: str = "对",
+    *,
+    matched_points: list[str] | None = None,
+    missing_points: list[str] | None = None,
+    diagnosis: str = "complete",
+    reason: str = "回答覆盖了全部评分点。",
+    cited_evidence: object = None,
+) -> str:
+    return json.dumps(
+        {
+            "verdict": verdict,
+            "matched_points": (
+                [_POINT_CAPTURE, _POINT_CONTRAST] if matched_points is None else matched_points
+            ),
+            "missing_points": [] if missing_points is None else missing_points,
+            "diagnosis": diagnosis,
+            "reason": reason,
+            "cited_evidence": [_QUOTE] if cited_evidence is None else cited_evidence,
+        },
+        ensure_ascii=False,
+    )
 
 
 class _FixedProvider:
@@ -59,7 +109,7 @@ async def _grade(provider: _FixedProvider, *, max_attempts: int = 3) -> Verdict:
     emitter, _ = _emitter()
     return await grade_answer(
         _item(),
-        "什么是闭包？",
+        _question_spec(),
         "闭包能捕获外层变量",
         provider=provider,
         emitter=emitter,
@@ -69,12 +119,12 @@ async def _grade(provider: _FixedProvider, *, max_attempts: int = 3) -> Verdict:
 
 
 async def test_valid_verdict_parses() -> None:
-    provider = _FixedProvider(json.dumps({"verdict": "对", "cited_evidence": [_QUOTE]}))
+    provider = _FixedProvider(_verdict_json())
     emitter, events = _emitter()
 
     verdict = await grade_answer(
         _item(),
-        "什么是闭包？",
+        _question_spec(),
         "闭包能捕获外层变量",
         provider=provider,
         emitter=emitter,
@@ -83,6 +133,9 @@ async def test_valid_verdict_parses() -> None:
 
     assert isinstance(verdict, Verdict)
     assert verdict.verdict == "对"
+    assert verdict.matched_points == [_POINT_CAPTURE, _POINT_CONTRAST]
+    assert verdict.missing_points == []
+    assert verdict.diagnosis == "complete"
     assert verdict.cited_evidence == [_QUOTE]
     assert provider.calls == 1
     assert provider.roles == ["basic"]  # 判卷走 basic 角色
@@ -92,7 +145,16 @@ async def test_valid_verdict_parses() -> None:
 async def test_string_cited_evidence_is_coerced_to_list() -> None:
     # 真机 LLM 常把单条 cited_evidence 写成裸字符串（正是这次真机踩到的 list_type 报错）——
     # 被宽容纳成单元素列表，锚定门在其后照常把关。
-    provider = _FixedProvider(json.dumps({"verdict": "错", "cited_evidence": _QUOTE}))
+    provider = _FixedProvider(
+        _verdict_json(
+            "错",
+            matched_points=[],
+            missing_points=[_POINT_CAPTURE, _POINT_CONTRAST],
+            diagnosis="wrong_focus",
+            reason="回答偏离了题目要求。",
+            cited_evidence=_QUOTE,
+        )
+    )
     verdict = await _grade(provider)
     assert verdict.cited_evidence == [_QUOTE]
     assert provider.calls == 1  # 裸字符串被纳成列表 + 引文命中真实证据 → 无需重试
@@ -100,7 +162,7 @@ async def test_string_cited_evidence_is_coerced_to_list() -> None:
 
 async def test_substring_citation_is_accepted() -> None:
     # 判卷锚定门放宽为子串（与出题门对称）：判卷只引长证据里一句短句，仍属真实原文，首次即过。
-    provider = _FixedProvider(json.dumps({"verdict": "对", "cited_evidence": ["捕获的是变量"]}))
+    provider = _FixedProvider(_verdict_json(cited_evidence=["捕获的是变量"]))
     verdict = await _grade(provider)
     assert verdict.cited_evidence == ["捕获的是变量"]
     assert provider.calls == 1  # 子串命中真实证据 → 无需重试
@@ -108,7 +170,24 @@ async def test_substring_citation_is_accepted() -> None:
 
 @pytest.mark.parametrize("label", ["对", "勉强", "错"])
 async def test_all_three_verdicts_parse(label: str) -> None:
-    provider = _FixedProvider(json.dumps({"verdict": label, "cited_evidence": [_QUOTE]}))
+    payloads = {
+        "对": _verdict_json(),
+        "勉强": _verdict_json(
+            "勉强",
+            matched_points=[_POINT_CAPTURE],
+            missing_points=[_POINT_CONTRAST],
+            diagnosis="missing_key_point",
+            reason="答到了捕获变量，但没明确排除值快照。",
+        ),
+        "错": _verdict_json(
+            "错",
+            matched_points=[],
+            missing_points=[_POINT_CAPTURE, _POINT_CONTRAST],
+            diagnosis="wrong_focus",
+            reason="回答没有触及本题评分点。",
+        ),
+    }
+    provider = _FixedProvider(payloads[label])
     verdict = await _grade(provider)
     assert verdict.verdict == label
 
@@ -116,24 +195,35 @@ async def test_all_three_verdicts_parse(label: str) -> None:
 async def test_reason_is_parsed_when_present() -> None:
     # 判官一句话诊断进 reason（只展示、不驱动记账）。
     provider = _FixedProvider(
-        json.dumps(
-            {"verdict": "勉强", "reason": "方向对但没点出是变量本身", "cited_evidence": [_QUOTE]}
+        _verdict_json(
+            "勉强",
+            matched_points=[_POINT_CAPTURE],
+            missing_points=[_POINT_CONTRAST],
+            diagnosis="missing_key_point",
+            reason="方向对但没点出不是值快照",
         )
     )
     verdict = await _grade(provider)
-    assert verdict.reason == "方向对但没点出是变量本身"
+    assert verdict.reason == "方向对但没点出不是值快照"
 
 
-async def test_reason_defaults_empty_for_backward_compat() -> None:
-    # 旧 cassette / 旧输出无 reason 字段 → 可选默认空串，照常解析（向后兼容）。
-    provider = _FixedProvider(json.dumps({"verdict": "对", "cited_evidence": [_QUOTE]}))
-    verdict = await _grade(provider)
-    assert verdict.reason == ""
+async def test_partial_answer_must_name_both_matched_and_missing_points() -> None:
+    provider = _FixedProvider(
+        _verdict_json(
+            "勉强",
+            matched_points=[_POINT_CAPTURE],
+            missing_points=[],
+            diagnosis="missing_key_point",
+            reason="漏了一个要点。",
+        )
+    )
+    with pytest.raises(GradingError):
+        await _grade(provider, max_attempts=1)
 
 
 async def test_illegal_verdict_enum_retries_then_raises() -> None:
     # verdict 非三值枚举 → schema 校验失败 → ModelRetry 用尽 → GradingError。
-    provider = _FixedProvider(json.dumps({"verdict": "满分", "cited_evidence": [_QUOTE]}))
+    provider = _FixedProvider(_verdict_json("满分"))
     with pytest.raises(GradingError):
         await _grade(provider, max_attempts=2)
     assert provider.calls == 2
@@ -141,7 +231,7 @@ async def test_illegal_verdict_enum_retries_then_raises() -> None:
 
 async def test_empty_cited_evidence_retries_then_raises() -> None:
     # 判卷校验门：cited_evidence 为空 → ModelRetry 用尽 → GradingError。
-    provider = _FixedProvider(json.dumps({"verdict": "对", "cited_evidence": []}))
+    provider = _FixedProvider(_verdict_json(cited_evidence=[]))
     with pytest.raises(GradingError):
         await _grade(provider, max_attempts=2)
     assert provider.calls == 2
@@ -149,9 +239,7 @@ async def test_empty_cited_evidence_retries_then_raises() -> None:
 
 async def test_fabricated_cited_evidence_retries_then_raises() -> None:
     # 判卷锚定门（与出题门对称）：引了伪造的"原文" → ModelRetry 用尽 → GradingError。
-    provider = _FixedProvider(
-        json.dumps({"verdict": "对", "cited_evidence": ["这句原文根本不存在"]})
-    )
+    provider = _FixedProvider(_verdict_json(cited_evidence=["这句原文根本不存在"]))
     with pytest.raises(GradingError):
         await _grade(provider, max_attempts=2)
     assert provider.calls == 2
@@ -211,7 +299,7 @@ async def test_provider_exception_closes_model_span_and_propagates() -> None:
     with pytest.raises(RuntimeError):
         await grade_answer(
             _item(),
-            "什么是闭包？",
+            _question_spec(),
             "闭包能捕获外层变量",
             provider=provider,
             emitter=emitter,

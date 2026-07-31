@@ -3,6 +3,9 @@
     "schemas": {
       "AcquisitionCandidateView": {
         "properties": {
+          "classification": {
+            "$ref": "#/components/schemas/ClassificationProposal"
+          },
           "concept": {
             "title": "Concept",
             "type": "string"
@@ -32,7 +35,8 @@
           "concept",
           "summary",
           "confidence",
-          "evidence"
+          "evidence",
+          "classification"
         ],
         "title": "AcquisitionCandidateView",
         "type": "object"
@@ -57,6 +61,36 @@
           "error_code": {
             "anyOf": [
               {
+                "enum": [
+                  "invalid_url",
+                  "domain_not_allowed",
+                  "too_large",
+                  "ssrf",
+                  "redirect_limit",
+                  "timeout",
+                  "http_status",
+                  "unsupported_content_type",
+                  "empty_content",
+                  "too_short",
+                  "navigation_page",
+                  "login_page",
+                  "bot_challenge",
+                  "source_failure",
+                  "quote_mismatch",
+                  "unknown_node",
+                  "span_out_of_bounds",
+                  "evidence_schema",
+                  "reader_failed",
+                  "citation_invalid",
+                  "ingest_failed"
+                ],
+                "type": "string"
+              },
+              {
+                "enum": [
+                  "processing_failed",
+                  "interrupted"
+                ],
                 "type": "string"
               },
               {
@@ -75,6 +109,29 @@
               }
             ],
             "title": "Error Message"
+          },
+          "error_stage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fetch",
+                  "reader",
+                  "evidence_validation"
+                ],
+                "type": "string"
+              },
+              {
+                "enum": [
+                  "processing",
+                  "runtime"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Stage"
           },
           "kind": {
             "enum": [
@@ -239,6 +296,36 @@
           "error_code": {
             "anyOf": [
               {
+                "enum": [
+                  "invalid_url",
+                  "domain_not_allowed",
+                  "too_large",
+                  "ssrf",
+                  "redirect_limit",
+                  "timeout",
+                  "http_status",
+                  "unsupported_content_type",
+                  "empty_content",
+                  "too_short",
+                  "navigation_page",
+                  "login_page",
+                  "bot_challenge",
+                  "source_failure",
+                  "quote_mismatch",
+                  "unknown_node",
+                  "span_out_of_bounds",
+                  "evidence_schema",
+                  "reader_failed",
+                  "citation_invalid",
+                  "ingest_failed"
+                ],
+                "type": "string"
+              },
+              {
+                "enum": [
+                  "processing_failed",
+                  "interrupted"
+                ],
                 "type": "string"
               },
               {
@@ -257,6 +344,29 @@
               }
             ],
             "title": "Error Message"
+          },
+          "error_stage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fetch",
+                  "reader",
+                  "evidence_validation"
+                ],
+                "type": "string"
+              },
+              {
+                "enum": [
+                  "processing",
+                  "runtime"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Stage"
           },
           "kind": {
             "enum": [
@@ -321,6 +431,15 @@
             "title": "Answer",
             "type": "string"
           },
+          "input_modality": {
+            "default": "text",
+            "enum": [
+              "text",
+              "voice"
+            ],
+            "title": "Input Modality",
+            "type": "string"
+          },
           "request_id": {
             "minLength": 1,
             "title": "Request Id",
@@ -355,6 +474,204 @@
         "title": "ApprovalRequest",
         "type": "object"
       },
+      "AssessmentAttemptList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssessmentAttemptV1"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AssessmentAttemptList",
+        "type": "object"
+      },
+      "AssessmentAttemptV1": {
+        "description": "Minimum durable attempt projection; later slices add behavioral fidelity.",
+        "properties": {
+          "active_demand_validation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Demand Validation Id"
+          },
+          "adaptive_route": {
+            "$ref": "#/components/schemas/QuestionRoute"
+          },
+          "answer_format": {
+            "enum": [
+              "choice",
+              "natural_language",
+              "code"
+            ],
+            "title": "Answer Format",
+            "type": "string"
+          },
+          "answer_text": {
+            "title": "Answer Text",
+            "type": "string"
+          },
+          "appeal_status": {
+            "default": "none",
+            "enum": [
+              "none",
+              "pending",
+              "upheld",
+              "overturned"
+            ],
+            "title": "Appeal Status",
+            "type": "string"
+          },
+          "assessment_span_id": {
+            "title": "Assessment Span Id",
+            "type": "string"
+          },
+          "attempt_id": {
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "concept_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "薄弱",
+                  "观察中"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Concept State"
+          },
+          "difficulty_tier": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Tier"
+          },
+          "effective_route": {
+            "$ref": "#/components/schemas/QuestionRoute"
+          },
+          "elapsed_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elapsed Ms"
+          },
+          "evidence_revealed_before_answer": {
+            "default": false,
+            "title": "Evidence Revealed Before Answer",
+            "type": "boolean"
+          },
+          "final_verdict": {
+            "enum": [
+              "对",
+              "勉强",
+              "错"
+            ],
+            "title": "Final Verdict",
+            "type": "string"
+          },
+          "grading": {
+            "$ref": "#/components/schemas/GradingProvenance"
+          },
+          "initial_verdict": {
+            "enum": [
+              "对",
+              "勉强",
+              "错"
+            ],
+            "title": "Initial Verdict",
+            "type": "string"
+          },
+          "input_modality": {
+            "enum": [
+              "text",
+              "voice"
+            ],
+            "title": "Input Modality",
+            "type": "string"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "question_generation": {
+            "$ref": "#/components/schemas/GenerationProvenance"
+          },
+          "question_text": {
+            "title": "Question Text",
+            "type": "string"
+          },
+          "routing_source": {
+            "enum": [
+              "adaptive",
+              "user_override"
+            ],
+            "title": "Routing Source",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "assessment-attempt.v1",
+            "default": "assessment-attempt.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_event_cursor": {
+            "$ref": "#/components/schemas/SourceEventCursor"
+          },
+          "taxonomy_version": {
+            "title": "Taxonomy Version",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taxonomy_version",
+          "attempt_id",
+          "trace_id",
+          "assessment_span_id",
+          "item_id",
+          "question_text",
+          "answer_text",
+          "initial_verdict",
+          "final_verdict",
+          "adaptive_route",
+          "effective_route",
+          "routing_source",
+          "input_modality",
+          "answer_format",
+          "question_generation",
+          "grading",
+          "source_event_cursor"
+        ],
+        "title": "AssessmentAttemptV1",
+        "type": "object"
+      },
       "AssessmentJudgementView": {
         "properties": {
           "concept_state": {
@@ -379,6 +696,40 @@
             ],
             "title": "Correct Answer"
           },
+          "diagnosis": {
+            "anyOf": [
+              {
+                "enum": [
+                  "complete",
+                  "missing_key_point",
+                  "wrong_focus",
+                  "concept_confusion",
+                  "off_topic",
+                  "uncertain",
+                  "incorrect_choice"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnosis"
+          },
+          "matched_points": {
+            "items": {
+              "$ref": "#/components/schemas/AssessmentPointFeedbackView"
+            },
+            "title": "Matched Points",
+            "type": "array"
+          },
+          "missing_points": {
+            "items": {
+              "$ref": "#/components/schemas/AssessmentPointFeedbackView"
+            },
+            "title": "Missing Points",
+            "type": "array"
+          },
           "reason": {
             "title": "Reason",
             "type": "string"
@@ -393,6 +744,24 @@
           "reason"
         ],
         "title": "AssessmentJudgementView",
+        "type": "object"
+      },
+      "AssessmentPointFeedbackView": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "point_id": {
+            "title": "Point Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "point_id",
+          "description"
+        ],
+        "title": "AssessmentPointFeedbackView",
         "type": "object"
       },
       "AssessmentQuestionView": {
@@ -466,6 +835,29 @@
               }
             ],
             "title": "Question Type"
+          },
+          "question_type_plan": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Type Plan"
           },
           "resource_ids": {
             "items": {
@@ -607,6 +999,95 @@
         "title": "ChatUiEvent",
         "type": "object"
       },
+      "ClassificationProposal": {
+        "properties": {
+          "classified_by": {
+            "const": "rule",
+            "default": "rule",
+            "title": "Classified By",
+            "type": "string"
+          },
+          "classifier_version": {
+            "const": "knowledge-kind-rules.v1",
+            "default": "knowledge-kind-rules.v1",
+            "title": "Classifier Version",
+            "type": "string"
+          },
+          "orientations": {
+            "items": {
+              "enum": [
+                "theory",
+                "practice"
+              ],
+              "type": "string"
+            },
+            "title": "Orientations",
+            "type": "array"
+          },
+          "primary_kind": {
+            "enum": [
+              "concept",
+              "mechanism",
+              "procedure",
+              "method",
+              "tradeoff",
+              "failure_mode",
+              "case"
+            ],
+            "title": "Primary Kind",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "classification-proposal.v1",
+            "default": "classification-proposal.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "tag_candidates": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Tag Candidates",
+            "type": "array"
+          },
+          "taxonomy_version": {
+            "title": "Taxonomy Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "primary_kind",
+          "orientations",
+          "taxonomy_version"
+        ],
+        "title": "ClassificationProposal",
+        "type": "object"
+      },
+      "ClassificationReviewRequest": {
+        "properties": {
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review_status": {
+            "enum": [
+              "proposed",
+              "approved",
+              "rejected"
+            ],
+            "title": "Review Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "review_status"
+        ],
+        "title": "ClassificationReviewRequest",
+        "type": "object"
+      },
       "CreateAcquisitionRequest": {
         "properties": {
           "content": {
@@ -655,6 +1136,170 @@
           "kind"
         ],
         "title": "CreateAcquisitionRequest",
+        "type": "object"
+      },
+      "DemandValidationRequest": {
+        "properties": {
+          "rationale": {
+            "minLength": 1,
+            "title": "Rationale",
+            "type": "string"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "validated_demand": {
+            "anyOf": [
+              {
+                "enum": [
+                  "recall",
+                  "explain",
+                  "compare",
+                  "apply",
+                  "diagnose",
+                  "evaluate",
+                  "design"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validated Demand"
+          },
+          "validator_kind": {
+            "const": "user",
+            "default": "user",
+            "title": "Validator Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "validated_demand",
+          "rationale"
+        ],
+        "title": "DemandValidationRequest",
+        "type": "object"
+      },
+      "DemandValidationV1": {
+        "properties": {
+          "attempt_id": {
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "calibration_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Version"
+          },
+          "lifecycle_status": {
+            "default": "active",
+            "enum": [
+              "active",
+              "superseded",
+              "retracted"
+            ],
+            "title": "Lifecycle Status",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "review_status": {
+            "enum": [
+              "proposed",
+              "approved",
+              "rejected"
+            ],
+            "title": "Review Status",
+            "type": "string"
+          },
+          "revision": {
+            "default": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "schema_version": {
+            "const": "demand-validation.v1",
+            "default": "demand-validation.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "validated_demand": {
+            "anyOf": [
+              {
+                "enum": [
+                  "recall",
+                  "explain",
+                  "compare",
+                  "apply",
+                  "diagnose",
+                  "evaluate",
+                  "design"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validated Demand"
+          },
+          "validation_id": {
+            "title": "Validation Id",
+            "type": "string"
+          },
+          "validator_kind": {
+            "enum": [
+              "rule",
+              "calibrated_judge",
+              "user"
+            ],
+            "title": "Validator Kind",
+            "type": "string"
+          },
+          "validator_version": {
+            "title": "Validator Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "validation_id",
+          "attempt_id",
+          "validated_demand",
+          "validator_kind",
+          "validator_version",
+          "rationale",
+          "review_status",
+          "trace_id"
+        ],
+        "title": "DemandValidationV1",
         "type": "object"
       },
       "DocumentNodeReadResponse": {
@@ -859,6 +1504,50 @@
         "title": "EvidenceRevealRequest",
         "type": "object"
       },
+      "GenerationProvenance": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "rule",
+              "model"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "version"
+        ],
+        "title": "GenerationProvenance",
+        "type": "object"
+      },
+      "GradingProvenance": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "deterministic",
+              "model"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "version"
+        ],
+        "title": "GradingProvenance",
+        "type": "object"
+      },
       "GroundedAnswerMetrics": {
         "properties": {
           "candidate_nodes": {
@@ -1024,6 +1713,323 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "KnowledgeClassificationHistory": {
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeClassificationV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeClassificationV1"
+            },
+            "title": "History",
+            "type": "array"
+          }
+        },
+        "required": [
+          "active",
+          "history"
+        ],
+        "title": "KnowledgeClassificationHistory",
+        "type": "object"
+      },
+      "KnowledgeClassificationRequest": {
+        "properties": {
+          "orientations": {
+            "items": {
+              "enum": [
+                "theory",
+                "practice"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Orientations",
+            "type": "array",
+            "uniqueItems": true
+          },
+          "primary_kind": {
+            "enum": [
+              "concept",
+              "mechanism",
+              "procedure",
+              "method",
+              "tradeoff",
+              "failure_mode",
+              "case"
+            ],
+            "title": "Primary Kind",
+            "type": "string"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review_status": {
+            "default": "approved",
+            "enum": [
+              "proposed",
+              "approved",
+              "rejected"
+            ],
+            "title": "Review Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "primary_kind",
+          "orientations"
+        ],
+        "title": "KnowledgeClassificationRequest",
+        "type": "object"
+      },
+      "KnowledgeClassificationV1": {
+        "properties": {
+          "classification_id": {
+            "title": "Classification Id",
+            "type": "string"
+          },
+          "classified_by": {
+            "enum": [
+              "rule",
+              "model",
+              "user"
+            ],
+            "title": "Classified By",
+            "type": "string"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "lifecycle_status": {
+            "enum": [
+              "active",
+              "superseded",
+              "retracted"
+            ],
+            "title": "Lifecycle Status",
+            "type": "string"
+          },
+          "orientations": {
+            "items": {
+              "enum": [
+                "theory",
+                "practice"
+              ],
+              "type": "string"
+            },
+            "title": "Orientations",
+            "type": "array"
+          },
+          "primary_kind": {
+            "enum": [
+              "concept",
+              "mechanism",
+              "procedure",
+              "method",
+              "tradeoff",
+              "failure_mode",
+              "case"
+            ],
+            "title": "Primary Kind",
+            "type": "string"
+          },
+          "review_status": {
+            "enum": [
+              "proposed",
+              "approved",
+              "rejected"
+            ],
+            "title": "Review Status",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "schema_version": {
+            "const": "knowledge-classification.v1",
+            "default": "knowledge-classification.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "taxonomy_version": {
+            "title": "Taxonomy Version",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taxonomy_version",
+          "classification_id",
+          "item_id",
+          "revision",
+          "primary_kind",
+          "orientations",
+          "classified_by",
+          "review_status",
+          "lifecycle_status",
+          "trace_id"
+        ],
+        "title": "KnowledgeClassificationV1",
+        "type": "object"
+      },
+      "LearnerProjectionList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LearnerProjectionV1"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "LearnerProjectionList",
+        "type": "object"
+      },
+      "LearnerProjectionV1": {
+        "description": "Explainable item-level analytics rebuilt from durable attempts.",
+        "properties": {
+          "attempt_count": {
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "closed_book_attempt_count": {
+            "title": "Closed Book Attempt Count",
+            "type": "integer"
+          },
+          "difficulty_tier": {
+            "title": "Difficulty Tier",
+            "type": "integer"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "learning_memory_state": {
+            "enum": [
+              "薄弱",
+              "观察中",
+              "not_in_memory"
+            ],
+            "title": "Learning Memory State",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "learner-projection.v1",
+            "default": "learner-projection.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "taxonomy_version": {
+            "default": "vocabulary.v1",
+            "title": "Taxonomy Version",
+            "type": "string"
+          },
+          "validated_demand_states": {
+            "additionalProperties": {
+              "enum": [
+                "passed",
+                "needs_work"
+              ],
+              "type": "string"
+            },
+            "propertyNames": {
+              "enum": [
+                "recall",
+                "explain",
+                "compare",
+                "apply",
+                "diagnose",
+                "evaluate",
+                "design"
+              ]
+            },
+            "title": "Validated Demand States",
+            "type": "object"
+          },
+          "verdict_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "enum": [
+                "对",
+                "勉强",
+                "错"
+              ]
+            },
+            "title": "Verdict Counts",
+            "type": "object"
+          }
+        },
+        "required": [
+          "item_id",
+          "attempt_count",
+          "closed_book_attempt_count",
+          "verdict_counts",
+          "learning_memory_state",
+          "difficulty_tier",
+          "validated_demand_states"
+        ],
+        "title": "LearnerProjectionV1",
+        "type": "object"
+      },
+      "LearningReportV1": {
+        "properties": {
+          "attempt_count": {
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "projections": {
+            "items": {
+              "$ref": "#/components/schemas/LearnerProjectionV1"
+            },
+            "title": "Projections",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": "learning-report.v1",
+            "default": "learning-report.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt_count",
+          "projections"
+        ],
+        "title": "LearningReportV1",
+        "type": "object"
+      },
       "MessageAccepted": {
         "properties": {
           "turn_id": {
@@ -1088,6 +2094,32 @@
           "query"
         ],
         "title": "QuestionRequest",
+        "type": "object"
+      },
+      "QuestionRoute": {
+        "properties": {
+          "format": {
+            "enum": [
+              "multiple_choice",
+              "open_response"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "strategy": {
+            "enum": [
+              "standard",
+              "probe"
+            ],
+            "title": "Strategy",
+            "type": "string"
+          }
+        },
+        "required": [
+          "format",
+          "strategy"
+        ],
+        "title": "QuestionRoute",
         "type": "object"
       },
       "ResolvedCitation": {
@@ -1167,6 +2199,129 @@
           "items"
         ],
         "title": "ResourceListResponse",
+        "type": "object"
+      },
+      "ResourceRevisionClassificationRequest": {
+        "properties": {
+          "primary_source_genre": {
+            "enum": [
+              "official_documentation",
+              "tutorial",
+              "research_paper",
+              "forum_post",
+              "incident_report",
+              "source_code",
+              "personal_notes"
+            ],
+            "title": "Primary Source Genre",
+            "type": "string"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "primary_source_genre"
+        ],
+        "title": "ResourceRevisionClassificationRequest",
+        "type": "object"
+      },
+      "ResourceRevisionClassificationV1": {
+        "properties": {
+          "classification_id": {
+            "title": "Classification Id",
+            "type": "string"
+          },
+          "classified_by": {
+            "enum": [
+              "rule",
+              "model",
+              "user"
+            ],
+            "title": "Classified By",
+            "type": "string"
+          },
+          "lifecycle_status": {
+            "enum": [
+              "active",
+              "superseded",
+              "retracted"
+            ],
+            "title": "Lifecycle Status",
+            "type": "string"
+          },
+          "primary_source_genre": {
+            "enum": [
+              "official_documentation",
+              "tutorial",
+              "research_paper",
+              "forum_post",
+              "incident_report",
+              "source_code",
+              "personal_notes"
+            ],
+            "title": "Primary Source Genre",
+            "type": "string"
+          },
+          "review_status": {
+            "enum": [
+              "proposed",
+              "approved",
+              "rejected"
+            ],
+            "title": "Review Status",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "revision_id": {
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "resource-revision-classification.v1",
+            "default": "resource-revision-classification.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "taxonomy_version": {
+            "title": "Taxonomy Version",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taxonomy_version",
+          "classification_id",
+          "revision_id",
+          "revision",
+          "primary_source_genre",
+          "classified_by",
+          "review_status",
+          "lifecycle_status",
+          "trace_id"
+        ],
+        "title": "ResourceRevisionClassificationV1",
         "type": "object"
       },
       "ResourceSummary": {
@@ -1293,6 +2448,237 @@
           "trace_id"
         ],
         "title": "SessionView",
+        "type": "object"
+      },
+      "SourceEventCursor": {
+        "properties": {
+          "first_seq": {
+            "title": "First Seq",
+            "type": "integer"
+          },
+          "last_seq": {
+            "title": "Last Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "first_seq",
+          "last_seq"
+        ],
+        "title": "SourceEventCursor",
+        "type": "object"
+      },
+      "TagAssignmentList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TagAssignmentV1"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "TagAssignmentList",
+        "type": "object"
+      },
+      "TagAssignmentRequest": {
+        "properties": {
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "term_id": {
+            "minLength": 1,
+            "title": "Term Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "term_id"
+        ],
+        "title": "TagAssignmentRequest",
+        "type": "object"
+      },
+      "TagAssignmentV1": {
+        "properties": {
+          "assigned_by": {
+            "enum": [
+              "rule",
+              "model",
+              "user"
+            ],
+            "title": "Assigned By",
+            "type": "string"
+          },
+          "assignment_id": {
+            "title": "Assignment Id",
+            "type": "string"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "lifecycle_status": {
+            "enum": [
+              "active",
+              "superseded",
+              "retracted"
+            ],
+            "title": "Lifecycle Status",
+            "type": "string"
+          },
+          "review_status": {
+            "enum": [
+              "proposed",
+              "approved",
+              "rejected"
+            ],
+            "title": "Review Status",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "schema_version": {
+            "const": "tag-assignment.v1",
+            "default": "tag-assignment.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "taxonomy_version": {
+            "title": "Taxonomy Version",
+            "type": "string"
+          },
+          "term_id": {
+            "title": "Term Id",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assignment_id",
+          "item_id",
+          "term_id",
+          "revision",
+          "assigned_by",
+          "review_status",
+          "lifecycle_status",
+          "trace_id",
+          "taxonomy_version"
+        ],
+        "title": "TagAssignmentV1",
+        "type": "object"
+      },
+      "TagCandidateRequest": {
+        "properties": {
+          "namespace": {
+            "minLength": 1,
+            "title": "Namespace",
+            "type": "string"
+          },
+          "raw_value": {
+            "minLength": 1,
+            "title": "Raw Value",
+            "type": "string"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "namespace",
+          "raw_value"
+        ],
+        "title": "TagCandidateRequest",
+        "type": "object"
+      },
+      "TagCandidateV1": {
+        "properties": {
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "namespace": {
+            "title": "Namespace",
+            "type": "string"
+          },
+          "normalized_value": {
+            "title": "Normalized Value",
+            "type": "string"
+          },
+          "promoted_term_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted Term Id"
+          },
+          "raw_value": {
+            "title": "Raw Value",
+            "type": "string"
+          },
+          "review_status": {
+            "enum": [
+              "proposed",
+              "approved",
+              "rejected"
+            ],
+            "title": "Review Status",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "tag-candidate.v1",
+            "default": "tag-candidate.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "taxonomy_version": {
+            "title": "Taxonomy Version",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "raw_value",
+          "namespace",
+          "normalized_value",
+          "review_status",
+          "trace_id",
+          "taxonomy_version"
+        ],
+        "title": "TagCandidateV1",
         "type": "object"
       },
       "TraceSnapshot": {
@@ -1720,6 +3106,133 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VerdictCorrectionRequest": {
+        "properties": {
+          "final_verdict": {
+            "enum": [
+              "对",
+              "勉强",
+              "错"
+            ],
+            "title": "Final Verdict",
+            "type": "string"
+          },
+          "reason": {
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "final_verdict",
+          "reason"
+        ],
+        "title": "VerdictCorrectionRequest",
+        "type": "object"
+      },
+      "VocabularyReviewRequest": {
+        "properties": {
+          "replacement_term_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Term Id"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review_status": {
+            "enum": [
+              "proposed",
+              "approved",
+              "deprecated"
+            ],
+            "title": "Review Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "review_status"
+        ],
+        "title": "VocabularyReviewRequest",
+        "type": "object"
+      },
+      "VocabularyTermView": {
+        "properties": {
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Aliases",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label_zh": {
+            "title": "Label Zh",
+            "type": "string"
+          },
+          "namespace": {
+            "title": "Namespace",
+            "type": "string"
+          },
+          "replacement_term_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Term Id"
+          },
+          "status": {
+            "enum": [
+              "proposed",
+              "approved",
+              "deprecated"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "taxonomy_version": {
+            "title": "Taxonomy Version",
+            "type": "string"
+          },
+          "term_id": {
+            "title": "Term Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "term_id",
+          "namespace",
+          "key",
+          "label_zh",
+          "aliases",
+          "status",
+          "taxonomy_version"
+        ],
+        "title": "VocabularyTermView",
         "type": "object"
       }
     }
@@ -2515,6 +4028,727 @@
         "summary": "Health",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/api/v1/learning/attempts": {
+      "get": {
+        "operationId": "list_assessment_attempts_api_v1_learning_attempts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "trace_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Trace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentAttemptList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Assessment Attempts",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/attempts/{attempt_id}": {
+      "get": {
+        "operationId": "get_assessment_attempt_api_v1_learning_attempts__attempt_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentAttemptV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Assessment Attempt",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/attempts/{attempt_id}/demand-validations": {
+      "post": {
+        "operationId": "validate_attempt_demand_api_v1_learning_attempts__attempt_id__demand_validations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemandValidationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemandValidationV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Attempt Demand",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/attempts/{attempt_id}/verdict-corrections": {
+      "post": {
+        "operationId": "correct_attempt_verdict_api_v1_learning_attempts__attempt_id__verdict_corrections_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attempt_id",
+            "required": true,
+            "schema": {
+              "title": "Attempt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerdictCorrectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentAttemptV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Correct Attempt Verdict",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/items/{item_id}/classifications": {
+      "get": {
+        "operationId": "get_knowledge_item_classifications_api_v1_learning_items__item_id__classifications_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeClassificationHistory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Knowledge Item Classifications",
+        "tags": [
+          "learning"
+        ]
+      },
+      "post": {
+        "operationId": "classify_knowledge_item_api_v1_learning_items__item_id__classifications_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeClassificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeClassificationV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Classify Knowledge Item",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/items/{item_id}/classifications/{classification_id}/review": {
+      "post": {
+        "operationId": "review_knowledge_classification_api_v1_learning_items__item_id__classifications__classification_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "classification_id",
+            "required": true,
+            "schema": {
+              "title": "Classification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassificationReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeClassificationV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Knowledge Classification",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/items/{item_id}/tags": {
+      "get": {
+        "operationId": "list_managed_tags_api_v1_learning_items__item_id__tags_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagAssignmentList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Managed Tags",
+        "tags": [
+          "learning"
+        ]
+      },
+      "post": {
+        "operationId": "assign_managed_tag_api_v1_learning_items__item_id__tags_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagAssignmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagAssignmentV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign Managed Tag",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/projections": {
+      "get": {
+        "operationId": "list_learner_projections_api_v1_learning_projections_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearnerProjectionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Learner Projections",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/projections/{item_id}": {
+      "get": {
+        "operationId": "get_learner_projection_api_v1_learning_projections__item_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearnerProjectionV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Learner Projection",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/report": {
+      "get": {
+        "operationId": "get_learning_report_api_v1_learning_report_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningReportV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Learning Report",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/revisions/{revision_id}/classifications": {
+      "post": {
+        "operationId": "classify_resource_revision_api_v1_learning_revisions__revision_id__classifications_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "revision_id",
+            "required": true,
+            "schema": {
+              "title": "Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceRevisionClassificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceRevisionClassificationV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Classify Resource Revision",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/vocabulary/tag-candidates": {
+      "post": {
+        "operationId": "propose_tag_candidate_api_v1_learning_vocabulary_tag_candidates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagCandidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagCandidateV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose Tag Candidate",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/vocabulary/tag-candidates/{candidate_id}/review": {
+      "post": {
+        "operationId": "review_tag_candidate_api_v1_learning_vocabulary_tag_candidates__candidate_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "title": "Candidate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassificationReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagCandidateV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Tag Candidate",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/vocabulary/terms/{term_id}/review": {
+      "post": {
+        "operationId": "review_vocabulary_term_api_v1_learning_vocabulary_terms__term_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "term_id",
+            "required": true,
+            "schema": {
+              "title": "Term Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VocabularyReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VocabularyTermView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Vocabulary Term",
+        "tags": [
+          "learning"
         ]
       }
     },

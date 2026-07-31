@@ -44,7 +44,7 @@ flowchart LR
 TheGrandQuiz 同时包含一套可观测、可恢复、可评测的 Agent Runtime。Runtime 是产品的工程内核，
 不是对外承诺稳定 API 的通用框架。
 
-## v0.1.0 能做什么
+## v0.2 功能候选版能做什么
 
 | 能力 | 当前体验 | 工程保证 |
 | --- | --- | --- |
@@ -53,11 +53,12 @@ TheGrandQuiz 同时包含一套可观测、可恢复、可评测的 Agent Runtim
 | **逐题考核** | 选择题、开放问答、薄弱点复考 | LLM 判卷，代码负责状态转移与记账 |
 | **精确 Evidence** | 从答案和考题回到原文依据 | 定位到 revision / node / source span |
 | **学习记忆** | 记录暴露出的薄弱概念 | 下一轮选题优先复考，而非只存聊天记录 |
+| **可纠正学习事实** | 审查答题记录、分类和用户纠正 | append-only Journal/outbox，可重建投影 |
 | **可信运行** | 浏览 trace、执行树、token、错误与恢复状态 | Record/Replay + 17 条离线 Eval |
 | **Local Web** | 三栏 Chat、文章阅读、Evidence 揭示与考核 | 同源 SPA、安全 Markdown、稳定 SSE |
 
 > [!NOTE]
-> 首个版本是**本机单用户候选版**，不支持账号、多用户、云同步或公网服务。Web 已提供材料导入与
+> v0.2 仍是**本机单用户功能候选版**，不支持账号、多用户、云同步或公网服务。Web 已提供材料导入与
 > 可恢复审批，但完整的文章/知识点维护操作和连续“掌握度分数”仍属于后续版本；现有 Web 服务也
 > 不应直接暴露到局域网或公网。
 
@@ -141,7 +142,7 @@ uv run grandquiz-web
 
 浏览器打开 `http://127.0.0.1:8000`。服务同时提供打包后的 React 页面与 `/api/v1`，并且只监听
 loopback。Web 可完成上传/URL 导入、状态观察、候选知识点审批与失败/取消重试；CLI 继续作为批量 ingest、
-恢复和 trace 审计入口。完整的资源删除、revision/知识点维护仍不在 v0.1.0 范围内。
+恢复和 trace 审计入口。完整的资源删除、revision/知识点维护仍不在 v0.2 范围内。
 
 修改前端源码时再使用两个终端进入开发模式：
 
@@ -211,6 +212,10 @@ npm run test:sites
 npm run test:e2e
 ```
 
+本地 Playwright 默认复用已安装的稳定版 Chrome，避免因 Playwright 浏览器 revision 更新反复下载大体积
+Chromium；CI 仍安装并使用固定 Chromium。需要在本地验证固定 Chromium 时，可先执行
+`npx playwright install chromium`，再以 `GRANDQUIZ_SYSTEM_CHROME=0 npm run test:e2e` 运行。
+
 CI 在每次 push / PR 上运行 Python、Eval、Web、OpenAPI 和 Playwright 门。贡献约定、cassette 重录纪律和
 PR 要求见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
@@ -218,9 +223,13 @@ PR 要求见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 | 文档 | 内容 |
 | --- | --- |
+| [docs/index.md](docs/index.md) | 文档导航、职责边界与冲突优先级 |
+| [docs/product.md](docs/product.md) | 用户问题、核心循环、产品原则与版本边界 |
 | [CONTEXT.md](CONTEXT.md) | 产品领域语言权威表 |
+| [docs/domain-model.md](docs/domain-model.md) | 当前实体、不变量与 Learning Model v2 数据契约 |
+| [docs/vocabulary.md](docs/vocabulary.md) | 分层受控词表与审核治理 |
 | [docs/architecture.md](docs/architecture.md) | 分层、事件脊柱与核心设计判断 |
-| [docs/roadmap.md](docs/roadmap.md) | 发展路线与 walking skeleton |
+| [docs/roadmap.md](docs/roadmap.md) | 后续阶段与验收顺序 |
 | [docs/adr/](docs/adr/) | 不可逆架构决策 |
 | [docs/devrecords/](docs/devrecords/) | 实现、dogfood、成本与门禁记录 |
 | [docs/open-source-release-checklist.md](docs/open-source-release-checklist.md) | v0.1.0 发布门 |

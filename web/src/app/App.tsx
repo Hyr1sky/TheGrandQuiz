@@ -38,8 +38,7 @@ const ONBOARDING_STORAGE_KEY = "grandquiz.onboarding.v1";
 
 interface AssessmentParams {
   resource_id: string;
-  rounds: number;
-  question_type: string | null;
+  question_type_plan: Array<string | null>;
 }
 
 export function App() {
@@ -206,17 +205,24 @@ export function App() {
           }
           if (nav.target === "assessment") {
             const params = nav.params;
+            const rawQuestionTypePlan = params.question_type_plan;
+            const questionTypePlan = Array.isArray(rawQuestionTypePlan)
+              ? rawQuestionTypePlan
+                  .filter(
+                    (value): value is string | null =>
+                      typeof value === "string" || value === null,
+                  )
+                  .slice(0, 20)
+              : [];
             setAssessmentParams({
               resource_id:
                 typeof params.resource_id === "string"
                   ? params.resource_id
                   : "",
-              rounds:
-                typeof params.rounds === "number" ? params.rounds : 3,
-              question_type:
-                typeof params.question_type === "string"
-                  ? params.question_type
-                  : null,
+              question_type_plan:
+                questionTypePlan.length > 0
+                  ? questionTypePlan
+                  : [null, null, null],
             });
             setAssessmentEpoch((current) => current + 1);
             setAssessment(null);
@@ -327,8 +333,7 @@ export function App() {
             key={assessmentEpoch}
             ref={assessmentPanelRef}
             resourceId={assessmentParams.resource_id}
-            rounds={assessmentParams.rounds}
-            questionType={assessmentParams.question_type}
+            questionTypePlan={assessmentParams.question_type_plan}
             onClose={handleAssessmentClose}
             onUpdate={handleAssessmentUpdate}
           />

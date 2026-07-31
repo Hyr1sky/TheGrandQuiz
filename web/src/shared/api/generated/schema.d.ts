@@ -261,6 +261,246 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/learning/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Assessment Attempts */
+        get: operations["list_assessment_attempts_api_v1_learning_attempts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning/attempts/{attempt_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Assessment Attempt */
+        get: operations["get_assessment_attempt_api_v1_learning_attempts__attempt_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning/attempts/{attempt_id}/demand-validations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate Attempt Demand */
+        post: operations["validate_attempt_demand_api_v1_learning_attempts__attempt_id__demand_validations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning/attempts/{attempt_id}/verdict-corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Correct Attempt Verdict */
+        post: operations["correct_attempt_verdict_api_v1_learning_attempts__attempt_id__verdict_corrections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning/items/{item_id}/classifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Knowledge Item Classifications */
+        get: operations["get_knowledge_item_classifications_api_v1_learning_items__item_id__classifications_get"];
+        put?: never;
+        /** Classify Knowledge Item */
+        post: operations["classify_knowledge_item_api_v1_learning_items__item_id__classifications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning/items/{item_id}/classifications/{classification_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Knowledge Classification */
+        post: operations["review_knowledge_classification_api_v1_learning_items__item_id__classifications__classification_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning/items/{item_id}/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Managed Tags */
+        get: operations["list_managed_tags_api_v1_learning_items__item_id__tags_get"];
+        put?: never;
+        /** Assign Managed Tag */
+        post: operations["assign_managed_tag_api_v1_learning_items__item_id__tags_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning/projections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Learner Projections */
+        get: operations["list_learner_projections_api_v1_learning_projections_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning/projections/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Learner Projection */
+        get: operations["get_learner_projection_api_v1_learning_projections__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Learning Report */
+        get: operations["get_learning_report_api_v1_learning_report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning/revisions/{revision_id}/classifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Classify Resource Revision */
+        post: operations["classify_resource_revision_api_v1_learning_revisions__revision_id__classifications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning/vocabulary/tag-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Propose Tag Candidate */
+        post: operations["propose_tag_candidate_api_v1_learning_vocabulary_tag_candidates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning/vocabulary/tag-candidates/{candidate_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Tag Candidate */
+        post: operations["review_tag_candidate_api_v1_learning_vocabulary_tag_candidates__candidate_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning/vocabulary/terms/{term_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Vocabulary Term */
+        post: operations["review_vocabulary_term_api_v1_learning_vocabulary_terms__term_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/observability/traces/{trace_id}": {
         parameters: {
             query?: never;
@@ -437,6 +677,7 @@ export interface components {
     schemas: {
         /** AcquisitionCandidateView */
         AcquisitionCandidateView: {
+            classification: components["schemas"]["ClassificationProposal"];
             /** Concept */
             concept: string;
             /** Confidence */
@@ -457,9 +698,11 @@ export interface components {
             /** Display Name */
             display_name: string;
             /** Error Code */
-            error_code?: string | null;
+            error_code?: ("invalid_url" | "domain_not_allowed" | "too_large" | "ssrf" | "redirect_limit" | "timeout" | "http_status" | "unsupported_content_type" | "empty_content" | "too_short" | "navigation_page" | "login_page" | "bot_challenge" | "source_failure" | "quote_mismatch" | "unknown_node" | "span_out_of_bounds" | "evidence_schema" | "reader_failed" | "citation_invalid" | "ingest_failed") | ("processing_failed" | "interrupted") | null;
             /** Error Message */
             error_message?: string | null;
+            /** Error Stage */
+            error_stage?: ("fetch" | "reader" | "evidence_validation") | ("processing" | "runtime") | null;
             /**
              * Kind
              * @enum {string}
@@ -515,9 +758,11 @@ export interface components {
             /** Display Name */
             display_name: string;
             /** Error Code */
-            error_code?: string | null;
+            error_code?: ("invalid_url" | "domain_not_allowed" | "too_large" | "ssrf" | "redirect_limit" | "timeout" | "http_status" | "unsupported_content_type" | "empty_content" | "too_short" | "navigation_page" | "login_page" | "bot_challenge" | "source_failure" | "quote_mismatch" | "unknown_node" | "span_out_of_bounds" | "evidence_schema" | "reader_failed" | "citation_invalid" | "ingest_failed") | ("processing_failed" | "interrupted") | null;
             /** Error Message */
             error_message?: string | null;
+            /** Error Stage */
+            error_stage?: ("fetch" | "reader" | "evidence_validation") | ("processing" | "runtime") | null;
             /**
              * Kind
              * @enum {string}
@@ -541,6 +786,12 @@ export interface components {
         AnswerSubmissionRequest: {
             /** Answer */
             answer: string;
+            /**
+             * Input Modality
+             * @default text
+             * @enum {string}
+             */
+            input_modality: "text" | "voice";
             /** Request Id */
             request_id: string;
         };
@@ -551,16 +802,109 @@ export interface components {
             /** Resume Token */
             resume_token: string;
         };
+        /** AssessmentAttemptList */
+        AssessmentAttemptList: {
+            /** Items */
+            items: components["schemas"]["AssessmentAttemptV1"][];
+        };
+        /**
+         * AssessmentAttemptV1
+         * @description Minimum durable attempt projection; later slices add behavioral fidelity.
+         */
+        AssessmentAttemptV1: {
+            /** Active Demand Validation Id */
+            active_demand_validation_id?: string | null;
+            adaptive_route: components["schemas"]["QuestionRoute"];
+            /**
+             * Answer Format
+             * @enum {string}
+             */
+            answer_format: "choice" | "natural_language" | "code";
+            /** Answer Text */
+            answer_text: string;
+            /**
+             * Appeal Status
+             * @default none
+             * @enum {string}
+             */
+            appeal_status: "none" | "pending" | "upheld" | "overturned";
+            /** Assessment Span Id */
+            assessment_span_id: string;
+            /** Attempt Id */
+            attempt_id: string;
+            /** Concept State */
+            concept_state?: ("薄弱" | "观察中") | null;
+            /** Difficulty Tier */
+            difficulty_tier?: number | null;
+            effective_route: components["schemas"]["QuestionRoute"];
+            /** Elapsed Ms */
+            elapsed_ms?: number | null;
+            /**
+             * Evidence Revealed Before Answer
+             * @default false
+             */
+            evidence_revealed_before_answer: boolean;
+            /**
+             * Final Verdict
+             * @enum {string}
+             */
+            final_verdict: "对" | "勉强" | "错";
+            grading: components["schemas"]["GradingProvenance"];
+            /**
+             * Initial Verdict
+             * @enum {string}
+             */
+            initial_verdict: "对" | "勉强" | "错";
+            /**
+             * Input Modality
+             * @enum {string}
+             */
+            input_modality: "text" | "voice";
+            /** Item Id */
+            item_id: string;
+            question_generation: components["schemas"]["GenerationProvenance"];
+            /** Question Text */
+            question_text: string;
+            /**
+             * Routing Source
+             * @enum {string}
+             */
+            routing_source: "adaptive" | "user_override";
+            /**
+             * Schema Version
+             * @default assessment-attempt.v1
+             * @constant
+             */
+            schema_version: "assessment-attempt.v1";
+            source_event_cursor: components["schemas"]["SourceEventCursor"];
+            /** Taxonomy Version */
+            taxonomy_version: string;
+            /** Trace Id */
+            trace_id: string;
+        };
         /** AssessmentJudgementView */
         AssessmentJudgementView: {
             /** Concept State */
             concept_state?: string | null;
             /** Correct Answer */
             correct_answer?: string | null;
+            /** Diagnosis */
+            diagnosis?: ("complete" | "missing_key_point" | "wrong_focus" | "concept_confusion" | "off_topic" | "uncertain" | "incorrect_choice") | null;
+            /** Matched Points */
+            matched_points?: components["schemas"]["AssessmentPointFeedbackView"][];
+            /** Missing Points */
+            missing_points?: components["schemas"]["AssessmentPointFeedbackView"][];
             /** Reason */
             reason: string;
             /** Verdict */
             verdict: string;
+        };
+        /** AssessmentPointFeedbackView */
+        AssessmentPointFeedbackView: {
+            /** Description */
+            description: string;
+            /** Point Id */
+            point_id: string;
         };
         /** AssessmentQuestionView */
         AssessmentQuestionView: {
@@ -589,6 +933,8 @@ export interface components {
             focus: "mixed" | "new" | "weak";
             /** Question Type */
             question_type?: string | null;
+            /** Question Type Plan */
+            question_type_plan?: (string | null)[] | null;
             /** Resource Ids */
             resource_ids: string[];
             /**
@@ -635,6 +981,51 @@ export interface components {
             /** Type */
             type: string;
         };
+        /** ClassificationProposal */
+        ClassificationProposal: {
+            /**
+             * Classified By
+             * @default rule
+             * @constant
+             */
+            classified_by: "rule";
+            /**
+             * Classifier Version
+             * @default knowledge-kind-rules.v1
+             * @constant
+             */
+            classifier_version: "knowledge-kind-rules.v1";
+            /** Orientations */
+            orientations: ("theory" | "practice")[];
+            /**
+             * Primary Kind
+             * @enum {string}
+             */
+            primary_kind: "concept" | "mechanism" | "procedure" | "method" | "tradeoff" | "failure_mode" | "case";
+            /**
+             * Schema Version
+             * @default classification-proposal.v1
+             * @constant
+             */
+            schema_version: "classification-proposal.v1";
+            /**
+             * Tag Candidates
+             * @default []
+             */
+            tag_candidates: string[];
+            /** Taxonomy Version */
+            taxonomy_version: string;
+        };
+        /** ClassificationReviewRequest */
+        ClassificationReviewRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * Review Status
+             * @enum {string}
+             */
+            review_status: "proposed" | "approved" | "rejected";
+        };
         /** CreateAcquisitionRequest */
         CreateAcquisitionRequest: {
             /** Content */
@@ -648,6 +1039,67 @@ export interface components {
             kind: "upload" | "url";
             /** Url */
             url?: string | null;
+        };
+        /** DemandValidationRequest */
+        DemandValidationRequest: {
+            /** Rationale */
+            rationale: string;
+            /** Request Id */
+            request_id: string;
+            /** Validated Demand */
+            validated_demand: ("recall" | "explain" | "compare" | "apply" | "diagnose" | "evaluate" | "design") | null;
+            /**
+             * Validator Kind
+             * @default user
+             * @constant
+             */
+            validator_kind: "user";
+        };
+        /** DemandValidationV1 */
+        DemandValidationV1: {
+            /** Attempt Id */
+            attempt_id: string;
+            /** Calibration Version */
+            calibration_version?: string | null;
+            /**
+             * Lifecycle Status
+             * @default active
+             * @enum {string}
+             */
+            lifecycle_status: "active" | "superseded" | "retracted";
+            /** Rationale */
+            rationale: string;
+            /**
+             * Review Status
+             * @enum {string}
+             */
+            review_status: "proposed" | "approved" | "rejected";
+            /**
+             * Revision
+             * @default 1
+             */
+            revision: number;
+            /**
+             * Schema Version
+             * @default demand-validation.v1
+             * @constant
+             */
+            schema_version: "demand-validation.v1";
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /** Trace Id */
+            trace_id: string;
+            /** Validated Demand */
+            validated_demand: ("recall" | "explain" | "compare" | "apply" | "diagnose" | "evaluate" | "design") | null;
+            /** Validation Id */
+            validation_id: string;
+            /**
+             * Validator Kind
+             * @enum {string}
+             */
+            validator_kind: "rule" | "calibrated_judge" | "user";
+            /** Validator Version */
+            validator_version: string;
         };
         /** DocumentNodeReadResponse */
         DocumentNodeReadResponse: {
@@ -720,6 +1172,26 @@ export interface components {
              */
             interaction: "hover" | "click" | "keyboard";
         };
+        /** GenerationProvenance */
+        GenerationProvenance: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "rule" | "model";
+            /** Version */
+            version: string;
+        };
+        /** GradingProvenance */
+        GradingProvenance: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "deterministic" | "model";
+            /** Version */
+            version: string;
+        };
         /** GroundedAnswerMetrics */
         GroundedAnswerMetrics: {
             /** Candidate Nodes */
@@ -772,6 +1244,129 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** KnowledgeClassificationHistory */
+        KnowledgeClassificationHistory: {
+            active: components["schemas"]["KnowledgeClassificationV1"] | null;
+            /** History */
+            history: components["schemas"]["KnowledgeClassificationV1"][];
+        };
+        /** KnowledgeClassificationRequest */
+        KnowledgeClassificationRequest: {
+            /** Orientations */
+            orientations: ("theory" | "practice")[];
+            /**
+             * Primary Kind
+             * @enum {string}
+             */
+            primary_kind: "concept" | "mechanism" | "procedure" | "method" | "tradeoff" | "failure_mode" | "case";
+            /** Request Id */
+            request_id: string;
+            /**
+             * Review Status
+             * @default approved
+             * @enum {string}
+             */
+            review_status: "proposed" | "approved" | "rejected";
+        };
+        /** KnowledgeClassificationV1 */
+        KnowledgeClassificationV1: {
+            /** Classification Id */
+            classification_id: string;
+            /**
+             * Classified By
+             * @enum {string}
+             */
+            classified_by: "rule" | "model" | "user";
+            /** Item Id */
+            item_id: string;
+            /**
+             * Lifecycle Status
+             * @enum {string}
+             */
+            lifecycle_status: "active" | "superseded" | "retracted";
+            /** Orientations */
+            orientations: ("theory" | "practice")[];
+            /**
+             * Primary Kind
+             * @enum {string}
+             */
+            primary_kind: "concept" | "mechanism" | "procedure" | "method" | "tradeoff" | "failure_mode" | "case";
+            /**
+             * Review Status
+             * @enum {string}
+             */
+            review_status: "proposed" | "approved" | "rejected";
+            /** Revision */
+            revision: number;
+            /**
+             * Schema Version
+             * @default knowledge-classification.v1
+             * @constant
+             */
+            schema_version: "knowledge-classification.v1";
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /** Taxonomy Version */
+            taxonomy_version: string;
+            /** Trace Id */
+            trace_id: string;
+        };
+        /** LearnerProjectionList */
+        LearnerProjectionList: {
+            /** Items */
+            items: components["schemas"]["LearnerProjectionV1"][];
+        };
+        /**
+         * LearnerProjectionV1
+         * @description Explainable item-level analytics rebuilt from durable attempts.
+         */
+        LearnerProjectionV1: {
+            /** Attempt Count */
+            attempt_count: number;
+            /** Closed Book Attempt Count */
+            closed_book_attempt_count: number;
+            /** Difficulty Tier */
+            difficulty_tier: number;
+            /** Item Id */
+            item_id: string;
+            /**
+             * Learning Memory State
+             * @enum {string}
+             */
+            learning_memory_state: "薄弱" | "观察中" | "not_in_memory";
+            /**
+             * Schema Version
+             * @default learner-projection.v1
+             * @constant
+             */
+            schema_version: "learner-projection.v1";
+            /**
+             * Taxonomy Version
+             * @default vocabulary.v1
+             */
+            taxonomy_version: string;
+            /** Validated Demand States */
+            validated_demand_states: {
+                [key: string]: "passed" | "needs_work";
+            };
+            /** Verdict Counts */
+            verdict_counts: {
+                [key: string]: number;
+            };
+        };
+        /** LearningReportV1 */
+        LearningReportV1: {
+            /** Attempt Count */
+            attempt_count: number;
+            /** Projections */
+            projections: components["schemas"]["LearnerProjectionV1"][];
+            /**
+             * Schema Version
+             * @default learning-report.v1
+             * @constant
+             */
+            schema_version: "learning-report.v1";
+        };
         /** MessageAccepted */
         MessageAccepted: {
             /** Turn Id */
@@ -793,6 +1388,19 @@ export interface components {
         QuestionRequest: {
             /** Query */
             query: string;
+        };
+        /** QuestionRoute */
+        QuestionRoute: {
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "multiple_choice" | "open_response";
+            /**
+             * Strategy
+             * @enum {string}
+             */
+            strategy: "standard" | "probe";
         };
         /**
          * ResolvedCitation
@@ -824,6 +1432,57 @@ export interface components {
         ResourceListResponse: {
             /** Items */
             items: components["schemas"]["ResourceSummary"][];
+        };
+        /** ResourceRevisionClassificationRequest */
+        ResourceRevisionClassificationRequest: {
+            /**
+             * Primary Source Genre
+             * @enum {string}
+             */
+            primary_source_genre: "official_documentation" | "tutorial" | "research_paper" | "forum_post" | "incident_report" | "source_code" | "personal_notes";
+            /** Request Id */
+            request_id: string;
+        };
+        /** ResourceRevisionClassificationV1 */
+        ResourceRevisionClassificationV1: {
+            /** Classification Id */
+            classification_id: string;
+            /**
+             * Classified By
+             * @enum {string}
+             */
+            classified_by: "rule" | "model" | "user";
+            /**
+             * Lifecycle Status
+             * @enum {string}
+             */
+            lifecycle_status: "active" | "superseded" | "retracted";
+            /**
+             * Primary Source Genre
+             * @enum {string}
+             */
+            primary_source_genre: "official_documentation" | "tutorial" | "research_paper" | "forum_post" | "incident_report" | "source_code" | "personal_notes";
+            /**
+             * Review Status
+             * @enum {string}
+             */
+            review_status: "proposed" | "approved" | "rejected";
+            /** Revision */
+            revision: number;
+            /** Revision Id */
+            revision_id: string;
+            /**
+             * Schema Version
+             * @default resource-revision-classification.v1
+             * @constant
+             */
+            schema_version: "resource-revision-classification.v1";
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /** Taxonomy Version */
+            taxonomy_version: string;
+            /** Trace Id */
+            trace_id: string;
         };
         /** ResourceSummary */
         ResourceSummary: {
@@ -861,6 +1520,100 @@ export interface components {
         SessionView: {
             /** Session Id */
             session_id: string;
+            /** Trace Id */
+            trace_id: string;
+        };
+        /** SourceEventCursor */
+        SourceEventCursor: {
+            /** First Seq */
+            first_seq: number;
+            /** Last Seq */
+            last_seq: number;
+        };
+        /** TagAssignmentList */
+        TagAssignmentList: {
+            /** Items */
+            items: components["schemas"]["TagAssignmentV1"][];
+        };
+        /** TagAssignmentRequest */
+        TagAssignmentRequest: {
+            /** Request Id */
+            request_id: string;
+            /** Term Id */
+            term_id: string;
+        };
+        /** TagAssignmentV1 */
+        TagAssignmentV1: {
+            /**
+             * Assigned By
+             * @enum {string}
+             */
+            assigned_by: "rule" | "model" | "user";
+            /** Assignment Id */
+            assignment_id: string;
+            /** Item Id */
+            item_id: string;
+            /**
+             * Lifecycle Status
+             * @enum {string}
+             */
+            lifecycle_status: "active" | "superseded" | "retracted";
+            /**
+             * Review Status
+             * @enum {string}
+             */
+            review_status: "proposed" | "approved" | "rejected";
+            /** Revision */
+            revision: number;
+            /**
+             * Schema Version
+             * @default tag-assignment.v1
+             * @constant
+             */
+            schema_version: "tag-assignment.v1";
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /** Taxonomy Version */
+            taxonomy_version: string;
+            /** Term Id */
+            term_id: string;
+            /** Trace Id */
+            trace_id: string;
+        };
+        /** TagCandidateRequest */
+        TagCandidateRequest: {
+            /** Namespace */
+            namespace: string;
+            /** Raw Value */
+            raw_value: string;
+            /** Request Id */
+            request_id: string;
+        };
+        /** TagCandidateV1 */
+        TagCandidateV1: {
+            /** Candidate Id */
+            candidate_id: string;
+            /** Namespace */
+            namespace: string;
+            /** Normalized Value */
+            normalized_value: string;
+            /** Promoted Term Id */
+            promoted_term_id?: string | null;
+            /** Raw Value */
+            raw_value: string;
+            /**
+             * Review Status
+             * @enum {string}
+             */
+            review_status: "proposed" | "approved" | "rejected";
+            /**
+             * Schema Version
+             * @default tag-candidate.v1
+             * @constant
+             */
+            schema_version: "tag-candidate.v1";
+            /** Taxonomy Version */
+            taxonomy_version: string;
             /** Trace Id */
             trace_id: string;
         };
@@ -999,6 +1752,52 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** VerdictCorrectionRequest */
+        VerdictCorrectionRequest: {
+            /**
+             * Final Verdict
+             * @enum {string}
+             */
+            final_verdict: "对" | "勉强" | "错";
+            /** Reason */
+            reason: string;
+            /** Request Id */
+            request_id: string;
+        };
+        /** VocabularyReviewRequest */
+        VocabularyReviewRequest: {
+            /** Replacement Term Id */
+            replacement_term_id?: string | null;
+            /** Request Id */
+            request_id: string;
+            /**
+             * Review Status
+             * @enum {string}
+             */
+            review_status: "proposed" | "approved" | "deprecated";
+        };
+        /** VocabularyTermView */
+        VocabularyTermView: {
+            /** Aliases */
+            aliases: string[];
+            /** Key */
+            key: string;
+            /** Label Zh */
+            label_zh: string;
+            /** Namespace */
+            namespace: string;
+            /** Replacement Term Id */
+            replacement_term_id?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "proposed" | "approved" | "deprecated";
+            /** Taxonomy Version */
+            taxonomy_version: string;
+            /** Term Id */
+            term_id: string;
         };
     };
     responses: never;
@@ -1547,6 +2346,515 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    list_assessment_attempts_api_v1_learning_attempts_get: {
+        parameters: {
+            query?: {
+                trace_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentAttemptList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_assessment_attempt_api_v1_learning_attempts__attempt_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentAttemptV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_attempt_demand_api_v1_learning_attempts__attempt_id__demand_validations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DemandValidationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemandValidationV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    correct_attempt_verdict_api_v1_learning_attempts__attempt_id__verdict_corrections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerdictCorrectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentAttemptV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_knowledge_item_classifications_api_v1_learning_items__item_id__classifications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeClassificationHistory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    classify_knowledge_item_api_v1_learning_items__item_id__classifications_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KnowledgeClassificationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeClassificationV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_knowledge_classification_api_v1_learning_items__item_id__classifications__classification_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+                classification_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClassificationReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeClassificationV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_managed_tags_api_v1_learning_items__item_id__tags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagAssignmentList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assign_managed_tag_api_v1_learning_items__item_id__tags_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagAssignmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagAssignmentV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_learner_projections_api_v1_learning_projections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearnerProjectionList"];
+                };
+            };
+        };
+    };
+    get_learner_projection_api_v1_learning_projections__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearnerProjectionV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_learning_report_api_v1_learning_report_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningReportV1"];
+                };
+            };
+        };
+    };
+    classify_resource_revision_api_v1_learning_revisions__revision_id__classifications_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                revision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResourceRevisionClassificationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceRevisionClassificationV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_tag_candidate_api_v1_learning_vocabulary_tag_candidates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagCandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagCandidateV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_tag_candidate_api_v1_learning_vocabulary_tag_candidates__candidate_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClassificationReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagCandidateV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_vocabulary_term_api_v1_learning_vocabulary_terms__term_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                term_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VocabularyReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VocabularyTermView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

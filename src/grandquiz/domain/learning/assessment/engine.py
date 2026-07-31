@@ -42,11 +42,13 @@ from grandquiz.domain.learning.assessment.grading import (
 )
 from grandquiz.domain.learning.assessment.question import (
     MultipleChoiceQuestion,
+    QuestionSpec,
     generate_multiple_choice,
     generate_question,
 )
 from grandquiz.domain.learning.assessment.routing import (
     QuestionType,
+    is_supported_question_type_intent,
     resolve_question_type,
     route_question_type,
 )
@@ -58,6 +60,7 @@ from grandquiz.domain.learning.assessment.scope import (
     UnresolvedScope,
 )
 from grandquiz.domain.learning.assessment.selection import Focus, apply_scope, select_target
+from grandquiz.domain.learning.assessment_history import assessment_fact
 from grandquiz.domain.learning.difficulty import (
     DEFAULT_TIER,
     DifficultyLedger,
@@ -66,10 +69,15 @@ from grandquiz.domain.learning.difficulty import (
     target_option_count,
 )
 from grandquiz.domain.learning.events import LearningEvent
+from grandquiz.domain.learning.learning_facts import LearningFactJournal
 from grandquiz.domain.learning.memory import Memory
-from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY, PreferenceMemory
-from grandquiz.domain.learning.responder import Responder
+from grandquiz.domain.learning.prompts import load_prompt
+from grandquiz.domain.learning.responder import (
+    AnswerSubmissionMetadata,
+    Responder,
+    SubmissionMetadataProvider,
+)
 from grandquiz.domain.learning.state import LearningStateWriter
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.clock import Rng
@@ -108,14 +116,11 @@ def _resolve_language(preferences: PreferenceMemory | None) -> str:
     return "中文"
 
 
-def _compose_solution(item: KnowledgeItem) -> str:
-    """从被考 item 的摘要 + 证据确定性组出正解文本（纯代码、不调 LLM）——后置追问"给正解"用。
+def _compose_multiple_choice_solution(question: MultipleChoiceQuestion) -> str:
+    """从选择题自身的答案键与题目证据组成题目级参考作答。"""
 
-    MVP 取确定性版："触发追问或给正解"里的"给正解"分支——直接把该概念的一句话摘要 + 逐字原文
-    证据拼成正解，供学习者当场对照盲区。不产幽灵内容：只用 item 自己已有的 summary / evidence。
-    """
-    evidence = "；".join(ev.quote for ev in item.evidence)
-    return f"{item.concept}：{item.summary}（原文依据：{evidence}）"
+    evidence = "；".join(question.cited_evidence)
+    return f"正确选项：{question.options[question.answer_index]}（原文依据：{evidence}）"
 
 
 class AssessmentResult(BaseModel):
@@ -154,6 +159,7 @@ async def assess_once(
     scope: QuizScope = ALL_SCOPE,
     question_type: str | None = None,
     difficulty: DifficultyLedger | None = None,
+    learning_facts: LearningFactJournal | None = None,
 ) -> AssessmentResult:
     """对**全局 KB** 跑一轮单题考核，全程发事件。见模块 docstring。
 
@@ -300,6 +306,7 @@ async def assess_once(
             )
         asked_before = asked_before[-_MAX_ASKED_QUESTIONS_PER_ITEM:]
         mc: MultipleChoiceQuestion | None = None
+        question_spec: QuestionSpec | None = None
         if effective == "选择题":
             # SE-S5a 选择题硬杠杆①：难度**只在概念离开默认档后**才落到题面——接了难度台账
             # （difficulty is not None）且被考 item 的档 ≠ 默认档（3）时，读档 → 目标选项数
@@ -352,7 +359,7 @@ async def assess_once(
             difficulty_hint = (
                 difficulty_prompt_hint(current_tier) if current_tier is not None else None
             )
-            generated = await generate_question(
+            question_spec = await generate_question(
                 target,
                 provider=provider,
                 emitter=emitter,
@@ -362,8 +369,8 @@ async def assess_once(
                 asked_before=asked_before,
                 difficulty_hint=difficulty_hint,
             )
-            question_text = generated.question
-            asked_evidence = list(generated.cited_evidence)
+            question_text = question_spec.question
+            asked_evidence = list(question_spec.cited_evidence)
         asked_payload: dict[str, Any] = {
             "item_id": target.item_id,
             "question": question_text,
@@ -378,6 +385,10 @@ async def assess_once(
             # MC 另带 options 供"用户视图"；answer_index 刻意不进事件（不泄露答案键——判卷走 in-code
             # mc 对象的确定性比对，答案键仍在 model span 输出里可供 trace / replay 复查）。
             asked_payload["options"] = list(mc.options)
+        elif question_spec is not None:
+            asked_payload["expected_points"] = [
+                point.model_dump(mode="json") for point in question_spec.expected_points
+            ]
         # 接住返回的 AgentEvent（带注入 Clock 的 .ts）——SE-S3 决策 B：本轮答题耗时近似 =
         # (ANSWER_JUDGED.ts − QUESTION_ASKED.ts)。接住返回值不改变发射行为、零副作用（replay 下
         # ManualClock 使其确定、生产 SystemClock 下是真实墙上时间——都对）；耗时只被销账证据读取。
@@ -393,6 +404,13 @@ async def assess_once(
         answer = await responder.answer(
             question_text, options=list(mc.options) if mc is not None else None
         )
+        submission = (
+            responder.last_submission_metadata()
+            if isinstance(responder, SubmissionMetadataProvider)
+            else AnswerSubmissionMetadata(
+                answer_format="choice" if mc is not None else "natural_language"
+            )
+        )
 
         # g. 分型判卷。选择题 → 确定性代码（**不调 LLM**，无判卷 model span）；开放 / 追问 → LLM
         #    判卷（role=basic）+ 校验门（缝 3）。两路统一得到 VerdictLabel + cited_evidence。
@@ -400,13 +418,26 @@ async def assess_once(
         # → 空串）。additive 进 ANSWER_JUDGED 供 printer 展示；**不参与记账**（weak_item_id 仍按
         # verdict 算）。
         verdict_reason = ""
+        matched_points: list[dict[str, str]] = []
+        missing_points: list[dict[str, str]] = []
         if mc is not None:
             verdict_label: VerdictLabel = grade_multiple_choice(answer, mc)
             judged_evidence = list(mc.cited_evidence)
+            correct_option = {
+                "point_id": "correct_option",
+                "description": f"选择正确选项：{mc.options[mc.answer_index]}",
+            }
+            if verdict_label == "对":
+                matched_points = [correct_option]
+                diagnosis = "complete"
+            else:
+                missing_points = [correct_option]
+                diagnosis = "incorrect_choice"
         else:
+            assert question_spec is not None
             verdict = await grade_answer(
                 target,
-                question_text,
+                question_spec,
                 answer,
                 provider=provider,
                 emitter=emitter,
@@ -416,6 +447,18 @@ async def assess_once(
             verdict_label = verdict.verdict
             verdict_reason = verdict.reason
             judged_evidence = list(verdict.cited_evidence)
+            points_by_id = {
+                point.point_id: point.description for point in question_spec.expected_points
+            }
+            matched_points = [
+                {"point_id": point_id, "description": points_by_id[point_id]}
+                for point_id in verdict.matched_points
+            ]
+            missing_points = [
+                {"point_id": point_id, "description": points_by_id[point_id]}
+                for point_id in verdict.missing_points
+            ]
+            diagnosis = verdict.diagnosis
 
         # h. 代码记账：verdict 属"勉强 / 错"→ weak_item_id = 被考 item；"对"→ None（不由 LLM 产）。
         weak_item_id = target.item_id if verdict_label in _WEAK_VERDICTS else None
@@ -429,20 +472,59 @@ async def assess_once(
                 "weak_item_id": weak_item_id,
                 "answer": answer,
                 "reason": verdict_reason,
+                "diagnosis": diagnosis,
+                "matched_points": matched_points,
+                "missing_points": missing_points,
                 "cited_evidence": judged_evidence,
             },
         )
 
         # i. 持久状态原子提交：已问题目、Learning Memory 与 Difficulty 要么全成、要么全回滚。
+        elapsed_ms = round((j_event.ts - q_event.ts) * 1000)
         committed = LearningStateWriter(
             memory=memory,
             asked_questions=asked_questions,
             difficulty=difficulty,
+            learning_facts=learning_facts,
         ).commit_judgement(
             item_id=target.item_id,
             question=question_text,
             verdict=verdict_label,
-            elapsed_ms=round((j_event.ts - q_event.ts) * 1000),
+            elapsed_ms=elapsed_ms,
+            learning_fact=(
+                assessment_fact(
+                    question_event=q_event,
+                    judgement_event=j_event,
+                    item_id=target.item_id,
+                    question_text=question_text,
+                    answer_text=answer,
+                    verdict=verdict_label,
+                    adaptive_question_type=routed,
+                    effective_question_type=effective,
+                    routing_source=(
+                        "user_override"
+                        if is_supported_question_type_intent(question_type)
+                        else "adaptive"
+                    ),
+                    input_modality=submission.input_modality,
+                    answer_format=submission.answer_format,
+                    evidence_revealed_before_answer=(submission.evidence_revealed_before_answer),
+                    elapsed_ms=elapsed_ms,
+                    question_generation_version=load_prompt(
+                        "question_multiple_choice"
+                        if mc is not None
+                        else ("question_probe" if effective == "追问" else "question_generate")
+                    ).version,
+                    grading_kind="deterministic" if mc is not None else "model",
+                    grading_version=(
+                        "multiple-choice-exact.v1"
+                        if mc is not None
+                        else load_prompt("answer_grade").version
+                    ),
+                )
+                if learning_facts is not None
+                else None
+            ),
         )
         transition = committed.transition
         emitter.emit(
@@ -470,16 +552,30 @@ async def assess_once(
                 },
             )
 
-        # j. 后置追问：判"勉强 / 错"→ 给正解（确定性代码，从被考 item 的 summary + evidence
-        #    组文本），发 FOLLOWUP_GIVEN（在 CONCEPT_STATE_CHANGED 之后、assessment.ended 之前）。
+        if committed.learning_fact is not None and learning_facts is not None:
+            emitter.emit(
+                LearningEvent.ASSESSMENT_JUDGEMENT_COMMITTED,
+                parent_span_id=assessment_span,
+                payload=committed.learning_fact.model_dump(mode="json"),
+            )
+            learning_facts.mark_published(committed.learning_fact.event_id)
+
+        # j. 后置追问：判"勉强 / 错"→ 给本题正解，发 FOLLOWUP_GIVEN（在
+        #    CONCEPT_STATE_CHANGED 之后、assessment.ended 之前）。
         #    判"对"不发；MC 判错同样触发（MC 无"勉强"）。
         if verdict_label in _WEAK_VERDICTS:
+            if mc is not None:
+                correct_answer = _compose_multiple_choice_solution(mc)
+            elif question_spec is not None:
+                correct_answer = question_spec.reference_answer
+            else:
+                raise AssertionError("非选择题判卷缺少 QuestionSpec")
             emitter.emit(
                 LearningEvent.FOLLOWUP_GIVEN,
                 parent_span_id=assessment_span,
                 payload={
                     "item_id": target.item_id,
-                    "correct_answer": _compose_solution(target),
+                    "correct_answer": correct_answer,
                 },
             )
 

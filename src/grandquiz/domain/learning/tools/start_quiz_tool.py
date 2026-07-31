@@ -5,7 +5,6 @@ LLM 的软工具方案（那套 deepseek 守不住：编题 / MC 答案加前缀
 confabulate）。
 """
 
-import logging
 from typing import Literal
 
 from pydantic import BaseModel
@@ -13,10 +12,15 @@ from pydantic import BaseModel
 from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
 from grandquiz.domain.learning.assessment.engine import AssessmentResult
 from grandquiz.domain.learning.assessment.grading import VerdictLabel
+from grandquiz.domain.learning.assessment.plan import (
+    AssessmentPlan,
+    QuestionTypeSegment,
+)
 from grandquiz.domain.learning.assessment.scope import QuizScope
 from grandquiz.domain.learning.assessment.selection import Focus
 from grandquiz.domain.learning.assessment.session import AssessmentSession
 from grandquiz.domain.learning.difficulty import DifficultyLedger
+from grandquiz.domain.learning.learning_facts import LearningFactJournal
 from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.preference import PreferenceMemory
 from grandquiz.domain.learning.responder import Responder
@@ -26,77 +30,6 @@ from grandquiz.domain.learning.tools.query_weak_tool import WeakConcept
 from grandquiz.kernel.events import EventEmitter
 from grandquiz.kernel.tools import Tool, ToolContext
 from grandquiz.providers.base import Provider
-
-logger = logging.getLogger(__name__)
-
-# start_quiz 单次调用的出题上限：挡 LLM 传超大 count 把一次工具调用拖成长跑（保守取 20）。
-_MAX_QUIZ_COUNT = 20
-
-
-def _clamp_count(n: int) -> int:
-    """把请求题数夹到 ``[1, _MAX_QUIZ_COUNT]``（挡 0 / 负 / 超大）。
-
-    与改动前 handler 的 ``min(max(params.count, 1), _MAX_QUIZ_COUNT)`` 逐字节等价——是 SE-S4
-    保"无分段路径字节不变"的锚点。
-    """
-    return min(max(n, 1), _MAX_QUIZ_COUNT)
-
-
-class QuizSegment(BaseModel):
-    """批内一段（SE-S4）：连续 ``count`` 道题共用同一题型意图短语 ``question_type``。
-
-    ``question_type`` 是**用户原话里的题型意图短语**（"选择题" / "简答" / "追问"…），同 ADR-0006 的
-    口径——LLM 只抽短语、代码用冻结同义表映射到既有三题型（**不是**最终题型枚举、也不新增第 4
-    题型）。
-    ``count`` 为该段题数；``<= 0`` 的段在 ``expand_segments`` 里贡献 0 题、被跳过（fail-soft，容
-    LLM 抽出 0 / 负）。
-    """
-
-    count: int
-    question_type: str
-
-
-def expand_segments(
-    segments: list[QuizSegment] | None,
-    *,
-    count: int,
-    question_type: str | None,
-) -> list[str | None]:
-    """把「分段列表 或 单值题型」展开成**每题一个题型意图**的列表（纯函数，无 I/O / 随机 / 时钟）。
-
-    返回列表每个元素是喂给该题 ``assess_once(question_type=...)`` → ``resolve_question_type`` 的意图
-    短语（``None`` = 该题不指定、回落记忆状态自适应路由）。逐位置解析仍复用 ADR-0006 的仲裁，本
-    函数**不做任何题型裁决**、只负责编排展开。口径（各分支都被单测钉死）：
-
-    - ``segments`` 为 ``None`` 或空列表 → ``[question_type] * _clamp_count(count)``：**改动前单值
-      行为**——单一题型重复 clamp(count) 次（``question_type`` 可为 ``None`` = 全程自适应）。此路径
-      与旧 ``for _ in range(min(max(count, 1), _MAX_QUIZ_COUNT))`` 逐字节等价（字节等价的锚）。
-    - ``segments`` 非空 → 展平：对每段把 ``seg.question_type`` 重复 ``seg.count`` 次、顺序拼接；
-      **分段存在时总题数 = 各段 count 之和**（``count`` 入参此时被忽略）。其中：
-        - 某段 ``count <= 0`` → 该段贡献 0 题（跳过），不报错（fail-soft）。
-        - 展平后总数 > ``_MAX_QUIZ_COUNT`` → **截断**到前 ``_MAX_QUIZ_COUNT`` 题并 log 警告（不静默
-          丢，与单值路径同一上限，挡 LLM 传超大段把一次调用拖成长跑）。
-        - 展平后为空（各段全 0 / 负）→ 回落 ``[question_type] * _clamp_count(count or 1)``：防退化
-          成 0 题（0 题会让工具空转、返回 asked=0，对用户是"我要考试却什么都没发生"）。
-    """
-    if not segments:
-        return [question_type] * _clamp_count(count)
-    intents: list[str | None] = []
-    for seg in segments:
-        if seg.count > 0:
-            intents.extend([seg.question_type] * seg.count)
-    if not intents:
-        # 各段 count 全 <= 0：回落单值路径，避免退化成 0 题（fail-soft）。
-        return [question_type] * _clamp_count(count or 1)
-    if len(intents) > _MAX_QUIZ_COUNT:
-        logger.warning(
-            "start_quiz 分段总题数 %d 超上限 %d，截断到前 %d 题（分段调度 SE-S4）",
-            len(intents),
-            _MAX_QUIZ_COUNT,
-            _MAX_QUIZ_COUNT,
-        )
-        intents = intents[:_MAX_QUIZ_COUNT]
-    return intents
 
 
 class QuizRoundResult(BaseModel):
@@ -138,8 +71,8 @@ class _StartQuizParams(BaseModel):
     # 批内分段调度（SE-S4）：按题目位置分段指定题型（"前 3 道选择、后 2 道简答"）。仍逐题交互、
     # 非批量出卷。None（默认）= 不分段 → 走上面的单值 question_type / count 老路（字节等价）。给了
     # segments 时**总题数 = 各段 count 之和**（count 入参被忽略）；每题的 question_type 仍逐题走
-    # resolve_question_type（ADR-0006，无新裁决）。展开逻辑见 expand_segments。
-    segments: list[QuizSegment] | None = None
+    # resolve_question_type（ADR-0006，无新裁决）。展开逻辑由 AssessmentPlan 唯一持有。
+    segments: list[QuestionTypeSegment] | None = None
 
 
 def _weak_concepts(store: Store, memory: Memory) -> list[WeakConcept]:
@@ -162,6 +95,7 @@ def make_start_quiz_tool(
     quiz_seed: int = 0,
     asked_questions: AskedQuestionsLedger | None = None,
     difficulty: DifficultyLedger | None = None,
+    learning_facts: LearningFactJournal | None = None,
 ) -> Tool:
     """建 ``start_quiz(count)`` 工具：受控一问一答子流程，内部跑 ``assess_once × count``。
 
@@ -217,6 +151,7 @@ def make_start_quiz_tool(
         asked_questions=asked_questions,
         preferences=preferences,
         difficulty=difficulty,
+        learning_facts=learning_facts,
     )
 
     async def handler(params: _StartQuizParams, ctx: ToolContext) -> str:
@@ -227,13 +162,13 @@ def make_start_quiz_tool(
             else ctx.emitter
         )
         concept_by_id = {it.item_id: it.concept for it in store.all_items()}
-        # 展开成逐题题型意图（SE-S4）：无分段 → [question_type]*clamp(count)（字节等价改动前）；
-        # 有分段 → 各段展平。每题仍逐题走 resolve_question_type，无新裁决。
-        intents = expand_segments(
-            params.segments, count=params.count, question_type=params.question_type
+        plan = AssessmentPlan.create(
+            rounds=params.count,
+            question_type=params.question_type,
+            segments=params.segments,
         )
         rounds: list[QuizRoundResult] = []
-        for intent in intents:
+        for intent in plan.question_type_intents:
             try:
                 result: AssessmentResult = await session.assess(
                     emitter=scoped,

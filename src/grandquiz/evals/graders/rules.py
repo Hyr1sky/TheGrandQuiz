@@ -307,7 +307,11 @@ def grade_case4(sr: SolveResult) -> list[str]:
         item = next((it for it in _items(sr) if it.item_id == target), None)
         correct = str(followup.payload.get("correct_answer", ""))
         if item is not None:
-            _check(failures, item.summary in correct, "正解应含被考 item 的摘要")
+            _check(
+                failures,
+                any(evidence.quote in correct for evidence in item.evidence),
+                "本题正解应含被考 item 的原文依据",
+            )
     # 时序（family 2）：ANSWER_JUDGED < CONCEPT_STATE_CHANGED < FOLLOWUP_GIVEN < ended。
     types = [e.type for e in sr.events]
     order = [

@@ -23,6 +23,7 @@ from grandquiz.interfaces.cli.composition import (
 )
 from grandquiz.interfaces.cli.interactive import InteractiveResponder
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
+from grandquiz.interfaces.learning_outbox import publish_pending_learning_facts
 from grandquiz.kernel.recovery import Decision, RecoveryPolicy
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Provider
@@ -91,6 +92,7 @@ async def run_quiz(
         emitter, trace_store = build_event_backbone(
             resolved_trace_db, trace_id=trace_id, subscribers=[QuizEventPrinter(console)]
         )
+        publish_pending_learning_facts(persistence.learning_facts, trace_store)
         policy = RecoveryPolicy(emitter)  # 每轮失败统一裁决（读异常 error_class 标、发事件上脊柱）
         session = AssessmentSession(
             store=store,
@@ -101,6 +103,7 @@ async def run_quiz(
             asked_questions=asked_questions,
             preferences=preferences,
             difficulty=difficulty,
+            learning_facts=persistence.learning_facts,
         )
         banner = f"「{title}」" if title else ""
         console.print(f"[bold]开始考核{banner}——共 {rounds} 轮（Ctrl+C 随时退出）[/]")

@@ -1,0 +1,202 @@
+schema_version: learning-vocabulary.v1
+status: accepted_design
+
+closed_dimensions:
+  knowledge_kind:
+    - key: concept
+      label_zh: 概念
+      definition: 一个对象、术语或规则是什么。
+      use_when: 核心问题是定义、组成或边界。
+      avoid_when: 核心问题是它如何运行或如何操作。
+    - key: mechanism
+      label_zh: 原理
+      definition: 一个系统为何以及如何产生某种行为。
+      use_when: 内容解释因果链、内部过程或工作机制。
+      avoid_when: 内容只给出操作步骤。
+    - key: procedure
+      label_zh: 流程
+      definition: 为完成目标而执行的有序步骤。
+      use_when: 顺序、前置条件和操作结果对正确性重要。
+      avoid_when: 内容只描述机制而没有可执行步骤。
+    - key: method
+      label_zh: 方法
+      definition: 为一类问题提供可复用解法的技术、策略或建模方式。
+      use_when: 内容回答采用什么思路解决问题，例如 PageIndex。
+      avoid_when: 内容主要解释内部因果，或只是一次操作的有序步骤。
+    - key: tradeoff
+      label_zh: 权衡
+      definition: 多个方案在不同约束下的收益与代价。
+      use_when: 结论依赖场景、约束或优先级。
+      avoid_when: 存在无条件唯一正确答案。
+    - key: failure_mode
+      label_zh: 故障模式
+      definition: 系统发生异常的表现、原因、诊断或恢复方法。
+      use_when: 内容能支持排障或解释失败。
+      avoid_when: 内容只是正常流程中的注意事项。
+    - key: case
+      label_zh: 案例
+      definition: 在具体背景与约束下发生的真实或完整场景。
+      use_when: 场景细节本身对理解结论必要。
+      avoid_when: 例子只是替代抽象定义的短句。
+
+  knowledge_orientation:
+    - key: theory
+      label_zh: 理论
+      definition: 主要帮助理解概念、机制、原因或原则。
+    - key: practice
+      label_zh: 实践
+      definition: 主要帮助执行、应用、诊断或做工程决策。
+
+  question_format:
+    - key: multiple_choice
+      label_zh: 选择题
+      definition: 从有限选项中选择答案，由代码确定性比对。
+    - key: open_response
+      label_zh: 开放回答
+      definition: 用户自由表达，由结构化判卷契约裁决。
+
+  question_strategy:
+    - key: standard
+      label_zh: 标准提问
+      definition: 直接考察目标知识，不附加深挖策略。
+    - key: probe
+      label_zh: 追问深挖
+      definition: 针对薄弱点继续追问边界、原因、反例或应用。
+
+  input_modality:
+    - key: text
+      label_zh: 文本输入
+      definition: 通过键盘、粘贴等方式提交文本。
+    - key: voice
+      label_zh: 语音输入
+      definition: 经 ASR 产生可审计 transcript。
+
+  answer_format:
+    - key: choice
+      label_zh: 选项
+      definition: 从有限选项中提交一个选择。
+    - key: natural_language
+      label_zh: 自然语言
+      definition: 用自然语言解释、比较、分析或提出方案。
+    - key: code
+      label_zh: 代码
+      definition: 提交代码或结构化技术产物。
+
+  cognitive_demand:
+    - key: recall
+      label_zh: 回忆
+      definition: 复述事实、术语或规则。
+    - key: explain
+      label_zh: 解释
+      definition: 说明机制、因果或边界。
+    - key: compare
+      label_zh: 比较
+      definition: 分辨多个概念或方案的异同。
+    - key: apply
+      label_zh: 应用
+      definition: 把知识用于新的具体条件。
+    - key: diagnose
+      label_zh: 排障
+      definition: 从现象定位原因并提出验证或处理。
+    - key: evaluate
+      label_zh: 评价
+      definition: 按约束、证据或标准判断方案。
+    - key: design
+      label_zh: 设计
+      definition: 综合多个知识单元构造方案。
+
+  error_kind:
+    - key: unknown
+      label_zh: 不知道
+      definition: 缺少目标知识或无法形成回答。
+    - key: incomplete
+      label_zh: 不完整
+      definition: 命中部分要点，但缺少必要内容。
+    - key: confusion
+      label_zh: 混淆
+      definition: 把两个概念、机制或适用范围错误等同。
+    - key: misapplication
+      label_zh: 误用
+      definition: 知道知识本身，但应用到不成立的条件。
+    - key: missing_prerequisite
+      label_zh: 缺少前置
+      definition: 当前错误主要源于更基础知识缺失。
+    - key: unsupported
+      label_zh: 缺少依据
+      definition: 结论没有给出必要证据、理由或推导。
+    - key: overgeneralization
+      label_zh: 过度泛化
+      definition: 把有条件结论错误扩展为普遍结论。
+    - key: outdated
+      label_zh: 已过时
+      definition: 回答依赖已经失效的版本或环境事实。
+    - key: communication
+      label_zh: 表达不清
+      definition: 理解可能存在，但表达不足以验证。
+
+  source_genre:
+    - key: official_documentation
+      label_zh: 官方文档
+    - key: tutorial
+      label_zh: 教程
+    - key: research_paper
+      label_zh: 论文
+    - key: forum_post
+      label_zh: 论坛文章
+    - key: incident_report
+      label_zh: 事故复盘
+    - key: source_code
+      label_zh: 源代码
+    - key: personal_notes
+      label_zh: 个人笔记
+
+default_orientation_by_kind:
+  concept: [theory]
+  mechanism: [theory]
+  procedure: [practice]
+  method: [practice]
+  tradeoff: [theory, practice]
+  failure_mode: [practice]
+  case: [practice]
+
+managed_seed_terms:
+  - namespace: domain
+    key: rag
+    label_zh: 检索增强生成
+    aliases: [检索增强, retrieval_augmented_generation]
+    status: proposed
+  - namespace: domain
+    key: agent_runtime
+    label_zh: Agent Runtime
+    aliases: [智能体运行时]
+    status: proposed
+  - namespace: domain
+    key: evaluation
+    label_zh: 评测
+    aliases: [eval]
+    status: proposed
+  - namespace: domain
+    key: observability
+    label_zh: 可观测性
+    aliases: []
+    status: proposed
+  - namespace: technology
+    key: ros2
+    label_zh: ROS 2
+    aliases: [ros_2]
+    status: proposed
+  - namespace: technology
+    key: dds
+    label_zh: DDS
+    aliases: [data_distribution_service]
+    status: proposed
+  - namespace: technology
+    key: fastdds
+    label_zh: Fast DDS
+    aliases: [fast_dds]
+    status: proposed
+  - namespace: technology
+    key: serialization
+    label_zh: 序列化
+    aliases: [serialisation]
+    status: proposed

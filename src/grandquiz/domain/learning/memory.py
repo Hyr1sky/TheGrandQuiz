@@ -190,6 +190,14 @@ class LearningMemory:
         """某 item 的完整记录（含 verdict_history）；不在记忆 → None。只读投影。"""
         return self._records.get(item_id)
 
+    def replace_record(self, item_id: str, record: ConceptRecord | None) -> None:
+        """Replace one derived current state during full-history reconciliation."""
+
+        if record is None:
+            self._records.pop(item_id, None)
+        else:
+            self._records[item_id] = record
+
     def _snapshot_state(self) -> object:
         return deepcopy(self._records)
 
@@ -260,6 +268,15 @@ class SqliteLearningMemory:
     def record_of(self, item_id: str) -> ConceptRecord | None:
         """某 item 的完整记录（含 verdict_history）；不在记忆 → None。只读投影。"""
         return self._read_record(item_id)
+
+    def replace_record(self, item_id: str, record: ConceptRecord | None) -> None:
+        """Replace one derived current state inside the caller's transaction."""
+
+        if record is None:
+            self._conn.execute("DELETE FROM learning_memory WHERE item_id = ?", (item_id,))
+        else:
+            self._write_record(record)
+        self._db.commit()
 
     def close(self) -> None:
         """关闭底层连接（跨会话验收：关闭后用同一 db_path 重开，薄弱点仍在、状态 / 连对不变）。"""

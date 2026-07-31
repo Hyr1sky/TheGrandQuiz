@@ -479,6 +479,14 @@
   line-height: 1.65;
 }
 
+.acquisition-result__error-code {
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--danger);
+  font: 500 10px/1.4 var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
 .acquisition-approval {
   margin-top: 6px;
 }

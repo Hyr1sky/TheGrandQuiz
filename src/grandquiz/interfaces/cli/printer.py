@@ -23,6 +23,8 @@ R1-S4 起还投影 ReAct 骨架的 kernel 级事件（``grandquiz react`` 的对
 消费者该做的正确防御：别把渲染搞乱、也别只靠隔离兜底。
 """
 
+from typing import cast
+
 from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
@@ -82,6 +84,20 @@ class QuizEventPrinter:
         # 一律 escape。
         if verdict in _WEAK_VERDICTS and reason:
             self._console.print(f"  [dim]问题：{escape(reason)}[/]")
+        for label, key in (("答到了", "matched_points"), ("还缺", "missing_points")):
+            raw_points = event.payload.get(key)
+            if not isinstance(raw_points, list):
+                continue
+            descriptions: list[str] = []
+            for raw_point in cast("list[object]", raw_points):
+                if not isinstance(raw_point, dict):
+                    continue
+                point = cast("dict[str, object]", raw_point)
+                description = point.get("description")
+                if isinstance(description, str):
+                    descriptions.append(description)
+            if descriptions:
+                self._console.print(f"  [dim]{label}：{escape('；'.join(descriptions))}[/]")
 
     def _render_followup(self, event: AgentEvent) -> None:
         correct_answer = str(event.payload.get("correct_answer", ""))

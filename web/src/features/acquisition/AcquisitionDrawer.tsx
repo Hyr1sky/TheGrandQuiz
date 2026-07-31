@@ -529,6 +529,13 @@ export function AcquisitionDrawer({
                       {run.error_message ??
                         "正式知识库没有写入任何半成品，可以安全重试。"}
                     </p>
+                    {run.status === "failed" &&
+                    run.error_stage != null &&
+                    run.error_code != null ? (
+                      <small className="acquisition-result__error-code">
+                        {run.error_stage} / {run.error_code}
+                      </small>
+                    ) : null}
                   </div>
                 </div>
               ) : null}

@@ -386,8 +386,7 @@ describe("Sidebar context switching", () => {
           target: "assessment",
           params: {
             resource_id: "resource-1",
-            rounds: 3,
-            question_type: null,
+            question_type_plan: ["选择题", "选择题", "简答题"],
           },
         },
       });

@@ -8,7 +8,7 @@
 import json
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -24,6 +24,7 @@ from grandquiz.domain.learning.ingest import (
     ingest_resource,
     prepare_ingest,
 )
+from grandquiz.domain.learning.ingest.fetch import FetchError, FetchFailureReason
 from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.evals.harness import build_event_harness as _harness
@@ -294,6 +295,36 @@ async def test_fetch_failure_marks_resource_failed_and_produces_no_ghost_items()
     assert resource.topic is None
     assert store.items_for_resource(result.resource_id) == []
     trace.close()
+
+
+async def test_unknown_fetch_classification_is_projected_as_safe_finite_failure() -> None:
+    emitter, _, trace = _harness()
+
+    def _unknown_failure(_url: str) -> str:
+        raise FetchError(
+            cast("FetchFailureReason", "provider_internal_detail"),
+            "secret upstream diagnostic",
+        )
+
+    try:
+        result = await ingest_resource(
+            _URL,
+            source=_unknown_failure,
+            provider=_FixedProvider(_READER_JSON),
+            store=LearningStore(),
+            approval=ScriptedApprovalGate(keep=_keep_two),
+            emitter=emitter,
+            max_bytes=4096,
+            allowed_domains=_ALLOWED,
+        )
+    finally:
+        trace.close()
+
+    assert result.failure is not None
+    assert result.failure.code == "source_failure"
+    assert result.failure.stage == "fetch"
+    assert result.failure.reason == "材料抓取失败，请检查地址或页面内容"
+    assert "secret upstream diagnostic" not in result.failure.reason
 
 
 async def test_unlocatable_reader_quote_fails_closed_with_public_fingerprint_event() -> None:

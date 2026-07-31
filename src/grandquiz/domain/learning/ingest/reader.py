@@ -18,6 +18,7 @@
 
 import hashlib
 import json
+import string
 from dataclasses import dataclass
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -47,6 +48,39 @@ UNTRUSTED_READ_HOOK = "untrusted_read"
 # 单片上下文预算，不替代 Provider 最终 fail-closed 门；两层分别负责“主动切块”和
 # “任何调用都不得越界”。
 _DEFAULT_CHUNK_TOKEN_BUDGET = 16_000
+
+
+def _unique_markdown_visible_span(source: str, quote: str) -> tuple[int, int] | None:
+    """Map one unique CommonMark backslash-unescaped quote back to raw source offsets.
+
+    Only ASCII punctuation escapes are removed, matching CommonMark's backslash escape
+    boundary. The caller still stores the untouched raw source slice as Evidence.
+    """
+
+    visible_chars: list[str] = []
+    raw_spans: list[tuple[int, int]] = []
+    raw_index = 0
+    while raw_index < len(source):
+        char = source[raw_index]
+        if (
+            char == "\\"
+            and raw_index + 1 < len(source)
+            and source[raw_index + 1] in string.punctuation
+        ):
+            visible_chars.append(source[raw_index + 1])
+            raw_spans.append((raw_index, raw_index + 2))
+            raw_index += 2
+            continue
+        visible_chars.append(char)
+        raw_spans.append((raw_index, raw_index + 1))
+        raw_index += 1
+
+    visible = "".join(visible_chars)
+    visible_start = visible.find(quote)
+    if visible_start < 0 or visible.find(quote, visible_start + 1) >= 0:
+        return None
+    visible_end = visible_start + len(quote)
+    return raw_spans[visible_start][0], raw_spans[visible_end - 1][1]
 
 
 def neutralize_fence(content: str) -> str:
@@ -440,15 +474,27 @@ class Reader:
                 if quote != proposed.quote:
                     exact_start = source.content.find(proposed.quote)
                     repeated_start = source.content.find(proposed.quote, exact_start + 1)
-                    if exact_start < 0 or repeated_start >= 0:
-                        raise EvidenceModelRetry(
-                            "quote_mismatch",
-                            proposed.model_dump(),
-                            f"evidence quote 无法唯一定位到声明节点：{proposed.node_key}",
+                    if exact_start >= 0 and repeated_start < 0:
+                        canonical_start = exact_start
+                        canonical_end = canonical_start + len(proposed.quote)
+                        quote = proposed.quote
+                    else:
+                        visible_span = (
+                            None
+                            if source.node.kind == "code"
+                            else _unique_markdown_visible_span(
+                                source.content,
+                                proposed.quote,
+                            )
                         )
-                    canonical_start = exact_start
-                    canonical_end = canonical_start + len(proposed.quote)
-                    quote = proposed.quote
+                        if visible_span is None:
+                            raise EvidenceModelRetry(
+                                "quote_mismatch",
+                                proposed.model_dump(),
+                                f"evidence quote 无法唯一定位到声明节点：{proposed.node_key}",
+                            )
+                        canonical_start, canonical_end = visible_span
+                        quote = source.content[canonical_start:canonical_end]
                 global_start = source.node.start_offset + canonical_start
                 global_end = source.node.start_offset + canonical_end
                 evidence.append(

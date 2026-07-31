@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from grandquiz.domain.learning.approval import ApprovalGate
 from grandquiz.domain.learning.ingest import ingest_resource
 from grandquiz.domain.learning.ingest.fetch import FetchSource
+from grandquiz.domain.learning.ingest.pipeline import IngestClassificationRepository
 from grandquiz.domain.learning.store import Store
 from grandquiz.domain.learning.tools._scoped_emitter import ScopedEmitter
 from grandquiz.kernel.events import EventEmitter
@@ -42,6 +43,7 @@ def make_ingest_tool(
     approval: ApprovalGate,
     max_bytes: int,
     allowed_domains: Collection[str] | Literal["*"],
+    classifications: IngestClassificationRepository | None = None,
 ) -> Tool:
     """建 ``ingest(url)`` 工具：wrap ``ingest_resource``，把内部 span 重挂到本次 TOOL_CALL 之下。
 
@@ -67,6 +69,7 @@ def make_ingest_tool(
             emitter=scoped,
             max_bytes=max_bytes,
             allowed_domains=allowed_domains,
+            classifications=classifications,
         )
         return IngestToolResult(
             resource_id=result.resource_id,

@@ -37,6 +37,7 @@ from grandquiz.interfaces.cli.composition import (
 )
 from grandquiz.interfaces.cli.interactive import InteractiveResponder
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
+from grandquiz.interfaces.learning_outbox import publish_pending_learning_facts
 from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Provider
@@ -103,6 +104,7 @@ async def run_react(
         emitter, trace_store = build_event_backbone(
             resolved_trace_db, trace_id=trace_id, subscribers=[QuizEventPrinter(console)]
         )
+        publish_pending_learning_facts(persistence.learning_facts, trace_store)
         runner = build_react_runner(
             provider=provider,
             emitter=emitter,
@@ -117,6 +119,8 @@ async def run_react(
             seed=seed,
             max_iterations=max_iterations,
             search_provider=search_provider_from_env(),
+            learning_facts=persistence.learning_facts,
+            classifications=persistence.classifications,
         )
 
         banner = f"「{title}」" if title else ""

@@ -45,3 +45,4 @@ localtemp
 .scratch/
 .private/
 *.local.md
+/docs/resume/

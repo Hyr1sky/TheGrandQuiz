@@ -631,12 +631,41 @@ class _HintCapturingProvider:
         if role == "enrich":
             self.enrich_calls += 1
             self.last_enrich_text = text
-            payload = {"question": "该知识点的核心是什么？", "cited_evidence": [quote]}
+            payload = {
+                "question": "该知识点的核心是什么？",
+                "expected_points": [
+                    {
+                        "point_id": "core",
+                        "description": "说明核心含义",
+                        "cited_evidence": quote,
+                    },
+                    {
+                        "point_id": "boundary",
+                        "description": "说明关键区分",
+                        "cited_evidence": quote,
+                    },
+                ],
+                "reference_answer": quote,
+                "cited_evidence": [quote],
+            }
             return Completion(
                 text=json.dumps(payload, ensure_ascii=False),
                 usage=Usage(prompt_tokens=7, completion_tokens=3),
             )
-        payload = {"verdict": self._verdict, "cited_evidence": [quote]}
+        if self._verdict == "对":
+            matched, missing, diagnosis = ["core", "boundary"], [], "complete"
+        elif self._verdict == "勉强":
+            matched, missing, diagnosis = ["core"], ["boundary"], "missing_key_point"
+        else:
+            matched, missing, diagnosis = [], ["core", "boundary"], "wrong_focus"
+        payload = {
+            "verdict": self._verdict,
+            "matched_points": matched,
+            "missing_points": missing,
+            "diagnosis": diagnosis,
+            "reason": "测试判卷反馈",
+            "cited_evidence": [quote],
+        }
         return Completion(
             text=json.dumps(payload, ensure_ascii=False),
             usage=Usage(prompt_tokens=7, completion_tokens=3),

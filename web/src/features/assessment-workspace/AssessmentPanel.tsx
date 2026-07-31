@@ -32,8 +32,7 @@ import "./assessment-panel.css";
 
 interface AssessmentPanelProps {
   resourceId: string;
-  rounds: number;
-  questionType: string | null;
+  questionTypePlan: Array<string | null>;
   onClose: () => void;
   onUpdate?: (view: AssessmentView) => void;
 }
@@ -50,7 +49,7 @@ export const AssessmentPanel = forwardRef<
   AssessmentPanelHandle,
   AssessmentPanelProps
 >(function AssessmentPanel(
-  { resourceId, rounds, questionType, onClose, onUpdate },
+  { resourceId, questionTypePlan, onClose, onUpdate },
   ref,
 ) {
   const [assessment, setAssessment] = useState<AssessmentView | null>(null);
@@ -87,12 +86,12 @@ export const AssessmentPanel = forwardRef<
 
   // Start assessment on mount
   useEffect(() => {
-    const key = `${resourceId}\u0000${rounds}\u0000${questionType ?? ""}`;
+    const key = `${resourceId}\u0000${JSON.stringify(questionTypePlan)}`;
     let request = startRequest.current;
     if (request?.key !== key) {
       request = {
         key,
-        promise: startAssessment(resourceId, rounds, questionType ?? ""),
+        promise: startAssessment(resourceId, { questionTypePlan }),
       };
       startRequest.current = request;
     }
@@ -119,7 +118,7 @@ export const AssessmentPanel = forwardRef<
     return () => {
       active = false;
     };
-  }, [resourceId, rounds, questionType, notifyUpdate]);
+  }, [resourceId, questionTypePlan, notifyUpdate]);
 
   // Poll for status changes
   const pollDelay = useRef(1000);
@@ -397,6 +396,8 @@ export const AssessmentPanel = forwardRef<
     const waiting = assessment.status === "awaiting_answer";
     const judged =
       assessment.status === "judged" || assessment.status === "completed";
+    const matchedPoints = assessment.judgement?.matched_points ?? [];
+    const missingPoints = assessment.judgement?.missing_points ?? [];
 
     return (
       <section className="assessment-panel" aria-label="考核面板">
@@ -521,6 +522,30 @@ export const AssessmentPanel = forwardRef<
             </p>
             {assessment.judgement.reason ? (
               <p>{assessment.judgement.reason}</p>
+            ) : null}
+            {matchedPoints.length > 0 || missingPoints.length > 0 ? (
+              <div className="assessment-panel__point-feedback">
+                {matchedPoints.length > 0 ? (
+                  <section>
+                    <h3>答到了</h3>
+                    <ul>
+                      {matchedPoints.map((point) => (
+                        <li key={point.point_id}>{point.description}</li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+                {missingPoints.length > 0 ? (
+                  <section>
+                    <h3>还缺</h3>
+                    <ul>
+                      {missingPoints.map((point) => (
+                        <li key={point.point_id}>{point.description}</li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+              </div>
             ) : null}
             <p>
               概念状态：

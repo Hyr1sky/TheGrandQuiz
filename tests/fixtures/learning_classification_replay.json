@@ -1,0 +1,20 @@
+[
+  {
+    "concept": "PageIndex",
+    "summary": "PageIndex 是一种长文档检索方法。",
+    "evidence": "PageIndex 使用层级树组织长文档并缩小检索范围。",
+    "expected_primary_kind": "method"
+  },
+  {
+    "concept": "树检索原理",
+    "summary": "该机制解释树结构如何缩小检索范围。",
+    "evidence": "查询沿树逐层缩小候选节点集合。",
+    "expected_primary_kind": "mechanism"
+  },
+  {
+    "concept": "PageIndex 接入步骤",
+    "summary": "依次初始化、建树并执行查询。",
+    "evidence": "先初始化索引，再构建文档树，最后提交查询。",
+    "expected_primary_kind": "procedure"
+  }
+]

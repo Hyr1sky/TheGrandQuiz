@@ -295,10 +295,19 @@ def test_printer_shows_reason_on_borderline_verdict() -> None:
     QuizEventPrinter(console)(
         _event(
             LearningEvent.ANSWER_JUDGED,
-            {"verdict": "勉强", "answer": "大概是变量吧", "reason": "方向对但不够精确"},
+            {
+                "verdict": "勉强",
+                "answer": "大概是变量吧",
+                "reason": "方向对但不够精确",
+                "matched_points": [{"point_id": "capture", "description": "指出捕获变量本身"}],
+                "missing_points": [{"point_id": "contrast", "description": "说明不是值快照"}],
+            },
         )
     )
-    assert "问题：方向对但不够精确" in console.export_text()
+    out = console.export_text()
+    assert "问题：方向对但不够精确" in out
+    assert "答到了：指出捕获变量本身" in out
+    assert "还缺：说明不是值快照" in out
 
 
 def test_printer_escapes_reason_markup() -> None:
@@ -481,14 +490,35 @@ class _ScopeTypeScriptProvider:
         if role == "enrich":  # 出题槽：effective=开放 → 出开放题（非 MC）
             return Completion(
                 text=json.dumps(
-                    {"question": "请解释闭包如何捕获变量？", "cited_evidence": [_QUOTE]},
+                    {
+                        "question": "请解释闭包如何捕获变量？",
+                        "expected_points": [
+                            {
+                                "point_id": "capture",
+                                "description": "说明闭包捕获变量",
+                                "cited_evidence": _QUOTE,
+                            }
+                        ],
+                        "reference_answer": _QUOTE,
+                        "cited_evidence": [_QUOTE],
+                    },
                     ensure_ascii=False,
                 ),
                 usage=Usage(prompt_tokens=7, completion_tokens=3),
             )
         if "判卷官" in system:  # 开放判卷槽（本剧本真的打这个槽）
             return Completion(
-                text=json.dumps({"verdict": "对", "cited_evidence": [_QUOTE]}, ensure_ascii=False),
+                text=json.dumps(
+                    {
+                        "verdict": "对",
+                        "matched_points": ["capture"],
+                        "missing_points": [],
+                        "diagnosis": "complete",
+                        "reason": "回答覆盖了评分点。",
+                        "cited_evidence": [_QUOTE],
+                    },
+                    ensure_ascii=False,
+                ),
                 usage=Usage(prompt_tokens=5, completion_tokens=2),
             )
         # ReAct 决策槽：有 tool 结果 → final；否则发带 scope + 题型的 start_quiz。

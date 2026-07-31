@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 # 各命令的公开编排（re-export，见 __all__）+ 私有 CLI handler（main 分发调用）。
 from grandquiz.interfaces.cli.commands.audit import run_document_dogfood_audit_cli
 from grandquiz.interfaces.cli.commands.ingest import _run_ingest_cli, run_ingest
+from grandquiz.interfaces.cli.commands.learning import run_learning_export_cli
 from grandquiz.interfaces.cli.commands.quiz import _run_quiz_cli, run_quiz
 from grandquiz.interfaces.cli.commands.react import _run_react_cli, run_react
 from grandquiz.interfaces.cli.commands.search import _run_search_cli, run_search
@@ -162,6 +163,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="允许读取的 revision 正文比例上限（默认 0.25）",
     )
 
+    p_learning_export = sub.add_parser(
+        "export-learning",
+        help="从 learning.db 导出脱敏、可重建的 Agent 审查包",
+    )
+    p_learning_export.add_argument(
+        "--db",
+        type=Path,
+        default=_DEFAULT_DB,
+        help="SQLite learning 库路径",
+    )
+    p_learning_export.add_argument(
+        "--out",
+        type=Path,
+        default=Path.home() / ".grandquiz" / "exports" / "learning-review",
+        help="输出目录",
+    )
+
     return parser
 
 
@@ -219,6 +237,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             search_trace_id=args.search_trace,
             max_read_fraction=args.max_read_fraction,
         )
+    elif args.command == "export-learning":
+        run_learning_export_cli(db_path=args.db, out_dir=args.out)
     else:
         parser.print_help()
 

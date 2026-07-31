@@ -95,3 +95,78 @@ def test_approval_token_is_single_use_and_transition_is_atomic(tmp_path: Path) -
                 token_hash="token-hash",
                 now=104.0,
             )
+
+
+def test_failed_transition_rolls_back_when_failure_detail_write_fails(
+    tmp_path: Path,
+) -> None:
+    with LearningPersistence(tmp_path / "learning.db") as persistence:
+        ledger = persistence.acquisitions
+        ledger.create(
+            run_id="run-atomic-failure",
+            trace_id="trace-atomic-failure",
+            kind="url",
+            locator="https://example.com/article",
+            display_name="example.com/article",
+            request_payload={},
+            token_hash="token-hash",
+            token_expires_at=200.0,
+            now=100.0,
+        )
+        ledger.mark_running("run-atomic-failure", now=101.0)
+        persistence.transaction_owner.connection.execute(
+            """
+            CREATE TRIGGER reject_failure_detail
+            BEFORE INSERT ON acquisition_run_failures
+            BEGIN
+              SELECT RAISE(ABORT, 'injected failure detail write error');
+            END
+            """
+        )
+        persistence.transaction_owner.connection.commit()
+
+        with pytest.raises(Exception, match="injected failure detail write error"):
+            ledger.mark_failed(
+                "run-atomic-failure",
+                code="processing_failed",
+                stage="processing",
+                message="材料处理失败",
+                now=102.0,
+            )
+
+        recovered = ledger.require("run-atomic-failure")
+        assert recovered.status == "running"
+        assert recovered.error_code is None
+        assert recovered.error_stage is None
+
+
+def test_legacy_acquisition_failure_is_projected_to_current_finite_contract(
+    tmp_path: Path,
+) -> None:
+    with LearningPersistence(tmp_path / "learning.db") as persistence:
+        ledger = persistence.acquisitions
+        ledger.create(
+            run_id="legacy-failure",
+            trace_id="legacy-trace",
+            kind="url",
+            locator="https://example.com/article",
+            display_name="example.com/article",
+            request_payload={},
+            token_hash="token-hash",
+            token_expires_at=200.0,
+            now=100.0,
+        )
+        persistence.transaction_owner.connection.execute(
+            """
+            UPDATE acquisition_runs
+            SET status = 'failed', error_code = 'acquisition_failed',
+                error_message = '材料读取或深读失败，请检查内容后重试'
+            WHERE run_id = 'legacy-failure'
+            """
+        )
+        persistence.transaction_owner.connection.commit()
+
+        recovered = ledger.require("legacy-failure")
+
+    assert recovered.error_code == "ingest_failed"
+    assert recovered.error_stage == "reader"

@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ValidationError
 
-from grandquiz.domain.learning.assessment.question import MultipleChoiceQuestion
+from grandquiz.domain.learning.assessment.question import MultipleChoiceQuestion, QuestionSpec
 from grandquiz.domain.learning.models import (
     CitedEvidence,
     KnowledgeItem,
@@ -28,6 +28,23 @@ from grandquiz.providers.base import Completion, Message, Provider
 
 # 判决三值——出题 / 判卷 / 记账全链路共用的枚举（assessment 的 AssessmentResult 亦复用之）。
 VerdictLabel = Literal["对", "勉强", "错"]
+OpenAnswerDiagnosisKind = Literal[
+    "complete",
+    "missing_key_point",
+    "wrong_focus",
+    "concept_confusion",
+    "off_topic",
+    "uncertain",
+]
+AssessmentDiagnosisKind = Literal[
+    "complete",
+    "missing_key_point",
+    "wrong_focus",
+    "concept_confusion",
+    "off_topic",
+    "uncertain",
+    "incorrect_choice",
+]
 
 
 def grade_multiple_choice(chosen: str, mc: MultipleChoiceQuestion) -> VerdictLabel:
@@ -62,24 +79,25 @@ class ModelRetry(Exception):
 
 
 class Verdict(BaseModel):
-    """判卷 LLM 的结构化输出契约：三值判决 + 一句话诊断理由 + 所引原文证据。
+    """判卷输出：三值结论 + 逐评分点覆盖结果 + 受控诊断 + 原文证据。
 
     刻意不含 ``weak_item_id``——薄弱记账由代码按 ``verdict`` 算（ADR-0004），不由 LLM 产。
-    ``cited_evidence`` 非空由 ``grade_answer`` 的校验门把关（判卷必须引证据）。
-
-    ``reason``：判官对本次作答的一句话诊断（错 / 勉强：缺 / 偏了哪点；对：命中哪个要点），**只
-    展示、不驱动记账**——``weak_item_id`` / 三态转移仍由代码按 ``verdict`` 算。可选默认空串以保向后
-    兼容：旧 cassette / 旧模型输出无 ``reason`` 字段时照常解析（缺省为空），不触发校验门重试。
+    ``matched_points`` / ``missing_points`` 只能引用 QuestionSpec 中的 point_id，且必须完整、不重叠
+    地覆盖 rubric；``grade_answer`` 再校验它们与三值判决一致。这样“对 / 勉强 / 错”不再只是一个
+    无法解释的标签。
     """
 
     verdict: VerdictLabel
-    reason: str = ""
+    matched_points: list[str]
+    missing_points: list[str]
+    diagnosis: OpenAnswerDiagnosisKind
+    reason: str
     cited_evidence: CitedEvidence
 
 
 async def grade_answer(
     item: KnowledgeItem,
-    question: str,
+    question: QuestionSpec,
     answer: str,
     *,
     provider: Provider,
@@ -88,7 +106,7 @@ async def grade_answer(
     max_attempts: int = 3,
     language: str = "中文",
 ) -> Verdict:
-    """对 ``answer``（针对 ``question`` / ``item``）产出结构化判决；持续失败 → ``GradingError``。
+    """依据 ``QuestionSpec`` 的唯一 rubric 判卷；持续失败 → ``GradingError``。
 
     ``max_attempts``：1 次初始调用 + 最多 ``max_attempts - 1`` 次重试（默认 3；测试可收紧）。
     ``language``：判决与反馈语言（默认"中文"，由 ``assess_once`` 从 task 下传）——用字面
@@ -98,18 +116,25 @@ async def grade_answer(
     if max_attempts < 1:
         raise ValueError("max_attempts 至少为 1")
     prompt = load_prompt("answer_grade")
-    valid_quotes = {ev.quote for ev in item.evidence}
-    evidence_block = "\n".join(f"- {ev.quote}" for ev in item.evidence)
+    del item  # KnowledgeItem 只用于保留稳定调用边界；判卷内容必须收窄到单题 QuestionSpec。
+    valid_quotes = {point.cited_evidence for point in question.expected_points}
+    rubric_block = "\n".join(
+        (f"- {point.point_id}: {point.description}\n  原文依据：{point.cited_evidence}")
+        for point in question.expected_points
+    )
+    evidence_block = "\n".join(f"- {quote}" for quote in sorted(valid_quotes))
     base_messages = [
         Message(role="system", content=prompt.text.replace("{{LANGUAGE}}", language)),
         Message(
             role="user",
             content=(
-                "被考知识点：\n"
-                f"概念：{item.concept}\n"
-                "原文证据（cited_evidence 应从中引用）：\n"
+                f"题目：{question.question}\n"
+                "本题评分点（matched_points / missing_points 只能填写 point_id）：\n"
+                f"{rubric_block}\n"
+                f"本题参考作答：{question.reference_answer}\n"
+                "判卷可引用的原文证据（cited_evidence 只能逐字从这里选择，"
+                "不能引用参考作答或学习者作答）：\n"
                 f"{evidence_block}\n"
-                f"题目：{question}\n"
                 f"学习者作答：{answer}"
             ),
         ),
@@ -128,10 +153,17 @@ async def grade_answer(
             prompt_version=prompt.version,
         )
         try:
-            return _parse(completion.text, valid_quotes)
+            return _parse(
+                completion.text,
+                valid_quotes,
+                expected_point_ids=[point.point_id for point in question.expected_points],
+            )
         except ModelRetry as exc:
             last_error = str(exc)
-            retry_note = f"上一次判卷无法采用：{exc}。请只返回合法 JSON，且引用真实证据。"
+            retry_note = (
+                f"上一次判卷无法采用：{exc}。请只返回合法 JSON；cited_evidence 只能逐字引用"
+                f"“判卷可引用的原文证据”中的内容：{sorted(valid_quotes)}。"
+            )
     raise GradingError(f"判卷失败（{max_attempts} 次尝试仍无合法输出）：{last_error}")
 
 
@@ -174,7 +206,12 @@ async def _call_model(
     return completion
 
 
-def _parse(text: str, valid_quotes: set[str]) -> Verdict:
+def _parse(
+    text: str,
+    valid_quotes: set[str],
+    *,
+    expected_point_ids: list[str],
+) -> Verdict:
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -190,4 +227,31 @@ def _parse(text: str, valid_quotes: set[str]) -> Verdict:
     ghost = ungrounded_citations(verdict.cited_evidence, valid_quotes)
     if ghost:
         raise ModelRetry(f"引用了不属于被考知识点的证据（幽灵引文）：{ghost}")
+    expected = set(expected_point_ids)
+    matched = verdict.matched_points
+    missing = verdict.missing_points
+    if len(matched) != len(set(matched)) or len(missing) != len(set(missing)):
+        raise ModelRetry("matched_points / missing_points 中的 point_id 不得重复")
+    unknown = (set(matched) | set(missing)) - expected
+    if unknown:
+        raise ModelRetry(f"判卷引用了不存在的评分点：{sorted(unknown)}")
+    overlap = set(matched) & set(missing)
+    if overlap:
+        raise ModelRetry(f"同一评分点不能同时命中和缺失：{sorted(overlap)}")
+    uncovered = expected - set(matched) - set(missing)
+    if uncovered:
+        raise ModelRetry(f"判卷必须覆盖全部评分点，尚未判断：{sorted(uncovered)}")
+    if verdict.verdict == "对" and (
+        set(matched) != expected or missing or verdict.diagnosis != "complete"
+    ):
+        raise ModelRetry("判为“对”时必须命中全部评分点、没有缺失，且 diagnosis=complete")
+    if verdict.verdict == "勉强" and (
+        not matched or not missing or verdict.diagnosis not in {"missing_key_point", "wrong_focus"}
+    ):
+        raise ModelRetry(
+            "判为“勉强”时必须同时列出已命中和缺失评分点，diagnosis 只能是 "
+            "missing_key_point / wrong_focus"
+        )
+    if verdict.verdict == "错" and (not missing or verdict.diagnosis == "complete"):
+        raise ModelRetry("判为“错”时必须存在缺失评分点，且 diagnosis 不能是 complete")
     return verdict

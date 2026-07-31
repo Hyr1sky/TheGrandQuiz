@@ -14,6 +14,8 @@ from grandquiz.domain.learning.acquisition import AcquisitionLedger
 from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.interfaces.api import acquisitions as acquisition_mod
 from grandquiz.interfaces.api.app import ApiSettings, create_app
+from grandquiz.kernel.clock import ManualClock
+from grandquiz.kernel.events import EventEmitter, EventSink
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, ToolSpec, Usage
 
@@ -26,7 +28,9 @@ class _ReaderProvider:
         role: Role = "basic",
         tools: Sequence[ToolSpec] | None = None,
     ) -> Completion:
-        payload = json.loads(messages[-1].content)
+        payload = json.loads(
+            next(message.content for message in messages if message.role == "user")
+        )
         node = next(
             candidate
             for candidate in payload["untrusted_document_nodes"]
@@ -81,6 +85,47 @@ class _FailingReaderProvider:
         tools: Sequence[ToolSpec] | None = None,
     ) -> Completion:
         raise RuntimeError("provider secret")
+
+
+class _InvalidEvidenceReaderProvider:
+    """返回结构合法但无法定位的 Evidence，复现被泛化的领域失败。"""
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        payload = json.loads(
+            next(message.content for message in messages if message.role == "user")
+        )
+        node = payload["untrusted_document_nodes"][0]
+        quote = "原文中不存在的证据"
+        return Completion(
+            text=json.dumps(
+                {
+                    "topic": "Agent Runtime",
+                    "candidates": [
+                        {
+                            "concept": "无效证据",
+                            "summary": "模型返回了无法定位的引用。",
+                            "confidence": 0.8,
+                            "evidence": [
+                                {
+                                    "node_key": node["node_key"],
+                                    "start_offset": 0,
+                                    "end_offset": len(quote),
+                                    "quote": quote,
+                                }
+                            ],
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            usage=Usage(prompt_tokens=20, completion_tokens=10),
+        )
 
 
 def _app(tmp_path: Path, provider: Provider | None = None):
@@ -144,11 +189,112 @@ def test_upload_can_resume_approval_after_service_restart(tmp_path: Path) -> Non
         observability = restarted.get(f"/api/v1/observability/traces/{creation['trace_id']}").json()
         assert observability["summary"]["status"] == "completed"
 
+    with LearningPersistence(tmp_path / "learning.db") as persistence:
+        history = persistence.classifications.history_for_item(item_id)
+        assert len(history) == 1
+        assert history[0].classified_by == "rule"
+        assert history[0].review_status == "proposed"
+        assert persistence.classifications.active_for_item(item_id) is None
+
     trace = TraceStore(tmp_path / "trace.db")
     events = trace.events(creation["trace_id"])
     trace.close()
     assert [event.seq for event in events] == list(range(len(events)))
     assert len({event.span_id for event in events if event.span_id is not None}) == 3
+
+
+def test_interrupted_run_uses_complete_safe_failure_projection(tmp_path: Path) -> None:
+    with LearningPersistence(tmp_path / "learning.db") as persistence:
+        persistence.acquisitions.create(
+            run_id="run-interrupted",
+            trace_id="trace-interrupted",
+            kind="url",
+            locator="https://example.com/runtime",
+            display_name="example.com/runtime",
+            request_payload={},
+            token_hash="token-hash",
+            token_expires_at=200.0,
+            now=100.0,
+        )
+
+    with TestClient(_app(tmp_path)) as client:
+        recovered = client.get("/api/v1/acquisitions/run-interrupted").json()
+        stream = client.get("/api/v1/acquisitions/run-interrupted/events")
+
+    assert recovered["status"] == "failed"
+    assert recovered["error_code"] == "interrupted"
+    assert recovered["error_stage"] == "runtime"
+    assert recovered["error_message"] == "服务在材料处理期间重启，请重试"
+    events = [
+        json.loads(line.removeprefix("data: "))
+        for line in stream.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    failed = next(event for event in events if event["type"] == "acquisition.failed")
+    assert failed["data"] == {
+        "code": "interrupted",
+        "stage": "runtime",
+        "reason": "服务在材料处理期间重启，请重试",
+    }
+
+
+def test_legacy_failure_event_cannot_leak_internal_values_to_sse(tmp_path: Path) -> None:
+    with LearningPersistence(tmp_path / "learning.db") as persistence:
+        persistence.acquisitions.create(
+            run_id="run-legacy-failure",
+            trace_id="trace-legacy-failure",
+            kind="url",
+            locator="https://example.com/runtime",
+            display_name="example.com/runtime",
+            request_payload={},
+            token_hash="token-hash",
+            token_expires_at=200.0,
+            now=100.0,
+        )
+        persistence.transaction_owner.connection.execute(
+            """
+            UPDATE acquisition_runs
+            SET status = 'failed', error_code = 'acquisition_failed',
+                error_message = '旧版安全文案'
+            WHERE run_id = 'run-legacy-failure'
+            """
+        )
+        persistence.transaction_owner.connection.commit()
+    trace = TraceStore(tmp_path / "trace.db")
+    sink = EventSink()
+    sink.register_durable(trace)
+    EventEmitter(
+        sink,
+        ManualClock(),
+        trace_id="trace-legacy-failure",
+    ).emit(
+        "acquisition.failed",
+        payload={
+            "run_id": "run-legacy-failure",
+            "code": "internal_sql_error",
+            "stage": "database_password",
+            "reason": "secret diagnostic",
+            "status": "failed",
+        },
+    )
+    trace.close()
+
+    with TestClient(_app(tmp_path)) as client:
+        stream = client.get("/api/v1/acquisitions/run-legacy-failure/events")
+
+    events = [
+        json.loads(line.removeprefix("data: "))
+        for line in stream.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    failed = next(event for event in events if event["type"] == "acquisition.failed")
+    assert failed["data"] == {
+        "code": "ingest_failed",
+        "stage": "reader",
+        "reason": "材料读取或深读失败，请检查内容后重试",
+    }
+    assert "secret diagnostic" not in stream.text
+    assert "database_password" not in stream.text
 
 
 def test_upload_rejects_unsupported_file_without_creating_run(tmp_path: Path) -> None:
@@ -213,6 +359,31 @@ def test_processing_error_is_sanitized_and_leaves_zero_pollution(tmp_path: Path)
     error_message = failed["error_message"]
     assert isinstance(error_message, str)
     assert "provider secret" not in error_message
+    with LearningPersistence(tmp_path / "learning.db") as persistence:
+        assert persistence.store.all_resources() == []
+
+
+def test_domain_ingest_failure_keeps_safe_code_stage_reason_and_counts_error(
+    tmp_path: Path,
+) -> None:
+    with TestClient(_app(tmp_path, _InvalidEvidenceReaderProvider())) as client:
+        creation = client.post(
+            "/api/v1/acquisitions",
+            json={
+                "kind": "upload",
+                "filename": "runtime.md",
+                "content": "# Runtime\n\n事件是系统脊柱。",
+            },
+        ).json()
+        failed = _wait_for_status(client, creation["run_id"], "failed")
+        observability = client.get(f"/api/v1/observability/traces/{creation['trace_id']}").json()
+
+    assert failed["error_code"] == "quote_mismatch"
+    assert failed["error_stage"] == "evidence_validation"
+    assert failed["error_message"] == "Evidence 引文无法精确定位到原文节点"
+    assert observability["summary"]["status"] == "failed"
+    assert observability["summary"]["error_count"] == 1
+    assert "原文中不存在的证据" not in json.dumps(observability, ensure_ascii=False)
     with LearningPersistence(tmp_path / "learning.db") as persistence:
         assert persistence.store.all_resources() == []
 

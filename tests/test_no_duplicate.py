@@ -110,7 +110,21 @@ class _SeqProvider:
 
 
 def _open_json(question: str) -> str:
-    return json.dumps({"question": question, "cited_evidence": [_QUOTE]}, ensure_ascii=False)
+    return json.dumps(
+        {
+            "question": question,
+            "expected_points": [
+                {
+                    "point_id": "capture",
+                    "description": "说明闭包捕获变量",
+                    "cited_evidence": _QUOTE,
+                }
+            ],
+            "reference_answer": _QUOTE,
+            "cited_evidence": [_QUOTE],
+        },
+        ensure_ascii=False,
+    )
 
 
 def _mc_json(question: str) -> str:
@@ -206,9 +220,16 @@ class _DupProvider:
         text = "\n".join(m.content for m in messages)
         if role == "enrich":  # 出题
             question = self._ALT_Q if "已问过" in text else self._DEFAULT_Q
-            payload: dict[str, object] = {"question": question, "cited_evidence": [_QUOTE]}
+            payload: dict[str, object] = json.loads(_open_json(question))
         else:  # 判卷恒判对（让薄弱 item 转观察中、仍留在薄弱优先集，复考锁定同一 item）
-            payload = {"verdict": "对", "cited_evidence": [_QUOTE]}
+            payload = {
+                "verdict": "对",
+                "matched_points": ["capture"],
+                "missing_points": [],
+                "diagnosis": "complete",
+                "reason": "回答覆盖了评分点。",
+                "cited_evidence": [_QUOTE],
+            }
         return Completion(
             text=json.dumps(payload, ensure_ascii=False),
             usage=Usage(prompt_tokens=7, completion_tokens=3),

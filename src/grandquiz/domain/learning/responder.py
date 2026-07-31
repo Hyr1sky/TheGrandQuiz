@@ -15,7 +15,22 @@ asyncio loop 内 ``await responder.answer(...)``，故协议第一天就按 asyn
 """
 
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Literal, Protocol, runtime_checkable
+
+from pydantic import BaseModel
+
+
+class AnswerSubmissionMetadata(BaseModel):
+    """Interface provenance captured with an answer, separate from answer text."""
+
+    input_modality: Literal["text", "voice"] = "text"
+    answer_format: Literal["choice", "natural_language", "code"]
+    evidence_revealed_before_answer: bool = False
+
+
+@runtime_checkable
+class SubmissionMetadataProvider(Protocol):
+    def last_submission_metadata(self) -> AnswerSubmissionMetadata: ...
 
 
 class Responder(Protocol):

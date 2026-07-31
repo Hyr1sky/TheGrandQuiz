@@ -183,6 +183,7 @@ class ChatManager:
             preferences=self._persistence.preferences,
             asked_questions=self._persistence.asked_questions,
             difficulty=self._persistence.difficulty,
+            classifications=self._persistence.classifications,
         )
         register_navigation_tools(registry)
 

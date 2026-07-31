@@ -68,3 +68,22 @@ replay_key / prompt 版本号 / golden cassette 一字不变。
   未来若要开放式题型或按材料定制题型，需重新审视这张表 + 是否升级为第一类题型（`assert_never` 缝）。
 - **重新审视信号**：出现"用户反复点某个表外说法却总拿到自适应题型"的 dogfood 反馈；或"简答"需要
   与"开放"区分（独立 prompt / grading）时——那就该把它提升为第 4 题型并重录 cassette。
+
+## 2026-07-31 修订：多题请求必须先形成 AssessmentPlan
+
+真实 Web trace 暴露了新的同类问题：用户要求“两道选择、一道简答”，Chat adapter 却只把
+`rounds=3` 传给 FastAPI，后端于是按同一个题型/自适应规则跑三轮。CLI 已经有分段展开，但 Web
+复制的是更早的单题型接口；OpenAPI 只能证明 HTTP 字段合法，不能证明两个 adapter 解释了同一种语义。
+
+因此本 ADR 的“显式意图胜过自适应”从单题扩展到批次：
+
+- `AssessmentPlan` 是唯一的批次规范化接口，输出逐位置 `question_type_intents`；
+- CLI `start_quiz`、Web Chat `start_assessment` 和 FastAPI Assessment 都消费这份有序计划；
+- Web 导航事件与 HTTP 请求传 `question_type_plan`，不得再把混合序列压扁成
+  `rounds + question_type`；
+- 旧 HTTP `rounds/question_type` 暂留兼容入口，但进入 manager 后立即规范化为计划，workflow 内部
+  不保留第二套表示；
+- Pydantic/OpenAPI 负责单 adapter 的形状，跨 adapter conformance tests 负责语义等价。
+
+这不是新增题型裁决：每个位置仍复用 `resolve_question_type` 与本 ADR 的冻结同义表。变化只是把
+“用户明确说了什么”在进入异步 workflow 前完整保存下来。

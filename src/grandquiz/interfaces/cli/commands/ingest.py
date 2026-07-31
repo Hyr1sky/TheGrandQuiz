@@ -9,7 +9,7 @@ from rich.console import Console
 from grandquiz.domain.learning.approval import ApprovalCancelled, ApprovalGate
 from grandquiz.domain.learning.ingest import IngestResult, ingest_resource
 from grandquiz.domain.learning.models import derive_id
-from grandquiz.domain.learning.store import SqliteLearningStore
+from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.interfaces.cli.approval import CliApprovalGate
 from grandquiz.interfaces.cli.commands import _print_trace_location
 from grandquiz.interfaces.cli.composition import (
@@ -59,7 +59,7 @@ async def run_ingest(
     _ensure_parent(db_path)
     resolved_trace_db = _resolve_trace_db(db_path, trace_db_path)
     _ensure_parent(resolved_trace_db)
-    store = SqliteLearningStore(db_path)
+    persistence = LearningPersistence(db_path)
     trace_store: TraceStore | None = None  # try 内构造 + None-guard 关闭，建失败不泄漏 store
     url = _local_material_url(material_path)
     trace_id = uuid.uuid4().hex
@@ -69,14 +69,15 @@ async def run_ingest(
             url,
             source=lambda _url: content,
             provider=provider,
-            store=store,
+            store=persistence.store,
             approval=approval,
             emitter=emitter,
             max_bytes=max(_DEFAULT_MAX_BYTES, len(content.encode("utf-8")) + 1),
             allowed_domains={_LOCAL_HOST},
+            classifications=persistence.classifications,
         )
     finally:
-        store.close()
+        persistence.close()
         if trace_store is not None:
             trace_store.close()
     _print_ingest_result(console, title, result)
@@ -86,7 +87,16 @@ async def run_ingest(
 
 def _print_ingest_result(console: Console, title: str, result: IngestResult) -> None:
     if result.status == "failed":
-        console.print(f"[red]深读失败：材料未能入库（入库标签「{title}」）。[/]")
+        if result.failure is None:
+            console.print(f"[red]深读失败：材料未能入库（入库标签「{title}」）。[/]")
+            return
+        console.print(
+            "深读失败："
+            f"[{result.failure.stage}/{result.failure.code}] "
+            f"{result.failure.reason}（入库标签「{title}」）。",
+            style="red",
+            markup=False,
+        )
         return
     if not result.items:
         console.print(f"[yellow]深读完成但没有抽出知识点（入库标签「{title}」）。[/]")

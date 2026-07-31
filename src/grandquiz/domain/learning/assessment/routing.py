@@ -87,3 +87,9 @@ def resolve_question_type(intent: str | None, state: ConceptState | None) -> Que
     if mapped is None:
         return route_question_type(state)  # 未知短语 → 回落自适应路由（fail-soft）
     return mapped
+
+
+def is_supported_question_type_intent(intent: str | None) -> bool:
+    """Whether an input is a recognized explicit override rather than fail-soft text."""
+
+    return intent is not None and _QUESTION_TYPE_INTENTS.get(intent.strip().casefold()) is not None

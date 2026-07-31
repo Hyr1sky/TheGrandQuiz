@@ -151,6 +151,9 @@ class DictDifficultyLedger:
     def set_progress(self, item_id: str, progress: DifficultyProgress) -> None:
         self._progress[item_id] = progress
 
+    def replace_progress(self, item_id: str, progress: DifficultyProgress) -> None:
+        self._progress[item_id] = progress
+
     def _snapshot_state(self) -> object:
         return dict(self._progress)
 
@@ -205,6 +208,11 @@ class SqliteDifficultyLedger:
             (item_id, progress.tier, progress.correct_streak),
         )
         self._db.commit()
+
+    def replace_progress(self, item_id: str, progress: DifficultyProgress) -> None:
+        """Replace one derived current state inside the caller's transaction."""
+
+        self.set_progress(item_id, progress)
 
     def close(self) -> None:
         """关闭底层连接（跨会话验收：关闭后用同一 db_path 重开，档位仍在、不重置回默认）。"""

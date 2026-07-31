@@ -6,6 +6,7 @@ re-export）；``fetch``/``web_fetch``/``reader`` 各自的类型走精确子模
 """
 
 from grandquiz.domain.learning.ingest.pipeline import (
+    IngestFailure,
     IngestResult,
     PreparedIngest,
     abort_ingest,
@@ -17,6 +18,7 @@ from grandquiz.domain.learning.ingest.pipeline import (
 )
 
 __all__ = [
+    "IngestFailure",
     "IngestResult",
     "PreparedIngest",
     "abort_ingest",

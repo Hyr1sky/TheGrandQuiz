@@ -1,26 +1,26 @@
 {
-  "024c454adb5be8018728ad7942632f23e5b535e8d14e58ae847a81bd8009b06e": {
+  "a0459e158df4769f57d9cdf626e1d23a63ea40c8b2c0a788640937c0e3cf5b07": {
     "fingerprint_version": 2,
     "model": "deepseek-v4-flash",
     "role": "basic",
-    "text": "{\"verdict\": \"错\", \"reason\": \"没有回答 pass@k 的含义，而是解释了闭包概念，完全答非所问。\", \"cited_evidence\": [\"pass@k means success in at least one of k attempts\"]}",
+    "text": "{\"verdict\": \"错\", \"matched_points\": [], \"missing_points\": [\"definition\"], \"diagnosis\": \"off_topic\", \"reason\": \"作答内容是关于闭包的描述，与 pass@k 指标的定义完全无关，未指出“k 次尝试中至少有一次成功”这一要点。\", \"cited_evidence\": [\"pass@k means success in at least one of k attempts\"]}",
     "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "usage": {
-      "completion_tokens": 139,
-      "prompt_tokens": 635,
-      "total_tokens": 774
+      "completion_tokens": 320,
+      "prompt_tokens": 1086,
+      "total_tokens": 1406
     }
   },
-  "f06eb039f47b5f9d6a90811244fac569c6831d9fbf42f9d4e958a2b3f6736f72": {
+  "bc93ba40ee6e008fbbfbbe851c633940e1b7246e3122f3d0dd75e1036448dc2b": {
     "fingerprint_version": 2,
     "model": "qwen3.7-plus",
     "role": "enrich",
-    "text": "{\"question\": \"请解释 pass@k 的含义，即在 k 次尝试中需要满足什么条件才算成功？\", \"cited_evidence\": [\"pass@k means success in at least one of k attempts\"]}",
+    "text": "{\n  \"question\": \"请解释 pass@k 指标的具体含义。\",\n  \"expected_points\": [\n    {\n      \"point_id\": \"definition\",\n      \"description\": \"指出 pass@k 意味着在 k 次尝试中至少有一次成功。\",\n      \"cited_evidence\": \"pass@k means success in at least one of k attempts\"\n    }\n  ],\n  \"reference_answer\": \"pass@k 表示在 k 次尝试中至少有一次成功。\",\n  \"cited_evidence\": [\n    \"pass@k means success in at least one of k attempts\"\n  ]\n}",
     "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "usage": {
-      "completion_tokens": 46,
-      "prompt_tokens": 349,
-      "total_tokens": 395
+      "completion_tokens": 141,
+      "prompt_tokens": 519,
+      "total_tokens": 660
     }
   }
 }

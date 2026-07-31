@@ -92,10 +92,41 @@ class _AssessProvider:
                     "cited_evidence": [quote],
                 }
             else:  # 开放 / 追问 prompt → 产开放题 JSON（共用 schema）
-                payload = {"question": "该知识点的核心是什么？", "cited_evidence": [quote]}
+                payload = {
+                    "question": "该知识点的核心是什么？",
+                    "expected_points": [
+                        {
+                            "point_id": "core",
+                            "description": "说明核心含义",
+                            "cited_evidence": quote,
+                        },
+                        {
+                            "point_id": "boundary",
+                            "description": "说明关键区分",
+                            "cited_evidence": quote,
+                        },
+                    ],
+                    "reference_answer": f"参考作答：{quote}",
+                    "cited_evidence": [quote],
+                }
         else:  # basic → 判卷
+            if self._verdict == "对":
+                matched_points = ["core", "boundary"]
+                missing_points: list[str] = []
+                diagnosis = "complete"
+            elif self._verdict == "勉强":
+                matched_points = ["core"]
+                missing_points = ["boundary"]
+                diagnosis = "missing_key_point"
+            else:
+                matched_points = []
+                missing_points = ["core", "boundary"]
+                diagnosis = "wrong_focus"
             payload = {
                 "verdict": self._verdict,
+                "matched_points": matched_points,
+                "missing_points": missing_points,
+                "diagnosis": diagnosis,
                 "reason": self._reason,
                 "cited_evidence": [quote],
             }
@@ -264,11 +295,11 @@ async def test_fresh_concept_routes_to_mc_with_deterministic_grade(
         assert result.weak_item_id == result.item_id
         assert result.concept_state == "薄弱"
         assert memory.state_of(result.item_id) == "薄弱"
-        # 后置追问给正解：锚定被考 item_id + 正解含该 item 的摘要（确定性组文本，不产幽灵内容）。
+        # 后置追问给本题正解：锚定被考 item_id，并保留本题证据。
         target_item = next(i for i in store.all_items() if i.item_id == result.item_id)
         followup = next(e for e in events if e.type == LearningEvent.FOLLOWUP_GIVEN)
         assert followup.payload["item_id"] == result.item_id
-        assert target_item.summary in followup.payload["correct_answer"]
+        assert target_item.evidence[0].quote in followup.payload["correct_answer"]
     else:
         assert result.weak_item_id is None
         assert result.concept_state is None
@@ -350,8 +381,8 @@ async def test_observing_concept_routes_to_open_with_llm_grade_and_followup(
         target_item = next(i for i in store.all_items() if i.item_id == target)
         followup = next(e for e in events if e.type == LearningEvent.FOLLOWUP_GIVEN)
         assert followup.payload["item_id"] == target
-        # 正解含被考 item 的摘要 + 原文依据（evidence 段）——防回归把 evidence 从正解里删掉。
-        assert target_item.summary in followup.payload["correct_answer"]
+        # 正解来自本题 QuestionSpec，而不是泛化复述整个 KnowledgeItem。
+        assert followup.payload["correct_answer"].startswith("参考作答：")
         assert target_item.evidence[0].quote in followup.payload["correct_answer"]
     else:
         assert LearningEvent.FOLLOWUP_GIVEN not in types

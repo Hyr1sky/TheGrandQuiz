@@ -13,10 +13,16 @@ from typing import Any, Literal, cast
 from pydantic import BaseModel
 
 from grandquiz.domain.learning.ingest import PreparedIngest
+from grandquiz.domain.learning.ingest.pipeline import (
+    IngestFailureCode,
+    IngestFailureStage,
+)
 from grandquiz.domain.learning.persistence import DatabaseSource, LearningDatabase, database_from
 
 AcquisitionKind = Literal["upload", "url"]
 AcquisitionStatus = Literal["queued", "running", "needs_input", "succeeded", "failed", "cancelled"]
+AcquisitionFailureCode = IngestFailureCode | Literal["processing_failed", "interrupted"]
+AcquisitionFailureStage = IngestFailureStage | Literal["processing", "runtime"]
 _TERMINAL = {"succeeded", "failed", "cancelled"}
 
 
@@ -38,7 +44,8 @@ class AcquisitionRun(BaseModel):
     created_at: float
     updated_at: float
     resource_id: str | None = None
-    error_code: str | None = None
+    error_code: AcquisitionFailureCode | None = None
+    error_stage: AcquisitionFailureStage | None = None
     error_message: str | None = None
 
 
@@ -92,10 +99,13 @@ class AcquisitionLedger:
     def get(self, run_id: str) -> AcquisitionRun | None:
         row = self._db.connection.execute(
             """
-            SELECT run_id, trace_id, kind, locator, display_name, status,
-                   request_payload, prepared_payload, token_expires_at, token_used_at,
-                   created_at, updated_at, resource_id, error_code, error_message
-            FROM acquisition_runs WHERE run_id = ?
+            SELECT runs.run_id, runs.trace_id, runs.kind, runs.locator, runs.display_name,
+                   runs.status, runs.request_payload, runs.prepared_payload,
+                   runs.token_expires_at, runs.token_used_at, runs.created_at, runs.updated_at,
+                   runs.resource_id, runs.error_code, runs.error_message, failures.error_stage
+            FROM acquisition_runs AS runs
+            LEFT JOIN acquisition_run_failures AS failures ON failures.run_id = runs.run_id
+            WHERE runs.run_id = ?
             """,
             (run_id,),
         ).fetchone()
@@ -110,10 +120,13 @@ class AcquisitionLedger:
     def recent(self, *, limit: int = 20) -> list[AcquisitionRun]:
         rows = self._db.connection.execute(
             """
-            SELECT run_id, trace_id, kind, locator, display_name, status,
-                   request_payload, prepared_payload, token_expires_at, token_used_at,
-                   created_at, updated_at, resource_id, error_code, error_message
-            FROM acquisition_runs ORDER BY updated_at DESC LIMIT ?
+            SELECT runs.run_id, runs.trace_id, runs.kind, runs.locator, runs.display_name,
+                   runs.status, runs.request_payload, runs.prepared_payload,
+                   runs.token_expires_at, runs.token_used_at, runs.created_at, runs.updated_at,
+                   runs.resource_id, runs.error_code, runs.error_message, failures.error_stage
+            FROM acquisition_runs AS runs
+            LEFT JOIN acquisition_run_failures AS failures ON failures.run_id = runs.run_id
+            ORDER BY runs.updated_at DESC LIMIT ?
             """,
             (limit,),
         ).fetchall()
@@ -122,12 +135,14 @@ class AcquisitionLedger:
     def in_flight(self) -> list[AcquisitionRun]:
         rows = self._db.connection.execute(
             """
-            SELECT run_id, trace_id, kind, locator, display_name, status,
-                   request_payload, prepared_payload, token_expires_at, token_used_at,
-                   created_at, updated_at, resource_id, error_code, error_message
-            FROM acquisition_runs
-            WHERE status IN ('queued', 'running')
-            ORDER BY updated_at
+            SELECT runs.run_id, runs.trace_id, runs.kind, runs.locator, runs.display_name,
+                   runs.status, runs.request_payload, runs.prepared_payload,
+                   runs.token_expires_at, runs.token_used_at, runs.created_at, runs.updated_at,
+                   runs.resource_id, runs.error_code, runs.error_message, failures.error_stage
+            FROM acquisition_runs AS runs
+            LEFT JOIN acquisition_run_failures AS failures ON failures.run_id = runs.run_id
+            WHERE runs.status IN ('queued', 'running')
+            ORDER BY runs.updated_at
             """
         ).fetchall()
         return [self._from_row(row) for row in rows]
@@ -220,7 +235,8 @@ class AcquisitionLedger:
         self,
         run_id: str,
         *,
-        code: str,
+        code: AcquisitionFailureCode,
+        stage: AcquisitionFailureStage,
         message: str,
         now: float,
     ) -> AcquisitionRun:
@@ -233,6 +249,7 @@ class AcquisitionLedger:
             status="failed",
             now=now,
             error_code=code,
+            error_stage=stage,
             error_message=message,
             clear_payloads=True,
         )
@@ -250,17 +267,25 @@ class AcquisitionLedger:
         )
 
     def fail_interrupted_runs(self, *, now: float) -> None:
-        self._db.connection.execute(
-            """
-            UPDATE acquisition_runs
-            SET status = 'failed', error_code = 'interrupted',
-                error_message = '服务在材料处理期间重启，请重试',
-                request_payload = '{}', prepared_payload = NULL, updated_at = ?
-            WHERE status IN ('queued', 'running')
-            """,
-            (now,),
-        )
-        self._db.commit()
+        with self._db.transaction() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO acquisition_run_failures (run_id, error_stage)
+                SELECT run_id, 'runtime'
+                FROM acquisition_runs
+                WHERE status IN ('queued', 'running')
+                """
+            )
+            conn.execute(
+                """
+                UPDATE acquisition_runs
+                SET status = 'failed', error_code = 'interrupted',
+                    error_message = '服务在材料处理期间重启，请重试',
+                    request_payload = '{}', prepared_payload = NULL, updated_at = ?
+                WHERE status IN ('queued', 'running')
+                """,
+                (now,),
+            )
 
     def _transition(
         self,
@@ -271,7 +296,8 @@ class AcquisitionLedger:
         now: float,
         prepared_payload: str | None = None,
         resource_id: str | None = None,
-        error_code: str | None = None,
+        error_code: AcquisitionFailureCode | None = None,
+        error_stage: AcquisitionFailureStage | None = None,
         error_message: str | None = None,
         clear_payloads: bool = False,
     ) -> AcquisitionRun:
@@ -300,23 +326,41 @@ class AcquisitionLedger:
                 error_message,
                 run_id,
             )
-        self._db.connection.execute(
-            f"""
-            UPDATE acquisition_runs
-            SET status = ?, updated_at = ?, prepared_payload = {prepared_sql},
-                request_payload = {request_sql},
-                resource_id = COALESCE(?, resource_id),
-                error_code = ?, error_message = ?
-            WHERE run_id = ?
-            """,
-            parameters,
-        )
-        self._db.commit()
+        with self._db.transaction() as conn:
+            conn.execute(
+                f"""
+                UPDATE acquisition_runs
+                SET status = ?, updated_at = ?, prepared_payload = {prepared_sql},
+                    request_payload = {request_sql},
+                    resource_id = COALESCE(?, resource_id),
+                    error_code = ?, error_message = ?
+                WHERE run_id = ?
+                """,
+                parameters,
+            )
+            if error_stage is not None:
+                conn.execute(
+                    """
+                    INSERT INTO acquisition_run_failures (run_id, error_stage)
+                    VALUES (?, ?)
+                    ON CONFLICT(run_id) DO UPDATE SET error_stage = excluded.error_stage
+                    """,
+                    (run_id, error_stage),
+                )
         return self.require(run_id)
 
     @staticmethod
     def _from_row(row: tuple[Any, ...]) -> AcquisitionRun:
         prepared_raw = None if row[7] is None else str(row[7])
+        raw_error_code = None if row[13] is None else str(row[13])
+        raw_error_stage = None if row[15] is None else str(row[15])
+        if raw_error_code == "acquisition_failed":
+            raw_error_code = "ingest_failed"
+            raw_error_stage = raw_error_stage or "reader"
+        elif raw_error_code == "processing_failed":
+            raw_error_stage = raw_error_stage or "processing"
+        elif raw_error_code == "interrupted":
+            raw_error_stage = raw_error_stage or "runtime"
         return AcquisitionRun(
             run_id=str(row[0]),
             trace_id=str(row[1]),
@@ -333,8 +377,9 @@ class AcquisitionLedger:
             created_at=float(row[10]),
             updated_at=float(row[11]),
             resource_id=None if row[12] is None else str(row[12]),
-            error_code=None if row[13] is None else str(row[13]),
+            error_code=cast("AcquisitionFailureCode | None", raw_error_code),
             error_message=None if row[14] is None else str(row[14]),
+            error_stage=cast("AcquisitionFailureStage | None", raw_error_stage),
         )
 
     def close(self) -> None:

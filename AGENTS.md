@@ -8,7 +8,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 作者本人是用户 #1，同时作为 AI/Agent 工程师方向的简历项目。核心循环是"考核"：学完材料 → 被拷问
 → 暴露薄弱概念 → 记入记忆 → 下次优先考薄弱点。
 
-**当前状态（2026-07-29）**：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel/`（events/runner/tools/
+**当前状态（2026-07-31）**：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel/`（events/runner/tools/
 hooks/context/clock/recovery/trace/db）+ `providers/`（OpenAI 兼容 + Record/Replay）+ `domain/learning/`
 （考核竖切 ingest→深读→出题→判卷→薄弱记账）+ `interfaces/cli/`（ingest/quiz/react/report/trace 子命令）
 + `evals/`（17 条 Tier-1 规则用例 + case15 校准优先 Tier-2 质量门）。**最小 ReAct 对话核（R1）与全局 KB 重构均已落地**（`grandquiz react`
@@ -17,7 +17,7 @@ hooks/context/clock/recovery/trace/db）+ `providers/`（OpenAI 兼容 + Record/
 [修订化文档结构](docs/devrecords/04-revisioned-document-search-foundation.md) DS-S1–S4 代码也已落地：不可变 revision/tree、精确
 Evidence、自然节点 Reader、FTS5 与有界 Agentic Search。生产 DB 已备份并迁移到 schema v11；新增真实材料后现为
 4 resources / 122 items / 4 revisions / 1723 nodes / 1723 FTS rows / 169 evidence（117 resolved / 52 unresolved）。
-Reader、ReAct case14/case15/case17 与 Tier-2 judge 已用真实模型录制；Web Acquisition WA-S1–S5 已落地（Trafilatura、质量门、可选 Tavily / SearXNG、Search/Fetch Replay、case16/case17），免信用卡 Key、loopback-only 单容器、两种 provider 真实连通与 search → 用户选择 → ingest ReAct dogfood 均已验收。Local Web 的 LW-S1–S5 与 Web Runtime WR-O1–O4 也已落地：FastAPI 资源/大纲/有界节点、GroundedDocumentAnswer run、稳定 SSE、取消、精确 citation 与 loopback 启动，“墨迹星图”亮/暗 React Article/Assessment Workspace，复用 `AssessmentSession` 的逐题考核、可审计 Evidence reveal、幂等提交/下一题，以及 exact 当前材料、跨轮 Chat cursor、安全实时 `TraceObservatory`，并提供 Markdown/Text 上传、公开 URL 导入、持久状态与跨重启候选审批。v0.1.0 功能 RC 已完成安全 Markdown、Assessment trace 终态、Chat 并发拒绝、Provider 原生 delta 流式 Chat、turn-scoped 真取消、版本化首次引导、稳定观测投影与确定性 Web Scenario Bot 收口；当前收口为 LW-S7 发布门，LW-S6 完整资源/知识点管理进入 v0.1.0 后 backlog。默认 Eval/HTML 只做离线 Replay，Rule/Quality 与 execution/judge 成本分列；静态四门全绿，全量 pytest 当前为 `921 passed`，Web unit 为 `42 passed`，Playwright 桌面/移动端为 `14 passed`。Reader 真实基线为
+Reader、ReAct case14/case15/case17 与 Tier-2 judge 已用真实模型录制；Web Acquisition WA-S1–S5 已落地（Trafilatura、质量门、可选 Tavily / SearXNG、Search/Fetch Replay、case16/case17），免信用卡 Key、loopback-only 单容器、两种 provider 真实连通与 search → 用户选择 → ingest ReAct dogfood 均已验收。Local Web 的 LW-S1–S5 与 Web Runtime WR-O1–O4 也已落地：FastAPI 资源/大纲/有界节点、GroundedDocumentAnswer run、稳定 SSE、取消、精确 citation 与 loopback 启动，“墨迹星图”亮/暗 React Article/Assessment Workspace，复用 `AssessmentSession` 的逐题考核、可审计 Evidence reveal、幂等提交/下一题，以及 exact 当前材料、跨轮 Chat cursor、安全实时 `TraceObservatory`，并提供 Markdown/Text 上传、公开 URL 导入、持久状态与跨重启候选审批。v0.1.0 功能 RC 已完成安全 Markdown、Assessment trace 终态、Chat 并发拒绝、Provider 原生 delta 流式 Chat、turn-scoped 真取消、版本化首次引导、稳定观测投影与确定性 Web Scenario Bot 收口；当前收口为 LW-S7 发布门，LW-S6 完整资源/知识点管理进入 v0.1.0 后 backlog。Learning Model v2 基础闭环也已落地：长期白名单 Journal/outbox、可重建 Attempt、判决纠正/reconciliation、受控词表与分类审核、LearnerProjection 和稳定审查导出；自动 Demand Judge、Diagnosis/Misconception 仍受 Eval gate 限制。v0.2 RC 又补齐非代码 Markdown 节点中 CommonMark 可见 Evidence 到 raw source 的唯一映射，以及 Acquisition `code / stage / reason` 安全错误信封；领域失败会进入 Trace error 统计，并在 CLI/Web 管理态可见。多题考核由 `AssessmentPlan` 统一 CLI/Web/FastAPI 有序题型意图，开放题由 `QuestionSpec` 统一评分点、Evidence、参考答案和逐点评判；v0.2 功能 RC 已关闭。默认 Eval/HTML 只做离线 Replay，Rule/Quality 与 execution/judge 成本分列；静态四门全绿，全量 pytest 当前为 `947 passed`，Web unit 为 `44 passed`，Playwright 桌面/移动端为 `14 passed`。Reader 真实基线为
 105/105 个可考节点 exactly-once 覆盖、12 个候选、0 重复、单次请求 8715 prompt tokens。DS-S3 的生产 ingest/
 人工筛选已由 trace `2515ec1af79a4a0a9860993b4a35beb9` 通过只读审计（141 个可考节点、2 批、34 条 exact
 evidence）。DS-S4 生产 trace `46b91c61c1c24ebabc94be97db31bb16` 也已通过 selected search → 3 次 bounded
@@ -29,9 +29,10 @@ DS-S5 KnowledgeRelation 因没有关系增益证据而按 eval gate 关闭，本
 - [CONTEXT.md](CONTEXT.md) — 领域语言权威表（先读这个统一术语）
 - [docs/architecture.md](docs/architecture.md) — 目标架构、两条核心设计判断、搭建顺序
 - [docs/roadmap.md](docs/roadmap.md) — MVP 考核竖切、领域模型、eval 用例
-- [docs/adr/](docs/adr/) — 九个不可逆决策（0001 提取式迁移 / 0002 概念同一性 / 0003 记忆四收二 /
+- [docs/adr/](docs/adr/) — 十个不可逆决策（0001 提取式迁移 / 0002 概念同一性 / 0003 记忆四收二 /
   0004 循环是 workflow / 0005 全局 KB·消解 LearningTask / 0006 用户显式题型覆盖 / 0007 稳定资源修订与
-  item 身份 / 0008 修订化文档树·精确溯源·分层知识图 / 0009 Local-first Web Interface）
+  item 身份 / 0008 修订化文档树·精确溯源·分层知识图 / 0009 Local-first Web Interface /
+  0010 长期学习事实与完整运行 Trace 分离）
 
 ## 常用命令
 

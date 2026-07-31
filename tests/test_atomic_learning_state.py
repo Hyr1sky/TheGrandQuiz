@@ -125,9 +125,27 @@ class _OpenCorrectProvider:
         self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
     ) -> Completion:
         payload = (
-            {"question": "请解释闭包", "cited_evidence": [_QUOTE]}
+            {
+                "question": "请解释闭包",
+                "expected_points": [
+                    {
+                        "point_id": "core",
+                        "description": "说明闭包的核心含义",
+                        "cited_evidence": _QUOTE,
+                    }
+                ],
+                "reference_answer": _QUOTE,
+                "cited_evidence": [_QUOTE],
+            }
             if role == "enrich"
-            else {"verdict": "对", "reason": "回答正确", "cited_evidence": [_QUOTE]}
+            else {
+                "verdict": "对",
+                "matched_points": ["core"],
+                "missing_points": [],
+                "diagnosis": "complete",
+                "reason": "回答正确",
+                "cited_evidence": [_QUOTE],
+            }
         )
         return Completion(
             text=json.dumps(payload, ensure_ascii=False),

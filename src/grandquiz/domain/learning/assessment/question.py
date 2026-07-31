@@ -22,7 +22,7 @@ import json
 import unicodedata
 from collections.abc import Sequence
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from grandquiz.domain.learning.difficulty import distractor_meets_floor
 from grandquiz.domain.learning.judge import DistractorLabel, judge_distractor
@@ -133,16 +133,32 @@ class ModelRetry(Exception):
     """
 
 
-class GeneratedQuestion(BaseModel):
-    """出题 LLM 的结构化输出契约：一道题 + 其锚定的原文证据引文。
+class ExpectedPoint(BaseModel):
+    """一道开放题的可审计评分点；每个点必须绑定该题引用的一条原文证据。"""
+
+    point_id: NonEmptyStr
+    description: NonEmptyStr
+    cited_evidence: NonEmptyStr
+
+
+class QuestionSpec(BaseModel):
+    """开放题的唯一题目规格：题干、评分点、参考作答与原文证据。
 
     ``question`` 非空（``NonEmptyStr``，strip 后为空也拒）；``cited_evidence`` 的非空与"锚定
-    被考 item 证据（子串即可）"由 ``generate_question`` 的校验门把关。刻意不产 ``item_id`` /
-    ``weak_item_id``——出题不记账，被考 item 由调用方指定、记账由判卷后的代码算（ADR-0004）。
+    被考 item 证据（子串即可）"由 ``generate_question`` 的校验门把关。``expected_points`` 是判卷
+    的唯一 rubric；``reference_answer`` 回答的必须是本题，而不是泛化复述整个 KnowledgeItem。
+    刻意不产 ``item_id`` / ``weak_item_id``——出题不记账，被考 item 由调用方指定、记账由判卷后的
+    代码算（ADR-0004）。
     """
 
     question: NonEmptyStr
+    expected_points: list[ExpectedPoint] = Field(min_length=1)
+    reference_answer: NonEmptyStr
     cited_evidence: CitedEvidence
+
+
+# 兼容既有导入名；领域内的新权威术语是 QuestionSpec。
+GeneratedQuestion = QuestionSpec
 
 
 class MultipleChoiceQuestion(BaseModel):
@@ -172,7 +188,7 @@ async def generate_question(
     language: str = "中文",
     asked_before: Sequence[str] = (),
     difficulty_hint: str | None = None,
-) -> GeneratedQuestion:
+) -> QuestionSpec:
     """为 ``item`` 产出一道 grounded 题；持续失败 → ``QuestionError``。见模块 docstring。
 
     ``max_attempts``：1 次初始调用 + 最多 ``max_attempts - 1`` 次重试（默认 3；测试可收紧）。
@@ -312,15 +328,13 @@ async def _call_model(
     return completion
 
 
-def _parse(
-    text: str, valid_quotes: set[str], asked_before: Sequence[str] = ()
-) -> GeneratedQuestion:
+def _parse(text: str, valid_quotes: set[str], asked_before: Sequence[str] = ()) -> QuestionSpec:
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
         raise ModelRetry(f"非法 JSON：{exc}") from exc
     try:
-        question = GeneratedQuestion.model_validate(data)
+        question = QuestionSpec.model_validate(data)
     except ValidationError as exc:
         raise ModelRetry(f"输出不符合 schema：{_stable_error_summary(exc)}") from exc
     # 出题校验门（缝 3，eval case 3）：非空 + 每条引文都锚定被考 item 的真实证据（防幽灵题）。
@@ -330,6 +344,21 @@ def _parse(
     ghost = ungrounded_citations(question.cited_evidence, valid_quotes)
     if ghost:
         raise ModelRetry(f"引用了不属于被考知识点的证据（幽灵引文）：{ghost}")
+    point_ids = [point.point_id for point in question.expected_points]
+    if len(point_ids) != len(set(point_ids)):
+        raise ModelRetry("expected_points.point_id 必须在单题内唯一")
+    point_quotes = [point.cited_evidence for point in question.expected_points]
+    ghost_points = ungrounded_citations(point_quotes, valid_quotes)
+    if ghost_points:
+        raise ModelRetry(f"评分点引用了不属于被考知识点的证据（幽灵引文）：{ghost_points}")
+    missing_from_question = [
+        quote for quote in point_quotes if quote not in question.cited_evidence
+    ]
+    if missing_from_question:
+        raise ModelRetry(
+            "每个评分点的 cited_evidence 必须同时出现在题目的 cited_evidence 中："
+            f"{missing_from_question}"
+        )
     # 归一化去重门（缝 3）：新题归一化后命中会话内"已问过"台账 → ModelRetry（复用有界重试）。
     # 即使 LLM 无视 user message 里的"换角度"约束，这道确定性门也保证重复题不会到达学习者。
     if is_duplicate(question.question, asked_before):

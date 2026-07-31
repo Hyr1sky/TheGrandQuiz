@@ -3,16 +3,33 @@ import type { components } from "../../shared/api/generated/schema";
 
 export type AssessmentView = components["schemas"]["AssessmentView"];
 
+export type AssessmentStartPlan =
+  | {
+      rounds: number;
+      questionType: string | null;
+    }
+  | {
+      questionTypePlan: Array<string | null>;
+    };
+
 export async function startAssessment(
   resourceId: string,
-  rounds: number,
-  questionType: string,
+  plan: AssessmentStartPlan,
 ): Promise<AssessmentView> {
+  const planBody =
+    "questionTypePlan" in plan
+      ? {
+          rounds: plan.questionTypePlan.length,
+          question_type_plan: plan.questionTypePlan,
+        }
+      : {
+          rounds: plan.rounds,
+          question_type: plan.questionType,
+        };
   const { data, error } = await apiClient.POST("/api/v1/assessments", {
     body: {
       resource_ids: [resourceId],
-      rounds,
-      question_type: questionType === "" ? null : questionType,
+      ...planBody,
       focus: "mixed",
     },
   });
@@ -75,7 +92,7 @@ export async function submitAnswer(
     "/api/v1/assessments/{session_id}/questions/{question_id}/answers",
     {
       params: { path: { session_id: sessionId, question_id: questionId } },
-      body: { answer, request_id: requestId },
+      body: { answer, input_modality: "text", request_id: requestId },
     },
   );
   if (error !== undefined) {

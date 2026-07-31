@@ -9,7 +9,7 @@
 
 - `main` 已完成稳定性加固、Document Structure、Agentic Search、GroundedDocumentAnswer、
   Tier-2 Eval 与 Web Acquisition WA-S1–S5。
-- 当前工程基线为 17 条 Eval、908 项 pytest、41 项 Web unit、12 项 Playwright 场景；
+- 当前工程基线为 17 条 Eval、940 项 pytest、44 项 Web unit、14 项 Playwright 场景；
   ruff / format / pyright / import-linter / Web lint 与 typecheck 全绿。
 - `uv build` 可以生成 sdist 与 wheel；macOS / Python 3.12 仓库外安装 smoke 为 17/17。
 - Replay cassette 与生产 Web bundle 已进入 wheel，不再依赖仓库工作目录或 `tests/fixtures/`。

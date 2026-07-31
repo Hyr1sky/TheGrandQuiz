@@ -1,86 +1,74 @@
 {
-  "2642c3d80be8abc9a39d8b3c5ea92380f184f83164c50fd5336a50c4839bbb3d": {
+  "2ab5300841a6cba16e74e87c3e563cb16677bc76ebfff03b5e826a9837475aa4": {
+    "fingerprint_version": 2,
+    "model": "qwen3.7-plus",
+    "role": "enrich",
+    "text": "{\n  \"question\": \"基于“闭包捕获的是变量本身而非当时的值快照”这一机制，如果外层作用域中的变量在闭包创建后被修改，闭包内部访问该变量时会得到什么结果？请说明原因。\",\n  \"expected_points\": [\n    {\n      \"point_id\": \"point_1\",\n      \"description\": \"指出闭包访问到的是修改后的最新值，而非创建时的旧值\",\n      \"cited_evidence\": \"闭包捕获的是变量本身而非当时的值快照\"\n    },\n    {\n      \"point_id\": \"point_2\",\n      \"description\": \"解释原因是因为捕获的是变量引用（本身），所以随变量变化而变化\",\n      \"cited_evidence\": \"闭包捕获的是变量本身而非当时的值快照\"\n    }\n  ],\n  \"reference_answer\": \"闭包内部会访问到修改后的最新值。因为闭包捕获的是变量本身（引用），而不是创建时刻的值快照，所以外层变量的后续修改会直接影响闭包内的访问结果。\",\n  \"cited_evidence\": [\n    \"闭包捕获的是变量本身而非当时的值快照\"\n  ]\n}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 257,
+      "prompt_tokens": 625,
+      "total_tokens": 882
+    }
+  },
+  "303870cd381ead028eedebba9d0cf9a9e2f87245e032fb23cc06ca90908fd360": {
+    "fingerprint_version": 2,
+    "model": "qwen3.7-plus",
+    "role": "enrich",
+    "text": "{\n  \"question\": \"在闭包机制中，内部函数捕获的是外层变量的什么？请简要说明。\",\n  \"expected_points\": [\n    {\n      \"point_id\": \"capture_target\",\n      \"description\": \"指出闭包捕获的是变量本身，而不是该变量在某一时刻的值快照。\",\n      \"cited_evidence\": \"闭包捕获的是变量本身而非当时的值快照\"\n    }\n  ],\n  \"reference_answer\": \"闭包捕获的是变量本身，而非当时的值快照。\",\n  \"cited_evidence\": [\n    \"闭包捕获的是变量本身而非当时的值快照\"\n  ]\n}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 144,
+      "prompt_tokens": 526,
+      "total_tokens": 670
+    }
+  },
+  "56c7be79dc366d16c6a30d1a95f0438052ac387ab7738ee4e9b32a995e54c10a": {
     "fingerprint_version": 2,
     "model": "deepseek-v4-flash",
     "role": "basic",
-    "text": "{\"verdict\": \"对\", \"reason\": \"正确指出了闭包捕获变量本身，因此后续修改会被闭包读到新值\", \"cited_evidence\": [\"闭包捕获的是变量本身而非当时的值快照\"]}",
+    "text": "{\"verdict\": \"对\", \"matched_points\": [\"point_1\", \"point_2\"], \"missing_points\": [], \"diagnosis\": \"complete\", \"reason\": \"明确答出闭包会读到修改后的新值，并正确解释了是因为捕获变量本身而非值快照。\", \"cited_evidence\": [\"闭包捕获的是变量本身而非当时的值快照\"]}",
     "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "usage": {
-      "completion_tokens": 168,
-      "prompt_tokens": 721,
-      "total_tokens": 889
+      "completion_tokens": 439,
+      "prompt_tokens": 1250,
+      "total_tokens": 1689
     }
   },
-  "4d8ae2a182ad8fd70dc3a17f5cb8e5407c37cf815e9be1a8a44fbd11e4c0a130": {
+  "74d112358b05558984407d16d32b472a0b60ee30314d2828d58159ce3e5bb626": {
     "fingerprint_version": 2,
     "model": "qwen3.7-plus",
     "role": "enrich",
-    "text": "{\n  \"question\": \"既然闭包捕获的是变量本身而非值快照，请分析：如果外层作用域中的变量在闭包创建后被重新赋值，闭包内部再次访问该变量时，读取到的是创建时的旧值还是修改后的新值？请依据“闭包捕获的是变量本身而非当时的值快照”这一特性解释其背后的机制。\",\n  \"cited_evidence\": [\n    \"闭包捕获的是变量本身而非当时的值快照\"\n  ]\n}",
+    "text": "{\n  \"question\": \"为什么闭包能够让函数在外层作用域结束后，依然访问到其中的变量？请结合闭包的捕获机制简要说明。\",\n  \"expected_points\": [\n    {\n      \"point_id\": \"capture_mechanism\",\n      \"description\": \"指出闭包捕获的是变量本身（引用/绑定），而不是变量在某一时刻的值快照，因此能持续访问该变量。\",\n      \"cited_evidence\": \"闭包捕获的是变量本身而非当时的值快照\"\n    }\n  ],\n  \"reference_answer\": \"因为闭包捕获的是变量本身而非当时的值快照，所以即使外层作用域结束，内部函数仍能通过该引用继续访问变量。\",\n  \"cited_evidence\": [\n    \"闭包捕获的是变量本身而非当时的值快照\"\n  ]\n}",
     "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "usage": {
-      "completion_tokens": 107,
-      "prompt_tokens": 488,
-      "total_tokens": 595
+      "completion_tokens": 181,
+      "prompt_tokens": 561,
+      "total_tokens": 742
     }
   },
-  "b2b77ca412c146f9807ee8ee0cebc86b6ca8623d0b0339e17757447feba3245b": {
-    "fingerprint_version": 2,
-    "model": "qwen3.7-plus",
-    "role": "enrich",
-    "text": "{\n  \"question\": \"在闭包机制中，内部函数捕获的是外层变量的什么？请结合“闭包捕获的是变量本身而非当时的值快照”这一特性进行说明。\",\n  \"cited_evidence\": [\n    \"闭包捕获的是变量本身而非当时的值快照\"\n  ]\n}",
-    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-    "usage": {
-      "completion_tokens": 69,
-      "prompt_tokens": 356,
-      "total_tokens": 425
-    }
-  },
-  "b45f56744236b2c32813611189e2e35c365cf92877bc893bb555c3168e467fef": {
-    "fingerprint_version": 2,
-    "model": "qwen3.7-plus",
-    "role": "enrich",
-    "text": "{\n  \"question\": \"为什么闭包能够让函数在外层作用域结束后，依然可以访问其词法环境中的变量？\",\n  \"cited_evidence\": [\n    \"闭包让函数在外层作用域结束后继续访问其词法环境中的变量\"\n  ]\n}",
-    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-    "usage": {
-      "completion_tokens": 64,
-      "prompt_tokens": 406,
-      "total_tokens": 470
-    }
-  },
-  "bc21a8b5a6dc1d5fa5bf08f1523e86079d21d4b79b32b4a90e398e1c588632ff": {
+  "a547fbc7548b51c7206a2ae964825fcc238a770404083437cd2f3d88f7d6ab09": {
     "fingerprint_version": 2,
     "model": "deepseek-v4-flash",
     "role": "basic",
-    "text": "{\"verdict\": \"对\", \"reason\": \"准确回答了闭包读到的是修改后的新值，并解释了因捕获变量本身而非快照的机制。\", \"cited_evidence\": [\"闭包捕获的是变量本身而非当时的值快照\"]}",
+    "text": "{\"verdict\": \"对\", \"matched_points\": [\"capture_target\"], \"missing_points\": [], \"diagnosis\": \"complete\", \"reason\": \"明确答出闭包捕获的是变量本身而非当时的值快照，命中要点。\", \"cited_evidence\": [\"闭包捕获的是变量本身而非当时的值快照\"]}",
     "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "usage": {
-      "completion_tokens": 229,
-      "prompt_tokens": 749,
-      "total_tokens": 978
+      "completion_tokens": 163,
+      "prompt_tokens": 1157,
+      "total_tokens": 1320
     }
   },
-  "d1d6e9a02ca7b5ac3eb8ffeab6cebd168dfcac1291a82a8c84bee75b326866bc": {
+  "e24affde670b07d396500df5fa135bbae2ce4aa9eadcec8d50c19a9afd34a1e1": {
     "fingerprint_version": 2,
     "model": "deepseek-v4-flash",
     "role": "basic",
-    "text": "{\"verdict\": \"对\", \"reason\": \"直接答出闭包捕获的是变量本身而非值快照，并正确说明了其影响。\", \"cited_evidence\": [\"闭包捕获的是变量本身而非当时的值快照\"]}",
+    "text": "{\"verdict\": \"对\", \"matched_points\": [\"capture_mechanism\"], \"missing_points\": [], \"diagnosis\": \"complete\", \"reason\": \"明确指出闭包捕获的是变量本身而非值快照，准确命中所考要点。\", \"cited_evidence\": [\"闭包捕获的是变量本身而非当时的值快照\"]}",
     "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "usage": {
-      "completion_tokens": 145,
-      "prompt_tokens": 710,
-      "total_tokens": 855
-    }
-  },
-  "d7cd603db540190e484181e2a526cbb3ae1b88b7de761b8e981428cf7434c289": {
-    "fingerprint_version": 2,
-    "model": "qwen3.7-plus",
-    "role": "enrich",
-    "text": "{\n  \"question\": \"根据“闭包捕获的是变量本身而非当时的值快照”这一特性，如果外层作用域中的变量在闭包创建后被修改，闭包内部访问该变量时会得到什么结果？请解释原因。\",\n  \"cited_evidence\": [\n    \"闭包捕获的是变量本身而非当时的值快照\"\n  ]\n}",
-    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-    "usage": {
-      "completion_tokens": 80,
-      "prompt_tokens": 457,
-      "total_tokens": 537
+      "completion_tokens": 179,
+      "prompt_tokens": 1195,
+      "total_tokens": 1374
     }
   }
 }

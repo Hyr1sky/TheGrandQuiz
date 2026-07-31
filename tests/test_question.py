@@ -11,9 +11,11 @@ from collections.abc import Sequence
 import pytest
 
 from grandquiz.domain.learning.assessment.question import (
+    ExpectedPoint,
     GeneratedQuestion,
     MultipleChoiceQuestion,
     QuestionError,
+    QuestionSpec,
     generate_multiple_choice,
     generate_question,
 )
@@ -23,6 +25,24 @@ from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventTy
 from grandquiz.providers.base import Completion, Message, Role, Usage
 
 _QUOTE = "闭包捕获的是变量而非值"
+_POINT_ID = "capture-semantics"
+
+
+def _question_json(**overrides: object) -> str:
+    payload: dict[str, object] = {
+        "question": "什么是闭包？",
+        "expected_points": [
+            {
+                "point_id": _POINT_ID,
+                "description": "说明闭包捕获变量本身，而不是值快照",
+                "cited_evidence": _QUOTE,
+            }
+        ],
+        "reference_answer": "闭包捕获的是变量本身，而不是定义时的值快照。",
+        "cited_evidence": [_QUOTE],
+    }
+    payload.update(overrides)
+    return json.dumps(payload, ensure_ascii=False)
 
 
 class _FixedProvider:
@@ -59,7 +79,7 @@ def _item() -> KnowledgeItem:
 
 
 async def test_valid_output_becomes_generated_question() -> None:
-    provider = _FixedProvider(json.dumps({"question": "什么是闭包？", "cited_evidence": [_QUOTE]}))
+    provider = _FixedProvider(_question_json())
     emitter, events = _emitter()
 
     question = await generate_question(
@@ -67,7 +87,16 @@ async def test_valid_output_becomes_generated_question() -> None:
     )
 
     assert isinstance(question, GeneratedQuestion)
+    assert isinstance(question, QuestionSpec)
     assert question.question == "什么是闭包？"
+    assert question.expected_points == [
+        ExpectedPoint(
+            point_id=_POINT_ID,
+            description="说明闭包捕获变量本身，而不是值快照",
+            cited_evidence=_QUOTE,
+        )
+    ]
+    assert question.reference_answer == "闭包捕获的是变量本身，而不是定义时的值快照。"
     assert question.cited_evidence == [_QUOTE]
     assert provider.calls == 1  # 首次即通过，无重试
     assert provider.roles == ["enrich"]  # 出题走 enrich 角色
@@ -77,7 +106,7 @@ async def test_valid_output_becomes_generated_question() -> None:
 
 async def test_string_cited_evidence_is_coerced_to_list() -> None:
     # 真机 LLM 常把单条 cited_evidence 写成裸字符串——被宽容纳成单元素列表，锚定门在其后照常把关。
-    provider = _FixedProvider(json.dumps({"question": "什么是闭包？", "cited_evidence": _QUOTE}))
+    provider = _FixedProvider(_question_json(cited_evidence=_QUOTE))
     emitter, _ = _emitter()
 
     question = await generate_question(
@@ -89,7 +118,7 @@ async def test_string_cited_evidence_is_coerced_to_list() -> None:
 
 async def test_empty_cited_evidence_retries_then_raises() -> None:
     # 校验门：cited_evidence 为空 → ModelRetry 用尽 → QuestionError（provider 被多调）。
-    provider = _FixedProvider(json.dumps({"question": "什么是闭包？", "cited_evidence": []}))
+    provider = _FixedProvider(_question_json(cited_evidence=[]))
     emitter, _ = _emitter()
 
     with pytest.raises(QuestionError):
@@ -101,9 +130,7 @@ async def test_empty_cited_evidence_retries_then_raises() -> None:
 
 async def test_forged_citation_is_rejected_as_ghost_question() -> None:
     # 校验门（防幽灵题）：引了不属于该 item 的伪造引文 → ModelRetry 用尽 → QuestionError。
-    provider = _FixedProvider(
-        json.dumps({"question": "什么是闭包？", "cited_evidence": ["这句话材料里根本没有"]})
-    )
+    provider = _FixedProvider(_question_json(cited_evidence=["这句话材料里根本没有"]))
     emitter, _ = _emitter()
 
     with pytest.raises(QuestionError):
@@ -117,7 +144,16 @@ async def test_substring_citation_is_accepted() -> None:
     # 锚定门放宽为子串（真机 dogfood 坑）：出题只引长证据里一句短句，仍属真实原文，首次即过。
     # 旧门要整条 evidence 全等，把合法子串误判成幽灵引文、重试用尽后崩溃。
     provider = _FixedProvider(
-        json.dumps({"question": "什么是闭包？", "cited_evidence": ["捕获的是变量"]})
+        _question_json(
+            expected_points=[
+                {
+                    "point_id": _POINT_ID,
+                    "description": "说明捕获语义",
+                    "cited_evidence": "捕获的是变量",
+                }
+            ],
+            cited_evidence=["捕获的是变量"],
+        )
     )
     emitter, _ = _emitter()
 
@@ -126,6 +162,16 @@ async def test_substring_citation_is_accepted() -> None:
     )
     assert question.cited_evidence == ["捕获的是变量"]
     assert provider.calls == 1  # 子串命中真实证据 → 无需重试
+
+
+async def test_open_question_requires_an_explicit_grounded_rubric() -> None:
+    provider = _FixedProvider(json.dumps({"question": "什么是闭包？", "cited_evidence": [_QUOTE]}))
+    emitter, _ = _emitter()
+
+    with pytest.raises(QuestionError):
+        await generate_question(
+            _item(), provider=provider, emitter=emitter, parent_span_id="a", max_attempts=1
+        )
 
 
 async def test_malformed_json_retries_then_raises() -> None:
@@ -298,7 +344,7 @@ async def test_mc_provider_exception_closes_model_span_and_propagates() -> None:
 async def test_probe_prompt_variant_reflected_in_trace_prompt_version() -> None:
     # 追问复用 generate_question，仅换 prompt——断 model span 的 prompt_version 反映 probe 变体，
     # 故 trace 能把追问题与标准开放题区分归因（eval 回归可定位到具体题型 prompt）。
-    provider = _FixedProvider(json.dumps({"question": "为什么？", "cited_evidence": [_QUOTE]}))
+    provider = _FixedProvider(_question_json(question="为什么？"))
     emitter, events = _emitter()
 
     question = await generate_question(
@@ -341,9 +387,7 @@ class _MessageCapturingProvider:
 
 async def test_difficulty_hint_appended_to_open_question() -> None:
     # 传 difficulty_hint → 发出的 messages 含该 hint（作为一条 user message 追加）。
-    provider = _MessageCapturingProvider(
-        json.dumps({"question": "什么是闭包？", "cited_evidence": [_QUOTE]})
-    )
+    provider = _MessageCapturingProvider(_question_json())
     emitter, _ = _emitter()
 
     await generate_question(
@@ -364,9 +408,7 @@ async def test_difficulty_hint_appended_to_open_question() -> None:
 
 async def test_difficulty_hint_appended_to_probe_question() -> None:
     # 追问（prompt_name=question_probe）走同一入口 → 难度提示同样被追加（开放 + 追问都覆盖）。
-    provider = _MessageCapturingProvider(
-        json.dumps({"question": "为什么？", "cited_evidence": [_QUOTE]})
-    )
+    provider = _MessageCapturingProvider(_question_json(question="为什么？"))
     emitter, _ = _emitter()
 
     await generate_question(
@@ -385,7 +427,7 @@ async def test_difficulty_hint_appended_to_probe_question() -> None:
 async def test_difficulty_hint_none_is_byte_equivalent_to_absent() -> None:
     # **关键对照**：显式传 difficulty_hint=None 与完全不传 → 发出的 messages 逐字节相同（证明默认
     # 路径不追加任何难度约束；这是 eval / cassette 字节等价的命根）。开放与追问都验一遍。
-    q_json = json.dumps({"question": "什么是闭包？", "cited_evidence": [_QUOTE]})
+    q_json = _question_json()
     for prompt_name in ("question_generate", "question_probe"):
         absent = _MessageCapturingProvider(q_json)
         emitter_a, _ = _emitter()

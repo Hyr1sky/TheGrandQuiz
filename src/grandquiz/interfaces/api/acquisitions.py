@@ -14,6 +14,8 @@ from urllib.parse import quote, urlparse
 from pydantic import BaseModel, Field
 
 from grandquiz.domain.learning.acquisition import (
+    AcquisitionFailureCode,
+    AcquisitionFailureStage,
     AcquisitionLedger,
     AcquisitionRun,
     AcquisitionTransitionError,
@@ -22,8 +24,10 @@ from grandquiz.domain.learning.approval import (
     emit_approval_decided,
     emit_approval_requested,
 )
+from grandquiz.domain.learning.classification import ClassificationProposal
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.ingest import (
+    IngestFailure,
     IngestResult,
     abort_ingest,
     emit_prepared_ingest_committed,
@@ -31,8 +35,10 @@ from grandquiz.domain.learning.ingest import (
     prepare_ingest,
 )
 from grandquiz.domain.learning.ingest.fetch import ALLOW_ANY_DOMAIN, FetchSource
+from grandquiz.domain.learning.ingest.pipeline import public_ingest_failure_reason
 from grandquiz.domain.learning.ingest.web_fetch import create_http_source
 from grandquiz.domain.learning.persistence import LearningPersistence
+from grandquiz.interfaces.learning_outbox import publish_pending_learning_facts
 from grandquiz.kernel.clock import Clock, SystemClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.trace import TraceStore
@@ -65,6 +71,7 @@ class AcquisitionCandidateView(BaseModel):
     summary: str
     confidence: float
     evidence: list[str]
+    classification: ClassificationProposal
 
 
 class AcquisitionView(BaseModel):
@@ -75,7 +82,8 @@ class AcquisitionView(BaseModel):
     status: Literal["queued", "running", "needs_input", "succeeded", "failed", "cancelled"]
     candidates: list[AcquisitionCandidateView] = Field(default_factory=_empty_candidates)
     resource_id: str | None = None
-    error_code: str | None = None
+    error_code: AcquisitionFailureCode | None = None
+    error_stage: AcquisitionFailureStage | None = None
     error_message: str | None = None
     created_at: float
     updated_at: float
@@ -106,6 +114,22 @@ class AcquisitionCommitError(RuntimeError):
         super().__init__("知识快照提交失败")
 
 
+def _public_failure_data(
+    run: AcquisitionRun,
+) -> dict[str, str]:
+    code = run.error_code or "processing_failed"
+    if code == "processing_failed":
+        stage: AcquisitionFailureStage = "processing"
+        reason = "材料处理失败，请通过 trace_id 查看详情"
+    elif code == "interrupted":
+        stage = "runtime"
+        reason = "服务在材料处理期间重启，请重试"
+    else:
+        stage = run.error_stage or "reader"
+        reason = public_ingest_failure_reason(code)
+    return {"code": code, "stage": stage, "reason": reason}
+
+
 class AcquisitionManager:
     """把持久领域状态机接到 Provider、事件脊柱和后台 task。"""
 
@@ -129,19 +153,24 @@ class AcquisitionManager:
         interrupted = self._ledger.in_flight()
         self._ledger.fail_interrupted_runs(now=self._clock.now())
         for run in interrupted:
+            failed_run = self._ledger.require(run.run_id)
+            failure = _public_failure_data(failed_run)
             emitter = self._resume_emitter(run.trace_id)
             open_span = self._open_ingest_span(run.trace_id)
             if open_span is not None:
                 abort_ingest(open_span, reason="interrupted", emitter=emitter)
             emitter.emit(
                 EventType.ERROR,
-                payload={"classification": "acquisition_interrupted"},
+                payload={
+                    "classification": failure["code"],
+                    **failure,
+                },
             )
             emitter.emit(
                 "acquisition.failed",
                 payload={
                     "run_id": run.run_id,
-                    "code": "interrupted",
+                    **failure,
                     "status": "failed",
                 },
             )
@@ -213,6 +242,8 @@ class AcquisitionManager:
                     prepared,
                     approved=approved,
                     store=self._persistence.store,
+                    classifications=self._persistence.classifications,
+                    trace_id=run.trace_id,
                 )
                 updated = self._ledger.mark_succeeded(
                     run_id,
@@ -248,6 +279,11 @@ class AcquisitionManager:
                 "resource_id": result.resource_id,
                 "status": "completed",
             },
+        )
+        publish_pending_learning_facts(
+            self._persistence.learning_facts,
+            self._trace_store,
+            clock=self._clock,
         )
         self._notify(run_id)
         return self._view(updated)
@@ -365,17 +401,31 @@ class AcquisitionManager:
                 persist_failed_resource=False,
             )
             if isinstance(result, IngestResult):
-                self._ledger.mark_failed(
+                failure = result.failure or IngestFailure(
+                    code="ingest_failed",
+                    stage="reader",
+                    reason="材料读取或深读失败，请检查内容后重试",
+                )
+                failed_run = self._ledger.mark_failed(
                     run_id,
-                    code="acquisition_failed",
-                    message="材料读取或深读失败，请检查内容后重试",
+                    code=failure.code,
+                    stage=failure.stage,
+                    message=failure.reason,
                     now=self._clock.now(),
+                )
+                public_failure = _public_failure_data(failed_run)
+                emitter.emit(
+                    EventType.ERROR,
+                    payload={
+                        "classification": public_failure["code"],
+                        **public_failure,
+                    },
                 )
                 emitter.emit(
                     "acquisition.failed",
                     payload={
                         "run_id": run_id,
-                        "code": "acquisition_failed",
+                        **public_failure,
                         "status": "failed",
                     },
                 )
@@ -393,16 +443,19 @@ class AcquisitionManager:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            self._ledger.mark_failed(
+            failed_run = self._ledger.mark_failed(
                 run_id,
                 code="processing_failed",
+                stage="processing",
                 message="材料处理失败，请通过 trace_id 查看详情",
                 now=self._clock.now(),
             )
+            public_failure = _public_failure_data(failed_run)
             emitter.emit(
                 EventType.ERROR,
                 payload={
-                    "classification": "acquisition_processing_failed",
+                    "classification": public_failure["code"],
+                    **public_failure,
                     "error_type": type(exc).__name__,
                 },
             )
@@ -410,7 +463,7 @@ class AcquisitionManager:
                 "acquisition.failed",
                 payload={
                     "run_id": run_id,
-                    "code": "processing_failed",
+                    **public_failure,
                     "status": "failed",
                 },
             )
@@ -468,8 +521,7 @@ class AcquisitionManager:
     def _notify(self, run_id: str) -> None:
         self._changed.setdefault(run_id, asyncio.Event()).set()
 
-    @staticmethod
-    def _view(run: AcquisitionRun) -> AcquisitionView:
+    def _view(self, run: AcquisitionRun) -> AcquisitionView:
         candidates: list[AcquisitionCandidateView] = []
         if run.prepared is not None:
             candidates = [
@@ -479,9 +531,11 @@ class AcquisitionManager:
                     summary=item.summary,
                     confidence=item.confidence,
                     evidence=[evidence.quote[:240] for evidence in item.evidence[:2]],
+                    classification=self._persistence.classifications.propose_item(item),
                 )
                 for item in run.prepared.candidates
             ]
+        failure = _public_failure_data(run) if run.status == "failed" else None
         return AcquisitionView(
             run_id=run.run_id,
             trace_id=run.trace_id,
@@ -490,8 +544,13 @@ class AcquisitionManager:
             status=run.status,
             candidates=candidates,
             resource_id=run.resource_id,
-            error_code=run.error_code,
-            error_message=run.error_message,
+            error_code=(
+                None if failure is None else cast("AcquisitionFailureCode", failure["code"])
+            ),
+            error_stage=(
+                None if failure is None else cast("AcquisitionFailureStage", failure["stage"])
+            ),
+            error_message=None if failure is None else failure["reason"],
             created_at=run.created_at,
             updated_at=run.updated_at,
         )
@@ -520,10 +579,12 @@ class AcquisitionManager:
                     len(cast("list[object]", candidates)) if isinstance(candidates, list) else 0
                 )
             if public_type in {"acquisition.failed", "acquisition.succeeded"}:
-                key = "code" if public_type.endswith("failed") else "resource_id"
-                value = event.payload.get(key)
-                if isinstance(value, str):
-                    data[key] = value
+                if public_type == "acquisition.failed":
+                    data.update(_public_failure_data(run))
+                else:
+                    value = event.payload.get("resource_id")
+                    if isinstance(value, str):
+                        data["resource_id"] = value
             projected.append(
                 AcquisitionUiEvent(
                     sequence=event.seq + 1,

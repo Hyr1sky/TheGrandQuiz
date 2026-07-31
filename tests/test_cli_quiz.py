@@ -23,6 +23,7 @@ from grandquiz.domain.learning.models import (
     KnowledgeItem,
     LearningResource,
 )
+from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.interfaces.cli.app import run_ingest, run_quiz
@@ -74,6 +75,41 @@ class _ReaderProvider:
         ]
         return Completion(
             text=json.dumps(output, ensure_ascii=False),
+            usage=Usage(prompt_tokens=7, completion_tokens=3),
+        )
+
+
+class _InvalidEvidenceReaderProvider:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        request = json.loads(
+            next(message.content for message in messages if message.role == "user")
+        )
+        node = request["untrusted_document_nodes"][0]
+        quote = "原文中不存在的证据"
+        return Completion(
+            text=json.dumps(
+                {
+                    "topic": "错误契约",
+                    "candidates": [
+                        {
+                            "concept": "无效证据",
+                            "summary": "引用必须精确定位。",
+                            "evidence": [
+                                {
+                                    "node_key": node["node_key"],
+                                    "start_offset": 0,
+                                    "end_offset": len(quote),
+                                    "quote": quote,
+                                }
+                            ],
+                            "confidence": 0.8,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
             usage=Usage(prompt_tokens=7, completion_tokens=3),
         )
 
@@ -251,10 +287,37 @@ async def test_run_ingest_reads_material_and_persists_items(tmp_path: Path) -> N
     store = SqliteLearningStore(db)
     assert [item.concept for item in store.all_items()] == ["闭包"]
     store.close()
+    with LearningPersistence(db) as persistence:
+        classifications = persistence.classifications.history_for_item(result.items[0].item_id)
+        assert len(classifications) == 1
+        assert classifications[0].review_status == "proposed"
+        assert classifications[0].classified_by == "rule"
     output = console.export_text()
     assert "闭包" in output  # Rich 打印了抽出的知识点
     assert "入库标签「React」" in output
     assert "任务「" not in output
+
+
+async def test_run_ingest_prints_safe_failure_code_stage_and_reason(tmp_path: Path) -> None:
+    material = tmp_path / "material.md"
+    material.write_text("# Runtime\n\n事件是系统脊柱。", encoding="utf-8")
+    console = Console(record=True, width=100)
+
+    result = await run_ingest(
+        title="Runtime",
+        material_path=material,
+        db_path=tmp_path / "learning.db",
+        provider=_InvalidEvidenceReaderProvider(),
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
+        console=console,
+    )
+
+    assert result.status == "failed"
+    output = console.export_text()
+    normalized_output = " ".join(output.split())
+    assert "[evidence_validation/quote_mismatch]" in output
+    assert "Evidence 引文无法精确定位到原文节点" in normalized_output
+    assert "原文中不存在的证据" not in output
 
 
 async def test_run_ingest_keeps_same_named_files_from_different_directories(

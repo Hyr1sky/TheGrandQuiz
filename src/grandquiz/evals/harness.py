@@ -179,9 +179,38 @@ class AssessFakeProvider:
                     "cited_evidence": [quote],
                 }
             else:  # 开放 / 追问 prompt → 产开放题 JSON（共用 schema）
-                payload = {"question": "该知识点的核心是什么？", "cited_evidence": [quote]}
+                payload = {
+                    "question": "该知识点的核心是什么？",
+                    "expected_points": [
+                        {
+                            "point_id": "core",
+                            "description": "说明核心含义",
+                            "cited_evidence": quote,
+                        },
+                        {
+                            "point_id": "boundary",
+                            "description": "说明关键区分",
+                            "cited_evidence": quote,
+                        },
+                    ],
+                    "reference_answer": quote,
+                    "cited_evidence": [quote],
+                }
         else:  # basic → 判卷
-            payload = {"verdict": self._verdict, "cited_evidence": [quote]}
+            if self._verdict == "对":
+                matched, missing, diagnosis = ["core", "boundary"], [], "complete"
+            elif self._verdict == "勉强":
+                matched, missing, diagnosis = ["core"], ["boundary"], "missing_key_point"
+            else:
+                matched, missing, diagnosis = [], ["core", "boundary"], "wrong_focus"
+            payload = {
+                "verdict": self._verdict,
+                "matched_points": matched,
+                "missing_points": missing,
+                "diagnosis": diagnosis,
+                "reason": "确定性 eval 判卷反馈",
+                "cited_evidence": [quote],
+            }
         return Completion(
             text=json.dumps(payload, ensure_ascii=False),
             usage=Usage(prompt_tokens=7, completion_tokens=3),
@@ -254,7 +283,17 @@ class LanguageEchoAssessProvider:
         quote = _extract_quote(messages)
         if role != "enrich":  # basic 判卷：恒判对（健康态 MC 不走这里，仅回归时兜底）
             return Completion(
-                text=json.dumps({"verdict": "对", "cited_evidence": [quote]}, ensure_ascii=False),
+                text=json.dumps(
+                    {
+                        "verdict": "对",
+                        "matched_points": ["core"],
+                        "missing_points": [],
+                        "diagnosis": "complete",
+                        "reason": "回答覆盖了评分点。",
+                        "cited_evidence": [quote],
+                    },
+                    ensure_ascii=False,
+                ),
                 usage=Usage(prompt_tokens=7, completion_tokens=3),
             )
         english = "请用 英文" in messages[0].content  # {{LANGUAGE}} 被替换成"英文"的证据
@@ -300,9 +339,27 @@ class DedupAssessProvider:
         if role == "enrich":  # 出题：见"已问过"约束才换角度，否则默认重复
             text = "\n".join(m.content for m in messages)
             question = _DEDUP_ALT_Q if "已问过" in text else _DEDUP_DEFAULT_Q
-            payload: dict[str, Any] = {"question": question, "cited_evidence": [quote]}
+            payload: dict[str, Any] = {
+                "question": question,
+                "expected_points": [
+                    {
+                        "point_id": "core",
+                        "description": "说明核心含义",
+                        "cited_evidence": quote,
+                    }
+                ],
+                "reference_answer": quote,
+                "cited_evidence": [quote],
+            }
         else:  # basic：恒判对（让薄弱 item 转观察中、留在薄弱优先集，复考锁定同一 item）
-            payload = {"verdict": "对", "cited_evidence": [quote]}
+            payload = {
+                "verdict": "对",
+                "matched_points": ["core"],
+                "missing_points": [],
+                "diagnosis": "complete",
+                "reason": "回答覆盖了评分点。",
+                "cited_evidence": [quote],
+            }
         return Completion(
             text=json.dumps(payload, ensure_ascii=False),
             usage=Usage(prompt_tokens=7, completion_tokens=3),

@@ -15,7 +15,6 @@ LLM 槽本身经脚本化 / 回放 provider 验证（不 unit-TDD LLM）。start
 """
 
 import json
-import logging
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -36,11 +35,7 @@ from grandquiz.domain.learning.preference import (
 from grandquiz.domain.learning.responder import Responder, ScriptedResponder
 from grandquiz.domain.learning.store import LearningStore
 from grandquiz.domain.learning.tools import register_learning_tools
-from grandquiz.domain.learning.tools.start_quiz_tool import (
-    QuizSegment,
-    StartQuizResult,
-    expand_segments,
-)
+from grandquiz.domain.learning.tools.start_quiz_tool import StartQuizResult
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
 from grandquiz.kernel.tools import ModelRetry, ToolContext, ToolRegistry
@@ -51,6 +46,43 @@ _MODELS: dict[Role, str] = {"basic": "deepseek-x", "enrich": "qwen-x"}
 _QUOTE = "闭包捕获变量而非值"
 _MC_CORRECT = "正确选项内容"
 _MC_WRONG = "干扰项内容"
+
+
+def _open_question_payload(question: str) -> dict[str, Any]:
+    return {
+        "question": question,
+        "expected_points": [
+            {
+                "point_id": "core",
+                "description": "说明核心含义",
+                "cited_evidence": _QUOTE,
+            },
+            {
+                "point_id": "boundary",
+                "description": "说明关键区分",
+                "cited_evidence": _QUOTE,
+            },
+        ],
+        "reference_answer": _QUOTE,
+        "cited_evidence": [_QUOTE],
+    }
+
+
+def _verdict_payload(verdict: str) -> dict[str, Any]:
+    if verdict == "对":
+        matched, missing, diagnosis = ["core", "boundary"], [], "complete"
+    elif verdict == "勉强":
+        matched, missing, diagnosis = ["core"], ["boundary"], "missing_key_point"
+    else:
+        matched, missing, diagnosis = [], ["core", "boundary"], "wrong_focus"
+    return {
+        "verdict": verdict,
+        "matched_points": matched,
+        "missing_points": missing,
+        "diagnosis": diagnosis,
+        "reason": "测试判卷反馈",
+        "cited_evidence": [_QUOTE],
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -138,9 +170,9 @@ class _OpenProvider:
         self.calls += 1
         payload: dict[str, Any]
         if role == "enrich":
-            payload = {"question": "请解释闭包如何捕获变量？", "cited_evidence": [_QUOTE]}
+            payload = _open_question_payload("请解释闭包如何捕获变量？")
         else:
-            payload = {"verdict": self._verdict, "cited_evidence": [_QUOTE]}
+            payload = _verdict_payload(self._verdict)
         return Completion(
             text=json.dumps(payload, ensure_ascii=False),
             usage=Usage(prompt_tokens=7, completion_tokens=3),
@@ -705,72 +737,6 @@ async def test_start_quiz_record_then_replay_is_identical(tmp_path: Path) -> Non
 
 
 # --------------------------------------------------------------------------- #
-# SE-S4 批内分段调度：expand_segments 纯函数（TDD 命门，各 mutation 可杀）
-# --------------------------------------------------------------------------- #
-
-
-def _seg(count: int, question_type: str) -> QuizSegment:
-    return QuizSegment(count=count, question_type=question_type)
-
-
-# 出题上限（= start_quiz_tool._MAX_QUIZ_COUNT）：不引私有常量，而由"单值路径 clamp 超大 count"
-# 的返回长度反推——同一上限、外部可观测行为，避免测试硬编码 20 或触 reportPrivateUsage。
-_CAP = len(expand_segments(None, count=1_000_000, question_type="x"))
-
-
-def test_expand_segments_none_repeats_single_value() -> None:
-    # segments=None → 单值重复 clamp(count) 次——改动前 `for _ in range(count)` 行为的字节等价锚。
-    assert expand_segments(None, count=3, question_type="选择题") == ["选择题", "选择题", "选择题"]
-    assert expand_segments(None, count=1, question_type=None) == [None]  # None = 全程自适应
-
-
-def test_expand_segments_empty_list_same_as_none() -> None:
-    # 空列表 = 无分段 → 走 None 同分支（单值重复），不退化成 0 题。
-    assert expand_segments([], count=2, question_type="简答") == ["简答", "简答"]
-
-
-def test_expand_segments_none_clamps_count() -> None:
-    # clamp 到 [1, 上限]：0 / 负 → 1 题；超上限 → 截到上限（同旧 min(max(...))）。
-    assert _CAP > 1  # 上限本身 > 1（否则下面的超限断言退化）
-    assert expand_segments(None, count=0, question_type="x") == ["x"]
-    assert expand_segments(None, count=-5, question_type="x") == ["x"]
-    assert expand_segments(None, count=_CAP + 3, question_type="x") == ["x"] * _CAP
-
-
-def test_expand_segments_flattens_in_order() -> None:
-    # 多段展平：顺序 = 选择×3 + 简答×2（顺序不能乱）；顶层 count / question_type 被忽略。
-    out = expand_segments([_seg(3, "选择题"), _seg(2, "简答")], count=99, question_type="追问")
-    assert out == ["选择题", "选择题", "选择题", "简答", "简答"]
-
-
-def test_expand_segments_total_is_sum_not_count_param() -> None:
-    # 总题数 = 各段 count 之和，钉死"分段存在时忽略顶层 count"。
-    out = expand_segments([_seg(1, "a"), _seg(4, "b")], count=1, question_type="c")
-    assert out == ["a", "b", "b", "b", "b"]
-
-
-def test_expand_segments_truncates_over_max(caplog: pytest.LogCaptureFixture) -> None:
-    # 段和超上限 → 截断到前 _CAP 题（与单值路径同一上限），且大声 log（不静默丢）。
-    with caplog.at_level(logging.WARNING):
-        out = expand_segments([_seg(_CAP + 5, "选择题")], count=1, question_type=None)
-    assert out == ["选择题"] * _CAP
-    assert "截断" in caplog.text  # 截断不静默——大声报告
-
-
-def test_expand_segments_skips_nonpositive_segment() -> None:
-    # 某段 count <= 0 → 该段贡献 0 题（跳过），不报错（fail-soft）；其余段照常展平。
-    segs = [_seg(2, "选择题"), _seg(0, "简答"), _seg(-3, "追问"), _seg(1, "开放")]
-    assert expand_segments(segs, count=99, question_type=None) == ["选择题", "选择题", "开放"]
-
-
-def test_expand_segments_all_nonpositive_falls_back() -> None:
-    # 各段全 0 / 负 → 展平为空 → 回落单值路径 clamp(count or 1)，防退化成 0 题。
-    segs = [_seg(0, "选择题"), _seg(-1, "简答")]
-    assert expand_segments(segs, count=3, question_type="开放") == ["开放", "开放", "开放"]
-    assert expand_segments(segs, count=0, question_type=None) == [None]  # count=0 也保底 1 题
-
-
-# --------------------------------------------------------------------------- #
 # SE-S4 集成（脚本化 provider）：分段逐题按位置解析题型，复用 resolve_question_type（无新裁决）
 # --------------------------------------------------------------------------- #
 
@@ -799,12 +765,9 @@ class _SegmentProvider:
                     "cited_evidence": [_QUOTE],
                 }
             else:
-                payload = {
-                    "question": f"请解释闭包如何捕获变量？#{self.calls}",
-                    "cited_evidence": [_QUOTE],
-                }
+                payload = _open_question_payload(f"请解释闭包如何捕获变量？#{self.calls}")
         else:
-            payload = {"verdict": "对", "cited_evidence": [_QUOTE]}
+            payload = _verdict_payload("对")
         return Completion(
             text=json.dumps(payload, ensure_ascii=False),
             usage=Usage(prompt_tokens=7, completion_tokens=3),

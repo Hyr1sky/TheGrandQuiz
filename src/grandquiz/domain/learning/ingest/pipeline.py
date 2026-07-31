@@ -18,7 +18,8 @@ LLM 只在 Reader 的"深读"一个槽被调用。每步都在**同一条事件�
 
 import hashlib
 from collections.abc import Collection
-from typing import Literal
+from contextlib import nullcontext
+from typing import Literal, Protocol, cast
 
 from pydantic import BaseModel
 
@@ -35,6 +36,7 @@ from grandquiz.domain.learning.ingest.reader import (
     neutralize_fence,
 )
 from grandquiz.domain.learning.models import EvidenceLocator, KnowledgeItem, LearningResource
+from grandquiz.domain.learning.persistence import LearningDatabase
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.events import EventEmitter
 from grandquiz.kernel.hooks import HookManager
@@ -45,12 +47,116 @@ _INGEST_STARTED = "ingest.started"
 _INGEST_ENDED = "ingest.ended"
 
 
+class IngestClassificationRepository(Protocol):
+    """获批快照提交时所需的最小分类写入端口。"""
+
+    @property
+    def transaction_owner(self) -> LearningDatabase: ...
+
+    def record_ingest_proposal(
+        self,
+        item: KnowledgeItem,
+        *,
+        ingest_id: str,
+        trace_id: str,
+    ) -> None: ...
+
+
+IngestFailureStage = Literal["fetch", "reader", "evidence_validation"]
+IngestFailureCode = Literal[
+    "invalid_url",
+    "domain_not_allowed",
+    "too_large",
+    "ssrf",
+    "redirect_limit",
+    "timeout",
+    "http_status",
+    "unsupported_content_type",
+    "empty_content",
+    "too_short",
+    "navigation_page",
+    "login_page",
+    "bot_challenge",
+    "source_failure",
+    "quote_mismatch",
+    "unknown_node",
+    "span_out_of_bounds",
+    "evidence_schema",
+    "reader_failed",
+    "citation_invalid",
+    "ingest_failed",
+]
+
+_PUBLIC_FAILURE_REASONS = {
+    "invalid_url": "材料地址无效",
+    "domain_not_allowed": "材料地址不在允许范围内",
+    "too_large": "材料内容超过允许大小",
+    "ssrf": "材料地址未通过网络安全检查",
+    "redirect_limit": "材料地址重定向次数过多",
+    "timeout": "材料抓取超时",
+    "http_status": "材料页面返回异常状态",
+    "unsupported_content_type": "材料格式暂不支持",
+    "quote_mismatch": "Evidence 引文无法精确定位到原文节点",
+    "unknown_node": "Evidence 引用了当前批次不存在的文档节点",
+    "span_out_of_bounds": "Evidence 定位超出原文节点边界",
+    "evidence_schema": "Evidence 输出不符合结构化契约",
+    "login_page": "目标页面需要登录，无法安全读取正文",
+    "bot_challenge": "目标页面要求人机验证，无法安全读取正文",
+    "navigation_page": "目标页面主要是导航内容，未发现可入库正文",
+    "empty_content": "目标页面没有可入库正文",
+    "too_short": "目标页面正文过短，无法可靠入库",
+    "reader_failed": "材料深读未返回合法结果",
+    "citation_invalid": "Evidence 未通过精确原文校验",
+    "source_failure": "材料抓取失败，请检查地址或页面内容",
+    "ingest_failed": "材料读取或深读失败，请检查内容后重试",
+}
+_KNOWN_FAILURE_CODES = frozenset(_PUBLIC_FAILURE_REASONS)
+_FALLBACK_CODE_BY_STAGE: dict[IngestFailureStage, IngestFailureCode] = {
+    "fetch": "source_failure",
+    "reader": "reader_failed",
+    "evidence_validation": "citation_invalid",
+}
+
+
+def public_ingest_failure_reason(code: IngestFailureCode) -> str:
+    """返回可进入 CLI/Web 的固定失败文案，不接受任意内部 detail。"""
+
+    return _PUBLIC_FAILURE_REASONS[code]
+
+
+class IngestFailure(BaseModel):
+    """可安全投影到 interface 的稳定领域失败信封。"""
+
+    code: IngestFailureCode
+    stage: IngestFailureStage
+    reason: str
+
+
+def _public_failure(
+    code: str,
+    *,
+    stage: IngestFailureStage,
+    fallback: str,
+) -> IngestFailure:
+    public_code = (
+        cast("IngestFailureCode", code)
+        if code in _KNOWN_FAILURE_CODES
+        else _FALLBACK_CODE_BY_STAGE[stage]
+    )
+    return IngestFailure(
+        code=public_code,
+        stage=stage,
+        reason=_PUBLIC_FAILURE_REASONS.get(public_code, fallback),
+    )
+
+
 class IngestResult(BaseModel):
     """一次 ingest 的结果：状态 + 资源 id + 获批入库的 item 列表。"""
 
     status: Literal["read", "failed"]
     resource_id: str
     items: list[KnowledgeItem]
+    failure: IngestFailure | None = None
 
 
 class PreparedIngest(BaseModel):
@@ -90,21 +196,45 @@ async def prepare_ingest(
     resource = LearningResource.create(url=url)
     previous = store.get_resource(resource.resource_id)
 
-    def fail(reason: str, *, classification: str | None = None) -> IngestResult:
+    def fail(
+        detail: str,
+        *,
+        failure: IngestFailure,
+    ) -> IngestResult:
         # 首次 ingest 失败留下 failed 诊断记录；刷新失败不覆盖既有获批 read 快照。
         if persist_failed_resource and (previous is None or previous.status != "read"):
             failed = resource.model_copy(update={"status": "failed"})
             store.add_resource(failed)
-        failure_payload = {"resource_id": resource.resource_id, "url": url, "reason": reason}
-        if classification is not None:
-            failure_payload["classification"] = classification
+        failure_payload = {
+            "resource_id": resource.resource_id,
+            "url": url,
+            "code": failure.code,
+            "stage": failure.stage,
+            "reason": failure.reason,
+            "detail": detail,
+            "classification": failure.code,
+        }
         emitter.emit(
             LearningEvent.RESOURCE_FETCH_FAILED,
             parent_span_id=ingest_span,
             payload=failure_payload,
         )
-        emitter.emit(_INGEST_ENDED, span_id=ingest_span, payload={"ok": False, "reason": reason})
-        return IngestResult(status="failed", resource_id=resource.resource_id, items=[])
+        emitter.emit(
+            _INGEST_ENDED,
+            span_id=ingest_span,
+            payload={
+                "ok": False,
+                "code": failure.code,
+                "stage": failure.stage,
+                "reason": failure.reason,
+            },
+        )
+        return IngestResult(
+            status="failed",
+            resource_id=resource.resource_id,
+            items=[],
+            failure=failure,
+        )
 
     try:
         # b. 发 staged resource 事件；fetch / Reader / 审批完成前不覆盖既有获批快照。
@@ -120,7 +250,14 @@ async def prepare_ingest(
                 url, source=source, max_bytes=max_bytes, allowed_domains=allowed_domains
             )
         except FetchError as exc:
-            return fail(f"fetch: {exc}", classification=exc.reason)
+            return fail(
+                f"fetch: {exc}",
+                failure=_public_failure(
+                    exc.reason,
+                    stage="fetch",
+                    fallback="材料抓取失败，请检查地址或页面内容",
+                ),
+            )
 
         # d. 回填 staged 内容 + hash，status=read，trusted=False；RESOURCE_READ 让
         #    成功侧状态跃迁也上脊柱（对称于 RESOURCE_FETCH_FAILED，兑现"回放=事件流回放"）。
@@ -189,9 +326,23 @@ async def prepare_ingest(
                     "quote_fingerprint": exc.public_fingerprint,
                 },
             )
-            return fail(f"reader evidence: {exc}")
+            return fail(
+                f"reader evidence: {exc}",
+                failure=_public_failure(
+                    exc.classification,
+                    stage="evidence_validation",
+                    fallback="Evidence 无法精确定位到原文",
+                ),
+            )
         except ReaderError as exc:
-            return fail(f"reader: {exc}")
+            return fail(
+                f"reader: {exc}",
+                failure=_public_failure(
+                    "reader_failed",
+                    stage="reader",
+                    fallback="材料深读未返回合法结果",
+                ),
+            )
         try:
             candidates = read_result.items
             validate_exact_evidence(document, candidates)
@@ -204,7 +355,14 @@ async def prepare_ingest(
                     "classification": exc.classification,
                 },
             )
-            return fail(f"grounding: {exc}")
+            return fail(
+                f"grounding: {exc}",
+                failure=_public_failure(
+                    exc.classification or "citation_invalid",
+                    stage="evidence_validation",
+                    fallback="Evidence 未通过精确原文校验",
+                ),
+            )
         locators = [
             evidence.locator
             for candidate in candidates
@@ -256,16 +414,34 @@ def persist_prepared_ingest(
     *,
     approved: list[KnowledgeItem],
     store: Store,
+    classifications: IngestClassificationRepository | None = None,
+    trace_id: str | None = None,
 ) -> IngestResult:
     """只提交获批快照，不发事件；调用方可把它纳入更大的原子事务。"""
     candidate_ids = {item.item_id for item in prepared.candidates}
     if any(item.item_id not in candidate_ids for item in approved):
         raise ValueError("approved 必须是 prepared candidates 的子集")
 
-    store.replace_snapshot(prepared.resource, approved)
-    committed_revision = store.current_revision(prepared.resource.resource_id)
-    if committed_revision is None or committed_revision.revision_id != prepared.revision_id:
-        raise RuntimeError("获批 revision/tree 未成为当前快照")
+    if classifications is not None and trace_id is None:
+        raise ValueError("写入分类 proposal 时必须提供 trace_id")
+    transaction = (
+        nullcontext()
+        if classifications is None
+        else classifications.transaction_owner.transaction()
+    )
+    with transaction:
+        store.replace_snapshot(prepared.resource, approved)
+        committed_revision = store.current_revision(prepared.resource.resource_id)
+        if committed_revision is None or committed_revision.revision_id != prepared.revision_id:
+            raise RuntimeError("获批 revision/tree 未成为当前快照")
+        if classifications is not None:
+            assert trace_id is not None
+            for item in approved:
+                classifications.record_ingest_proposal(
+                    item,
+                    ingest_id=prepared.revision_id,
+                    trace_id=trace_id,
+                )
     return IngestResult(
         status="read",
         resource_id=prepared.resource.resource_id,
@@ -316,12 +492,15 @@ def commit_prepared_ingest(
     approved: list[KnowledgeItem],
     store: Store,
     emitter: EventEmitter,
+    classifications: IngestClassificationRepository | None = None,
 ) -> IngestResult:
     """兼容同步入口：提交获批快照，并在提交成功后闭合 ingest span。"""
     result = persist_prepared_ingest(
         prepared,
         approved=approved,
         store=store,
+        classifications=classifications,
+        trace_id=emitter.trace_id,
     )
     emit_prepared_ingest_committed(prepared, result, emitter=emitter)
     return result
@@ -351,6 +530,7 @@ async def ingest_resource(
     emitter: EventEmitter,
     max_bytes: int,
     allowed_domains: Collection[str] | Literal["*"],
+    classifications: IngestClassificationRepository | None = None,
 ) -> IngestResult:
     """兼容 CLI/ReAct 的单次工作流：准备 → 同步审批 → 原子提交。"""
     prepared = await prepare_ingest(
@@ -374,4 +554,5 @@ async def ingest_resource(
         approved=approved,
         store=store,
         emitter=emitter,
+        classifications=classifications,
     )

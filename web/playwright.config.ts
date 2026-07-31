@@ -4,10 +4,11 @@ declare const process: {
   env: Record<string, string | undefined>;
 };
 
-const systemChrome =
-  process.env.GRANDQUIZ_SYSTEM_CHROME === "1"
-    ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-    : undefined;
+// Local development reuses the user's installed stable Chrome. This avoids a ~170 MiB
+// Playwright browser download every time its pinned browser revision changes or the cache
+// is cleared. CI explicitly installs Chromium and therefore keeps the hermetic path.
+const useSystemChrome =
+  process.env.CI !== "true" && process.env.GRANDQUIZ_SYSTEM_CHROME !== "0";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -17,9 +18,7 @@ export default defineConfig({
   workers: 1,
   use: {
     baseURL: "http://127.0.0.1:14173",
-    ...(systemChrome === undefined
-      ? {}
-      : { launchOptions: { executablePath: systemChrome } }),
+    ...(useSystemChrome ? { channel: "chrome" } : {}),
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },

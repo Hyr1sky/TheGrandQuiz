@@ -42,6 +42,7 @@ describe("Assessment Workspace", () => {
   });
 
   it("reveals grounded evidence and completes one question", async () => {
+    const startBodies: unknown[] = [];
     const question = {
       question_id: "question-memory",
       item_id: "item-memory",
@@ -69,6 +70,7 @@ describe("Assessment Workspace", () => {
           return Response.json({ items: [resource] });
         }
         if (request.url.endsWith("/api/v1/assessments") && request.method === "POST") {
+          startBodies.push(await request.clone().json());
           return Response.json(baseView, { status: 202 });
         }
         if (request.url.endsWith("/evidence/reveal") && request.method === "POST") {
@@ -108,6 +110,14 @@ describe("Assessment Workspace", () => {
     expect(
       await screen.findByRole("heading", { name: "潜在记忆主要承载在哪里？" }),
     ).toBeInTheDocument();
+    expect(startBodies).toEqual([
+      {
+        resource_ids: [resource.resource_id],
+        rounds: 3,
+        question_type: null,
+        focus: "mixed",
+      },
+    ]);
     const evidence = screen.getByRole("button", { name: "揭示本题材料证据" });
     await user.hover(evidence);
     expect(

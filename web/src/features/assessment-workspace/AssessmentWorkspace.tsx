@@ -129,10 +129,11 @@ export function AssessmentWorkspace() {
     setBusy(true);
     setError(null);
     try {
+      const requestedRounds = Number.parseInt(rounds, 10);
+      const normalizedType = questionType === "" ? null : questionType;
       const started = await startAssessment(
         resourceId,
-        Number.parseInt(rounds, 10),
-        questionType,
+        { rounds: requestedRounds, questionType: normalizedType },
       );
       window.sessionStorage.setItem(SESSION_STORAGE_KEY, started.session_id);
       setAssessment(started);

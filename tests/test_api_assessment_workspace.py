@@ -17,12 +17,35 @@ from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.interfaces.api.app import ApiSettings, create_app
+from grandquiz.interfaces.api.assessment_runs import project_assessment_diagnosis
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, ToolSpec, Usage
 
 _QUOTE = "潜在记忆以隐式形式承载在模型内部表示中。"
 _CORRECT = "模型内部表示"
 _WRONG = "浏览器缓存"
+
+
+def test_assessment_diagnosis_projection_has_a_finite_public_vocabulary() -> None:
+    assert project_assessment_diagnosis("missing_key_point") == "missing_key_point"
+    assert project_assessment_diagnosis("incorrect_choice") == "incorrect_choice"
+    assert project_assessment_diagnosis("future.internal.diagnosis") is None
+    assert project_assessment_diagnosis({"unexpected": "shape"}) is None
+
+
+def _open_question_payload(question: str) -> dict[str, object]:
+    return {
+        "question": question,
+        "expected_points": [
+            {
+                "point_id": "location",
+                "description": "指出潜在记忆位于模型内部表示",
+                "cited_evidence": _QUOTE,
+            }
+        ],
+        "reference_answer": "潜在记忆以隐式形式承载在模型内部表示中。",
+        "cited_evidence": [_QUOTE],
+    }
 
 
 class _AssessmentProvider:
@@ -73,13 +96,53 @@ class _OpenAssessmentProvider:
                 if self.question_calls == 1
                 else "潜在记忆为什么不等于外部文件？"
             )
-            payload = {"question": question, "cited_evidence": [_QUOTE]}
+            payload = _open_question_payload(question)
         else:
             payload = {
                 "verdict": "错",
+                "matched_points": [],
+                "missing_points": ["location"],
+                "diagnosis": "wrong_focus",
                 "reason": "回答没有指出模型内部表示。",
                 "cited_evidence": [_QUOTE],
             }
+        return Completion(
+            text=json.dumps(payload, ensure_ascii=False),
+            usage=Usage(prompt_tokens=100, completion_tokens=30),
+        )
+
+
+class _MixedPlanAssessmentProvider:
+    def __init__(self) -> None:
+        self.multiple_choice_calls = 0
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        assert tools is None
+        if role == "basic":
+            payload = {
+                "verdict": "对",
+                "matched_points": ["location"],
+                "missing_points": [],
+                "diagnosis": "complete",
+                "reason": "回答命中了模型内部表示。",
+                "cited_evidence": [_QUOTE],
+            }
+        elif "单项选择题" in messages[0].content:
+            self.multiple_choice_calls += 1
+            payload = {
+                "question": f"潜在记忆位置选择题 {self.multiple_choice_calls}",
+                "options": [_CORRECT, _WRONG],
+                "answer_index": 0,
+                "cited_evidence": [_QUOTE],
+            }
+        else:
+            payload = _open_question_payload("请解释潜在记忆的存储位置。")
         return Completion(
             text=json.dumps(payload, ensure_ascii=False),
             usage=Usage(prompt_tokens=100, completion_tokens=30),
@@ -200,6 +263,47 @@ def test_selected_resource_starts_one_real_question_and_waits_for_answer(
     assert payload["trace_id"]
 
 
+def test_fastapi_consumes_mixed_question_type_plan_in_order(tmp_path: Path) -> None:
+    resource, _ = _seed_item(tmp_path)
+
+    with TestClient(_app(tmp_path, _MixedPlanAssessmentProvider())) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "question_type_plan": ["选择题", "选择题", "简答题"],
+                "focus": "mixed",
+            },
+        ).json()
+        observed: list[str] = []
+        for round_index in range(1, 4):
+            waiting = _wait_for_status(
+                client,
+                started["session_id"],
+                "awaiting_answer",
+            )
+            observed.append(waiting["question"]["question_type"])
+            client.post(
+                (
+                    f"/api/v1/assessments/{started['session_id']}/questions/"
+                    f"{waiting['question']['question_id']}/answers"
+                ),
+                json={
+                    "request_id": f"answer-mixed-{round_index}",
+                    "answer": _CORRECT,
+                },
+            )
+            terminal = "completed" if round_index == 3 else "judged"
+            _wait_for_status(client, started["session_id"], terminal)
+            if round_index < 3:
+                client.post(
+                    f"/api/v1/assessments/{started['session_id']}/next",
+                    json={"request_id": f"next-mixed-{round_index}"},
+                )
+
+    assert observed == ["选择题", "选择题", "开放"]
+
+
 def test_empty_selected_scope_is_refused_without_calling_the_model(tmp_path: Path) -> None:
     provider = _AssessmentProvider()
 
@@ -297,6 +401,14 @@ def test_answer_submission_is_idempotent_and_records_one_judgement(tmp_path: Pat
     assert completed["judgement"] == {
         "verdict": "对",
         "reason": "",
+        "diagnosis": "complete",
+        "matched_points": [
+            {
+                "point_id": "correct_option",
+                "description": f"选择正确选项：{_CORRECT}",
+            }
+        ],
+        "missing_points": [],
         "concept_state": None,
         "correct_answer": None,
     }
@@ -312,6 +424,312 @@ def test_answer_submission_is_idempotent_and_records_one_judgement(tmp_path: Pat
     finally:
         trace.close()
     assert len(judged) == 1
+
+
+def test_completed_attempt_survives_app_restart_and_trace_deletion(tmp_path: Path) -> None:
+    resource, item = _seed_item(tmp_path)
+
+    with TestClient(_app(tmp_path)) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "选择题",
+            },
+        ).json()
+        waiting = _wait_for_status(client, started["session_id"], "awaiting_answer")
+        question_id = waiting["question"]["question_id"]
+        client.post(
+            f"/api/v1/assessments/{started['session_id']}/questions/{question_id}/answers",
+            json={"request_id": "durable-attempt-1", "answer": _CORRECT},
+        )
+        _wait_for_status(client, started["session_id"], "completed")
+
+        before_restart = client.get(
+            "/api/v1/learning/attempts",
+            params={"trace_id": started["trace_id"]},
+        )
+
+    assert before_restart.status_code == 200
+    attempts_before_restart = before_restart.json()["items"]
+    assert len(attempts_before_restart) == 1
+
+    (tmp_path / "trace.db").unlink()
+
+    with TestClient(_app(tmp_path)) as restarted:
+        after_restart = restarted.get(
+            "/api/v1/learning/attempts",
+            params={"trace_id": started["trace_id"]},
+        )
+        single_attempt = restarted.get(
+            f"/api/v1/learning/attempts/{attempts_before_restart[0]['attempt_id']}"
+        )
+
+    assert after_restart.status_code == 200
+    assert after_restart.json()["items"] == attempts_before_restart
+    assert single_attempt.status_code == 200
+    assert single_attempt.json() == attempts_before_restart[0]
+    attempt = attempts_before_restart[0]
+    assert attempt["attempt_id"] == (f"{started['trace_id']}:{attempt['assessment_span_id']}")
+    assert attempt["trace_id"] == started["trace_id"]
+    assert attempt["item_id"] == item.item_id
+    assert attempt["question_text"] == "潜在记忆主要承载在哪里？"
+    assert attempt["answer_text"] == _CORRECT
+    assert attempt["initial_verdict"] == "对"
+    assert attempt["final_verdict"] == "对"
+
+
+def test_attempt_records_route_grader_and_pre_answer_evidence(tmp_path: Path) -> None:
+    resource, _ = _seed_item(tmp_path)
+
+    with TestClient(_app(tmp_path)) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "选择题",
+            },
+        ).json()
+        waiting = _wait_for_status(client, started["session_id"], "awaiting_answer")
+        question_id = waiting["question"]["question_id"]
+        client.post(
+            f"/api/v1/assessments/{started['session_id']}/questions/{question_id}/evidence/reveal",
+            json={"interaction": "click"},
+        )
+        client.post(
+            f"/api/v1/assessments/{started['session_id']}/questions/{question_id}/answers",
+            json={
+                "request_id": "attempt-fidelity-1",
+                "answer": _CORRECT,
+                "input_modality": "text",
+            },
+        )
+        _wait_for_status(client, started["session_id"], "completed")
+        attempt = client.get(
+            "/api/v1/learning/attempts",
+            params={"trace_id": started["trace_id"]},
+        ).json()["items"][0]
+
+    assert attempt["adaptive_route"] == {
+        "format": "multiple_choice",
+        "strategy": "standard",
+    }
+    assert attempt["effective_route"] == {
+        "format": "multiple_choice",
+        "strategy": "standard",
+    }
+    assert attempt["routing_source"] == "user_override"
+    assert attempt["input_modality"] == "text"
+    assert attempt["answer_format"] == "choice"
+    assert attempt["evidence_revealed_before_answer"] is True
+    assert attempt["grading"] == {
+        "kind": "deterministic",
+        "version": "multiple-choice-exact.v1",
+    }
+    assert attempt["question_generation"]["kind"] == "model"
+    assert attempt["question_generation"]["version"].startswith("question_multiple_choice@")
+    assert attempt["source_event_cursor"]["first_seq"] < attempt["source_event_cursor"]["last_seq"]
+
+
+def test_learner_projection_distinguishes_not_in_memory_from_never_attempted(
+    tmp_path: Path,
+) -> None:
+    resource, item = _seed_item(tmp_path)
+
+    with TestClient(_app(tmp_path)) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "选择题",
+            },
+        ).json()
+        waiting = _wait_for_status(client, started["session_id"], "awaiting_answer")
+        client.post(
+            f"/api/v1/assessments/{started['session_id']}/questions/"
+            f"{waiting['question']['question_id']}/answers",
+            json={"request_id": "projection-1", "answer": _CORRECT},
+        )
+        _wait_for_status(client, started["session_id"], "completed")
+
+        response = client.get(f"/api/v1/learning/projections/{item.item_id}")
+        report = client.get("/api/v1/learning/report")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "schema_version": "learner-projection.v1",
+        "taxonomy_version": "vocabulary.v1",
+        "item_id": item.item_id,
+        "attempt_count": 1,
+        "closed_book_attempt_count": 1,
+        "verdict_counts": {"对": 1, "勉强": 0, "错": 0},
+        "learning_memory_state": "not_in_memory",
+        "difficulty_tier": 3,
+        "validated_demand_states": {},
+    }
+    assert report.json()["attempt_count"] == 1
+    assert report.json()["projections"] == [response.json()]
+
+
+def test_verdict_correction_preserves_initial_verdict_and_reconciles_state(
+    tmp_path: Path,
+) -> None:
+    resource, item = _seed_item(tmp_path)
+
+    with TestClient(_app(tmp_path)) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "选择题",
+            },
+        ).json()
+        waiting = _wait_for_status(client, started["session_id"], "awaiting_answer")
+        client.post(
+            f"/api/v1/assessments/{started['session_id']}/questions/"
+            f"{waiting['question']['question_id']}/answers",
+            json={"request_id": "wrong-before-appeal", "answer": _WRONG},
+        )
+        _wait_for_status(client, started["session_id"], "completed")
+        attempt = client.get(
+            "/api/v1/learning/attempts",
+            params={"trace_id": started["trace_id"]},
+        ).json()["items"][0]
+
+        correction = client.post(
+            f"/api/v1/learning/attempts/{attempt['attempt_id']}/verdict-corrections",
+            json={
+                "request_id": "appeal-1",
+                "final_verdict": "对",
+                "reason": "Evidence 证明原判决错误",
+            },
+        )
+        correction_retry = client.post(
+            f"/api/v1/learning/attempts/{attempt['attempt_id']}/verdict-corrections",
+            json={
+                "request_id": "appeal-1",
+                "final_verdict": "对",
+                "reason": "Evidence 证明原判决错误",
+            },
+        )
+        corrected = client.get(
+            "/api/v1/learning/attempts",
+            params={"trace_id": started["trace_id"]},
+        ).json()["items"][0]
+        projection = client.get(f"/api/v1/learning/projections/{item.item_id}").json()
+
+    assert correction.status_code == 200
+    assert correction_retry.status_code == 200
+    assert correction_retry.json() == correction.json()
+    assert corrected["initial_verdict"] == "错"
+    assert corrected["final_verdict"] == "对"
+    assert corrected["appeal_status"] == "overturned"
+    assert projection["verdict_counts"] == {"对": 1, "勉强": 0, "错": 0}
+    assert projection["learning_memory_state"] == "not_in_memory"
+
+    with LearningPersistence(tmp_path / "learning.db") as persistence:
+        assert persistence.memory.state_of(item.item_id) is None
+        correction_fact = persistence.learning_facts.facts(event_type="learning.verdict_corrected")[
+            0
+        ]
+        assert correction_fact.payload["reconciliation"] == {
+            "item_id": item.item_id,
+            "learning_memory_state": "not_in_memory",
+            "difficulty_tier": 3,
+            "through_event_id": correction_fact.event_id,
+        }
+
+    correction_trace = TraceStore(tmp_path / "trace.db")
+    try:
+        published = correction_trace.events(correction_fact.trace_id)
+    finally:
+        correction_trace.close()
+    assert any(
+        event.type == "learning.verdict_corrected"
+        and event.payload["event_id"] == correction_fact.event_id
+        and event.payload["payload"]["reconciliation"]["through_event_id"]
+        == correction_fact.event_id
+        for event in published
+    )
+
+
+def test_only_approved_demand_validation_enters_learner_projection(
+    tmp_path: Path,
+) -> None:
+    resource, item = _seed_item(tmp_path)
+
+    with TestClient(_app(tmp_path)) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "选择题",
+            },
+        ).json()
+        waiting = _wait_for_status(client, started["session_id"], "awaiting_answer")
+        client.post(
+            f"/api/v1/assessments/{started['session_id']}/questions/"
+            f"{waiting['question']['question_id']}/answers",
+            json={"request_id": "demand-answer-1", "answer": _CORRECT},
+        )
+        _wait_for_status(client, started["session_id"], "completed")
+        attempt = client.get(
+            "/api/v1/learning/attempts",
+            params={"trace_id": started["trace_id"]},
+        ).json()["items"][0]
+
+        validation = client.post(
+            f"/api/v1/learning/attempts/{attempt['attempt_id']}/demand-validations",
+            json={
+                "request_id": "demand-validation-1",
+                "validated_demand": "apply",
+                "validator_kind": "user",
+                "rationale": "这道题要求把材料规则用于具体选项判断",
+            },
+        )
+        validation_retry = client.post(
+            f"/api/v1/learning/attempts/{attempt['attempt_id']}/demand-validations",
+            json={
+                "request_id": "demand-validation-1",
+                "validated_demand": "apply",
+                "validator_kind": "user",
+                "rationale": "这道题要求把材料规则用于具体选项判断",
+            },
+        )
+        forged_judge = client.post(
+            f"/api/v1/learning/attempts/{attempt['attempt_id']}/demand-validations",
+            json={
+                "request_id": "forged-judge",
+                "validated_demand": "design",
+                "validator_kind": "calibrated_judge",
+                "calibration_version": "totally-trusted-by-client",
+                "rationale": "伪造校准身份",
+            },
+        )
+        revised = client.post(
+            f"/api/v1/learning/attempts/{attempt['attempt_id']}/demand-validations",
+            json={
+                "request_id": "demand-validation-2",
+                "validated_demand": "explain",
+                "validator_kind": "user",
+                "rationale": "人工复核后改为解释",
+            },
+        )
+        projection = client.get(f"/api/v1/learning/projections/{item.item_id}").json()
+
+    assert validation.status_code == 201
+    assert validation.json()["review_status"] == "approved"
+    assert validation_retry.status_code == 201
+    assert validation_retry.json() == validation.json()
+    assert forged_judge.status_code == 422
+    assert revised.json()["revision"] == 2
+    assert revised.json()["supersedes_id"] == validation.json()["validation_id"]
+    assert projection["validated_demand_states"] == {"explain": "passed"}
 
 
 def test_assessment_failure_projects_a_failed_terminal_trace(tmp_path: Path) -> None:
@@ -414,6 +832,14 @@ def test_open_question_wrong_answer_waits_for_explicit_next_round(tmp_path: Path
 
         assert judged["round_index"] == 1
         assert judged["judgement"]["verdict"] == "错"
+        assert judged["judgement"]["diagnosis"] == "wrong_focus"
+        assert judged["judgement"]["matched_points"] == []
+        assert judged["judgement"]["missing_points"] == [
+            {
+                "point_id": "location",
+                "description": "指出潜在记忆位于模型内部表示",
+            }
+        ]
         assert judged["judgement"]["reason"] == "回答没有指出模型内部表示。"
         assert judged["judgement"]["concept_state"] == "薄弱"
         assert _QUOTE in judged["judgement"]["correct_answer"]
