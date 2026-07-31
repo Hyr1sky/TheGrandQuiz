@@ -64,7 +64,7 @@ adapter 间退化成三道默认选择题。
 ## 收口验证
 
 - Python：`947 passed`；
-- Web unit：`44 passed`；
+- Web unit：`45 passed`；
 - Playwright：桌面/移动端 `14 passed`；
 - ruff、format、pyright、import-linter、ESLint、TypeScript、生产构建和 Sites worker 全绿；
 - Eval：`17/17`，默认只使用 Replay；

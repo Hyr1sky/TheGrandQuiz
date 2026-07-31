@@ -91,7 +91,7 @@ export function ChatPanel({
   const stopStream = useRef<(() => void) | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastSequence = useRef(0);
-  const assessmentNavigationTurns = useRef(new Set<string>());
+  const lastSubmittedInput = useRef<string | null>(null);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -194,14 +194,7 @@ export function ChatPanel({
           target === "assessment"
             ? "正在为你准备考核..."
             : "正在切换到文章阅读...";
-        const turnId =
-          typeof event.data.turn_id === "string"
-            ? event.data.turn_id
-            : "";
         if (target === "assessment") {
-          if (turnId !== "") {
-            assessmentNavigationTurns.current.add(turnId);
-          }
           setMessages((previous) => [
             ...previous.filter(
               (message) => message.kind !== "assessment-status",
@@ -228,16 +221,7 @@ export function ChatPanel({
           typeof event.data.turn_id === "string"
             ? event.data.turn_id
             : "";
-        const assessmentLaunch =
-          turnId !== "" &&
-          assessmentNavigationTurns.current.delete(turnId);
-        if (assessmentLaunch) {
-          setMessages((previous) =>
-            previous.filter(
-              (message) => message.turnId !== turnId,
-            ),
-          );
-        } else if (output !== "") {
+        if (output !== "") {
           setMessages((previous) => {
             const index = previous.findIndex(
               (message) =>
@@ -292,6 +276,7 @@ export function ChatPanel({
       return;
     }
     setError(null);
+    lastSubmittedInput.current = text;
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setInput("");
     setLoading(true);
@@ -330,6 +315,22 @@ export function ChatPanel({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      event.key === "ArrowUp" &&
+      input === "" &&
+      lastSubmittedInput.current !== null
+    ) {
+      event.preventDefault();
+      const previousInput = lastSubmittedInput.current;
+      setInput(previousInput);
+      queueMicrotask(() => {
+        textareaRef.current?.setSelectionRange(
+          previousInput.length,
+          previousInput.length,
+        );
+      });
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void send(event as unknown as FormEvent);

@@ -192,6 +192,9 @@ test("keeps the exact material across two chat cursors", async ({ page }) => {
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByText(new RegExp(`active_resource_id=${resourceId}.*第二轮`))).toBeVisible();
   await expect(page.locator(".chat-bubble--agent")).toHaveCount(2);
+  await expect(composer).toHaveValue("");
+  await composer.press("ArrowUp");
+  await expect(composer).toHaveValue("第二轮");
   expect(eventCursors).toContain(0);
   expect(eventCursors.some((cursor) => cursor > 0)).toBe(true);
 });
@@ -223,6 +226,9 @@ test("navigates from Chat to Assessment and closes the trace", async ({ page }) 
     page.getByRole("heading", {
       name: ASSESSMENT_QUESTION,
     }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/收到：请结合当前材料考我一题/),
   ).toBeVisible();
 
   const evidence = page.getByRole("button", { name: "揭示本题材料证据" });

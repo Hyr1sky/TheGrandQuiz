@@ -665,7 +665,7 @@ describe("ChatPanel", () => {
     expect(screen.getByText("正在为你准备考核...")).toBeInTheDocument();
   });
 
-  it("treats assessment launch messages as lifecycle status instead of permanent replies", async () => {
+  it("keeps the assessment launch reply alongside its lifecycle status", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
@@ -738,8 +738,8 @@ describe("ChatPanel", () => {
     });
 
     expect(
-      screen.queryByText(/完成后我会帮你查看结果小结/),
-    ).not.toBeInTheDocument();
+      screen.getByText(/完成后我会帮你查看结果小结/),
+    ).toBeInTheDocument();
     expect(screen.getByText("正在为你准备考核...")).toBeInTheDocument();
 
     rerender(<ChatPanel assessmentStatus="completed" />);
@@ -748,6 +748,70 @@ describe("ChatPanel", () => {
       screen.queryByText("正在为你准备考核..."),
     ).not.toBeInTheDocument();
     expect(screen.getByText("本轮考核已完成。")).toBeInTheDocument();
+  });
+
+  it("restores the last submitted question with ArrowUp when the composer is empty", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request =
+          input instanceof Request ? input : new Request(String(input));
+        if (
+          request.url.endsWith("/api/v1/chat/sessions") &&
+          request.method === "POST"
+        ) {
+          return Response.json(
+            { session_id: "session-history" },
+            { status: 201 },
+          );
+        }
+        if (
+          request.url.includes("/messages") &&
+          request.method === "POST"
+        ) {
+          return Response.json(
+            { turn_id: "turn-history" },
+            { status: 202 },
+          );
+        }
+        throw new Error(
+          `Unexpected request: ${request.method} ${request.url}`,
+        );
+      }),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const user = userEvent.setup();
+
+    render(<ChatPanel />);
+    const composer = screen.getByRole("textbox", { name: "发送消息" });
+    await waitFor(() => expect(composer).toBeEnabled());
+
+    await user.type(composer, "请解释事件溯源");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() =>
+      expect(FakeEventSource.instances).toHaveLength(1),
+    );
+    await act(async () => {
+      FakeEventSource.instances[0]?.emit("chat.turn_ended", {
+        sequence: 1,
+        type: "chat.turn_ended",
+        session_id: "session-history",
+        data: {
+          turn_id: "turn-history",
+          output: "事件溯源会把状态变化保存为事件。",
+        },
+      });
+    });
+
+    expect(composer).toHaveValue("");
+    await user.click(composer);
+    await user.keyboard("{ArrowUp}");
+    expect(composer).toHaveValue("请解释事件溯源");
+
+    await user.clear(composer);
+    await user.type(composer, "正在编辑的新问题");
+    await user.keyboard("{ArrowUp}");
+    expect(composer).toHaveValue("正在编辑的新问题");
   });
 
   it("shows reading transition hint for open_article navigation", async () => {

@@ -53,7 +53,7 @@ v0.2.0 面向愿意在个人电脑上运行 Python 服务、能够自行配置 O
 - [x] `ruff check` 与 `ruff format --check`。
 - [x] `pyright` 与 import-linter。
 - [x] 全量 pytest（947 passed）。
-- [x] Web lint、typecheck、unit（44 passed）、Sites worker 与 production build。
+- [x] Web lint、typecheck、unit（45 passed）、Sites worker 与 production build。
 - [x] Playwright 桌面/移动端场景（14 passed）。
 - [x] 离线 Eval 17/17。
 
@@ -104,6 +104,8 @@ Jul31 的真实 DB 已证明以下路径可运行：
 这些 trace 同时暴露过题型漂移和判卷过严问题；v0.2 代码已用 `AssessmentPlan`、`QuestionSpec` 与
 conformance tests 修复，但正式 tag 前仍建议做一次修复后的短回归：
 
+- [x] Assessment navigation 保留同轮模型回复，输入框为空时 `↑` 恢复上一条已发送问题；桌面/移动端
+  Playwright 已覆盖。
 - [ ] 明确要求“两道选择题 + 一道简答题”，确认顺序和数量准确。
 - [ ] 完成一道开放题，确认逐评分点反馈、参考作答与 verdict 可解释。
 - [ ] 重启 Web 后确认材料、薄弱状态和历史 Trace 可见。
