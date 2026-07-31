@@ -11,6 +11,7 @@ from threading import Event
 import pytest
 from fastapi.testclient import TestClient
 
+from grandquiz import __version__
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.models import LearningResource
 from grandquiz.domain.learning.persistence import LearningPersistence
@@ -464,6 +465,7 @@ def test_openapi_exposes_the_versioned_article_workspace_contract(tmp_path: Path
     with TestClient(_app(tmp_path)) as client:
         schema = client.get("/openapi.json").json()
 
+    assert schema["info"]["version"] == __version__
     paths = schema["paths"]
     assert {
         "/api/v1/health",

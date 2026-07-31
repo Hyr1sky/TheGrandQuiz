@@ -27,7 +27,8 @@ ApplicabilityAssertion 仅保留契约；CompetencyBlueprint、复习排期、�
 失败以安全 `code / stage / reason` 贯通 Trace、API、CLI 与 Web。多题考核统一为
 `AssessmentPlan`，开放题已统一为带评分点与题目级参考作答的 `QuestionSpec`；CLI/Web/FastAPI
 conformance tests 防止题型与判卷反馈再次漂移。功能 RC 已关闭，不再追加功能；正式版本号、tag、
-GitHub Release 与安装包发布由独立发布动作完成。完整证据见
+GitHub Release 与安装包由独立发布动作完成。包版本已进入 `0.2.0` 发布准备态；正式 tag/Release 仍以
+[发布清单](open-source-release-checklist.md) 为准。完整证据见
 [v0.2 功能 RC 收口](devrecords/24-v020-functional-rc-closeout.md)。
 
 ## 下一阶段：v0.3 先证明消费者与质量收益

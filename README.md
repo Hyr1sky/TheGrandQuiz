@@ -44,7 +44,7 @@ flowchart LR
 TheGrandQuiz 同时包含一套可观测、可恢复、可评测的 Agent Runtime。Runtime 是产品的工程内核，
 不是对外承诺稳定 API 的通用框架。
 
-## v0.2 功能候选版能做什么
+## v0.2.0 能做什么
 
 | 能力 | 当前体验 | 工程保证 |
 | --- | --- | --- |
@@ -58,7 +58,7 @@ TheGrandQuiz 同时包含一套可观测、可恢复、可评测的 Agent Runtim
 | **Local Web** | 三栏 Chat、文章阅读、Evidence 揭示与考核 | 同源 SPA、安全 Markdown、稳定 SSE |
 
 > [!NOTE]
-> v0.2 仍是**本机单用户功能候选版**，不支持账号、多用户、云同步或公网服务。Web 已提供材料导入与
+> v0.2.0 是**本机单用户版本**，不支持账号、多用户、云同步或公网服务。Web 已提供材料导入与
 > 可恢复审批，但完整的文章/知识点维护操作和连续“掌握度分数”仍属于后续版本；现有 Web 服务也
 > 不应直接暴露到局域网或公网。
 
@@ -232,14 +232,13 @@ PR 要求见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 | [docs/roadmap.md](docs/roadmap.md) | 后续阶段与验收顺序 |
 | [docs/adr/](docs/adr/) | 不可逆架构决策 |
 | [docs/devrecords/](docs/devrecords/) | 实现、dogfood、成本与门禁记录 |
-| [docs/open-source-release-checklist.md](docs/open-source-release-checklist.md) | v0.1.0 发布门 |
+| [docs/open-source-release-checklist.md](docs/open-source-release-checklist.md) | v0.2.0 发布门 |
 
 ## 反馈与合作
 
-目前项目还处于一个半成品的状态，很多细节还没有打磨。同时这个 Eval Harness 的架子我并没有发挥出完整的作用，距离所
-谓的“自进化”还有些距离，同时数据飞轮也还没有建立。
-
-如果有好的 idea 或者不佳体验的话，欢迎在 issue 中讨论。
+v0.2.0 仍是个人维护的早期版本：核心学习闭环已经可用，但 Eval Harness、纠正反馈和数据飞轮还有很长的
+深化空间。如果你有好的 idea、真实学习场景或不佳体验，欢迎在 issue 中讨论；Bug 请尽量附上版本、
+最小复现和脱敏后的 `trace_id`。
 
 ## 许可证
 

@@ -4,8 +4,7 @@ TheGrandQuiz 是 local-first、单用户软件。当前版本没有账号、鉴�
 
 ## Supported versions
 
-安全修复只面向最新的 `main` 和最新发布版本。v0.1.0 之前的候选版本按个人维护 alpha/RC 处理，
-不提供响应时限承诺。
+安全修复只面向最新的 `main` 和最新发布版本。当前由个人维护，不提供响应时限承诺。
 
 ## Report a vulnerability
 

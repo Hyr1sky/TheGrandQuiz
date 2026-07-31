@@ -1,6 +1,6 @@
 [project]
 name = "grandquiz"
-version = "0.1.0"
+version = "0.2.0"
 description = "Learning-oriented digital human: an observable, recoverable, and evaluable learning Agent Runtime"
 readme = "README.md"
 requires-python = ">=3.12"

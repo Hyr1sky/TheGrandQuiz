@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from grandquiz import __version__
 from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.interfaces.api.acquisition_routes import router as acquisitions_router
 from grandquiz.interfaces.api.acquisitions import AcquisitionManager
@@ -125,7 +126,7 @@ def create_app(
 
     app = FastAPI(
         title="TheGrandQuiz Local API",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
     install_error_handlers(app)

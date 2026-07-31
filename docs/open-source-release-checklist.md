@@ -1,248 +1,142 @@
-# Open-source v0.1.0 发布前检查清单
+# Open-source v0.2.0 发布检查清单
 
-> 建立日期：2026-07-23  
-> 目标：把当前“作者可用的个人 alpha”收口为其他技术用户可以从 GitHub 获取、安装、理解并安全试用的
-> local-first CLI + Web 开源版本。  
-> 执行方式：在独立“维护升级”会话中按顺序推进；本清单不授权自动发布、创建 tag 或上传 PyPI。
+> 更新日期：2026-07-31
+>
+> 目标：把已关闭的 v0.2 功能 RC 发布为可从 GitHub 获取、安装、理解并安全试用的 local-first
+> CLI + Web 版本。
+>
+> 本清单不自动授权创建 tag、GitHub Release 或上传 PyPI。tag 与 Release 必须在最终 Go/No-Go
+> 复核后由仓库所有者明确批准。
 
-## 1. 当前基线
+## 1. 发布边界
 
-- `main` 已完成稳定性加固、Document Structure、Agentic Search、GroundedDocumentAnswer、
-  Tier-2 Eval 与 Web Acquisition WA-S1–S5。
-- 当前工程基线为 17 条 Eval、940 项 pytest、44 项 Web unit、14 项 Playwright 场景；
-  ruff / format / pyright / import-linter / Web lint 与 typecheck 全绿。
-- `uv build` 可以生成 sdist 与 wheel；macOS / Python 3.12 仓库外安装 smoke 为 17/17。
-- Replay cassette 与生产 Web bundle 已进入 wheel，不再依赖仓库工作目录或 `tests/fixtures/`。
-- MIT LICENSE、SECURITY、CONTRIBUTING、issue/PR 模板与 RC 草案已就绪；Ubuntu CI、人工
-  dogfood 与发布 tag 仍是阻塞项。
+v0.2.0 面向愿意在个人电脑上运行 Python 服务、能够自行配置 OpenAI-compatible LLM 的技术用户。
+它承诺：
 
-## 2. 发布目标与非目标
+- 本地 Markdown/Text 与公开 URL 导入、人工审批和可恢复 Acquisition；
+- 带 revision、DocumentNode 与 source span 的精确 Evidence；
+- exact-scope Chat、GroundedDocumentAnswer 和逐题考核；
+- `AssessmentPlan` 统一混合题型，`QuestionSpec` 提供逐评分点判卷与参考作答；
+- 可纠正、可重建的长期学习事实，以及受控词表和 proposed-first 分类审核；
+- Trace、Record/Replay、17 条离线 Eval 与浏览器场景验收。
 
-### 本次目标
+它不承诺：
 
-- GitHub 仓库具备明确开源许可证与来源说明。
-- 新用户能从干净环境安装，并在不访问公网、不调用真实 LLM 的情况下验证 CLI 和离线 Eval。
-- README 能带用户完成配置、首次 ingest / react / quiz，并明确外部数据发送、成本和本地数据位置。
-- wheel 不依赖仓库工作目录或 `tests/` 才能运行公开 CLI。
-- CI 同时验证源码工作区和构建产物。
-- 形成一个可回溯的 `v0.1.0` GitHub Release。
+- 多用户、账号、鉴权、云同步或公网部署；
+- 完整资源/revision/知识点管理；
+- 自动 Demand Judge、长期 Misconception、主动复习排期、知识图谱或 ASR；
+- Windows 人工验收、第三方 Runtime SDK/API 的 semver 稳定性；
+- 发布到 PyPI。
 
-### 本次非目标
+## 2. 已完成的发布基础
 
-- 不新增语音、多用户、鉴权或云部署；Web 只承诺 loopback local-first 使用。
-- Web Acquisition 已进入 v0.1.0：必须保持跨进程 suspend/resume、单次过期 token、审批前零 KB
-  污染，不能回退成阻塞 HTTP request。
-- 不提前抽取只有 Reader 一个消费者的通用 subagent executor。
-- 不把架构审查 Candidate 01/02 的大型重构塞入发布收口。
-- 不强制发布到 PyPI；GitHub Release 与源码安装可先构成 v0.1.0。
+- [x] MIT `LICENSE`、`SECURITY.md`、`CONTRIBUTING.md` 和 issue/PR 模板。
+- [x] README Quickstart、外部数据发送说明、本地数据库/Trace 路径与备份清除方法。
+- [x] Web 默认只监听 `127.0.0.1`，不默认开放宽松 CORS。
+- [x] 安全 Markdown renderer 默认阻止远程图片，网页内容始终标记为 untrusted。
+- [x] wheel 自包含 Web bundle、Eval cases/fixtures 与受控词表。
+- [x] CI 包含 Python 静态门、pytest、Eval、OpenAPI、Web、Playwright、build 和 installed-wheel smoke。
+- [x] Learning Model v2、AssessmentPlan、QuestionSpec、Evidence locator 与 Acquisition error envelope
+  已完成双轴审查。
+- [x] 仓库公开、默认分支为 `main`、许可证被 GitHub 识别为 MIT、仓库 description 已配置。
 
-## 3. 硬阻塞项
+## 3. v0.2.0 发布候选验证
 
-以下任一项未完成，都不应把仓库称为可用的开源版本。
+### 版本与契约
 
-### OR-S1：许可证与来源审计
+- [x] `pyproject.toml`、`grandquiz.__version__` 与 FastAPI OpenAPI 统一为 `0.2.0`。
+- [x] 自动测试锁住包元数据与公开 API 版本，防止后续漂移。
+- [x] 连续两次生成 OpenAPI，确认 JSON/TypeScript client 无漂移。
 
-- [x] 选择许可证，并确认它与项目目标、作者权属和依赖许可证兼容。
-- [x] 检查 ADR-0001 记录的独立骨架边界，确认当前仓库内容可按所选许可证发布。
-- [x] 检查真实 LLM cassette、测试材料和 Web Acquisition fixture，确认没有不应再分发的第三方正文。
-- [x] 增加根目录 `LICENSE`。
-- [x] 在 `pyproject.toml` 增加 license、author、repository、issues 等项目元数据。
-- [x] 在 README 增加许可证与第三方资产说明。
+### 本地质量门
 
-验收：
+- [x] `ruff check` 与 `ruff format --check`。
+- [x] `pyright` 与 import-linter。
+- [x] 全量 pytest（947 passed）。
+- [x] Web lint、typecheck、unit（44 passed）、Sites worker 与 production build。
+- [x] Playwright 桌面/移动端场景（14 passed）。
+- [x] 离线 Eval 17/17。
 
-```bash
-uv build --out-dir /tmp/grandquiz-dist
-unzip -p /tmp/grandquiz-dist/grandquiz-0.1.0-py3-none-any.whl \
-  grandquiz-0.1.0.dist-info/METADATA
-```
+### 安装产物
 
-wheel metadata 必须出现正确许可证与项目链接，sdist / wheel 必须包含许可证文件。
+- [x] 构建 `grandquiz-0.2.0.tar.gz` 与 `grandquiz-0.2.0-py3-none-any.whl`。
+- [x] wheel metadata 包含 MIT、Python 3.12+ 和正确项目链接。
+- [x] wheel 包含 Web 静态资源、Eval fixtures/cases、prompt 与 `vocabulary.v1.yaml`。
+- [x] 从仓库外安装 wheel，运行 `grandquiz --help`。
+- [x] 从仓库外离线生成 Eval 17/17；不读取 `.env`、生产 DB 或仓库 `tests/`。
+- [x] 从 wheel 启动 `grandquiz-web`，验证 health、首页和 SPA fallback。
 
-人工决策记录：仓库所有者于 2026-07-28 明确选择 MIT。
-
-### OR-S2：安装包运行资产自包含
-
-- [x] 把 case14–17、Tier-2 judge 与 Acquisition Replay 所需 cassette 移入明确的 package resource
-  目录，或把 `grandquiz report` 明确降为仅源码开发命令。
-- [x] 所有运行资产通过 `importlib.resources` 或等价包内定位读取，禁止依赖当前工作目录。
-- [x] 保持 cassette 内容、请求键、token 统计与 Replay 行为不变。
-- [x] 增加“从仓库外运行已安装 wheel”的回归测试。
-- [x] 决定 `grandquiz report` 存在 Eval 失败时的 CLI exit-code 契约，并加测试固定。
-
-首选验收：
+建议使用一次性目录：
 
 ```bash
-uv build --out-dir /tmp/grandquiz-dist
-uv venv /tmp/grandquiz-release-venv
-uv pip install --python /tmp/grandquiz-release-venv/bin/python \
-  /tmp/grandquiz-dist/grandquiz-0.1.0-py3-none-any.whl
+uv build --out-dir /tmp/grandquiz-v020-dist
+uv venv --python 3.12 /tmp/grandquiz-v020-venv
+uv pip install --python /tmp/grandquiz-v020-venv/bin/python \
+  /tmp/grandquiz-v020-dist/grandquiz-0.2.0-py3-none-any.whl
 cd /tmp
-/tmp/grandquiz-release-venv/bin/grandquiz --help
-/tmp/grandquiz-release-venv/bin/grandquiz report \
-  --out /tmp/grandquiz-release-report
+/tmp/grandquiz-v020-venv/bin/grandquiz --help
+/tmp/grandquiz-v020-venv/bin/grandquiz report \
+  --out /tmp/grandquiz-v020-installed-eval
 ```
 
-预期：仓库外 `grandquiz report` 为 17/17，通过过程不读取原仓库 `tests/fixtures`，不访问公网，
-不读取 `.env`，不调用外部 LLM。
+### 仓库与供应链
 
-### OR-S3：新用户最短可用路径
+- [ ] 工作区只包含可解释的 release-prep 变更。
+- [x] `.env`、API Key、个人路径、数据库、Trace、`.scratch` 与 `localtemp` 未进入 Git。
+- [x] 本轮没有修改依赖或测试 fixture，没有新增分发权属问题。
+- [x] 当前 `main`（`ae028f8`）对应 Ubuntu GitHub Actions 全绿；release commit 推送后仍需复核新 run。
+- [x] Release Notes 与 README、SECURITY、package metadata 一致。
 
-- [x] README 增加面向用户的 Quickstart，而不仅是开发命令。
-- [x] 说明 Python 3.12+、uv、可选 Docker 的关系；Docker 不能写成基础依赖。
-- [x] 说明 basic / enrich 两个 LLM 角色，可否使用同一个 OpenAI-compatible provider。
-- [x] 给出从 `.env.example` 到首次本地材料 ingest 的完整命令。
-- [x] 给出 `react`、`quiz`、`trace` 和 `report` 的最小示例。
-- [x] 说明 Tavily / SearXNG 都是可选 Search adapter，不配置时核心本地材料流程仍可用。
-- [x] 给出常见配置错误和排查入口。
+## 4. 人工 dogfood 证据
 
-Quickstart 最低验收路径：
+Jul31 的真实 DB 已证明以下路径可运行：
 
-```text
-clone → uv sync → cp .env.example .env → 配置 LLM
-→ ingest 一份本地 Markdown / text → 审批
-→ react 或 quiz → 导出 trace
-```
+- GroundedDocumentAnswer、DocumentNode read 与 citation resolution：
+  `a8ab5ef6780e4d7ca2d1d9c2c3da2353`；
+- Web 混合考核、Evidence reveal、判卷与状态写入：
+  `11d55da599d1485ab5b4f917b788554b`；
+- URL Acquisition → Reader → approval → 原子入库：
+  `22247e0b0e6d41d48a90d24b271acc15`；
+- 早期 JavaGuide Acquisition：
+  `34b6f8c3e2084c0c90ccac27ac6d79fe`。
 
-要求：一名不了解仓库历史的技术用户只读 README 即可走完，不必先读 ADR、PRD 或 devrecords。
+这些 trace 同时暴露过题型漂移和判卷过严问题；v0.2 代码已用 `AssessmentPlan`、`QuestionSpec` 与
+conformance tests 修复，但正式 tag 前仍建议做一次修复后的短回归：
 
-### OR-S4：数据、隐私与安全说明
+- [ ] 明确要求“两道选择题 + 一道简答题”，确认顺序和数量准确。
+- [ ] 完成一道开放题，确认逐评分点反馈、参考作答与 verdict 可解释。
+- [ ] 重启 Web 后确认材料、薄弱状态和历史 Trace 可见。
+- [ ] 导入一个低质量/登录页 URL，确认结构化失败且零 KB 污染。
 
-- [x] 在 README 顶层明确：真实 LLM 调用会把 system prompt、用户消息、选定材料节点和工具上下文发送给
-  `.env` 配置的外部服务。
-- [x] 说明 Web 内容始终按 untrusted 输入处理，Search 不等于授权抓取或入库。
-- [x] 说明人工审批发生在 KnowledgeItem 写入前。
-- [x] 说明默认 learning DB / trace DB 路径、备份方法和删除方法。
-- [x] 说明 trace 不存完整网页正文，但可能包含用户消息、工具参数和模型输出。
-- [x] 增加 `SECURITY.md`，包含密钥泄漏、prompt injection、恶意网页和漏洞报告方式。
-- [x] 对 `.env.example`、cassette、文档和 git 历史做一次凭证扫描。
+该短回归只验证已修复行为，不新增功能。发现 P0/P1 时停止发布；P2 必须写入已知问题或修复后重跑。
 
-验收：README 与 SECURITY 对“哪些内容会离开本机、哪些内容会持久化、用户如何拒绝写入”给出一致答案。
+## 5. GitHub 发布面
 
-## 4. 发布质量项
+- [x] 仓库 visibility 为 public，default branch 为 `main`。
+- [x] 仓库 description 已说明 local-first、grounded assessment、durable memory 与 replayable traces。
+- [ ] 为仓库增加 topics，例如 `ai-agent`、`learning`、`assessment`、`local-first`、`rag`、
+  `fastapi`、`react`、`llm`。
+- [ ] 修复本机 `gh` 的失效 token，或确认使用 GitHub 网页完成 Release。
+- [x] 确认 `v0.2.0` tag 和同名 Release 当前不存在。
+- [x] 已在一次性目录验证 `grandquiz-0.2.0.tar.gz` 与 wheel；正式 assets 应从 release commit/CI
+  重新取得。
 
-这些项目原则上应在 v0.1.0 一并完成；若延后，必须在 Release Notes 明确限制。
+## 6. 最终 Go/No-Go
 
-### OR-S5：架构与 Eval 卫生收口
+只有以下项目全部满足，才创建正式发布：
 
-- [ ] 修正运行时 docstring 中已过时的“内容寻址”“INSERT OR REPLACE”“远程抓取仍缓办”等表述。
-- [ ] 保留历史 ADR / devrecords 的时间语境，不做全仓机械改写。
-- [ ] Eval case parser 对未知 `kind`、`provider`、`focus`、`fixture` fail closed，不静默回默认。
-- [ ] 给非法 Eval 配置增加确定性测试。
-- [ ] 确认三个 SKELETON 债与 `docs/skeleton-ledger.md` 对账；Reader 通用 executor 不阻塞
-  v0.1.0，Approval / Responder 是否阻塞取决于对应 Web 功能是否对用户开放。
+- [ ] 本地质量门、安装产物 smoke、离线 Eval 和 GitHub Actions 全绿。
+- [ ] 修复后人工短回归通过，没有未解决 P0/P1。
+- [ ] Release commit 已推送，工作区干净，`origin/main` 与本地 HEAD 一致。
+- [ ] Release Notes 已定稿，已知限制没有被包装成已交付能力。
+- [ ] 仓库所有者明确批准创建 `v0.2.0` tag 和 GitHub Release。
 
-### OR-S6：仓库协作入口
-
-- [x] 增加最小 `CONTRIBUTING.md`：环境安装、五道门、issue/PR 约定、cassette 重录规则和密钥纪律。
-- [x] 明确个人规划默认进入 gitignored 的 `.scratch/`；协作者参与后，GitHub Issues 才成为公开协作权威。
-- [x] 增加 issue / PR 模板，至少要求复现、trace_id、测试与架构影响。
-- [x] 决定是否增加 `CODE_OF_CONDUCT.md`；若不增加，在 Release Notes 说明当前为个人维护 alpha。
-- [ ] 检查 GitHub 仓库描述、Topics、默认分支和私有贡献显示设置。
-
-### OR-S7：构建与 CI 发布门
-
-- [x] CI 保留 ruff、format、pyright、import-linter、pytest 与 Eval 17/17。
-- [x] 新增 build job：构建 sdist / wheel，并检查产物内容。
-- [x] 新增 installed-wheel smoke：在仓库外运行 `grandquiz --help` 和离线 `grandquiz report`。
-- [x] 确认 CI 不依赖 `.env`、真实 API key、Docker 或本地生产 DB。
-- [ ] 至少在 Ubuntu CI 和作者 macOS 上完成验收；Windows 未验证则明确标注。
-- [x] 检查最低 Python 3.12 与当前开发 Python 的兼容性。
-
-### OR-S8：Local Web 最小产品闭环
-
-- [x] 完成 Local Web LW-S1–S3：FastAPI contract、稳定 SSE 投影和 React Article Workspace。
-- [x] 默认只监听 `127.0.0.1`，production build 与 API 同源，不默认开放宽松 CORS。
-- [x] OpenAPI 生成 TypeScript client，CI 检查 schema/client 无 drift。
-- [x] 资源列表不默认返回 raw_content；SSE 不泄露 system prompt、完整模型上下文、secret 或节点全文。
-- [x] fake/replay provider + 临时 SQLite 下，资源 → outline → question → citation 主路径离线可验收。
-- [x] Chat 支持 Provider 原生 delta 的稳定 SSE 投影、turn-scoped 真取消与取消后继续对话。
-- [x] 首次进入提供可跳过、可重开的四步指南，Chat 空状态提供不会自动发送的示例 prompt。
-- [x] 前端 lint、typecheck、unit test、production build 进入 CI。
-- [x] README 说明 Web 启动、DB/trace 位置、外部 LLM 数据发送和 CLI 恢复入口。
-- [x] Web 支持 Markdown/Text 上传与公开 URL 导入，完整投影状态、可取消、可恢复审批和稳定错误。
-
-首个 v0.1.0 Web release 已完成 LW-S1–S5；LW-S6 的完整资源/知识点维护仍须在 Release Notes 明示为
-后续范围，不能用空入口占位。
-
-## 5. 人工 dogfood 发布门
-
-自动化全绿后，仓库所有者完成两轮真实 dogfood。
-
-### Dogfood A：已有 KB 考核闭环
-
-- [ ] 对已有材料做一次 GroundedDocumentAnswer，检查 DocumentNode citation。
-- [ ] 运行一批混合题型考核。
-- [ ] 至少产生一次“薄弱”或“观察中”状态。
-- [ ] 重启 CLI 后复习薄弱点，验证跨会话状态和已问过去重。
-- [ ] 保存 trace_id，确认没有不可解释的额外工具调用。
-
-### Dogfood B：Web Acquisition 闭环
-
-- [ ] Search 返回有界候选，并在当前回合结束等待用户选择。
-- [x] 选择一个真实 URL，完成 Fetch → Reader → 人工筛选 → 原子入库（JavaGuide RAG 基础，
-  trace `34b6f8c3e2084c0c90ccac27ac6d79fe`，11/11 候选获批）。
-- [ ] 对新材料立即做一次 grounded question 或 quiz。
-- [ ] 测试一个低质量页，确认结构化失败且零 KB 污染。
-- [ ] 按 [Web Acquisition Dogfood 指南](guides/web-acquisition-dogfood.md) 导出 trace 并审计 DB。
-
-两轮都需记录：
-
-- trace_id；
-- 用户原始意图；
-- 有无多余工具调用；
-- 回答、题目和 citation 是否有学习价值；
-- 审批摩擦；
-- execution / judge tokens；
-- DB 增量；
-- “第二天是否愿意继续使用”的主观结论。
-
-## 6. 最终发布门
-
-只有以下条件全部满足，才创建 release commit / tag：
-
-- [ ] 工作区干净，发布范围不存在未解释变更。
-- [ ] 五道静态/测试门全绿。
-- [ ] Eval 17/17，HTML 报告可从已安装 wheel 离线生成。
-- [ ] sdist / wheel 均可构建，包内资源完整。
-- [x] LICENSE、README、SECURITY、CONTRIBUTING 与 package metadata 一致。
-- [ ] 凭证与个人路径扫描无阻塞发现。
-- [ ] 两轮人工 dogfood 通过，trace_id 已记录在发布开发日志。
-- [ ] 已写 Release Notes：能力、限制、外部服务、数据位置、已知问题、升级/备份说明。
-- [ ] 仓库所有者批准创建 `v0.1.0` tag 和 GitHub Release。
-
-建议发布命令仅在最终人工批准后执行：
+批准后执行：
 
 ```bash
-git tag -a v0.1.0 -m "TheGrandQuiz v0.1.0"
-git push origin main
-git push origin v0.1.0
+git tag -a v0.2.0 -m "TheGrandQuiz v0.2.0"
+git push origin v0.2.0
 ```
 
-PyPI 上传是独立决策，不是本清单默认动作。
-
-## 7. 明确延后项
-
-以下内容不得因“开源看起来更完整”而进入 v0.1.0：
-
-- 架构审查 Candidate 01：深化多题考核循环。
-- 架构审查 Candidate 02：收拢 Learning persistence 生命周期。
-- 第二个 subagent 与通用 subagent executor。
-- KnowledgeRelation、CanonicalConcept、向量库或图数据库。
-- 用户系统、云部署、定时任务与语音。
-
-它们可以在 v0.1.0 后由真实用户反馈和 trace 证据重新排序。
-
-## 8. 维护会话启动提示
-
-新会话开始时先执行：
-
-```bash
-git status
-git log -5 --oneline
-uv run grandquiz report --out /tmp/grandquiz-pre-release-report
-```
-
-然后阅读本清单、`CONTEXT.md`、`docs/architecture.md`、ADR-0001/0004/0007/0008 和
-`docs/skeleton-ledger.md`。建议先把 OR-S1–S7 拆成独立 issue，再按
-**许可证 → package resources → Quickstart/隐私 → CI → dogfood → release** 的顺序推进。
+随后在 GitHub 创建非 draft、非 prerelease 的 `v0.2.0` Release，粘贴
+[`docs/releases/v0.2.0.md`](releases/v0.2.0.md) 并上传 sdist/wheel。PyPI 上传继续作为独立决策。

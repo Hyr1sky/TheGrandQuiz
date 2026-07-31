@@ -21,7 +21,7 @@ body:
     id: version
     attributes:
       label: Commit / tag 与环境
-      placeholder: "v0.1.0-rc.1, macOS 15, Python 3.12"
+      placeholder: "v0.2.0, macOS 15, Python 3.12"
     validations:
       required: true
   - type: input

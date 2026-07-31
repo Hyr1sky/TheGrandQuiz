@@ -15,6 +15,7 @@
 | 理解不可逆决策及其理由 | [ADR](adr/) |
 | 复盘某次实现、验收和 dogfood | [开发记录](devrecords/) |
 | 准备小范围试用 | [小范围 RC 指南](guides/rc-small-cohort.md) |
+| 查看当前发布说明 | [v0.2.0 Release Notes](releases/v0.2.0.md) |
 
 ## 文档职责
 
