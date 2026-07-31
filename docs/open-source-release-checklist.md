@@ -84,7 +84,8 @@ cd /tmp
 - [ ] 工作区只包含可解释的 release-prep 变更。
 - [x] `.env`、API Key、个人路径、数据库、Trace、`.scratch` 与 `localtemp` 未进入 Git。
 - [x] 本轮没有修改依赖或测试 fixture，没有新增分发权属问题。
-- [x] 当前 `main`（`ae028f8`）对应 Ubuntu GitHub Actions 全绿；release commit 推送后仍需复核新 run。
+- [x] release-prep commit `31102f6` 的 Ubuntu GitHub Actions 全绿，`checks` 与 `package-smoke`
+  均为 success。
 - [x] Release Notes 与 README、SECURITY、package metadata 一致。
 
 ## 4. 人工 dogfood 证据
