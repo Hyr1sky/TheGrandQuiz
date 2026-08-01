@@ -13,7 +13,6 @@ Learning 持久层由 ``LearningPersistence`` 明确拥有共享连接与五个�
 
 import asyncio
 import hashlib
-import os
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from urllib.parse import urlparse
@@ -32,8 +31,6 @@ from grandquiz.domain.learning.ingest.pipeline import IngestClassificationReposi
 from grandquiz.domain.learning.ingest.web_fetch import create_http_source
 from grandquiz.domain.learning.ingest.web_search import (
     SearchProvider,
-    SearXNGSearchProvider,
-    TavilySearchProvider,
 )
 from grandquiz.domain.learning.learning_facts import LearningFactJournal
 from grandquiz.domain.learning.memory import SqliteLearningMemory
@@ -44,6 +41,7 @@ from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.domain.learning.summarizer import LLMSummarizer
 from grandquiz.domain.learning.tools import register_learning_tools
+from grandquiz.interfaces.search_config import search_provider_from_env
 from grandquiz.kernel.clock import SystemClock
 from grandquiz.kernel.context import (
     BudgetCompressionPolicy,
@@ -93,11 +91,6 @@ _TRACE_DB_NAME = "trace.db"
 _LOCAL_HOST = "local"
 _DEFAULT_MAX_BYTES = 8 * 1024 * 1024
 _DEFAULT_ROUNDS = 5
-_SEARXNG_URL_ENV = "SEARXNG_URL"
-_SEARXNG_TIMEOUT_ENV = "SEARXNG_TIMEOUT_SECONDS"
-_TAVILY_API_KEY_ENV = "TAVILY_API_KEY"
-_TAVILY_TIMEOUT_ENV = "TAVILY_TIMEOUT_SECONDS"
-_WEB_SEARCH_PROVIDER_ENV = "WEB_SEARCH_PROVIDER"
 
 # Context compression（C-wire 增量 1；历史压缩只保留最终 assistant 回答）：
 # system 分区实测 ~925 token（react_system.md），memory 分区随薄弱点/资源目录增长；两个 budget
@@ -139,30 +132,6 @@ def budget_provider(provider: Provider) -> Provider:
         counter=HeuristicTokenCounter(),
         ceiling=_PROVIDER_REQUEST_BUDGET,
     )
-
-
-def search_provider_from_env() -> SearchProvider | None:
-    """从显式凭证选择搜索 provider；不负责启动服务或 Docker。"""
-    selected = os.environ.get(_WEB_SEARCH_PROVIDER_ENV, "").strip().casefold()
-    tavily_api_key = os.environ.get(_TAVILY_API_KEY_ENV, "").strip()
-    endpoint = os.environ.get(_SEARXNG_URL_ENV, "").strip()
-
-    if selected and selected not in {"tavily", "searxng"}:
-        raise ValueError("WEB_SEARCH_PROVIDER 只能是 tavily 或 searxng")
-    if not selected and tavily_api_key and endpoint:
-        raise ValueError("同时配置 Tavily 与 SearXNG 时必须设置 WEB_SEARCH_PROVIDER")
-
-    if selected == "tavily" or (not selected and tavily_api_key):
-        if not tavily_api_key:
-            raise ValueError("WEB_SEARCH_PROVIDER=tavily 需要 TAVILY_API_KEY")
-        timeout = float(os.environ.get(_TAVILY_TIMEOUT_ENV, "10"))
-        return TavilySearchProvider(api_key=tavily_api_key, timeout_seconds=timeout)
-    if selected == "searxng" and not endpoint:
-        raise ValueError("WEB_SEARCH_PROVIDER=searxng 需要 SEARXNG_URL")
-    if not endpoint:
-        return None
-    timeout = float(os.environ.get(_SEARXNG_TIMEOUT_ENV, "10"))
-    return SearXNGSearchProvider(endpoint=endpoint, timeout_seconds=timeout)
 
 
 def _file_source(materials_dir: Path) -> Callable[[str], str]:

@@ -7,6 +7,7 @@ import hashlib
 import secrets
 import uuid
 from collections.abc import AsyncIterator, Mapping
+from contextlib import suppress
 from pathlib import PurePath
 from typing import Literal, cast
 from urllib.parse import quote, urlparse
@@ -153,6 +154,9 @@ class AcquisitionManager:
         interrupted = self._ledger.in_flight()
         self._ledger.fail_interrupted_runs(now=self._clock.now())
         for run in interrupted:
+            if run.status == "queued" and self._ledger.activation_required(run.run_id):
+                self.activate_reserved(run.run_id)
+                continue
             failed_run = self._ledger.require(run.run_id)
             failure = _public_failure_data(failed_run)
             emitter = self._resume_emitter(run.trace_id)
@@ -187,23 +191,101 @@ class AcquisitionManager:
         safe_name = PurePath(filename).name
         digest = hashlib.sha256(encoded).hexdigest()[:16]
         locator = f"file://local/upload/{digest}/{quote(safe_name)}"
-        return self._start(
-            kind="upload",
-            locator=locator,
-            display_name=safe_name,
-            request_payload={"content": content},
-        )
+        with self._ledger.transaction_owner.transaction():
+            created = self._reserve(
+                kind="upload",
+                locator=locator,
+                display_name=safe_name,
+                request_payload={"content": content},
+            )
+            self._ledger.require_activation(created.run_id)
+        self.activate_reserved(created.run_id)
+        return created
 
-    def start_url(self, *, url: str) -> AcquisitionCreated:
+    def start_url(self, *, url: str, control_token: str | None = None) -> AcquisitionCreated:
+        created = self.reserve_url(url=url, control_token=control_token)
+        self.activate_reserved(created.run_id)
+        return created
+
+    def reserve_url(self, *, url: str, control_token: str | None = None) -> AcquisitionCreated:
+        """Persist a queued URL run; caller activates it only after its transaction commits."""
+
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or parsed.hostname is None:
             raise AcquisitionInputError("invalid_url", "请输入带主机名的 http(s) URL")
         display_name = f"{parsed.hostname}{parsed.path}".rstrip("/")
-        return self._start(
-            kind="url",
-            locator=url,
-            display_name=display_name,
-            request_payload={},
+        with self._ledger.transaction_owner.transaction():
+            created = self._reserve(
+                kind="url",
+                locator=url,
+                display_name=display_name,
+                request_payload={},
+                control_token=control_token,
+            )
+            self._ledger.require_activation(created.run_id)
+        return created
+
+    def activate_reserved(self, run_id: str) -> None:
+        """Emit and schedule a committed reservation; repeated activation is harmless."""
+
+        task = self._tasks.get(run_id)
+        if task is not None:
+            return
+        run = self._ledger.claim_activation(run_id, now=self._clock.now())
+        if run is None:
+            return
+        emitter: EventEmitter | None = None
+        try:
+            loop = asyncio.get_running_loop()
+            existing_events = self._trace_store.events(run.trace_id)
+            emitter = (
+                self._resume_emitter(run.trace_id)
+                if existing_events
+                else self._new_emitter(run.trace_id)
+            )
+            emitter.emit("acquisition.queued", payload={"run_id": run_id, "kind": run.kind})
+            self._changed[run_id] = asyncio.Event()
+            self._tasks[run_id] = loop.create_task(
+                self._execute(run_id, emitter),
+                name=f"grandquiz-acquisition:{run_id}",
+            )
+        except Exception as exc:
+            failed = self._ledger.mark_failed(
+                run_id,
+                code="processing_failed",
+                stage="runtime",
+                message="材料任务激活失败，请重试",
+                now=self._clock.now(),
+            )
+            self._notify(run_id)
+            if emitter is not None:
+                with suppress(Exception):
+                    emitter.emit(
+                        EventType.ERROR,
+                        payload={
+                            "classification": "acquisition_activation_failed",
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+                    emitter.emit(
+                        "acquisition.failed",
+                        payload={
+                            "run_id": run_id,
+                            **_public_failure_data(failed),
+                            "status": "failed",
+                        },
+                    )
+            raise
+
+    def created_with_token(self, run_id: str, *, control_token: str) -> AcquisitionCreated:
+        """Re-project an idempotently launched run using the caller-held plaintext token."""
+
+        run = self._ledger.require(run_id)
+        self._verify_token(run, control_token)
+        return AcquisitionCreated(
+            **self._view(run).model_dump(),
+            resume_token=control_token,
+            token_expires_at=run.token_expires_at,
         )
 
     def get(self, run_id: str) -> AcquisitionView | None:
@@ -336,18 +418,21 @@ class AcquisitionManager:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    def _start(
+    def _reserve(
         self,
         *,
         kind: Literal["upload", "url"],
         locator: str,
         display_name: str,
         request_payload: Mapping[str, str],
+        control_token: str | None = None,
     ) -> AcquisitionCreated:
         now = self._clock.now()
         run_id = uuid.uuid4().hex
         trace_id = uuid.uuid4().hex
-        token = secrets.token_urlsafe(32)
+        token = control_token or secrets.token_urlsafe(32)
+        if len(token) < 24:
+            raise AcquisitionInputError("invalid_control_token", "控制令牌长度不足")
         run = self._ledger.create(
             run_id=run_id,
             trace_id=trace_id,
@@ -359,16 +444,6 @@ class AcquisitionManager:
             token_expires_at=now + _TOKEN_TTL_SECONDS,
             now=now,
         )
-        emitter = self._new_emitter(trace_id)
-        emitter.emit(
-            "acquisition.queued",
-            payload={"run_id": run_id, "kind": kind},
-        )
-        self._changed[run_id] = asyncio.Event()
-        self._tasks[run_id] = asyncio.create_task(
-            self._execute(run_id, emitter),
-            name=f"grandquiz-acquisition:{run_id}",
-        )
         return AcquisitionCreated(
             **self._view(run).model_dump(),
             resume_token=token,
@@ -376,7 +451,7 @@ class AcquisitionManager:
         )
 
     async def _execute(self, run_id: str, emitter: EventEmitter) -> None:
-        run = self._ledger.mark_running(run_id, now=self._clock.now())
+        run = self._ledger.require(run_id)
         emitter.emit("acquisition.started", payload={"run_id": run_id})
         self._notify(run_id)
         source: FetchSource

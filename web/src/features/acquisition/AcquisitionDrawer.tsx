@@ -4,6 +4,7 @@ import {
   CircleNotchIcon,
   FileTextIcon,
   LinkIcon,
+  MagnifyingGlassIcon,
   UploadSimpleIcon,
   WarningCircleIcon,
   XIcon,
@@ -22,10 +23,14 @@ import {
   cancelAcquisition,
   createUpload,
   createUrl,
+  discoverMaterials,
   getAcquisition,
   listAcquisitions,
+  listMaterialDiscoveries,
+  reviewMaterialCandidate,
   type AcquisitionCreated,
   type AcquisitionView,
+  type MaterialDiscoveryBatch,
 } from "./api";
 import { streamAcquisitionEvents } from "./acquisitionEvents";
 import "./acquisition-drawer.css";
@@ -36,8 +41,10 @@ interface AcquisitionDrawerProps {
   onCompleted: (resourceId: string) => void;
 }
 
-type InputMode = "upload" | "url";
+type InputMode = "upload" | "url" | "discover";
 const TOKEN_PREFIX = "grandquiz.acquisition.token.";
+const DISCOVERY_TOKEN_PREFIX = "grandquiz.discovery.token.";
+const DISCOVERY_REVIEW_PREFIX = "grandquiz.discovery.review.";
 const ACTIVE_STATUSES = new Set(["queued", "running"]);
 
 const STATUS_LABELS: Record<AcquisitionView["status"], string> = {
@@ -60,6 +67,14 @@ function storeToken(run: AcquisitionCreated) {
   );
 }
 
+function stableLocalValue(key: string, create: () => string): string {
+  const existing = globalThis.localStorage?.getItem(key);
+  if (existing !== null && existing !== undefined) return existing;
+  const value = create();
+  globalThis.localStorage?.setItem(key, value);
+  return value;
+}
+
 export function AcquisitionDrawer({
   open,
   onClose,
@@ -68,6 +83,12 @@ export function AcquisitionDrawer({
   const [mode, setMode] = useState<InputMode>("upload");
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState("");
+  const [discoveryTopic, setDiscoveryTopic] = useState("");
+  const [discovery, setDiscovery] =
+    useState<MaterialDiscoveryBatch | null>(null);
+  const [recentDiscoveries, setRecentDiscoveries] = useState<
+    MaterialDiscoveryBatch[]
+  >([]);
   const [run, setRun] = useState<AcquisitionView | null>(null);
   const [recent, setRecent] = useState<AcquisitionView[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -164,6 +185,80 @@ export function AcquisitionDrawer({
     }
   };
 
+  const search = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await discoverMaterials(discoveryTopic.trim());
+      setDiscovery(created);
+      setRecentDiscoveries((current) => [
+        created,
+        ...current.filter((item) => item.batch_id !== created.batch_id),
+      ]);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "无法发现候选材料");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openDiscovery = async () => {
+    setMode("discover");
+    try {
+      setRecentDiscoveries(await listMaterialDiscoveries());
+    } catch {
+      // 历史读取失败不应阻断新的材料发现。
+    }
+  };
+
+  const reviewDiscovery = async (
+    candidateId: string,
+    decision: "approved" | "rejected",
+  ) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const controlToken =
+        decision === "approved"
+          ? stableLocalValue(
+              `${DISCOVERY_TOKEN_PREFIX}${candidateId}`,
+              () =>
+                `${globalThis.crypto.randomUUID()}${globalThis.crypto.randomUUID()}`,
+            )
+          : undefined;
+      const result = await reviewMaterialCandidate(
+        candidateId,
+        decision,
+        stableLocalValue(
+          `${DISCOVERY_REVIEW_PREFIX}${candidateId}.${decision}`,
+          () => globalThis.crypto.randomUUID(),
+        ),
+        controlToken,
+      );
+      setDiscovery((current) =>
+        current === null
+          ? current
+          : {
+              ...current,
+              candidates: current.candidates.map((candidate) =>
+                candidate.candidate_id === candidateId
+                  ? result.candidate
+                  : candidate,
+              ),
+            },
+      );
+      if (result.acquisition != null) {
+        storeToken(result.acquisition);
+        setRun(result.acquisition);
+        await refreshRecent();
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "候选审核失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const approve = async () => {
     if (run === null) return;
     const token = tokenFor(run.run_id);
@@ -221,6 +316,8 @@ export function AcquisitionDrawer({
     setRun(null);
     setFile(null);
     setUrl("");
+    setDiscovery(null);
+    setDiscoveryTopic("");
     setSelectedIds(new Set());
     setError(null);
   };
@@ -280,6 +377,15 @@ export function AcquisitionDrawer({
                   <LinkIcon aria-hidden size={17} />
                   网页链接
                 </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "discover"}
+                  onClick={() => void openDiscovery()}
+                >
+                  <MagnifyingGlassIcon aria-hidden size={17} />
+                  发现材料
+                </button>
               </div>
 
               {mode === "upload" ? (
@@ -313,7 +419,7 @@ export function AcquisitionDrawer({
                     选择文件
                   </button>
                 </div>
-              ) : (
+              ) : mode === "url" ? (
                 <label className="acquisition-url-field">
                   <span>公开网页 URL</span>
                   <input
@@ -326,6 +432,97 @@ export function AcquisitionDrawer({
                     服务会执行 SSRF 防护、大小限制和正文质量检查。
                   </small>
                 </label>
+              ) : (
+                <section className="discovery-panel" aria-label="发现材料">
+                  <label className="acquisition-url-field">
+                    <span>这次想学习什么？</span>
+                    <input
+                      type="search"
+                      placeholder="例如：Agent Memory 的工程实践"
+                      value={discoveryTopic}
+                      onChange={(event) => setDiscoveryTopic(event.target.value)}
+                    />
+                    <small>只搜索候选；批准后才会抓取，仍需第二次审批知识点。</small>
+                  </label>
+                  <button
+                    type="button"
+                    className="acquisition-primary"
+                    disabled={busy || discoveryTopic.trim() === ""}
+                    onClick={() => void search()}
+                  >
+                    <MagnifyingGlassIcon aria-hidden size={18} />
+                    搜索候选
+                  </button>
+                  {discovery !== null ? (
+                    <div className="discovery-candidates">
+                      {discovery.candidates.map((candidate) => (
+                        <article key={candidate.candidate_id}>
+                          <div>
+                            <strong>{candidate.title}</strong>
+                            <small>{candidate.why}</small>
+                          </div>
+                          <p>{candidate.snippet || "没有可用摘要"}</p>
+                          <code>{candidate.canonical_url}</code>
+                          {candidate.review_status === "pending" ? (
+                            <div className="discovery-actions">
+                              <button
+                                type="button"
+                                disabled={
+                                  busy || candidate.eligibility !== "eligible"
+                                }
+                                onClick={() =>
+                                  void reviewDiscovery(
+                                    candidate.candidate_id,
+                                    "approved",
+                                  )
+                                }
+                              >
+                                批准并深读
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() =>
+                                  void reviewDiscovery(
+                                    candidate.candidate_id,
+                                    "rejected",
+                                  )
+                                }
+                              >
+                                忽略
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="discovery-reviewed">
+                              {candidate.review_status === "approved"
+                                ? "已授权"
+                                : "已忽略"}
+                            </span>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  ) : null}
+                  {recentDiscoveries.length > 0 ? (
+                    <div className="discovery-history">
+                      <h3>最近发现</h3>
+                      {recentDiscoveries.map((batch) => (
+                        <button
+                          type="button"
+                          key={batch.batch_id}
+                          onClick={() => setDiscovery(batch)}
+                        >
+                          <span>{batch.topic}</span>
+                          <small>
+                            {batch.status === "ready"
+                              ? `${batch.candidates.length} 个候选`
+                              : (batch.error_code ?? "搜索失败")}
+                          </small>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
               )}
 
               {error !== null ? (
@@ -335,7 +532,7 @@ export function AcquisitionDrawer({
                 </p>
               ) : null}
 
-              <button
+              {mode !== "discover" ? <button
                 type="button"
                 className="acquisition-primary"
                 disabled={
@@ -350,7 +547,7 @@ export function AcquisitionDrawer({
                   <UploadSimpleIcon aria-hidden size={18} />
                 )}
                 开始解析
-              </button>
+              </button> : null}
 
               {recent.length > 0 ? (
                 <section className="acquisition-history" aria-label="最近导入">

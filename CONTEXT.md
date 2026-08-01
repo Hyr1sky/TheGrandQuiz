@@ -142,6 +142,18 @@ _Avoid_: 自由 tag 直接控制行为、按显示名寻址、同义词自动合
 grader。
 _Avoid_: 把用户纠正冒充盲标金标准、自动上传或自动晋升为发布 Eval、建立第二份可变事实源
 
+**Material Discovery Batch / Candidate**（v0.4 已实现）:
+用户显式给出主题后，由 SearchProvider 返回的持久候选收件箱。Batch 保存搜索策略、adapter、成功/失败状态；
+Candidate 保存 provider 顺序、规范 URL、确定性质量标记、资格与人工决定。发现阶段严格只读：不抓正文、
+不调用 Reader、不写 LearningResource；批准只授权既有 Acquisition，仍要经过知识点审批。
+_Avoid_: 定时主动搜索、模型自动批准、用虚构相关性分数排序、让搜索直接写 KB
+
+**Eval Inbox Candidate / Dataset Snapshot**（v0.4 已实现）:
+判决纠正或显式导入的人工盲标进入本地隐私审核收件箱。相同来源的新 payload supersede 旧候选；只有
+active + approved 候选可以组成以内容 SHA-256 寻址的不可变快照。盲于模型输出且标签完整的样本可计入
+release gate，判决纠正固定为 exploratory。快照是获批输入的冻结版本，不是新的学习事实源。
+_Avoid_: 自动上传、自动训练、修改历史快照、把 correction 计入 blind gate、把 operational trace 当数据集
+
 **LearnerProjection**（Learning Model v2 v1 已实现）:
 从 committed attempts、Learning Memory 和 DifficultyLedger 重建的分析读模型，汇总考核次数、判决分布、
 闭卷次数、当前薄弱状态、难度和经独立 DemandValidator 验证的能力证据。销账/复发、自信校准

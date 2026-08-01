@@ -14,6 +14,8 @@ import uvicorn
 
 from grandquiz.domain.learning.citations import ground_items
 from grandquiz.domain.learning.document import build_document_snapshot
+from grandquiz.domain.learning.ingest.fetch import FetchResult
+from grandquiz.domain.learning.ingest.web_search import SearchResult
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.interfaces.api.app import ApiSettings, create_app
@@ -59,6 +61,42 @@ receive_event -> persist_trace -> notify_observers -> checkpoint_state -> resume
 
 恢复流程从事件日志和最近的成功快照重建状态，重放尚未完成的 turn，直到重新达到一致性边界。
 """
+
+
+class _FixtureSearchProvider:
+    adapter_name = "fixture-search"
+
+    async def search(
+        self,
+        query: str,
+        *,
+        limit: int,
+        domains: tuple[str, ...] = (),
+    ) -> list[SearchResult]:
+        del domains
+        suffix = hashlib.sha256(query.encode("utf-8")).hexdigest()[:12]
+        return [
+            SearchResult(
+                title="Agent Memory 工程指南",
+                url=f"https://example.com/agent-memory/{suffix}",
+                snippet="一份关于 Agent Memory 分层、检索与工程权衡的候选材料摘要。",
+                adapter=self.adapter_name,
+                rank=1,
+            )
+        ][:limit]
+
+
+class _FixtureHttpSource:
+    async def fetch(self, url: str, *, max_bytes: int) -> FetchResult:
+        encoded = CONTENT.encode("utf-8")
+        assert len(encoded) <= max_bytes
+        return FetchResult(
+            requested_url=url,
+            final_url=url,
+            content=CONTENT,
+            content_type="text/markdown",
+            content_hash=hashlib.sha256(encoded).hexdigest(),
+        )
 
 
 class _FixtureProvider:
@@ -269,6 +307,8 @@ def main() -> None:
             trace_db_path=root / "trace.db",
         ),
         provider=_FixtureProvider(resource_id),
+        search_provider=_FixtureSearchProvider(),
+        acquisition_http_source=_FixtureHttpSource(),
     )
     port = int(os.environ.get("GRANDQUIZ_FIXTURE_PORT", "8000"))
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")

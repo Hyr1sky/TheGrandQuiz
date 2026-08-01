@@ -8,7 +8,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 作者本人是用户 #1，同时作为 AI/Agent 工程师方向的简历项目。核心循环是"考核"：学完材料 → 被拷问
 → 暴露薄弱概念 → 记入记忆 → 下次优先考薄弱点。
 
-**当前状态（2026-07-31）**：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel/`（events/runner/tools/
+**当前状态（2026-08-01）**：可观测/可恢复/可评测的 Agent Runtime 已落地——`kernel/`（events/runner/tools/
 hooks/context/clock/recovery/trace/db）+ `providers/`（OpenAI 兼容 + Record/Replay）+ `domain/learning/`
 （考核竖切 ingest→深读→出题→判卷→薄弱记账）+ `interfaces/cli/`（ingest/quiz/react/report/trace 子命令）
 + `evals/`（17 条 Tier-1 规则用例 + case15 校准优先 Tier-2 质量门）。**最小 ReAct 对话核（R1）与全局 KB 重构均已落地**（`grandquiz react`
@@ -35,8 +35,9 @@ v0.2 RC 又补齐非代码 Markdown 节点中 CommonMark 可见 Evidence 到 raw
 和逐点评判；v0.2 功能 RC 已关闭。发布回归又修复了考核导航覆盖 Chat 回复，并为输入框增加空白态 `↑` 恢复
 上一问题；默认 Eval/HTML 只做离线 Replay，Rule/Quality 与 execution/judge 成本分列；v0.3 代码 RC 已接通 Web
 approved-only 分类筛选、生产判卷人工盲标 calibration gate 与判决纠正到本地 Eval 候选，真实校准证据仍待积累；
-静态四门全绿，全量 pytest 当前为 `961 passed`，Web unit 为 `47 passed`，Playwright 桌面/移动端为
-`14 passed`。Reader 真实基线为
+v0.4 进一步补齐人工授权的材料发现 inbox、Acquisition 桥接、Eval 隐私审核与内容哈希不可变快照；真实盲标
+仍与代码开发并行，不阻塞结构实现，也不会在 gate 前启用自动策略。静态四门全绿，全量 pytest 当前为
+`980 passed`，Web unit 为 `48 passed`，Playwright 桌面/移动端为 `18 passed`。Reader 真实基线为
 105/105 个可考节点 exactly-once 覆盖、12 个候选、0 重复、单次请求 8715 prompt tokens。DS-S3 的生产 ingest/
 人工筛选已由 trace `2515ec1af79a4a0a9860993b4a35beb9` 通过只读审计（141 个可考节点、2 批、34 条 exact
 evidence）。DS-S4 生产 trace `46b91c61c1c24ebabc94be97db31bb16` 也已通过 selected search → 3 次 bounded

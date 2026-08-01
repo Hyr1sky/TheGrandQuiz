@@ -32,6 +32,9 @@ QUESTION_ASKED + ANSWER_JUDGED
 | `AskedQuestionsLedger` | 避免跨会话机械重复 | 与薄弱状态、难度分别演化 |
 | `AssessmentPlan` | 把多题请求规范化为逐位置题型意图 | 1–20 题；顺序不可丢；所有 interface 共用 |
 | `QuestionSpec` | 保存单道开放题的题干、评分点、参考作答与 Evidence | 每个评分点 ID 唯一且锚定本题 Evidence；Grader 不读取题外 rubric |
+| `MaterialDiscoveryBatch / Candidate` | 保存一次只读搜索及其待审核材料 | 搜索不写 KB；只有 eligible + approved 候选可启动 Acquisition |
+| `EvalInboxCandidate` | 汇合可审核的纠正与盲标候选 | 来源版本替换时旧候选 superseded；审核前不进入快照 |
+| `DatasetSnapshot` | 冻结一次明确授权的 Eval 输入集合 | 按内容哈希标识且不可变；eligible blind 与 exploratory 分开核算 |
 
 ## 整体蓝图
 
@@ -92,6 +95,25 @@ flowchart TB
 `TraceStore` 横跨所有运行阶段，但只负责完整审计；它不是长期学习事实的唯一存储。
 [ADR-0010](adr/0010-durable-learning-facts-separate-from-operational-trace.md) 固定了两个事件消费者的
 保留边界。
+
+### v0.4 的两条授权边界
+
+```text
+topic → SearchProvider → MaterialDiscoveryBatch
+                         └─ pending Candidate
+                              ├─ reject → 终止
+                              └─ approve → Acquisition → 知识点审批 → KB
+
+VerdictCorrection ─┐
+                   ├→ EvalInboxCandidate → privacy review → DatasetSnapshot
+blind label JSON ──┘                                      ├─ eligible blind
+                                                          └─ exploratory
+```
+
+Discovery 是 Acquisition 前的候选收件箱，不拥有 fetch/Reader/KB 提交；Eval inbox 是来源事实后的授权层，
+不修改 LearningFactJournal 或盲标原件。两者都使用稳定 request id 保证重试幂等；快照复制审核 request、
+reason 与时间作为授权证据。关键决定只把 ID、类别和
+计数投影到 Trace，原始 query、URL 与样本正文不进入 operational event payload。
 
 ## Learning Model v2 的边界
 

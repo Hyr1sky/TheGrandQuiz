@@ -244,6 +244,161 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/discoveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Discoveries */
+        get: operations["list_discoveries_api_v1_discoveries_get"];
+        put?: never;
+        /** Create Discovery */
+        post: operations["create_discovery_api_v1_discoveries_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/discoveries/candidates/{candidate_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Material Candidate */
+        post: operations["review_material_candidate_api_v1_discoveries_candidates__candidate_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/discoveries/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Discovery */
+        get: operations["get_discovery_api_v1_discoveries__batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/eval/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Eval Candidates */
+        get: operations["list_eval_candidates_api_v1_eval_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/eval/candidates/blind-import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Blind Labels */
+        post: operations["import_blind_labels_api_v1_eval_candidates_blind_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/eval/candidates/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync Eval Candidates */
+        post: operations["sync_eval_candidates_api_v1_eval_candidates_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/eval/candidates/{candidate_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Eval Candidate */
+        post: operations["review_eval_candidate_api_v1_eval_candidates__candidate_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/eval/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Eval Snapshots */
+        get: operations["list_eval_snapshots_api_v1_eval_snapshots_get"];
+        put?: never;
+        /** Create Eval Snapshot */
+        post: operations["create_eval_snapshot_api_v1_eval_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/eval/snapshots/{snapshot_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Eval Snapshot */
+        get: operations["get_eval_snapshot_api_v1_eval_snapshots__snapshot_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -1004,6 +1159,13 @@ export interface components {
             /** Trace Id */
             trace_id: string;
         };
+        /** BlindLabelImportRequest */
+        BlindLabelImportRequest: {
+            /** Request Id */
+            request_id: string;
+            /** Samples */
+            samples: components["schemas"]["GradingCalibrationSample"][];
+        };
         /** CancelRequest */
         CancelRequest: {
             /** Resume Token */
@@ -1081,6 +1243,74 @@ export interface components {
             /** Url */
             url?: string | null;
         };
+        /** CreateDiscoveryRequest */
+        CreateDiscoveryRequest: {
+            source_policy?: components["schemas"]["MaterialSourcePolicyV1"];
+            /** Topic */
+            topic: string;
+        };
+        /** DatasetSnapshotItemV1 */
+        DatasetSnapshotItemV1: {
+            /** Candidate Id */
+            candidate_id: string;
+            /** Payload */
+            payload: components["schemas"]["GradingEvalCandidateV1"] | components["schemas"]["GradingCalibrationSample"];
+            /** Payload Hash */
+            payload_hash: string;
+            /** Payload Schema Version */
+            payload_schema_version: string;
+            /** Release Gate Eligible */
+            release_gate_eligible: boolean;
+            /** Review Reason */
+            review_reason: string;
+            /** Review Request Id */
+            review_request_id: string;
+            /** Reviewed At */
+            reviewed_at: number;
+            /**
+             * Source Kind
+             * @enum {string}
+             */
+            source_kind: "verdict_correction" | "blind_grading_label";
+        };
+        /** DatasetSnapshotList */
+        DatasetSnapshotList: {
+            /** Items */
+            items: components["schemas"]["DatasetSnapshotV1"][];
+        };
+        /** DatasetSnapshotRequest */
+        DatasetSnapshotRequest: {
+            /** Candidate Ids */
+            candidate_ids: string[];
+        };
+        /** DatasetSnapshotV1 */
+        DatasetSnapshotV1: {
+            /** Candidate Count */
+            candidate_count: number;
+            /** Content Sha256 */
+            content_sha256: string;
+            /** Created At */
+            created_at: number;
+            /** Eligible Blind Count */
+            eligible_blind_count: number;
+            /** Exploratory Count */
+            exploratory_count: number;
+            /** Items */
+            items: components["schemas"]["DatasetSnapshotItemV1"][];
+            /**
+             * Redaction Profile
+             * @default learning-facts.v1
+             */
+            redaction_profile: string;
+            /**
+             * Schema Version
+             * @default eval-dataset-snapshot.v1
+             * @constant
+             */
+            schema_version: "eval-dataset-snapshot.v1";
+            /** Snapshot Id */
+            snapshot_id: string;
+        };
         /** DemandValidationRequest */
         DemandValidationRequest: {
             /** Rationale */
@@ -1141,6 +1371,11 @@ export interface components {
             validator_kind: "rule" | "calibrated_judge" | "user";
             /** Validator Version */
             validator_version: string;
+        };
+        /** DiscoveryList */
+        DiscoveryList: {
+            /** Items */
+            items: components["schemas"]["MaterialDiscoveryBatchV1"][];
         };
         /** DocumentNodeReadResponse */
         DocumentNodeReadResponse: {
@@ -1205,6 +1440,75 @@ export interface components {
             /** Trace Id */
             trace_id: string | null;
         };
+        /** EvalCandidateList */
+        EvalCandidateList: {
+            /** Items */
+            items: components["schemas"]["EvalInboxCandidateV1"][];
+        };
+        /** EvalInboxCandidateV1 */
+        EvalInboxCandidateV1: {
+            /** Candidate Id */
+            candidate_id: string;
+            /** Created At */
+            created_at: number;
+            /** Dedupe Key */
+            dedupe_key: string;
+            /**
+             * Lifecycle Status
+             * @enum {string}
+             */
+            lifecycle_status: "active" | "superseded";
+            /** Payload */
+            payload: components["schemas"]["GradingEvalCandidateV1"] | components["schemas"]["GradingCalibrationSample"];
+            /** Payload Hash */
+            payload_hash: string;
+            /** Payload Schema Version */
+            payload_schema_version: string;
+            /**
+             * Privacy Review Required
+             * @default true
+             * @constant
+             */
+            privacy_review_required: true;
+            /** Release Gate Eligible */
+            release_gate_eligible: boolean;
+            /** Review Reason */
+            review_reason?: string | null;
+            /** Review Request Id */
+            review_request_id?: string | null;
+            /**
+             * Review Status
+             * @enum {string}
+             */
+            review_status: "pending" | "approved" | "rejected";
+            /** Reviewed At */
+            reviewed_at?: number | null;
+            /**
+             * Schema Version
+             * @default eval-inbox-candidate.v1
+             * @constant
+             */
+            schema_version: "eval-inbox-candidate.v1";
+            /**
+             * Source Kind
+             * @enum {string}
+             */
+            source_kind: "verdict_correction" | "blind_grading_label";
+            /** Source Request Id */
+            source_request_id: string;
+        };
+        /** EvalReviewRequest */
+        EvalReviewRequest: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approved" | "rejected";
+            /** Reason */
+            reason: string;
+            /** Request Id */
+            request_id: string;
+        };
         /** EvidenceRevealRequest */
         EvidenceRevealRequest: {
             /**
@@ -1212,6 +1516,18 @@ export interface components {
              * @enum {string}
              */
             interaction: "hover" | "click" | "keyboard";
+        };
+        /**
+         * ExpectedPoint
+         * @description 一道开放题的可审计评分点；每个点必须绑定该题引用的一条原文证据。
+         */
+        ExpectedPoint: {
+            /** Cited Evidence */
+            cited_evidence: string;
+            /** Description */
+            description: string;
+            /** Point Id */
+            point_id: string;
         };
         /** GenerationProvenance */
         GenerationProvenance: {
@@ -1222,6 +1538,36 @@ export interface components {
             kind: "rule" | "model";
             /** Version */
             version: string;
+        };
+        /**
+         * GradingCalibrationSample
+         * @description One explicit human label for a production question and learner answer.
+         */
+        GradingCalibrationSample: {
+            /** Annotator */
+            annotator: string;
+            /** Blind To Model Output */
+            blind_to_model_output: boolean;
+            /** Human Matched Points */
+            human_matched_points: string[];
+            /** Human Missing Points */
+            human_missing_points: string[];
+            /**
+             * Human Verdict
+             * @enum {string}
+             */
+            human_verdict: "对" | "勉强" | "错";
+            /** Learner Answer */
+            learner_answer: string;
+            question: components["schemas"]["QuestionSpec"];
+            /** Sample Id */
+            sample_id: string;
+            /**
+             * Schema Version
+             * @default grading-calibration-sample.v1
+             * @constant
+             */
+            schema_version: "grading-calibration-sample.v1";
         };
         /** GradingEvalCandidateList */
         GradingEvalCandidateList: {
@@ -1507,6 +1853,130 @@ export interface components {
              */
             schema_version: "learning-report.v1";
         };
+        /** MaterialCandidateV1 */
+        MaterialCandidateV1: {
+            /** Acquisition Run Id */
+            acquisition_run_id?: string | null;
+            /** Batch Id */
+            batch_id: string;
+            /** Candidate Id */
+            candidate_id: string;
+            /** Canonical Url */
+            canonical_url: string;
+            /** Duplicate Resource Id */
+            duplicate_resource_id?: string | null;
+            /**
+             * Eligibility
+             * @enum {string}
+             */
+            eligibility: "eligible" | "duplicate_batch" | "existing_resource" | "insufficient_preview";
+            /** Provider Adapter */
+            provider_adapter: string;
+            /** Provider Rank */
+            provider_rank: number;
+            /** Quality Flags */
+            quality_flags: ("has_title" | "has_preview" | "https" | "domain_constrained" | "new_to_library")[];
+            /** Review Reason */
+            review_reason?: string | null;
+            /** Review Request Id */
+            review_request_id?: string | null;
+            /**
+             * Review Status
+             * @default pending
+             * @enum {string}
+             */
+            review_status: "pending" | "approved" | "rejected";
+            /** Reviewed At */
+            reviewed_at?: number | null;
+            /**
+             * Schema Version
+             * @default material-candidate.v1
+             * @constant
+             */
+            schema_version: "material-candidate.v1";
+            /** Snippet */
+            snippet: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /** Why */
+            why: string;
+        };
+        /** MaterialDiscoveryBatchV1 */
+        MaterialDiscoveryBatchV1: {
+            /** Batch Id */
+            batch_id: string;
+            /** Candidate Count */
+            readonly candidate_count: number;
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["MaterialCandidateV1"][];
+            /** Created At */
+            created_at: number;
+            /** Error Code */
+            error_code?: string | null;
+            /** Error Message */
+            error_message?: string | null;
+            /** Provider Adapter */
+            provider_adapter: string;
+            /**
+             * Schema Version
+             * @default material-discovery-batch.v1
+             * @constant
+             */
+            schema_version: "material-discovery-batch.v1";
+            source_policy: components["schemas"]["MaterialSourcePolicyV1"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "failed";
+            /** Topic */
+            topic: string;
+            /** Trace Id */
+            trace_id: string;
+        };
+        /** MaterialReviewRequest */
+        MaterialReviewRequest: {
+            /** Control Token */
+            control_token?: string | null;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approved" | "rejected";
+            /** Reason */
+            reason?: string | null;
+            /** Request Id */
+            request_id: string;
+        };
+        /** MaterialReviewResult */
+        MaterialReviewResult: {
+            acquisition?: components["schemas"]["AcquisitionCreated"] | null;
+            candidate: components["schemas"]["MaterialCandidateV1"];
+        };
+        /** MaterialSourcePolicyV1 */
+        MaterialSourcePolicyV1: {
+            /**
+             * Domains
+             * @default []
+             */
+            domains: string[];
+            /**
+             * Limit
+             * @default 5
+             */
+            limit: number;
+            /**
+             * Schema Version
+             * @default material-source-policy.v1
+             * @constant
+             */
+            schema_version: "material-source-policy.v1";
+        };
         /** MessageAccepted */
         MessageAccepted: {
             /** Turn Id */
@@ -1541,6 +2011,26 @@ export interface components {
              * @enum {string}
              */
             strategy: "standard" | "probe";
+        };
+        /**
+         * QuestionSpec
+         * @description 开放题的唯一题目规格：题干、评分点、参考作答与原文证据。
+         *
+         *     ``question`` 非空（``NonEmptyStr``，strip 后为空也拒）；``cited_evidence`` 的非空与"锚定
+         *     被考 item 证据（子串即可）"由 ``generate_question`` 的校验门把关。``expected_points`` 是判卷
+         *     的唯一 rubric；``reference_answer`` 回答的必须是本题，而不是泛化复述整个 KnowledgeItem。
+         *     刻意不产 ``item_id`` / ``weak_item_id``——出题不记账，被考 item 由调用方指定、记账由判卷后的
+         *     代码算（ADR-0004）。
+         */
+        QuestionSpec: {
+            /** Cited Evidence */
+            cited_evidence: string[];
+            /** Expected Points */
+            expected_points: components["schemas"]["ExpectedPoint"][];
+            /** Question */
+            question: string;
+            /** Reference Answer */
+            reference_answer: string;
         };
         /**
          * ResolvedCitation
@@ -2457,6 +2947,339 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TurnCancelled"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_discoveries_api_v1_discoveries_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_discovery_api_v1_discoveries_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDiscoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialDiscoveryBatchV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_material_candidate_api_v1_discoveries_candidates__candidate_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MaterialReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialReviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_discovery_api_v1_discoveries__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialDiscoveryBatchV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_eval_candidates_api_v1_eval_candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCandidateList"];
+                };
+            };
+        };
+    };
+    import_blind_labels_api_v1_eval_candidates_blind_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlindLabelImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCandidateList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_eval_candidates_api_v1_eval_candidates_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCandidateList"];
+                };
+            };
+        };
+    };
+    review_eval_candidate_api_v1_eval_candidates__candidate_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvalReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalInboxCandidateV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_eval_snapshots_api_v1_eval_snapshots_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetSnapshotList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_eval_snapshot_api_v1_eval_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetSnapshotRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetSnapshotV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_snapshot_api_v1_eval_snapshots__snapshot_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetSnapshotV1"];
                 };
             };
             /** @description Validation Error */

@@ -96,6 +96,43 @@ class AcquisitionLedger:
         self._db.commit()
         return self.require(run_id)
 
+    def require_activation(self, run_id: str) -> None:
+        self._db.connection.execute(
+            "INSERT OR IGNORE INTO acquisition_activation_outbox (run_id) VALUES (?)",
+            (run_id,),
+        )
+        self._db.commit()
+
+    def activation_required(self, run_id: str) -> bool:
+        row = self._db.connection.execute(
+            "SELECT 1 FROM acquisition_activation_outbox WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        return row is not None
+
+    def claim_activation(self, run_id: str, *, now: float) -> AcquisitionRun | None:
+        """Atomically claim one durable activation before emitting or scheduling work."""
+
+        with self._db.transaction() as conn:
+            claimed = conn.execute(
+                """
+                UPDATE acquisition_runs
+                SET status = 'running', updated_at = ?
+                WHERE run_id = ? AND status = 'queued' AND EXISTS (
+                    SELECT 1 FROM acquisition_activation_outbox AS activation
+                    WHERE activation.run_id = acquisition_runs.run_id
+                )
+                """,
+                (now, run_id),
+            )
+            if claimed.rowcount != 1:
+                return None
+            conn.execute(
+                "DELETE FROM acquisition_activation_outbox WHERE run_id = ?",
+                (run_id,),
+            )
+        return self.require(run_id)
+
     def get(self, run_id: str) -> AcquisitionRun | None:
         row = self._db.connection.execute(
             """
@@ -273,7 +310,12 @@ class AcquisitionLedger:
                 INSERT OR REPLACE INTO acquisition_run_failures (run_id, error_stage)
                 SELECT run_id, 'runtime'
                 FROM acquisition_runs
-                WHERE status IN ('queued', 'running')
+                WHERE status = 'running' OR (
+                    status = 'queued' AND NOT EXISTS (
+                        SELECT 1 FROM acquisition_activation_outbox AS activation
+                        WHERE activation.run_id = acquisition_runs.run_id
+                    )
+                )
                 """
             )
             conn.execute(
@@ -282,7 +324,12 @@ class AcquisitionLedger:
                 SET status = 'failed', error_code = 'interrupted',
                     error_message = '服务在材料处理期间重启，请重试',
                     request_payload = '{}', prepared_payload = NULL, updated_at = ?
-                WHERE status IN ('queued', 'running')
+                WHERE status = 'running' OR (
+                    status = 'queued' AND NOT EXISTS (
+                        SELECT 1 FROM acquisition_activation_outbox AS activation
+                        WHERE activation.run_id = acquisition_runs.run_id
+                    )
+                )
                 """,
                 (now,),
             )
@@ -326,18 +373,23 @@ class AcquisitionLedger:
                 error_message,
                 run_id,
             )
+        expected_statuses = sorted(expected)
+        placeholders = ", ".join("?" for _ in expected_statuses)
         with self._db.transaction() as conn:
-            conn.execute(
+            updated = conn.execute(
                 f"""
                 UPDATE acquisition_runs
                 SET status = ?, updated_at = ?, prepared_payload = {prepared_sql},
                     request_payload = {request_sql},
                     resource_id = COALESCE(?, resource_id),
                     error_code = ?, error_message = ?
-                WHERE run_id = ?
+                WHERE run_id = ? AND status IN ({placeholders})
                 """,
-                parameters,
+                (*parameters, *expected_statuses),
             )
+            if updated.rowcount != 1:
+                current = self.require(run_id)
+                raise AcquisitionTransitionError(f"不能从 {current.status} 转换到 {status}")
             if error_stage is not None:
                 conn.execute(
                     """

@@ -97,6 +97,35 @@ def test_approval_token_is_single_use_and_transition_is_atomic(tmp_path: Path) -
             )
 
 
+def test_activation_claim_is_exclusive_across_database_connections(tmp_path: Path) -> None:
+    db_path = tmp_path / "learning.db"
+    with (
+        LearningPersistence(db_path) as first,
+        LearningPersistence(db_path) as second,
+    ):
+        with first.transaction_owner.transaction():
+            first.acquisitions.create(
+                run_id="run-claim",
+                trace_id="trace-claim",
+                kind="url",
+                locator="https://example.com/article",
+                display_name="example.com/article",
+                request_payload={},
+                token_hash="token-hash",
+                token_expires_at=200.0,
+                now=100.0,
+            )
+            first.acquisitions.require_activation("run-claim")
+
+        winner = first.acquisitions.claim_activation("run-claim", now=101.0)
+        loser = second.acquisitions.claim_activation("run-claim", now=101.0)
+
+        assert winner is not None
+        assert winner.status == "running"
+        assert loser is None
+        assert not first.acquisitions.activation_required("run-claim")
+
+
 def test_failed_transition_rolls_back_when_failure_detail_write_fails(
     tmp_path: Path,
 ) -> None:

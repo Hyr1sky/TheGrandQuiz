@@ -985,6 +985,30 @@
         "title": "AssessmentView",
         "type": "object"
       },
+      "BlindLabelImportRequest": {
+        "properties": {
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "samples": {
+            "items": {
+              "$ref": "#/components/schemas/GradingCalibrationSample"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Samples",
+            "type": "array"
+          }
+        },
+        "required": [
+          "request_id",
+          "samples"
+        ],
+        "title": "BlindLabelImportRequest",
+        "type": "object"
+      },
       "CancelRequest": {
         "properties": {
           "resume_token": {
@@ -1166,6 +1190,184 @@
         "title": "CreateAcquisitionRequest",
         "type": "object"
       },
+      "CreateDiscoveryRequest": {
+        "properties": {
+          "source_policy": {
+            "$ref": "#/components/schemas/MaterialSourcePolicyV1"
+          },
+          "topic": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic"
+        ],
+        "title": "CreateDiscoveryRequest",
+        "type": "object"
+      },
+      "DatasetSnapshotItemV1": {
+        "properties": {
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GradingEvalCandidateV1"
+              },
+              {
+                "$ref": "#/components/schemas/GradingCalibrationSample"
+              }
+            ],
+            "title": "Payload"
+          },
+          "payload_hash": {
+            "title": "Payload Hash",
+            "type": "string"
+          },
+          "payload_schema_version": {
+            "title": "Payload Schema Version",
+            "type": "string"
+          },
+          "release_gate_eligible": {
+            "title": "Release Gate Eligible",
+            "type": "boolean"
+          },
+          "review_reason": {
+            "minLength": 1,
+            "title": "Review Reason",
+            "type": "string"
+          },
+          "review_request_id": {
+            "minLength": 1,
+            "title": "Review Request Id",
+            "type": "string"
+          },
+          "reviewed_at": {
+            "title": "Reviewed At",
+            "type": "number"
+          },
+          "source_kind": {
+            "enum": [
+              "verdict_correction",
+              "blind_grading_label"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "source_kind",
+          "payload_schema_version",
+          "payload_hash",
+          "payload",
+          "release_gate_eligible",
+          "review_request_id",
+          "review_reason",
+          "reviewed_at"
+        ],
+        "title": "DatasetSnapshotItemV1",
+        "type": "object"
+      },
+      "DatasetSnapshotList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetSnapshotV1"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DatasetSnapshotList",
+        "type": "object"
+      },
+      "DatasetSnapshotRequest": {
+        "properties": {
+          "candidate_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Candidate Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidate_ids"
+        ],
+        "title": "DatasetSnapshotRequest",
+        "type": "object"
+      },
+      "DatasetSnapshotV1": {
+        "properties": {
+          "candidate_count": {
+            "minimum": 0.0,
+            "title": "Candidate Count",
+            "type": "integer"
+          },
+          "content_sha256": {
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "eligible_blind_count": {
+            "minimum": 0.0,
+            "title": "Eligible Blind Count",
+            "type": "integer"
+          },
+          "exploratory_count": {
+            "minimum": 0.0,
+            "title": "Exploratory Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetSnapshotItemV1"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "redaction_profile": {
+            "default": "learning-facts.v1",
+            "title": "Redaction Profile",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "eval-dataset-snapshot.v1",
+            "default": "eval-dataset-snapshot.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "content_sha256",
+          "candidate_count",
+          "eligible_blind_count",
+          "exploratory_count",
+          "items",
+          "created_at"
+        ],
+        "title": "DatasetSnapshotV1",
+        "type": "object"
+      },
       "DemandValidationRequest": {
         "properties": {
           "rationale": {
@@ -1328,6 +1530,22 @@
           "trace_id"
         ],
         "title": "DemandValidationV1",
+        "type": "object"
+      },
+      "DiscoveryList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MaterialDiscoveryBatchV1"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DiscoveryList",
         "type": "object"
       },
       "DocumentNodeReadResponse": {
@@ -1514,6 +1732,179 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "EvalCandidateList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EvalInboxCandidateV1"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "EvalCandidateList",
+        "type": "object"
+      },
+      "EvalInboxCandidateV1": {
+        "properties": {
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "dedupe_key": {
+            "title": "Dedupe Key",
+            "type": "string"
+          },
+          "lifecycle_status": {
+            "enum": [
+              "active",
+              "superseded"
+            ],
+            "title": "Lifecycle Status",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GradingEvalCandidateV1"
+              },
+              {
+                "$ref": "#/components/schemas/GradingCalibrationSample"
+              }
+            ],
+            "title": "Payload"
+          },
+          "payload_hash": {
+            "title": "Payload Hash",
+            "type": "string"
+          },
+          "payload_schema_version": {
+            "title": "Payload Schema Version",
+            "type": "string"
+          },
+          "privacy_review_required": {
+            "const": true,
+            "default": true,
+            "title": "Privacy Review Required",
+            "type": "boolean"
+          },
+          "release_gate_eligible": {
+            "title": "Release Gate Eligible",
+            "type": "boolean"
+          },
+          "review_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Reason"
+          },
+          "review_request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Request Id"
+          },
+          "review_status": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ],
+            "title": "Review Status",
+            "type": "string"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "schema_version": {
+            "const": "eval-inbox-candidate.v1",
+            "default": "eval-inbox-candidate.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_kind": {
+            "enum": [
+              "verdict_correction",
+              "blind_grading_label"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "source_request_id": {
+            "title": "Source Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "source_kind",
+          "dedupe_key",
+          "source_request_id",
+          "payload_schema_version",
+          "payload_hash",
+          "payload",
+          "lifecycle_status",
+          "review_status",
+          "release_gate_eligible",
+          "created_at"
+        ],
+        "title": "EvalInboxCandidateV1",
+        "type": "object"
+      },
+      "EvalReviewRequest": {
+        "properties": {
+          "decision": {
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "reason": {
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "decision",
+          "reason"
+        ],
+        "title": "EvalReviewRequest",
+        "type": "object"
+      },
       "EvidenceRevealRequest": {
         "properties": {
           "interaction": {
@@ -1530,6 +1921,33 @@
           "interaction"
         ],
         "title": "EvidenceRevealRequest",
+        "type": "object"
+      },
+      "ExpectedPoint": {
+        "description": "一道开放题的可审计评分点；每个点必须绑定该题引用的一条原文证据。",
+        "properties": {
+          "cited_evidence": {
+            "minLength": 1,
+            "title": "Cited Evidence",
+            "type": "string"
+          },
+          "description": {
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "point_id": {
+            "minLength": 1,
+            "title": "Point Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "point_id",
+          "description",
+          "cited_evidence"
+        ],
+        "title": "ExpectedPoint",
         "type": "object"
       },
       "GenerationProvenance": {
@@ -1552,6 +1970,74 @@
           "version"
         ],
         "title": "GenerationProvenance",
+        "type": "object"
+      },
+      "GradingCalibrationSample": {
+        "description": "One explicit human label for a production question and learner answer.",
+        "properties": {
+          "annotator": {
+            "minLength": 1,
+            "title": "Annotator",
+            "type": "string"
+          },
+          "blind_to_model_output": {
+            "title": "Blind To Model Output",
+            "type": "boolean"
+          },
+          "human_matched_points": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Human Matched Points",
+            "type": "array"
+          },
+          "human_missing_points": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Human Missing Points",
+            "type": "array"
+          },
+          "human_verdict": {
+            "enum": [
+              "对",
+              "勉强",
+              "错"
+            ],
+            "title": "Human Verdict",
+            "type": "string"
+          },
+          "learner_answer": {
+            "minLength": 1,
+            "title": "Learner Answer",
+            "type": "string"
+          },
+          "question": {
+            "$ref": "#/components/schemas/QuestionSpec"
+          },
+          "sample_id": {
+            "minLength": 1,
+            "title": "Sample Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "grading-calibration-sample.v1",
+            "default": "grading-calibration-sample.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sample_id",
+          "annotator",
+          "blind_to_model_output",
+          "question",
+          "learner_answer",
+          "human_verdict",
+          "human_matched_points",
+          "human_missing_points"
+        ],
+        "title": "GradingCalibrationSample",
         "type": "object"
       },
       "GradingEvalCandidateList": {
@@ -2251,6 +2737,341 @@
         "title": "LearningReportV1",
         "type": "object"
       },
+      "MaterialCandidateV1": {
+        "properties": {
+          "acquisition_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Run Id"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "canonical_url": {
+            "title": "Canonical Url",
+            "type": "string"
+          },
+          "duplicate_resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duplicate Resource Id"
+          },
+          "eligibility": {
+            "enum": [
+              "eligible",
+              "duplicate_batch",
+              "existing_resource",
+              "insufficient_preview"
+            ],
+            "title": "Eligibility",
+            "type": "string"
+          },
+          "provider_adapter": {
+            "title": "Provider Adapter",
+            "type": "string"
+          },
+          "provider_rank": {
+            "minimum": 1.0,
+            "title": "Provider Rank",
+            "type": "integer"
+          },
+          "quality_flags": {
+            "items": {
+              "enum": [
+                "has_title",
+                "has_preview",
+                "https",
+                "domain_constrained",
+                "new_to_library"
+              ],
+              "type": "string"
+            },
+            "title": "Quality Flags",
+            "type": "array"
+          },
+          "review_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Reason"
+          },
+          "review_request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Request Id"
+          },
+          "review_status": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ],
+            "title": "Review Status",
+            "type": "string"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "schema_version": {
+            "const": "material-candidate.v1",
+            "default": "material-candidate.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "snippet": {
+            "title": "Snippet",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "batch_id",
+          "title",
+          "url",
+          "canonical_url",
+          "snippet",
+          "provider_adapter",
+          "provider_rank",
+          "quality_flags",
+          "eligibility",
+          "why"
+        ],
+        "title": "MaterialCandidateV1",
+        "type": "object"
+      },
+      "MaterialDiscoveryBatchV1": {
+        "properties": {
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "candidate_count": {
+            "readOnly": true,
+            "title": "Candidate Count",
+            "type": "integer"
+          },
+          "candidates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MaterialCandidateV1"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "provider_adapter": {
+            "title": "Provider Adapter",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "material-discovery-batch.v1",
+            "default": "material-discovery-batch.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_policy": {
+            "$ref": "#/components/schemas/MaterialSourcePolicyV1"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch_id",
+          "trace_id",
+          "topic",
+          "source_policy",
+          "provider_adapter",
+          "status",
+          "created_at",
+          "candidate_count"
+        ],
+        "title": "MaterialDiscoveryBatchV1",
+        "type": "object"
+      },
+      "MaterialReviewRequest": {
+        "properties": {
+          "control_token": {
+            "anyOf": [
+              {
+                "minLength": 24,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control Token"
+          },
+          "decision": {
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "decision"
+        ],
+        "title": "MaterialReviewRequest",
+        "type": "object"
+      },
+      "MaterialReviewResult": {
+        "properties": {
+          "acquisition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcquisitionCreated"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/MaterialCandidateV1"
+          }
+        },
+        "required": [
+          "candidate"
+        ],
+        "title": "MaterialReviewResult",
+        "type": "object"
+      },
+      "MaterialSourcePolicyV1": {
+        "properties": {
+          "domains": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Domains",
+            "type": "array"
+          },
+          "limit": {
+            "default": 5,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "schema_version": {
+            "const": "material-source-policy.v1",
+            "default": "material-source-policy.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "title": "MaterialSourcePolicyV1",
+        "type": "object"
+      },
       "MessageAccepted": {
         "properties": {
           "turn_id": {
@@ -2341,6 +3162,44 @@
           "strategy"
         ],
         "title": "QuestionRoute",
+        "type": "object"
+      },
+      "QuestionSpec": {
+        "description": "开放题的唯一题目规格：题干、评分点、参考作答与原文证据。\n\n``question`` 非空（``NonEmptyStr``，strip 后为空也拒）；``cited_evidence`` 的非空与\"锚定\n被考 item 证据（子串即可）\"由 ``generate_question`` 的校验门把关。``expected_points`` 是判卷\n的唯一 rubric；``reference_answer`` 回答的必须是本题，而不是泛化复述整个 KnowledgeItem。\n刻意不产 ``item_id`` / ``weak_item_id``——出题不记账，被考 item 由调用方指定、记账由判卷后的\n代码算（ADR-0004）。",
+        "properties": {
+          "cited_evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cited Evidence",
+            "type": "array"
+          },
+          "expected_points": {
+            "items": {
+              "$ref": "#/components/schemas/ExpectedPoint"
+            },
+            "minItems": 1,
+            "title": "Expected Points",
+            "type": "array"
+          },
+          "question": {
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "reference_answer": {
+            "minLength": 1,
+            "title": "Reference Answer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "expected_points",
+          "reference_answer",
+          "cited_evidence"
+        ],
+        "title": "QuestionSpec",
         "type": "object"
       },
       "ResolvedCitation": {
@@ -4228,6 +5087,445 @@
         "summary": "Cancel Turn",
         "tags": [
           "chat"
+        ]
+      }
+    },
+    "/api/v1/discoveries": {
+      "get": {
+        "operationId": "list_discoveries_api_v1_discoveries_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Discoveries",
+        "tags": [
+          "discoveries"
+        ]
+      },
+      "post": {
+        "operationId": "create_discovery_api_v1_discoveries_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDiscoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialDiscoveryBatchV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Discovery",
+        "tags": [
+          "discoveries"
+        ]
+      }
+    },
+    "/api/v1/discoveries/candidates/{candidate_id}/review": {
+      "post": {
+        "operationId": "review_material_candidate_api_v1_discoveries_candidates__candidate_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "title": "Candidate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaterialReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialReviewResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Material Candidate",
+        "tags": [
+          "discoveries"
+        ]
+      }
+    },
+    "/api/v1/discoveries/{batch_id}": {
+      "get": {
+        "operationId": "get_discovery_api_v1_discoveries__batch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialDiscoveryBatchV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Discovery",
+        "tags": [
+          "discoveries"
+        ]
+      }
+    },
+    "/api/v1/eval/candidates": {
+      "get": {
+        "operationId": "list_eval_candidates_api_v1_eval_candidates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalCandidateList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Eval Candidates",
+        "tags": [
+          "eval"
+        ]
+      }
+    },
+    "/api/v1/eval/candidates/blind-import": {
+      "post": {
+        "operationId": "import_blind_labels_api_v1_eval_candidates_blind_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlindLabelImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalCandidateList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Blind Labels",
+        "tags": [
+          "eval"
+        ]
+      }
+    },
+    "/api/v1/eval/candidates/sync": {
+      "post": {
+        "operationId": "sync_eval_candidates_api_v1_eval_candidates_sync_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalCandidateList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sync Eval Candidates",
+        "tags": [
+          "eval"
+        ]
+      }
+    },
+    "/api/v1/eval/candidates/{candidate_id}/review": {
+      "post": {
+        "operationId": "review_eval_candidate_api_v1_eval_candidates__candidate_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "title": "Candidate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvalReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalInboxCandidateV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Eval Candidate",
+        "tags": [
+          "eval"
+        ]
+      }
+    },
+    "/api/v1/eval/snapshots": {
+      "get": {
+        "operationId": "list_eval_snapshots_api_v1_eval_snapshots_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetSnapshotList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Eval Snapshots",
+        "tags": [
+          "eval"
+        ]
+      },
+      "post": {
+        "operationId": "create_eval_snapshot_api_v1_eval_snapshots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetSnapshotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetSnapshotV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Eval Snapshot",
+        "tags": [
+          "eval"
+        ]
+      }
+    },
+    "/api/v1/eval/snapshots/{snapshot_id}": {
+      "get": {
+        "operationId": "get_eval_snapshot_api_v1_eval_snapshots__snapshot_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetSnapshotV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Eval Snapshot",
+        "tags": [
+          "eval"
         ]
       }
     },

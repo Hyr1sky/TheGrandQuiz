@@ -4,6 +4,10 @@ import type { components } from "../../shared/api/generated/schema";
 export type AcquisitionView = components["schemas"]["AcquisitionView"];
 export type AcquisitionCreated = components["schemas"]["AcquisitionCreated"];
 export type AcquisitionUiEvent = components["schemas"]["AcquisitionUiEvent"];
+export type MaterialDiscoveryBatch =
+  components["schemas"]["MaterialDiscoveryBatchV1"];
+export type MaterialCandidate = components["schemas"]["MaterialCandidateV1"];
+export type MaterialReviewResult = components["schemas"]["MaterialReviewResult"];
 
 export async function createUpload(
   filename: string,
@@ -88,5 +92,52 @@ export async function cancelAcquisition(
   if (error !== undefined) {
     throw toApiRequestError(error);
   }
+  return data;
+}
+
+export async function discoverMaterials(
+  topic: string,
+): Promise<MaterialDiscoveryBatch> {
+  const { data, error } = await apiClient.POST("/api/v1/discoveries", {
+    body: {
+      topic,
+      source_policy: {
+        schema_version: "material-source-policy.v1",
+        limit: 5,
+        domains: [],
+      },
+    },
+  });
+  if (error !== undefined) throw toApiRequestError(error);
+  return data;
+}
+
+export async function listMaterialDiscoveries(): Promise<MaterialDiscoveryBatch[]> {
+  const { data, error } = await apiClient.GET("/api/v1/discoveries", {
+    params: { query: { limit: 12 } },
+  });
+  if (error !== undefined) throw toApiRequestError(error);
+  return data.items;
+}
+
+export async function reviewMaterialCandidate(
+  candidateId: string,
+  decision: "approved" | "rejected",
+  requestId: string,
+  controlToken?: string,
+): Promise<MaterialReviewResult> {
+  const { data, error } = await apiClient.POST(
+    "/api/v1/discoveries/candidates/{candidate_id}/review",
+    {
+      params: { path: { candidate_id: candidateId } },
+      body: {
+        request_id: requestId,
+        decision,
+        reason: decision === "approved" ? "用户确认材料相关" : "用户拒绝候选",
+        ...(controlToken === undefined ? {} : { control_token: controlToken }),
+      },
+    },
+  );
+  if (error !== undefined) throw toApiRequestError(error);
   return data;
 }

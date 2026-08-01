@@ -41,6 +41,19 @@ v0.3 已完成三个窄消费者：人工批准的知识分类可在 Web 考核�
 gate 的自动 Judge、Diagnosis/Misconception、能力蓝图和自适应选题继续只保留在文档或 proposal 层。
 批量入库、Reader batch 并发、candidate-level LLM repair 和 Trace explain 也没有进入本轮。
 
+## 代码 RC 已完成：v0.4 人工授权的发现与数据晋升
+
+v0.4 没有越过尚未通过的质量 gate，而是把两条“候选 → 人工决定 → 既有可信路径”做完整：
+
+1. 显式学习主题经已配置的 SearchProvider 产生持久候选；搜索阶段不 fetch、不调用 Reader、不写 KB。
+2. 材料批准复用 Acquisition 的控制 token、状态机、错误信封与二次知识点审批；拒绝不会产生副作用。
+3. 最新判决纠正与人工盲标进入本地 Eval inbox；替换版本 supersede 旧候选，不修改来源事实。
+4. 只有 active + approved 候选可组成按内容哈希标识的不可变快照；盲标 eligible 与纠正 exploratory 分列。
+5. Web 提供发现历史、材料审核、盲标 JSON 导入、敏感内容折叠审核和快照结果；关键决定进入事件脊柱。
+
+完整证据见 [v0.4 人工授权闭环](devrecords/26-v040-human-approved-discovery.md)。真实校准仍与代码开发并行，
+质量 gate 未通过前不启用自动入库、自动数据晋升、定时发现或学习策略。
+
 This document records the initial architecture discussion for building an assessment-driven,
 observable, recoverable, and evaluable learning agent.
 

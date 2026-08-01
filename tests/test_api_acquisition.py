@@ -1,6 +1,7 @@
 """Web Acquisition HTTP seam：上传、恢复审批、原子入库与稳定错误。"""
 
 import asyncio
+import hashlib
 import json
 import time
 from collections.abc import Callable, Sequence
@@ -11,8 +12,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from grandquiz.domain.learning.acquisition import AcquisitionLedger
+from grandquiz.domain.learning.ingest.fetch import FetchResult, FetchSource
 from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.interfaces.api import acquisitions as acquisition_mod
+from grandquiz.interfaces.api.acquisitions import AcquisitionManager
 from grandquiz.interfaces.api.app import ApiSettings, create_app
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import EventEmitter, EventSink
@@ -128,24 +131,42 @@ class _InvalidEvidenceReaderProvider:
         )
 
 
-def _app(tmp_path: Path, provider: Provider | None = None):
+class _StaticHttpSource:
+    async def fetch(self, url: str, *, max_bytes: int) -> FetchResult:
+        content = "# Runtime\n\n事件是系统脊柱。"
+        return FetchResult(
+            requested_url=url,
+            final_url=url,
+            content=content,
+            content_type="text/markdown",
+            content_hash=hashlib.sha256(content.encode()).hexdigest(),
+        )
+
+
+def _app(
+    tmp_path: Path,
+    provider: Provider | None = None,
+    http_source: FetchSource | None = None,
+):
     return create_app(
         settings=ApiSettings(
             learning_db_path=tmp_path / "learning.db",
             trace_db_path=tmp_path / "trace.db",
         ),
         provider=provider or _ReaderProvider(),
+        acquisition_http_source=http_source,
     )
 
 
 def _wait_for_status(client: TestClient, run_id: str, status: str) -> dict[str, object]:
     deadline = time.monotonic() + 3
+    payload: dict[str, object] = {}
     while time.monotonic() < deadline:
         payload = client.get(f"/api/v1/acquisitions/{run_id}").json()
         if payload["status"] == status:
             return payload
         time.sleep(0.01)
-    raise AssertionError(f"acquisition 未进入 {status}")
+    raise AssertionError(f"acquisition 未进入 {status}; last={payload}")
 
 
 def test_upload_can_resume_approval_after_service_restart(tmp_path: Path) -> None:
@@ -172,7 +193,6 @@ def test_upload_can_resume_approval_after_service_restart(tmp_path: Path) -> Non
     with TestClient(_app(tmp_path)) as restarted:
         recovered = restarted.get(f"/api/v1/acquisitions/{creation['run_id']}").json()
         assert recovered["status"] == "needs_input"
-
         approved = restarted.post(
             f"/api/v1/acquisitions/{creation['run_id']}/approval",
             json={
@@ -201,6 +221,63 @@ def test_upload_can_resume_approval_after_service_restart(tmp_path: Path) -> Non
     trace.close()
     assert [event.seq for event in events] == list(range(len(events)))
     assert len({event.span_id for event in events if event.span_id is not None}) == 3
+
+
+def test_reserved_url_activation_is_recovered_after_restart(tmp_path: Path) -> None:
+    persistence = LearningPersistence(tmp_path / "learning.db")
+    trace_store = TraceStore(tmp_path / "trace.db")
+    manager = AcquisitionManager(
+        persistence=persistence,
+        provider=_ReaderProvider(),
+        trace_store=trace_store,
+        http_source=_StaticHttpSource(),
+    )
+    reserved = manager.reserve_url(
+        url="https://example.com/reserved",
+        control_token="r" * 32,
+    )
+    trace_store.close()
+    persistence.close()
+
+    with TestClient(_app(tmp_path, http_source=_StaticHttpSource())) as restarted:
+        recovered = _wait_for_status(restarted, reserved.run_id, "needs_input")
+        runs = restarted.get("/api/v1/acquisitions").json()["items"]
+
+    assert recovered["run_id"] == reserved.run_id
+    assert len([run for run in runs if run["run_id"] == reserved.run_id]) == 1
+
+
+async def test_activation_failure_is_compensated_without_waiting_for_restart(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    persistence = LearningPersistence(tmp_path / "learning.db")
+    trace_store = TraceStore(tmp_path / "trace.db")
+    manager = AcquisitionManager(
+        persistence=persistence,
+        provider=_ReaderProvider(),
+        trace_store=trace_store,
+        http_source=_StaticHttpSource(),
+    )
+    reserved = manager.reserve_url(
+        url="https://example.com/activation-failure",
+        control_token="f" * 32,
+    )
+
+    def fail_trace_read(_trace_id: str) -> Never:
+        raise RuntimeError("injected trace failure")
+
+    monkeypatch.setattr(trace_store, "events", fail_trace_read)
+    with pytest.raises(RuntimeError, match="injected trace failure"):
+        manager.activate_reserved(reserved.run_id)
+
+    failed = persistence.acquisitions.require(reserved.run_id)
+    assert failed.status == "failed"
+    assert failed.error_code == "processing_failed"
+    assert failed.error_stage == "runtime"
+    assert not persistence.acquisitions.activation_required(reserved.run_id)
+    trace_store.close()
+    persistence.close()
 
 
 def test_interrupted_run_uses_complete_safe_failure_projection(tmp_path: Path) -> None:

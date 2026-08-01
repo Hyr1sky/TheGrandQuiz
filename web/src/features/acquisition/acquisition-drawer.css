@@ -85,11 +85,113 @@
 
 .acquisition-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface-quiet);
+}
+
+.discovery-panel > .acquisition-primary {
+  width: 100%;
+  margin-top: 14px;
+}
+
+.discovery-candidates {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.discovery-history {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.discovery-history h3 {
+  margin: 0 0 4px;
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.discovery-history > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--text);
+  text-align: left;
+}
+
+.discovery-history small {
+  color: var(--muted);
+}
+
+.discovery-candidates article {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-quiet);
+}
+
+.discovery-candidates article > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.discovery-candidates strong,
+.discovery-candidates small,
+.discovery-candidates code {
+  display: block;
+}
+
+.discovery-candidates small,
+.discovery-candidates code {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.discovery-candidates p {
+  margin: 10px 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.discovery-candidates code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discovery-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.discovery-actions button,
+.discovery-reviewed {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.discovery-reviewed {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--evidence);
 }
 
 .acquisition-tabs button {

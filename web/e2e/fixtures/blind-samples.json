@@ -1,0 +1,26 @@
+[
+  {
+    "schema_version": "grading-calibration-sample.v1",
+    "sample_id": "fixture-blind-1",
+    "annotator": "owner",
+    "blind_to_model_output": true,
+    "question": {
+      "question": "durable processor 失败后为什么必须阻断当前 turn？",
+      "expected_points": [
+        {
+          "point_id": "causality",
+          "description": "避免后续副作用依赖不完整状态",
+          "cited_evidence": "失败后继续当前 turn 会让后续副作用依赖不完整状态"
+        }
+      ],
+      "reference_answer": "必须阻断，避免后续副作用建立在不完整状态上。",
+      "cited_evidence": [
+        "失败后继续当前 turn 会让后续副作用依赖不完整状态"
+      ]
+    },
+    "learner_answer": "避免后续副作用依赖不完整状态。",
+    "human_verdict": "对",
+    "human_matched_points": ["causality"],
+    "human_missing_points": []
+  }
+]

@@ -149,6 +149,9 @@ schema v11；受 prompt/tool schema 影响的真实 cassette 已重录，生产�
 - **错误本身是一种 AgentEvent**，自然进 trace——错误不只是字符串还给模型
 - 领域 workflow 的可预期失败通过安全 `code / stage / reason` 信封跨 interface 投影；完整 exception/detail
   只留内部 trace。Acquisition ledger 持久终态，CLI/Web/Observability 不各自猜测失败分类。
+- v0.4 Material Discovery 是 Acquisition 前的只读收件箱：SearchProvider 只返回候选，人工批准后才通过
+  control token 启动既有 Acquisition。Eval inbox 同样只负责隐私审核和按内容哈希标识的快照，不复制判卷 workflow
+  或长期学习事实。两个应用服务都把关键决定接回 AgentEvent 脊柱，原始查询、URL 与样本正文不进 trace。
 
 ### Eval harness（trace + grader）
 

@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from grandquiz.domain.learning.assessment.grading import VerdictLabel, grade_answer
-from grandquiz.domain.learning.assessment.question import QuestionSpec
+from grandquiz.domain.learning.grading_samples import GradingCalibrationSample
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Provider
@@ -27,40 +27,6 @@ def load_grading_calibration_samples(path: str | Path) -> list["GradingCalibrati
     if not isinstance(raw, list):
         raise ValueError("grading calibration YAML must contain a top-level list")
     return [GradingCalibrationSample.model_validate(item) for item in cast("list[Any]", raw)]
-
-
-class GradingCalibrationSample(BaseModel):
-    """One explicit human label for a production ``QuestionSpec`` and learner answer."""
-
-    model_config = ConfigDict(frozen=True)
-
-    sample_id: str = Field(min_length=1)
-    annotator: str = Field(min_length=1)
-    blind_to_model_output: bool
-    question: QuestionSpec
-    learner_answer: str = Field(min_length=1)
-    human_verdict: VerdictLabel
-    human_matched_points: list[str]
-    human_missing_points: list[str]
-
-    @model_validator(mode="after")
-    def _validate_human_point_partition(self) -> "GradingCalibrationSample":
-        expected = {point.point_id for point in self.question.expected_points}
-        matched = set(self.human_matched_points)
-        missing = set(self.human_missing_points)
-        if len(matched) != len(self.human_matched_points) or len(missing) != len(
-            self.human_missing_points
-        ):
-            raise ValueError("human point labels must not contain duplicates")
-        if matched & missing:
-            raise ValueError("a human-labelled point cannot be both matched and missing")
-        if matched | missing != expected:
-            raise ValueError("human labels must partition every expected point exactly once")
-        return self
-
-    @property
-    def eligible(self) -> bool:
-        return self.blind_to_model_output and bool(self.annotator.strip())
 
 
 class GradingCalibrationPolicy(BaseModel):

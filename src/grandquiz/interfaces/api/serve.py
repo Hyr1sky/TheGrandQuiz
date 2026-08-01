@@ -11,6 +11,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
 
 from grandquiz.interfaces.api.app import ApiSettings, create_app
+from grandquiz.interfaces.search_config import search_provider_from_env
 from grandquiz.providers.llm import OpenAICompatProvider
 
 _HOST = "127.0.0.1"
@@ -52,6 +53,7 @@ def create_default_app() -> FastAPI:
         settings=ApiSettings.default(),
         provider=provider,
         provider_close=provider.aclose,
+        search_provider=search_provider_from_env(),
     )
     mount_web_static(app)
     return app

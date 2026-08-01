@@ -9,6 +9,8 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from grandquiz import __version__
+from grandquiz.domain.learning.ingest.fetch import FetchSource
+from grandquiz.domain.learning.ingest.web_search import SearchProvider
 from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.interfaces.api.acquisition_routes import router as acquisitions_router
 from grandquiz.interfaces.api.acquisitions import AcquisitionManager
@@ -16,7 +18,11 @@ from grandquiz.interfaces.api.assessment_routes import router as assessments_rou
 from grandquiz.interfaces.api.assessment_runs import AssessmentManager
 from grandquiz.interfaces.api.chat import ChatManager
 from grandquiz.interfaces.api.chat_routes import router as chat_router
+from grandquiz.interfaces.api.discoveries import DiscoveryManager
+from grandquiz.interfaces.api.discovery_routes import router as discoveries_router
 from grandquiz.interfaces.api.errors import install_error_handlers
+from grandquiz.interfaces.api.eval_management import EvalManagementService
+from grandquiz.interfaces.api.eval_routes import router as eval_router
 from grandquiz.interfaces.api.learning_routes import router as learning_router
 from grandquiz.interfaces.api.observability import TraceObservatory
 from grandquiz.interfaces.api.observability_routes import router as observability_router
@@ -60,6 +66,8 @@ def create_app(
     provider: Provider,
     provider_close: Callable[[], Awaitable[None]] | None = None,
     clock: Clock | None = None,
+    search_provider: SearchProvider | None = None,
+    acquisition_http_source: FetchSource | None = None,
 ) -> FastAPI:
     """创建可注入 provider/DB 的 app；模块导入本身不触碰 `.env` 或数据库。"""
 
@@ -102,6 +110,19 @@ def create_app(
             provider=provider,
             trace_store=trace_store,
             clock=app_clock,
+            http_source=acquisition_http_source,
+        )
+        discovery_manager = DiscoveryManager(
+            persistence=persistence,
+            acquisitions=acquisition_manager,
+            search_provider=search_provider,
+            trace_store=trace_store,
+            clock=app_clock,
+        )
+        eval_management = EvalManagementService(
+            persistence=persistence,
+            trace_store=trace_store,
+            clock=app_clock,
         )
         app.state.persistence = persistence
         app.state.provider = provider
@@ -110,6 +131,8 @@ def create_app(
         app.state.assessment_manager = assessment_manager
         app.state.chat_manager = chat_manager
         app.state.acquisition_manager = acquisition_manager
+        app.state.discovery_manager = discovery_manager
+        app.state.eval_management = eval_management
         app.state.trace_observatory = trace_observatory
         app.state.trace_store = trace_store
         app.state.clock = app_clock
@@ -141,9 +164,11 @@ def create_app(
     )
     app.include_router(resources_router)
     app.include_router(acquisitions_router)
+    app.include_router(discoveries_router)
     app.include_router(runs_router)
     app.include_router(assessments_router)
     app.include_router(learning_router)
+    app.include_router(eval_router)
     app.include_router(chat_router)
     app.include_router(observability_router)
     return app

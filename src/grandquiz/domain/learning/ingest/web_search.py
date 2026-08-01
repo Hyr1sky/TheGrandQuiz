@@ -49,6 +49,11 @@ class SearchResult(BaseModel):
         parsed = urlparse(value)
         if parsed.scheme not in ("http", "https") or parsed.hostname is None:
             raise ValueError("搜索候选必须是带主机名的 http(s) URL")
+        # Accessing ``port`` rejects malformed netloc values such as ``:not-a-port``.
+        try:
+            _port = parsed.port
+        except ValueError as exc:
+            raise ValueError("搜索候选 URL 端口无效") from exc
         return value
 
 

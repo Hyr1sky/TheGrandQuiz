@@ -104,6 +104,58 @@ test("uploads, approves, and switches to a new material", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "上传材料：事件脊柱" })).toBeVisible();
 });
 
+test("discovers candidates and enters Acquisition only after human approval", async ({ page }, testInfo) => {
+  await page.goto("/");
+  await dismissOnboarding(page);
+  const resourceCount = await page.getByRole("combobox", { name: "当前材料" }).locator("option").count();
+  await page.getByRole("button", { name: "添加与管理材料" }).click();
+  const drawer = page.getByRole("dialog", { name: "添加与管理材料" });
+  await drawer.getByRole("tab", { name: "发现材料" }).click();
+  await drawer.getByRole("searchbox").fill(`Agent Memory ${testInfo.project.name}`);
+  await drawer.getByRole("button", { name: "搜索候选" }).click();
+
+  await expect(drawer.getByText("Agent Memory 工程指南")).toBeVisible();
+  await expect(drawer.getByText("只搜索候选；批准后才会抓取")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "当前材料" }).locator("option")).toHaveCount(resourceCount);
+  await drawer.getByRole("button", { name: "批准并深读" }).click();
+  await expect(drawer.getByText("事件事实源", { exact: true })).toBeVisible();
+  await drawer.getByRole("button", { name: "批准 1 个知识点" }).click();
+  await expect(drawer.getByText("材料已经进入知识星图")).toBeVisible();
+  await drawer.getByRole("button", { name: "关闭材料管理" }).click();
+  await expect(page.getByRole("combobox", { name: "当前材料" }).locator("option")).toHaveCount(resourceCount + 1);
+});
+
+test("reviews blind labels before creating a dataset snapshot", async ({ page }) => {
+  await page.goto("/");
+  await dismissOnboarding(page);
+  await page.getByRole("button", { name: "管理 Eval 数据" }).click();
+  const drawer = page.getByRole("dialog", { name: "Eval 数据管理" });
+  await drawer
+    .locator('input[type="file"]')
+    .setInputFiles("e2e/fixtures/blind-samples.json");
+
+  await expect(drawer.getByText("盲标样本 · fixture-blind-1")).toBeVisible();
+  await expect(drawer.getByText("可计入发布门")).toBeVisible();
+  const privacyReview = drawer.getByRole("button", { name: "隐私检查通过" });
+  if (await privacyReview.isVisible()) {
+    await expect(drawer.getByRole("button", { name: "生成快照" })).toBeDisabled();
+    await privacyReview.click();
+  } else {
+    // The second viewport deliberately reuses SQLite and proves review survives restart/readback.
+    await expect(drawer.getByText("纳入下一份快照")).toBeVisible();
+  }
+  await drawer.getByRole("button", { name: "生成快照" }).click();
+  await expect(drawer.getByText("快照已固定")).toBeVisible();
+  await expect(drawer.getByText("1 条 · 发布门 1 · 探索 0")).toBeVisible();
+  await drawer.getByRole("button", { name: "关闭 Eval 数据管理" }).click();
+  await page.reload();
+  await page.getByRole("button", { name: "管理 Eval 数据" }).click();
+  const restored = page.getByRole("dialog", { name: "Eval 数据管理" });
+  await expect(
+    restored.getByRole("region", { name: "数据集快照历史" }),
+  ).toContainText("1 条 · 发布门 1");
+});
+
 test("blocks Markdown network images and contains truly wide content", async ({
   page,
 }, testInfo) => {

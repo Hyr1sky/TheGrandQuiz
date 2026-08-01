@@ -68,6 +68,8 @@ class LearningPersistence:
             SqliteClassificationRepository,
         )
         from grandquiz.domain.learning.difficulty import SqliteDifficultyLedger
+        from grandquiz.domain.learning.discovery import MaterialDiscoveryLedger
+        from grandquiz.domain.learning.eval_inbox import EvalInboxLedger
         from grandquiz.domain.learning.learning_facts import SqliteLearningFactJournal
         from grandquiz.domain.learning.memory import SqliteLearningMemory
         from grandquiz.domain.learning.preference import SqlitePreferenceMemory
@@ -90,6 +92,8 @@ class LearningPersistence:
             clock=clock,
         )
         self.acquisitions: AcquisitionLedger = AcquisitionLedger(self._database)
+        self.material_discoveries: MaterialDiscoveryLedger = MaterialDiscoveryLedger(self._database)
+        self.eval_inbox: EvalInboxLedger = EvalInboxLedger(self._database)
         self._closed = False
 
     @property

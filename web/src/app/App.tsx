@@ -3,6 +3,7 @@ import {
   CompassIcon,
   ExamIcon,
   FolderPlusIcon,
+  ShieldCheckIcon,
   ListBulletsIcon,
   QuestionIcon,
 } from "@phosphor-icons/react";
@@ -10,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatPanel, type NavigationEvent } from "../features/chat/ChatPanel";
 import { AcquisitionDrawer } from "../features/acquisition/AcquisitionDrawer";
 import { ObservatoryDrawer } from "../features/observability/ObservatoryDrawer";
+import { EvalDrawer } from "../features/eval-management/EvalDrawer";
 import { OnboardingTour } from "../features/onboarding/OnboardingTour";
 import {
   AssessmentPanel,
@@ -50,6 +52,7 @@ export function App() {
   const [chatTraceId, setChatTraceId] = useState<string | null>(null);
   const [observatoryOpen, setObservatoryOpen] = useState(false);
   const [acquisitionOpen, setAcquisitionOpen] = useState(false);
+  const [evalOpen, setEvalOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(
     () =>
       globalThis.localStorage?.getItem(ONBOARDING_STORAGE_KEY) !==
@@ -443,6 +446,16 @@ export function App() {
             </button>
             <button
               type="button"
+              className="acquisition-launcher"
+              aria-label="管理 Eval 数据"
+              aria-expanded={evalOpen}
+              onClick={() => setEvalOpen(true)}
+            >
+              <ShieldCheckIcon aria-hidden size={17} />
+              <span>Eval 数据</span>
+            </button>
+            <button
+              type="button"
               className="onboarding-help"
               aria-label="打开新手指南"
               onClick={() => setOnboardingOpen(true)}
@@ -505,6 +518,7 @@ export function App() {
             void handleAcquisitionCompleted(resourceId);
           }}
         />
+        <EvalDrawer open={evalOpen} onClose={() => setEvalOpen(false)} />
         {onboardingOpen ? (
           <OnboardingTour onComplete={completeOnboarding} />
         ) : null}
