@@ -131,8 +131,16 @@ _Avoid_: 直接双写的领域表、修改历史判决、把未来字段提前�
 
 **Learning Vocabulary**（Learning Model v2 v1 已实现）:
 封闭行为维度、受控增长 term 和开放 candidate 三层词表。稳定身份是 namespace + key；模型候选在审核前
-不驱动选题或状态机。领域/技术标签只经 TagAssignment 关联，seed 在仓库，用户扩展存 learning.db。
+不驱动选题或状态机。人工批准且 active 的 KnowledgeClassification 可经唯一 facet consumer 在考核启动时
+冻结为 exact item IDs；空匹配直接拒绝，不回退整篇材料。领域/技术标签只经 TagAssignment 关联，seed
+在仓库，用户扩展存 learning.db。
 _Avoid_: 自由 tag 直接控制行为、按显示名寻址、同义词自动合并、把 tag 当概念同一性
+
+**Grading Eval Candidate**（v0.3 已实现）:
+从 append-only VerdictCorrection 确定性投影的本地反馈候选，保留题目、答案、模型初判、人类终判、原因和
+版本。它明确是非盲标、需要隐私审核且不能直接打开发布 gate；人工盲标校准样本另行维护并直接运行生产
+grader。
+_Avoid_: 把用户纠正冒充盲标金标准、自动上传或自动晋升为发布 Eval、建立第二份可变事实源
 
 **LearnerProjection**（Learning Model v2 v1 已实现）:
 从 committed attempts、Learning Memory 和 DifficultyLedger 重建的分析读模型，汇总考核次数、判决分布、

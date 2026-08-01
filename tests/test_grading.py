@@ -20,7 +20,6 @@ from grandquiz.domain.learning.assessment.question import (
     MultipleChoiceQuestion,
     QuestionSpec,
 )
-from grandquiz.domain.learning.models import Evidence, KnowledgeItem
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Completion, Message, Role, Usage
@@ -95,20 +94,9 @@ def _emitter() -> tuple[EventEmitter, list[AgentEvent]]:
     return EventEmitter(sink, ManualClock(), trace_id="t"), events
 
 
-def _item() -> KnowledgeItem:
-    return KnowledgeItem.create(
-        resource_id="res",
-        concept="闭包",
-        summary="函数捕获定义时的作用域",
-        evidence=[Evidence(quote=_QUOTE)],
-        confidence=0.9,
-    )
-
-
 async def _grade(provider: _FixedProvider, *, max_attempts: int = 3) -> Verdict:
     emitter, _ = _emitter()
     return await grade_answer(
-        _item(),
         _question_spec(),
         "闭包能捕获外层变量",
         provider=provider,
@@ -123,7 +111,6 @@ async def test_valid_verdict_parses() -> None:
     emitter, events = _emitter()
 
     verdict = await grade_answer(
-        _item(),
         _question_spec(),
         "闭包能捕获外层变量",
         provider=provider,
@@ -298,7 +285,6 @@ async def test_provider_exception_closes_model_span_and_propagates() -> None:
 
     with pytest.raises(RuntimeError):
         await grade_answer(
-            _item(),
             _question_spec(),
             "闭包能捕获外层变量",
             provider=provider,

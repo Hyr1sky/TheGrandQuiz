@@ -121,12 +121,12 @@ VocabularyTerm ──→ TagAssignment
 
 | 契约 | 状态 | 第一消费者 |
 | --- | --- | --- |
-| `AssessmentAttemptV1` | current | 学习历史 API、纠错与 Eval |
-| `VerdictCorrectionV1` | current | 申诉审计与状态 reconciliation |
+| `AssessmentAttemptV1` | current | 学习历史 API、纠错与本地 Eval 候选 |
+| `VerdictCorrectionV1` | current | 申诉审计、状态 reconciliation 与本地 Eval 候选 |
 | `DemandValidationV1` | current（仅人工） | 认知要求投影；自动 Judge gated |
 | `LearnerProjectionV1` | current（窄投影） | 可解释统计与本地报告 |
 | `LearningFactJournalV1` | current | 长期学习事实与投影重建 |
-| `KnowledgeClassificationV1` | foundation | 入库规则 proposal 与人工审核 |
+| `KnowledgeClassificationV1` | current（仅 approved） | Web 考核 KnowledgeKind 筛选；proposal 不影响行为 |
 | `ResourceRevisionClassificationV1` | foundation | 材料体裁记录；尚无筛选消费者 |
 | `VocabularyTermV1` / assignments / candidates | foundation | 词表审核；尚不驱动选题 |
 | `ApplicabilityAssertionV1` | future | 有证据的产品、版本与环境适用范围 |

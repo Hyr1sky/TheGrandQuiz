@@ -13,10 +13,16 @@ from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
 from grandquiz.domain.learning.assessment.grading import AssessmentDiagnosisKind
 from grandquiz.domain.learning.assessment.plan import AssessmentPlan
 from grandquiz.domain.learning.assessment.scope import SelectedScope
-from grandquiz.domain.learning.assessment.selection import Focus
+from grandquiz.domain.learning.assessment.selection import Focus, apply_scope
 from grandquiz.domain.learning.assessment.session import AssessmentSession
+from grandquiz.domain.learning.classification import KnowledgeKind
 from grandquiz.domain.learning.difficulty import DifficultyLedger
 from grandquiz.domain.learning.events import LearningEvent
+from grandquiz.domain.learning.knowledge_facets import (
+    ApprovedClassificationReader,
+    KnowledgeFacetFilter,
+    select_knowledge_facets,
+)
 from grandquiz.domain.learning.learning_facts import LearningFactJournal
 from grandquiz.domain.learning.memory import Memory
 from grandquiz.domain.learning.preference import PreferenceMemory
@@ -74,6 +80,7 @@ class AssessmentStartRequest(BaseModel):
         max_length=20,
     )
     focus: Focus = "mixed"
+    knowledge_kinds: set[KnowledgeKind] = Field(default_factory=lambda: set[KnowledgeKind]())
 
 
 class EvidenceRevealRequest(BaseModel):
@@ -149,6 +156,7 @@ class AssessmentView(BaseModel):
     status: AssessmentStatus
     round_index: int = Field(ge=1)
     rounds: int = Field(ge=1)
+    attempt_id: str | None = None
     question: AssessmentQuestionView | None = None
     judgement: AssessmentJudgementView | None = None
     error: str | None = None
@@ -191,6 +199,7 @@ class _AssessmentRecord:
     round_index: int
     focus: Focus
     scope: SelectedScope
+    candidate_item_ids: list[str] | None
     responder: _WebResponder
     session: AssessmentSession
     emitter: EventEmitter
@@ -206,6 +215,7 @@ class _AssessmentRecord:
     judgement: AssessmentJudgementView | None = None
     answer_request_id: str | None = None
     submitted_answer: str | None = None
+    attempt_id: str | None = None
     error: str | None = None
     task: asyncio.Task[None] | None = None
     next_request_ids: set[str] = field(default_factory=_empty_strings)
@@ -234,6 +244,7 @@ class _AssessmentRecord:
             status=self.status,
             round_index=self.round_index,
             rounds=self.plan.rounds,
+            attempt_id=self.attempt_id,
             question=question,
             judgement=self.judgement,
             error=self.error,
@@ -253,6 +264,7 @@ class AssessmentManager:
         preferences: PreferenceMemory,
         difficulty: DifficultyLedger,
         learning_facts: LearningFactJournal,
+        classifications: ApprovedClassificationReader,
         trace_store: TraceStore,
         trace_observatory: TraceObservatory | None = None,
     ) -> None:
@@ -263,6 +275,7 @@ class AssessmentManager:
         self._preferences = preferences
         self._difficulty = difficulty
         self._learning_facts = learning_facts
+        self._classifications = classifications
         self._trace_store = trace_store
         self._trace_observatory = trace_observatory
         self._records: dict[str, _AssessmentRecord] = {}
@@ -297,6 +310,18 @@ class AssessmentManager:
                 question_type=request.question_type,
             )
         )
+        scoped_items = apply_scope(self._store.all_items(), request.resource_ids)
+        frozen_item_ids: list[str] | None = None
+        if request.knowledge_kinds:
+            frozen_item_ids = list(
+                select_knowledge_facets(
+                    scoped_items,
+                    classifications=self._classifications,
+                    facet_filter=KnowledgeFacetFilter(
+                        primary_kinds=frozenset(request.knowledge_kinds),
+                    ),
+                ).item_ids
+            )
         record = _AssessmentRecord(
             session_id=session_id,
             trace_id=trace_id,
@@ -304,6 +329,7 @@ class AssessmentManager:
             round_index=1,
             focus=request.focus,
             scope=SelectedScope(resource_ids=request.resource_ids),
+            candidate_item_ids=frozen_item_ids,
             responder=responder,
             session=session,
             emitter=emitter,
@@ -318,6 +344,8 @@ class AssessmentManager:
                 "status": "running",
                 "rounds": plan.rounds,
                 "question_type_plan": list(plan.question_type_intents),
+                "knowledge_kinds": sorted(request.knowledge_kinds),
+                "facet_match_count": None if frozen_item_ids is None else len(frozen_item_ids),
             },
         )
         record.task = asyncio.create_task(
@@ -404,6 +432,7 @@ class AssessmentManager:
         record.evidence = None
         record.evidence_revealed = False
         record.judgement = None
+        record.attempt_id = None
         record.answer_request_id = None
         record.submitted_answer = None
         record.task = asyncio.create_task(
@@ -418,6 +447,7 @@ class AssessmentManager:
                 emitter=record.emitter,
                 focus=record.focus,
                 scope=record.scope,
+                candidate_item_ids=record.candidate_item_ids,
                 question_type=record.plan.intent_for(record.round_index),
             )
             if result.status == "refused":
@@ -468,6 +498,7 @@ class AssessmentManager:
             record.error = {
                 "empty_kb": "知识库中还没有可用于考核的知识点。",
                 "empty_scope": "当前选择的材料中没有可用于考核的知识点。",
+                "empty_facet": "当前筛选条件没有已审核、可用于考核的知识点。",
                 "unresolved_scope": "当前考核范围无法解析，请重新选择材料。",
             }.get(str(reason), "当前材料暂时无法开始考核。")
         elif event.type == LearningEvent.ANSWER_JUDGED:
@@ -486,6 +517,13 @@ class AssessmentManager:
                         payload.get("missing_points")
                     ),
                 )
+        elif event.type == LearningEvent.ASSESSMENT_JUDGEMENT_COMMITTED:
+            committed_payload = payload.get("payload")
+            if isinstance(committed_payload, Mapping):
+                committed = cast("Mapping[str, object]", committed_payload)
+                attempt_id = committed.get("attempt_id")
+                if isinstance(attempt_id, str):
+                    record.attempt_id = attempt_id
         elif event.type == LearningEvent.CONCEPT_STATE_CHANGED and record.judgement is not None:
             to_state = payload.get("to_state")
             record.judgement = record.judgement.model_copy(

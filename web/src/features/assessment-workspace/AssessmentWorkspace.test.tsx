@@ -41,6 +41,65 @@ describe("Assessment Workspace", () => {
     expect(screen.getByRole("button", { name: "生成第一题" })).toBeEnabled();
   });
 
+  it("filters an assessment by an approved knowledge kind", async () => {
+    const startBodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request = input instanceof Request ? input : new Request(String(input));
+        if (request.url.endsWith("/api/v1/resources")) {
+          return Response.json({ items: [resource] });
+        }
+        if (request.url.includes("/api/v1/learning/facets")) {
+          return Response.json({
+            schema_version: "knowledge-facet-inventory.v1",
+            taxonomy_version: "learning-vocabulary.v1",
+            item_count: 3,
+            approved_item_count: 2,
+            excluded_item_count: 1,
+            kind_counts: { method: 2 },
+          });
+        }
+        if (request.url.endsWith("/api/v1/assessments") && request.method === "POST") {
+          startBodies.push(await request.clone().json());
+          return Response.json(
+            {
+              session_id: "assessment-filtered",
+              trace_id: "trace-filtered",
+              status: "refused",
+              round_index: 1,
+              rounds: 3,
+              question: null,
+              judgement: null,
+              error: "fixture stop",
+            },
+            { status: 202 },
+          );
+        }
+        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<AssessmentWorkspace />);
+
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "知识类型" }),
+      "method",
+    );
+    await user.click(screen.getByRole("button", { name: "生成第一题" }));
+
+    expect(startBodies).toEqual([
+      {
+        resource_ids: [resource.resource_id],
+        rounds: 3,
+        question_type: null,
+        focus: "mixed",
+        knowledge_kinds: ["method"],
+      },
+    ]);
+  });
+
   it("reveals grounded evidence and completes one question", async () => {
     const startBodies: unknown[] = [];
     const question = {
@@ -172,6 +231,85 @@ describe("Assessment Workspace", () => {
     expect(fetchMock).not.toHaveBeenCalledWith(
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("submits a verdict correction from the judgement card", async () => {
+    window.sessionStorage.setItem("grandquiz.assessment.session_id", "assessment-correction");
+    const correctionBodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request = input instanceof Request ? input : new Request(String(input));
+        if (request.url.endsWith("/api/v1/resources")) {
+          return Response.json({ items: [resource] });
+        }
+        if (request.url.endsWith("/api/v1/assessments/assessment-correction")) {
+          return Response.json({
+            session_id: "assessment-correction",
+            trace_id: "trace-correction",
+            status: "completed",
+            round_index: 1,
+            rounds: 1,
+            attempt_id: "attempt-correction",
+            question: {
+              question_id: "question-correction",
+              item_id: "item-memory",
+              text: "HTTP/1.0 默认如何处理连接？",
+              question_type: "开放",
+              options: [],
+              evidence_revealed: false,
+              evidence: [],
+            },
+            judgement: {
+              verdict: "错",
+              reason: "没有覆盖要点。",
+              matched_points: [],
+              missing_points: [],
+              diagnosis: "wrong_focus",
+              concept_state: "薄弱",
+              correct_answer: "默认关闭，也可以协商 Keep-Alive。",
+            },
+            error: null,
+          });
+        }
+        if (request.url.includes("/verdict-corrections") && request.method === "POST") {
+          correctionBodies.push(await request.clone().json());
+          return Response.json({
+            schema_version: "assessment-attempt.v1",
+            taxonomy_version: "learning-vocabulary.v1",
+            attempt_id: "attempt-correction",
+            final_verdict: "对",
+          });
+        }
+        if (request.url.includes("/api/v1/learning/facets")) {
+          return Response.json({
+            schema_version: "knowledge-facet-inventory.v1",
+            taxonomy_version: "learning-vocabulary.v1",
+            item_count: 0,
+            approved_item_count: 0,
+            excluded_item_count: 0,
+            kind_counts: {},
+          });
+        }
+        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<AssessmentWorkspace />);
+    await user.click(await screen.findByRole("button", { name: "这个判决不准确" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "我认为应该是" }), "对");
+    await user.type(screen.getByRole("textbox", { name: "纠正理由" }), "两个评分点都覆盖了");
+    await user.click(screen.getByRole("button", { name: "保存纠正" }));
+
+    expect(await screen.findByText("纠正已保存，并进入本地 Eval 候选。"))
+      .toBeInTheDocument();
+    expect(correctionBodies).toEqual([
+      expect.objectContaining({
+        final_verdict: "对",
+        reason: "两个评分点都覆盖了",
+      }),
+    ]);
   });
 
   it("explains when the selected material has no assessable knowledge", async () => {

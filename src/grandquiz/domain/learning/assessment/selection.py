@@ -29,7 +29,12 @@ from grandquiz.kernel.clock import Rng
 Focus = Literal["mixed", "new", "weak"]
 
 
-def apply_scope(items: list[KnowledgeItem], resource_ids: list[str] | None) -> list[KnowledgeItem]:
+def apply_scope(
+    items: list[KnowledgeItem],
+    resource_ids: list[str] | None,
+    *,
+    item_ids: list[str] | None = None,
+) -> list[KnowledgeItem]:
     """目录式 scope 的**上游预过滤**（纯代码、确定性，无模糊匹配）——GKB-S4，修 #1 考错库。
 
     ``resource_ids is None`` → **恒等返回** ``items``（默认全库；字节等价旧行为）。否则按
@@ -43,10 +48,16 @@ def apply_scope(items: list[KnowledgeItem], resource_ids: list[str] | None) -> l
     parity 陷阱，replay 逐字节稳）。是 ``select_target`` **之前**的一层过滤，``select_target`` 签名
     及其既有 caller 零改。
     """
-    if resource_ids is None:
+    if resource_ids is None and item_ids is None:
         return items
-    allowed = set(resource_ids)
-    return [item for item in items if item.resource_id in allowed]
+    allowed_resources = None if resource_ids is None else set(resource_ids)
+    allowed_items = None if item_ids is None else set(item_ids)
+    return [
+        item
+        for item in items
+        if (allowed_resources is None or item.resource_id in allowed_resources)
+        and (allowed_items is None or item.item_id in allowed_items)
+    ]
 
 
 def _candidates(

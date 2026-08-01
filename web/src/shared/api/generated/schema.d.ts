@@ -329,6 +329,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/learning/eval-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Grading Eval Candidates */
+        get: operations["list_grading_eval_candidates_api_v1_learning_eval_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning/facets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Knowledge Facet Inventory
+         * @description Return active, approved classification counts for explicit product filtering.
+         */
+        get: operations["get_knowledge_facet_inventory_api_v1_learning_facets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/learning/items/{item_id}/classifications": {
         parameters: {
             query?: never;
@@ -931,6 +968,8 @@ export interface components {
              * @enum {string}
              */
             focus: "mixed" | "new" | "weak";
+            /** Knowledge Kinds */
+            knowledge_kinds?: ("concept" | "mechanism" | "procedure" | "method" | "tradeoff" | "failure_mode" | "case")[];
             /** Question Type */
             question_type?: string | null;
             /** Question Type Plan */
@@ -945,6 +984,8 @@ export interface components {
         };
         /** AssessmentView */
         AssessmentView: {
+            /** Attempt Id */
+            attempt_id?: string | null;
             /** Error */
             error?: string | null;
             judgement?: components["schemas"]["AssessmentJudgementView"] | null;
@@ -1182,6 +1223,84 @@ export interface components {
             /** Version */
             version: string;
         };
+        /** GradingEvalCandidateList */
+        GradingEvalCandidateList: {
+            /** Items */
+            items: components["schemas"]["GradingEvalCandidateV1"][];
+        };
+        /**
+         * GradingEvalCandidateV1
+         * @description Minimal local supervision record; promotion to a repo fixture is always manual.
+         */
+        GradingEvalCandidateV1: {
+            /** Answer Text */
+            answer_text: string;
+            /** Attempt Id */
+            attempt_id: string;
+            /**
+             * Blind To Model Output
+             * @default false
+             * @constant
+             */
+            blind_to_model_output: false;
+            /** Candidate Id */
+            candidate_id: string;
+            /** Correction Reason */
+            correction_reason: string;
+            /** Correction Trace Id */
+            correction_trace_id: string;
+            /** Grading Version */
+            grading_version: string;
+            /**
+             * Human Verdict
+             * @enum {string}
+             */
+            human_verdict: "对" | "勉强" | "错";
+            /** Item Id */
+            item_id: string;
+            /**
+             * Label Kind
+             * @enum {string}
+             */
+            label_kind: "upheld" | "overturned";
+            /**
+             * Model Verdict
+             * @enum {string}
+             */
+            model_verdict: "对" | "勉强" | "错";
+            /**
+             * Privacy Review Required
+             * @default true
+             * @constant
+             */
+            privacy_review_required: true;
+            /**
+             * Question Format
+             * @enum {string}
+             */
+            question_format: "multiple_choice" | "open_response";
+            /** Question Text */
+            question_text: string;
+            /**
+             * Redaction Profile
+             * @default learning-facts.v1
+             */
+            redaction_profile: string;
+            /**
+             * Release Gate Eligible
+             * @default false
+             * @constant
+             */
+            release_gate_eligible: false;
+            /**
+             * Schema Version
+             * @default grading-eval-candidate.v1
+             * @constant
+             */
+            schema_version: "grading-eval-candidate.v1";
+            /** Source Trace Id */
+            source_trace_id: string;
+        };
         /** GradingProvenance */
         GradingProvenance: {
             /**
@@ -1310,6 +1429,27 @@ export interface components {
             taxonomy_version: string;
             /** Trace Id */
             trace_id: string;
+        };
+        /** KnowledgeFacetInventoryV1 */
+        KnowledgeFacetInventoryV1: {
+            /** Approved Item Count */
+            approved_item_count: number;
+            /** Excluded Item Count */
+            excluded_item_count: number;
+            /** Item Count */
+            item_count: number;
+            /** Kind Counts */
+            kind_counts: {
+                [key: string]: number;
+            };
+            /**
+             * Schema Version
+             * @default knowledge-facet-inventory.v1
+             * @constant
+             */
+            schema_version: "knowledge-facet-inventory.v1";
+            /** Taxonomy Version */
+            taxonomy_version: string;
         };
         /** LearnerProjectionList */
         LearnerProjectionList: {
@@ -2469,6 +2609,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssessmentAttemptV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_grading_eval_candidates_api_v1_learning_eval_candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GradingEvalCandidateList"];
+                };
+            };
+        };
+    };
+    get_knowledge_facet_inventory_api_v1_learning_facets_get: {
+        parameters: {
+            query?: {
+                resource_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeFacetInventoryV1"];
                 };
             };
             /** @description Validation Error */

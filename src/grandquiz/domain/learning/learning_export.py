@@ -10,6 +10,7 @@ from grandquiz.domain.learning.assessment_history import (
     project_assessment_attempts,
     project_learner,
 )
+from grandquiz.domain.learning.eval_candidates import project_grading_eval_candidates
 from grandquiz.domain.learning.learning_facts import DEFAULT_REDACTION_PROFILE
 from grandquiz.domain.learning.persistence import LearningPersistence
 
@@ -46,6 +47,7 @@ def export_learning_review(
         for fact in facts
     )
     attempts = project_assessment_attempts(facts)
+    eval_candidates = project_grading_eval_candidates(facts)
     item_ids = sorted({attempt.item_id for attempt in attempts})
     projections = [
         projection
@@ -57,6 +59,7 @@ def export_learning_review(
         "",
         f"- Facts: {len(facts)}",
         f"- Attempts: {len(attempts)}",
+        f"- Eval candidates: {len(eval_candidates)} (local, privacy review required)",
         f"- Knowledge items with history: {len(projections)}",
         "",
         "## Attempts",
@@ -72,6 +75,17 @@ def export_learning_review(
     summary_text = "\n".join(summary_lines) + "\n"
     jsonl_bytes = jsonl_text.encode("utf-8")
     summary_bytes = summary_text.encode("utf-8")
+    candidate_text = "".join(
+        json.dumps(
+            candidate.model_dump(mode="json"),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+        for candidate in eval_candidates
+    )
+    candidate_bytes = candidate_text.encode("utf-8")
     cursors = [
         {
             "trace_id": fact.trace_id,
@@ -84,6 +98,8 @@ def export_learning_review(
         "schema_version": "learning-review-manifest.v1",
         "redaction_profile": DEFAULT_REDACTION_PROFILE,
         "fact_count": len(facts),
+        "eval_candidate_count": len(eval_candidates),
+        "privacy_review_required": True,
         "trace_ids": sorted({fact.trace_id for fact in facts}),
         "cursor": {
             "first": cursors[0] if cursors else None,
@@ -92,10 +108,12 @@ def export_learning_review(
         "files": {
             "learning-facts.jsonl": _sha256(jsonl_bytes),
             "summary.md": _sha256(summary_bytes),
+            "eval-candidates.jsonl": _sha256(candidate_bytes),
         },
     }
     manifest_text = json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
     (target / "learning-facts.jsonl").write_bytes(jsonl_bytes)
     (target / "summary.md").write_bytes(summary_bytes)
+    (target / "eval-candidates.jsonl").write_bytes(candidate_bytes)
     (target / "manifest.json").write_text(manifest_text, encoding="utf-8")
     return LearningReviewExport(out_dir=target, manifest=manifest)

@@ -127,6 +127,42 @@ def test_unknown_closed_classification_value_is_rejected(tmp_path: Path) -> None
     assert response.status_code == 422
 
 
+def test_facet_inventory_exposes_only_reviewed_product_truth(tmp_path: Path) -> None:
+    resource, item = _seed_item(tmp_path)
+
+    with TestClient(_app(tmp_path)) as client:
+        proposed = client.post(
+            f"/api/v1/learning/items/{item.item_id}/classifications",
+            json={
+                "request_id": "facet-proposal",
+                "primary_kind": "method",
+                "orientations": ["practice"],
+                "review_status": "proposed",
+            },
+        ).json()
+        before = client.get(
+            "/api/v1/learning/facets",
+            params={"resource_id": resource.resource_id},
+        ).json()
+        client.post(
+            f"/api/v1/learning/items/{item.item_id}/classifications/"
+            f"{proposed['classification_id']}/review",
+            json={"request_id": "facet-approve", "review_status": "approved"},
+        )
+        after = client.get(
+            "/api/v1/learning/facets",
+            params={"resource_id": resource.resource_id},
+        ).json()
+
+    assert before["item_count"] == 1
+    assert before["approved_item_count"] == 0
+    assert before["excluded_item_count"] == 1
+    assert before["kind_counts"] == {}
+    assert after["approved_item_count"] == 1
+    assert after["excluded_item_count"] == 0
+    assert after["kind_counts"] == {"method": 1}
+
+
 def test_classification_request_id_rejects_different_payload(tmp_path: Path) -> None:
     _, item = _seed_item(tmp_path)
 

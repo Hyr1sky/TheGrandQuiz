@@ -16,11 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, ValidationError
 
 from grandquiz.domain.learning.assessment.question import MultipleChoiceQuestion, QuestionSpec
-from grandquiz.domain.learning.models import (
-    CitedEvidence,
-    KnowledgeItem,
-    ungrounded_citations,
-)
+from grandquiz.domain.learning.models import CitedEvidence, ungrounded_citations
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.kernel.recovery import ErrorClass
@@ -96,7 +92,6 @@ class Verdict(BaseModel):
 
 
 async def grade_answer(
-    item: KnowledgeItem,
     question: QuestionSpec,
     answer: str,
     *,
@@ -116,7 +111,6 @@ async def grade_answer(
     if max_attempts < 1:
         raise ValueError("max_attempts 至少为 1")
     prompt = load_prompt("answer_grade")
-    del item  # KnowledgeItem 只用于保留稳定调用边界；判卷内容必须收窄到单题 QuestionSpec。
     valid_quotes = {point.cited_evidence for point in question.expected_points}
     rubric_block = "\n".join(
         (f"- {point.point_id}: {point.description}\n  原文依据：{point.cited_evidence}")

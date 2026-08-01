@@ -87,6 +87,7 @@ def create_app(
             preferences=persistence.preferences,
             difficulty=persistence.difficulty,
             learning_facts=persistence.learning_facts,
+            classifications=persistence.classifications,
             trace_store=trace_store,
             trace_observatory=trace_observatory,
         )

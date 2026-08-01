@@ -157,6 +157,7 @@ async def assess_once(
     focus: Focus = "mixed",
     preferences: PreferenceMemory | None = None,
     scope: QuizScope = ALL_SCOPE,
+    candidate_item_ids: list[str] | None = None,
     question_type: str | None = None,
     difficulty: DifficultyLedger | None = None,
     learning_facts: LearningFactJournal | None = None,
@@ -229,7 +230,9 @@ async def assess_once(
     #    （candidate_pool_size = scope 后池大小 = 命中数；判别力字段，供 trace/eval 断言选了哪库）。
     resource_ids = scope.resource_ids if isinstance(scope, SelectedScope) else None
     items = (
-        [] if isinstance(scope, UnresolvedScope) else apply_scope(store.all_items(), resource_ids)
+        []
+        if isinstance(scope, UnresolvedScope)
+        else apply_scope(store.all_items(), resource_ids, item_ids=candidate_item_ids)
     )
     assessment_span = emitter.new_span_id()
     scope_payload: dict[str, Any] = {
@@ -237,6 +240,8 @@ async def assess_once(
         "resource_ids": resource_ids,
         "candidate_pool_size": len(items),
     }
+    if candidate_item_ids is not None:
+        scope_payload["facet_filtered"] = True
     if isinstance(scope, UnresolvedScope):
         scope_payload["requested_label"] = scope.requested_label
     emitter.emit(
@@ -262,7 +267,11 @@ async def assess_once(
         # b. 空库 / 空 scope 拒答：不调任何 LLM，优雅返回 refused。两支——None scope 且全库空 →
         #    empty_kb（eval case 2，逐字节不动）；非 None scope 过滤后空 → empty_scope（在选题前）。
         if not items:
-            reason = "empty_kb" if isinstance(scope, AllScope) else "empty_scope"
+            reason = (
+                "empty_facet"
+                if candidate_item_ids is not None
+                else ("empty_kb" if isinstance(scope, AllScope) else "empty_scope")
+            )
             emitter.emit(
                 LearningEvent.ASSESSMENT_REFUSED,
                 parent_span_id=assessment_span,
@@ -436,7 +445,6 @@ async def assess_once(
         else:
             assert question_spec is not None
             verdict = await grade_answer(
-                target,
                 question_spec,
                 answer,
                 provider=provider,

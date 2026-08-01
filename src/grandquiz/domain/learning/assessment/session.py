@@ -53,6 +53,7 @@ class AssessmentSession:
         emitter: EventEmitter,
         focus: Focus = "mixed",
         scope: QuizScope = ALL_SCOPE,
+        candidate_item_ids: list[str] | None = None,
         question_type: str | None = None,
     ) -> AssessmentResult:
         """运行下一轮单题 workflow，并推进本会话的覆盖台账与随机序列。"""
@@ -70,6 +71,7 @@ class AssessmentSession:
             focus=focus,
             preferences=self._preferences,
             scope=scope,
+            candidate_item_ids=candidate_item_ids,
             question_type=question_type,
             difficulty=self._difficulty,
             learning_facts=self._learning_facts,

@@ -160,7 +160,11 @@ def _print_weak_summary(
 
 
 async def _run_quiz_cli(
-    *, title: str | None, rounds: int, db_path: Path, prefer_lang: str | None = None
+    *,
+    title: str | None,
+    rounds: int,
+    db_path: Path,
+    prefer_lang: str | None = None,
 ) -> None:
     # 先查库（不构造 provider）：空库 / 错任务直接给指引——无需 LLM key，也免去无谓 HTTP 客户端。
     console = Console()

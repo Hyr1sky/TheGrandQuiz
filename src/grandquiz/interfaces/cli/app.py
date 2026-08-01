@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 
 # 各命令的公开编排（re-export，见 __all__）+ 私有 CLI handler（main 分发调用）。
 from grandquiz.interfaces.cli.commands.audit import run_document_dogfood_audit_cli
+from grandquiz.interfaces.cli.commands.calibration import run_live_grading_calibration_cli
 from grandquiz.interfaces.cli.commands.ingest import _run_ingest_cli, run_ingest
 from grandquiz.interfaces.cli.commands.learning import run_learning_export_cli
 from grandquiz.interfaces.cli.commands.quiz import _run_quiz_cli, run_quiz
@@ -69,7 +70,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="显式设出题语言偏好（如 英文 / en），跨会话留存并覆盖任务默认语言",
     )
-
     p_react = sub.add_parser("react", help="真机 ReAct 对话——学材料 / 出题 / 判卷全经工具")
     p_react.add_argument("title", nargs="?", default=None, help="可选横幅（仅打印，不进考核范围）")
     p_react.add_argument("--db", type=Path, default=_DEFAULT_DB, help="SQLite 库路径")
@@ -180,6 +180,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="输出目录",
     )
 
+    p_calibration = sub.add_parser(
+        "calibrate-grading",
+        help="用人工盲标 YAML 校准生产逐点评分，并报告误判与 Token 成本",
+    )
+    p_calibration.add_argument("--samples", type=Path, required=True, help="人工标注 YAML")
+    p_calibration.add_argument(
+        "--out",
+        type=Path,
+        default=Path.home() / ".grandquiz" / "eval-report" / "grading-calibration.json",
+        help="JSON 报告路径",
+    )
+    p_calibration.add_argument(
+        "--min-samples",
+        type=int,
+        default=10,
+        help="打开质量门所需的最少盲标样本数（默认 10）",
+    )
+
     return parser
 
 
@@ -239,6 +257,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
     elif args.command == "export-learning":
         run_learning_export_cli(db_path=args.db, out_dir=args.out)
+    elif args.command == "calibrate-grading":
+        asyncio.run(
+            run_live_grading_calibration_cli(
+                samples_path=args.samples,
+                out_path=args.out,
+                min_samples=args.min_samples,
+            )
+        )
     else:
         parser.print_help()
 

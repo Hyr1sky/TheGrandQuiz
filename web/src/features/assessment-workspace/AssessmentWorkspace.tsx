@@ -16,15 +16,29 @@ import {
 } from "../../shared/api/resources";
 import {
   getAssessment,
+  getKnowledgeFacets,
+  correctVerdict,
   nextRound,
   revealEvidence,
   startAssessment,
   submitAnswer,
   type AssessmentView,
+  type KnowledgeFacetInventory,
+  type KnowledgeKind,
+  type VerdictLabel,
 } from "./api";
 import "./assessment-workspace.css";
 
 const SESSION_STORAGE_KEY = "grandquiz.assessment.session_id";
+const KNOWLEDGE_KIND_LABELS = [
+  ["concept", "概念"],
+  ["mechanism", "机制 / 原理"],
+  ["procedure", "流程"],
+  ["method", "方法"],
+  ["tradeoff", "权衡"],
+  ["failure_mode", "故障模式"],
+  ["case", "案例"],
+] as const;
 
 function commandId(prefix: string): string {
   return `${prefix}-${globalThis.crypto.randomUUID()}`;
@@ -35,10 +49,16 @@ export function AssessmentWorkspace() {
   const [resourceId, setResourceId] = useState("");
   const [rounds, setRounds] = useState("3");
   const [questionType, setQuestionType] = useState("");
+  const [knowledgeKind, setKnowledgeKind] = useState<KnowledgeKind | "">("");
+  const [facets, setFacets] = useState<KnowledgeFacetInventory | null>(null);
   const [assessment, setAssessment] = useState<AssessmentView | null>(null);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [correctionVerdict, setCorrectionVerdict] = useState<VerdictLabel>("勉强");
+  const [correctionReason, setCorrectionReason] = useState("");
+  const [correctionSaved, setCorrectionSaved] = useState(false);
   const revealRequested = useRef<string | null>(null);
   const answerCommand = useRef<{
     questionId: string;
@@ -48,6 +68,12 @@ export function AssessmentWorkspace() {
   const nextCommand = useRef<{ roundIndex: number; requestId: string } | null>(
     null,
   );
+  const correctionCommand = useRef<{
+    attemptId: string;
+    verdict: VerdictLabel;
+    reason: string;
+    requestId: string;
+  } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -68,6 +94,26 @@ export function AssessmentWorkspace() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (resourceId === "") {
+      return;
+    }
+    let active = true;
+    void getKnowledgeFacets(resourceId)
+      .then((inventory) => {
+        if (active) {
+          setKnowledgeKind("");
+          setFacets(inventory);
+        }
+      })
+      .catch(() => {
+        if (active) setFacets(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [resourceId]);
 
   useEffect(() => {
     const sessionId = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
@@ -133,7 +179,11 @@ export function AssessmentWorkspace() {
       const normalizedType = questionType === "" ? null : questionType;
       const started = await startAssessment(
         resourceId,
-        { rounds: requestedRounds, questionType: normalizedType },
+        {
+          rounds: requestedRounds,
+          questionType: normalizedType,
+          knowledgeKinds: knowledgeKind === "" ? undefined : [knowledgeKind],
+        },
       );
       window.sessionStorage.setItem(SESSION_STORAGE_KEY, started.session_id);
       setAssessment(started);
@@ -224,11 +274,49 @@ export function AssessmentWorkspace() {
         command.requestId,
       );
       setAnswer("");
+      setCorrectionOpen(false);
+      setCorrectionReason("");
+      setCorrectionSaved(false);
+      correctionCommand.current = null;
       revealRequested.current = null;
       answerCommand.current = null;
       setAssessment(next);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法进入下一题");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitCorrection = async (event: FormEvent) => {
+    event.preventDefault();
+    if (assessment?.attempt_id == null || correctionReason.trim() === "") return;
+    setBusy(true);
+    setError(null);
+    const existing = correctionCommand.current;
+    const command =
+      existing?.attemptId === assessment.attempt_id &&
+      existing.verdict === correctionVerdict &&
+      existing.reason === correctionReason.trim()
+        ? existing
+        : {
+            attemptId: assessment.attempt_id,
+            verdict: correctionVerdict,
+            reason: correctionReason.trim(),
+            requestId: commandId("verdict-correction"),
+          };
+    correctionCommand.current = command;
+    try {
+      await correctVerdict(
+        command.attemptId,
+        command.verdict,
+        command.reason,
+        command.requestId,
+      );
+      setCorrectionSaved(true);
+      setCorrectionOpen(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "无法保存判决纠正");
     } finally {
       setBusy(false);
     }
@@ -240,6 +328,10 @@ export function AssessmentWorkspace() {
     answerCommand.current = null;
     nextCommand.current = null;
     setAnswer("");
+    setCorrectionOpen(false);
+    setCorrectionReason("");
+    setCorrectionSaved(false);
+    correctionCommand.current = null;
     setAssessment(null);
     setError(null);
   };
@@ -349,6 +441,62 @@ export function AssessmentWorkspace() {
                   <p>{assessment.judgement.correct_answer}</p>
                 </details>
               ) : null}
+              {assessment.attempt_id != null ? (
+                <section className="quiz-correction" aria-label="判决纠正">
+                  {correctionSaved ? (
+                    <p role="status">纠正已保存，并进入本地 Eval 候选。</p>
+                  ) : correctionOpen ? (
+                    <form onSubmit={submitCorrection}>
+                      <label>
+                        <span>我认为应该是</span>
+                        <select
+                          aria-label="我认为应该是"
+                          value={correctionVerdict}
+                          onChange={(event) =>
+                            setCorrectionVerdict(event.target.value as VerdictLabel)
+                          }
+                        >
+                          <option value="对">对</option>
+                          <option value="勉强">勉强</option>
+                          <option value="错">错</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>纠正理由</span>
+                        <textarea
+                          aria-label="纠正理由"
+                          value={correctionReason}
+                          onChange={(event) => setCorrectionReason(event.target.value)}
+                          placeholder="指出已覆盖或遗漏的要点，便于后续校准"
+                        />
+                      </label>
+                      <div>
+                        <button type="button" onClick={() => setCorrectionOpen(false)}>
+                          取消
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={busy || correctionReason.trim() === ""}
+                        >
+                          保存纠正
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCorrectionVerdict(
+                          assessment.judgement?.verdict as VerdictLabel,
+                        );
+                        setCorrectionOpen(true);
+                      }}
+                    >
+                      这个判决不准确
+                    </button>
+                  )}
+                </section>
+              ) : null}
               {assessment.status === "judged" ? (
                 <button type="button" disabled={busy} onClick={() => void advance()}>
                   下一题
@@ -415,6 +563,31 @@ export function AssessmentWorkspace() {
               ))}
             </select>
           </label>
+          {facets !== null ? (
+            <label>
+              <span>知识类型 · 仅使用已审核分类</span>
+              <select
+                aria-label="知识类型"
+                value={knowledgeKind}
+                onChange={(event) =>
+                  setKnowledgeKind(event.target.value as KnowledgeKind | "")
+                }
+              >
+                <option value="">全部类型</option>
+                {KNOWLEDGE_KIND_LABELS.flatMap(([value, label]) => {
+                  const count = facets.kind_counts[value] ?? 0;
+                  return count > 0 ? (
+                    <option key={value} value={value}>
+                      {label} · {count}
+                    </option>
+                  ) : [];
+                })}
+              </select>
+              {facets.excluded_item_count > 0 ? (
+                <small>{facets.excluded_item_count} 个知识点未纳入已审核类型筛选</small>
+              ) : null}
+            </label>
+          ) : null}
           <label>
             <span>题型</span>
             <select

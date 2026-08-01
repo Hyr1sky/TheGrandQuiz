@@ -825,6 +825,23 @@
             "title": "Focus",
             "type": "string"
           },
+          "knowledge_kinds": {
+            "items": {
+              "enum": [
+                "concept",
+                "mechanism",
+                "procedure",
+                "method",
+                "tradeoff",
+                "failure_mode",
+                "case"
+              ],
+              "type": "string"
+            },
+            "title": "Knowledge Kinds",
+            "type": "array",
+            "uniqueItems": true
+          },
           "question_type": {
             "anyOf": [
               {
@@ -883,6 +900,17 @@
       },
       "AssessmentView": {
         "properties": {
+          "attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt Id"
+          },
           "error": {
             "anyOf": [
               {
@@ -1526,6 +1554,143 @@
         "title": "GenerationProvenance",
         "type": "object"
       },
+      "GradingEvalCandidateList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GradingEvalCandidateV1"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "GradingEvalCandidateList",
+        "type": "object"
+      },
+      "GradingEvalCandidateV1": {
+        "description": "Minimal local supervision record; promotion to a repo fixture is always manual.",
+        "properties": {
+          "answer_text": {
+            "title": "Answer Text",
+            "type": "string"
+          },
+          "attempt_id": {
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "blind_to_model_output": {
+            "const": false,
+            "default": false,
+            "title": "Blind To Model Output",
+            "type": "boolean"
+          },
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "correction_reason": {
+            "title": "Correction Reason",
+            "type": "string"
+          },
+          "correction_trace_id": {
+            "title": "Correction Trace Id",
+            "type": "string"
+          },
+          "grading_version": {
+            "title": "Grading Version",
+            "type": "string"
+          },
+          "human_verdict": {
+            "enum": [
+              "对",
+              "勉强",
+              "错"
+            ],
+            "title": "Human Verdict",
+            "type": "string"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "label_kind": {
+            "enum": [
+              "upheld",
+              "overturned"
+            ],
+            "title": "Label Kind",
+            "type": "string"
+          },
+          "model_verdict": {
+            "enum": [
+              "对",
+              "勉强",
+              "错"
+            ],
+            "title": "Model Verdict",
+            "type": "string"
+          },
+          "privacy_review_required": {
+            "const": true,
+            "default": true,
+            "title": "Privacy Review Required",
+            "type": "boolean"
+          },
+          "question_format": {
+            "enum": [
+              "multiple_choice",
+              "open_response"
+            ],
+            "title": "Question Format",
+            "type": "string"
+          },
+          "question_text": {
+            "title": "Question Text",
+            "type": "string"
+          },
+          "redaction_profile": {
+            "default": "learning-facts.v1",
+            "title": "Redaction Profile",
+            "type": "string"
+          },
+          "release_gate_eligible": {
+            "const": false,
+            "default": false,
+            "title": "Release Gate Eligible",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "const": "grading-eval-candidate.v1",
+            "default": "grading-eval-candidate.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_trace_id": {
+            "title": "Source Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "attempt_id",
+          "item_id",
+          "source_trace_id",
+          "correction_trace_id",
+          "question_text",
+          "answer_text",
+          "question_format",
+          "grading_version",
+          "model_verdict",
+          "human_verdict",
+          "correction_reason",
+          "label_kind"
+        ],
+        "title": "GradingEvalCandidateV1",
+        "type": "object"
+      },
       "GradingProvenance": {
         "properties": {
           "kind": {
@@ -1897,6 +2062,62 @@
           "trace_id"
         ],
         "title": "KnowledgeClassificationV1",
+        "type": "object"
+      },
+      "KnowledgeFacetInventoryV1": {
+        "properties": {
+          "approved_item_count": {
+            "minimum": 0.0,
+            "title": "Approved Item Count",
+            "type": "integer"
+          },
+          "excluded_item_count": {
+            "minimum": 0.0,
+            "title": "Excluded Item Count",
+            "type": "integer"
+          },
+          "item_count": {
+            "minimum": 0.0,
+            "title": "Item Count",
+            "type": "integer"
+          },
+          "kind_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "enum": [
+                "concept",
+                "mechanism",
+                "procedure",
+                "method",
+                "tradeoff",
+                "failure_mode",
+                "case"
+              ]
+            },
+            "title": "Kind Counts",
+            "type": "object"
+          },
+          "schema_version": {
+            "const": "knowledge-facet-inventory.v1",
+            "default": "knowledge-facet-inventory.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "taxonomy_version": {
+            "title": "Taxonomy Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taxonomy_version",
+          "item_count",
+          "approved_item_count",
+          "excluded_item_count",
+          "kind_counts"
+        ],
+        "title": "KnowledgeFacetInventoryV1",
         "type": "object"
       },
       "LearnerProjectionList": {
@@ -4221,6 +4442,77 @@
           }
         },
         "summary": "Correct Attempt Verdict",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/eval-candidates": {
+      "get": {
+        "operationId": "list_grading_eval_candidates_api_v1_learning_eval_candidates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GradingEvalCandidateList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Grading Eval Candidates",
+        "tags": [
+          "learning"
+        ]
+      }
+    },
+    "/api/v1/learning/facets": {
+      "get": {
+        "description": "Return active, approved classification counts for explicit product filtering.",
+        "operationId": "get_knowledge_facet_inventory_api_v1_learning_facets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "resource_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeFacetInventoryV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Knowledge Facet Inventory",
         "tags": [
           "learning"
         ]

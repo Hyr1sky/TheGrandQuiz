@@ -68,9 +68,15 @@ def test_learning_review_export_is_stable_and_uses_journal_not_trace(
         second_out / "learning-facts.jsonl"
     ).read_bytes()
     assert (first_out / "summary.md").read_bytes() == (second_out / "summary.md").read_bytes()
+    assert (first_out / "eval-candidates.jsonl").read_bytes() == (
+        second_out / "eval-candidates.jsonl"
+    ).read_bytes()
     manifest = json.loads((first_out / "manifest.json").read_text())
     assert manifest["fact_count"] == 1
     assert manifest["trace_ids"] == [trace_id]
+    assert manifest["eval_candidate_count"] == 0
+    assert manifest["privacy_review_required"] is True
+    assert "eval-candidates.jsonl" in manifest["files"]
     jsonl = (first_out / "learning-facts.jsonl").read_text()
     assert "prompt_tokens" not in jsonl
     assert "completion_tokens" not in jsonl

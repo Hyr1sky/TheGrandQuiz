@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
 from grandquiz.domain.learning.assessment.grading import VerdictLabel
+from grandquiz.domain.learning.assessment.selection import apply_scope
 from grandquiz.domain.learning.assessment_history import (
     DEMAND_VALIDATED,
     VERDICT_CORRECTED,
@@ -34,6 +35,14 @@ from grandquiz.domain.learning.classification import (
 from grandquiz.domain.learning.classification_store import (
     ClassificationIdempotencyConflict,
 )
+from grandquiz.domain.learning.eval_candidates import (
+    GradingEvalCandidateV1,
+    project_grading_eval_candidates,
+)
+from grandquiz.domain.learning.knowledge_facets import (
+    KnowledgeFacetInventoryV1,
+    build_knowledge_facet_inventory,
+)
 from grandquiz.domain.learning.models import derive_id
 from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.interfaces.api.errors import ApiError
@@ -46,6 +55,10 @@ router = APIRouter(prefix="/api/v1/learning", tags=["learning"])
 
 class AssessmentAttemptList(BaseModel):
     items: list[AssessmentAttemptV1]
+
+
+class GradingEvalCandidateList(BaseModel):
+    items: list[GradingEvalCandidateV1]
 
 
 class LearnerProjectionList(BaseModel):
@@ -150,6 +163,13 @@ async def list_assessment_attempts(
     return AssessmentAttemptList(items=attempts)
 
 
+@router.get("/eval-candidates", response_model=GradingEvalCandidateList)
+async def list_grading_eval_candidates(request: Request) -> GradingEvalCandidateList:
+    return GradingEvalCandidateList(
+        items=project_grading_eval_candidates(_persistence(request).learning_facts.facts())
+    )
+
+
 @router.get("/attempts/{attempt_id}", response_model=AssessmentAttemptV1)
 async def get_assessment_attempt(attempt_id: str, request: Request) -> AssessmentAttemptV1:
     attempts = project_assessment_attempts(_persistence(request).learning_facts.facts())
@@ -203,6 +223,24 @@ async def get_learning_report(request: Request) -> LearningReportV1:
         is not None
     ]
     return LearningReportV1(attempt_count=len(attempts), projections=projections)
+
+
+@router.get("/facets", response_model=KnowledgeFacetInventoryV1)
+async def get_knowledge_facet_inventory(
+    request: Request,
+    resource_id: str | None = Query(default=None),
+) -> KnowledgeFacetInventoryV1:
+    """Return active, approved classification counts for explicit product filtering."""
+
+    persistence = _persistence(request)
+    items = apply_scope(
+        persistence.store.all_items(),
+        None if resource_id is None else [resource_id],
+    )
+    return build_knowledge_facet_inventory(
+        items,
+        classifications=persistence.classifications,
+    )
 
 
 @router.get(

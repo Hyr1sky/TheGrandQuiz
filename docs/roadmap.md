@@ -11,8 +11,8 @@
 
 1. `LearningFactJournal + transactional outbox` 已落地，完整 Trace 可独立删除。
 2. `AssessmentAttemptV1`、append-only 判决纠正与确定性 reconciliation 已落地。
-3. v1 受控词表、分类 proposal/审核、TagCandidate/TagAssignment 与入库原子接线已作为 foundation 落地；
-   规则输出默认 proposed，尚不驱动筛选或选题。
+3. v1 受控词表、分类 proposal/审核、TagCandidate/TagAssignment 与入库原子接线已落地；规则输出默认
+   proposed，只有人工批准分类可以通过 v0.3 facet consumer 驱动考核筛选。
 4. 窄版 `LearnerProjectionV1`、只读 API 与稳定本地审查导出已落地；销账/复发、信心校准与错因统计后置。
 5. 人工 DemandValidation 已落地；自动 Judge 仍须先通过 calibration gate。
 6. AnswerDiagnosis/Misconception 晋升和新指标驱动选题仍由 Eval gate 阻挡。
@@ -31,11 +31,15 @@ GitHub Release 与安装包由独立发布动作完成。包版本已进入 `0.2
 [发布清单](open-source-release-checklist.md) 为准。完整证据见
 [v0.2 功能 RC 收口](devrecords/24-v020-functional-rc-closeout.md)。
 
-## 下一阶段：v0.3 先证明消费者与质量收益
+## 代码 RC 已完成：v0.3 证据闭环
 
-批量入库、Reader batch 并发、candidate-level LLM repair、Trace explain 与新学习指标没有进入 v0.2。
-下一阶段优先用真实样本校准逐评分点判卷、测量分类审核成本，并证明受控词表至少存在一个稳定产品消费者；
-未达到 gate 的字段、关系和自动 Judge 继续只保留在文档或 proposal 层。
+v0.3 已完成三个窄消费者：人工批准的知识分类可在 Web 考核前筛选范围；人工盲标 harness 直接校准
+生产逐点评判器并统计误判、重试与 Token；用户判决纠正可导出为明确标记隐私审核和非盲标属性的本地 Eval
+候选。完整实现记录见 [v0.3 证据闭环](devrecords/25-v030-evidence-loop.md)。
+
+代码 RC 不等于质量 gate 已通过。下一步须用 10–30 条真实人工盲标样本校准并记录分类审核成本；未达到
+gate 的自动 Judge、Diagnosis/Misconception、能力蓝图和自适应选题继续只保留在文档或 proposal 层。
+批量入库、Reader batch 并发、candidate-level LLM repair 和 Trace explain 也没有进入本轮。
 
 This document records the initial architecture discussion for building an assessment-driven,
 observable, recoverable, and evaluable learning agent.

@@ -323,6 +323,47 @@ def test_empty_selected_scope_is_refused_without_calling_the_model(tmp_path: Pat
     assert provider.calls == 0
 
 
+def test_assessment_kind_filter_is_approved_only_and_fails_closed(tmp_path: Path) -> None:
+    resource, item = _seed_item(tmp_path)
+    provider = _AssessmentProvider()
+
+    with TestClient(_app(tmp_path, provider)) as client:
+        unreviewed = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "选择题",
+                "knowledge_kinds": ["method"],
+            },
+        ).json()
+        refused = _wait_for_status(client, unreviewed["session_id"], "refused")
+        assert provider.calls == 0
+
+        client.post(
+            f"/api/v1/learning/items/{item.item_id}/classifications",
+            json={
+                "request_id": "assessment-facet-approved",
+                "primary_kind": "method",
+                "orientations": ["practice"],
+            },
+        )
+        reviewed = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "选择题",
+                "knowledge_kinds": ["method"],
+            },
+        ).json()
+        waiting = _wait_for_status(client, reviewed["session_id"], "awaiting_answer")
+
+    assert refused["error"] == "当前筛选条件没有已审核、可用于考核的知识点。"
+    assert waiting["question"]["item_id"] == item.item_id
+    assert provider.calls == 1
+
+
 def test_evidence_reveal_is_explicit_idempotent_and_audited(tmp_path: Path) -> None:
     resource, _ = _seed_item(tmp_path)
 
@@ -594,7 +635,7 @@ def test_verdict_correction_preserves_initial_verdict_and_reconciles_state(
             f"{waiting['question']['question_id']}/answers",
             json={"request_id": "wrong-before-appeal", "answer": _WRONG},
         )
-        _wait_for_status(client, started["session_id"], "completed")
+        completed = _wait_for_status(client, started["session_id"], "completed")
         attempt = client.get(
             "/api/v1/learning/attempts",
             params={"trace_id": started["trace_id"]},
@@ -621,8 +662,10 @@ def test_verdict_correction_preserves_initial_verdict_and_reconciles_state(
             params={"trace_id": started["trace_id"]},
         ).json()["items"][0]
         projection = client.get(f"/api/v1/learning/projections/{item.item_id}").json()
+        candidates = client.get("/api/v1/learning/eval-candidates").json()["items"]
 
     assert correction.status_code == 200
+    assert completed["attempt_id"] == attempt["attempt_id"]
     assert correction_retry.status_code == 200
     assert correction_retry.json() == correction.json()
     assert corrected["initial_verdict"] == "错"
@@ -630,6 +673,10 @@ def test_verdict_correction_preserves_initial_verdict_and_reconciles_state(
     assert corrected["appeal_status"] == "overturned"
     assert projection["verdict_counts"] == {"对": 1, "勉强": 0, "错": 0}
     assert projection["learning_memory_state"] == "not_in_memory"
+    assert len(candidates) == 1
+    assert candidates[0]["attempt_id"] == attempt["attempt_id"]
+    assert candidates[0]["human_verdict"] == "对"
+    assert candidates[0]["release_gate_eligible"] is False
 
     with LearningPersistence(tmp_path / "learning.db") as persistence:
         assert persistence.memory.state_of(item.item_id) is None
@@ -831,6 +878,7 @@ def test_open_question_wrong_answer_waits_for_explicit_next_round(tmp_path: Path
         judged = _wait_for_status(client, started["session_id"], "judged")
 
         assert judged["round_index"] == 1
+        assert judged["attempt_id"] is not None
         assert judged["judgement"]["verdict"] == "错"
         assert judged["judgement"]["diagnosis"] == "wrong_focus"
         assert judged["judgement"]["matched_points"] == []
@@ -852,6 +900,7 @@ def test_open_question_wrong_answer_waits_for_explicit_next_round(tmp_path: Path
         second = _wait_for_status(client, started["session_id"], "awaiting_answer")
 
     assert second["round_index"] == 2
+    assert second["attempt_id"] is None
     assert second["question"]["question_id"] != first_question_id
     assert second["question"]["text"] == "潜在记忆为什么不等于外部文件？"
     assert provider.question_calls == 2

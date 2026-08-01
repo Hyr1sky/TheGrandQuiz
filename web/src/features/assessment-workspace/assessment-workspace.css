@@ -317,6 +317,55 @@
   align-items: center;
 }
 
+.quiz-correction {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.quiz-correction > button {
+  justify-self: start;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.quiz-correction form,
+.quiz-correction label {
+  display: grid;
+  gap: 8px;
+}
+
+.quiz-correction form {
+  gap: 14px;
+}
+
+.quiz-correction select,
+.quiz-correction textarea {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--field);
+  color: var(--text-strong);
+}
+
+.quiz-correction textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.quiz-correction form > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.quiz-correction [role="status"] {
+  margin: 0;
+  color: var(--success);
+}
+
 .quiz-sheet > footer {
   margin-top: 28px;
   color: var(--muted);
