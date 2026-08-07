@@ -5,12 +5,14 @@ migrations 时建出 learning 四表；重复 migrate 幂等（``user_version`` 
 per-db 的 user_version（独立 db 文件不串号）。kernel 仍不认识任何领域表——它只按目录跑 SQL。
 """
 
+import hashlib
 import sqlite3
 from pathlib import Path
 
 import pytest
 
 import grandquiz.domain.learning
+from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.kernel.db import connect, migrate
 
 _KERNEL_TABLES = {"events"}
@@ -109,3 +111,83 @@ def test_migrate_stops_at_last_good_version_on_failure(tmp_path: Path) -> None:
     assert "a" in _tables(conn)
     assert _user_version(conn) == 1
     conn.close()
+
+
+def test_v020_learning_database_upgrades_without_losing_learning_state(tmp_path: Path) -> None:
+    """A v0.2.0 database remains readable after the v0.4.0 migration.
+
+    The public seam is ``LearningPersistence``: release compatibility must not depend on
+    callers running a bespoke conversion script or reaching into adapter internals.
+    """
+    legacy_migrations = tmp_path / "v020-migrations"
+    legacy_migrations.mkdir()
+    for source in sorted(_LEARNING_MIGRATIONS.glob("*.sql")):
+        number = int(source.name.split("_", 1)[0])
+        if number > 15:
+            continue
+        (legacy_migrations / source.name).write_text(
+            source.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+    database = tmp_path / "learning.db"
+    legacy = connect(database)
+    migrate(legacy, legacy_migrations)
+    assert _user_version(legacy) == 15
+    raw_content = "# HTTP\nHTTP is a request-response protocol."
+    legacy.execute(
+        "INSERT INTO resources "
+        "(resource_id, url, raw_content, content_hash, trusted, status, topic, "
+        "current_revision_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "resource-v020",
+            "file://release-compatibility.md",
+            raw_content,
+            hashlib.sha256(raw_content.encode("utf-8")).hexdigest(),
+            0,
+            "read",
+            "HTTP",
+            None,
+        ),
+    )
+    legacy.execute(
+        "INSERT INTO knowledge_items "
+        "(item_id, resource_id, concept, summary, evidence, confidence, concept_key) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            "item-v020",
+            "resource-v020",
+            "HTTP request-response",
+            "HTTP uses a request-response interaction.",
+            '[{"quote":"HTTP is a request-response protocol.","locator":null}]',
+            0.95,
+            None,
+        ),
+    )
+    legacy.execute(
+        "INSERT INTO learning_memory "
+        "(item_id, state, consecutive_correct, verdict_history) VALUES (?, ?, ?, ?)",
+        ("item-v020", "薄弱", 0, '["错"]'),
+    )
+    legacy.commit()
+    legacy.close()
+
+    with LearningPersistence(database) as persistence:
+        resource = persistence.store.get_resource("resource-v020")
+        items = persistence.store.items_for_resource("resource-v020")
+        memory = persistence.memory.record_of("item-v020")
+
+        assert resource is not None
+        assert resource.topic == "HTTP"
+        assert [item.item_id for item in items] == ["item-v020"]
+        assert items[0].evidence[0].quote == "HTTP is a request-response protocol."
+        assert memory is not None
+        assert memory.state == "薄弱"
+        assert memory.verdict_history == ["错"]
+        assert _user_version(persistence.transaction_owner.connection) == 16
+        assert {
+            "material_discovery_batches",
+            "material_candidates",
+            "eval_inbox_candidates",
+            "eval_dataset_snapshots",
+        } <= _tables(persistence.transaction_owner.connection)
