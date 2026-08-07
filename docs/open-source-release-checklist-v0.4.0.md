@@ -26,12 +26,12 @@ Evidence、逐点评判、申诉和 Trace 组成的人工可纠正产品可作�
 
 ## 3. 代码与浏览器门
 
-- [ ] Ruff lint 与 format check。
-- [ ] Pyright 与 import-linter。
-- [ ] 全量 pytest。
-- [ ] 离线 Eval 17/17，不读取真实 `.env` 或调用外部模型。
-- [ ] Web lint、typecheck、unit、OpenAPI、Sites worker 与 production package build。
-- [ ] Playwright 桌面/移动端全量通过；申诉场景覆盖“错 → 一次补充 → 对”，并确认原答不被覆盖。
+- [x] Ruff lint 与 format check。
+- [x] Pyright 与 import-linter。
+- [x] 全量 pytest（1034 passed）。
+- [x] 离线 Eval 17/17，不读取真实 `.env` 或调用外部模型。
+- [x] Web lint、typecheck、unit（49 passed）、OpenAPI、Sites worker 与 production package build。
+- [x] Playwright 桌面/移动端 20/20；申诉场景覆盖“错 → 一次补充 → 对”，并确认原答不被覆盖。
 - [ ] `origin/main...HEAD` Standards / Spec 双轴审查没有未解决 P0/P1。
 
 ## 4. 仓库与供应链

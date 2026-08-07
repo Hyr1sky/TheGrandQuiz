@@ -31,7 +31,8 @@ owner 对 push/tag/Release 的单独批准
    Evidence 与薄弱状态，再只通过公开 `LearningPersistence` 打开；迁移后全部可读，新 inbox 表存在。
 5. 新增桌面/移动端申诉 Scenario：先用无关答案得到“错”，再补充 exact 机制得到“对”，并确认原回答文本
    没有被覆盖。
-6. Web fixture 的题目加入稳定场景编号，避免两个 viewport 共用 SQLite 时，历史题目去重把固定四题耗尽。
+6. Web fixture 的题目加入稳定场景编号，并固定提供最高难度所需的 6 个选项；避免两个 viewport 共用
+   SQLite 后，历史去重或已累积的难度状态把固定输出耗尽。
 
 ## 本地验证证据
 
@@ -39,7 +40,7 @@ owner 对 push/tag/Release 的单独批准
 - 离线 Eval：`17/17`；
 - Ruff lint、format，Pyright，import-linter：通过；
 - Web lint、typecheck、unit：`49 passed`；Sites worker：`4 passed`；production package build：通过；
-- Playwright：申诉定向 `2/2`、取消回归 `2/2`；完整 `20/20` 留到 release commit 后做最终确认；
+- Playwright：完整桌面/移动端 `20/20`，包含申诉、取消、发现、Eval Snapshot、Chat 与安全 Markdown；
 - v0.4.0 sdist/wheel：构建成功；wheel 仓库外安装成功；CLI help、安装包内离线 Eval 17/17、FastAPI
   health、Web 首页和 SPA fallback 均通过；
 - sdist SHA-256：`aaf4505e1a97c19b57ae9d088dc6b5e8d3de715db4951476f518d13ccbfea12d`；
