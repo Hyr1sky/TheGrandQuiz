@@ -85,9 +85,9 @@ precision 66.67%，预注册失败；误差证明下一轮必须用独立三态 
 direct support 4/4、3 次重试、12,342 Token；预注册失败且未接生产。其旁路的用户主动申诉竖切已落地：
 开放题允许一次补充，原答不可变，同一 Grader 重判后经追加式 Verdict Correction 重放学习状态；这不代表
 自动 ambiguity classifier 已获准。当前 pytest 为
-`1034 passed`，
+`1036 passed`，
 Ruff、Pyright 与 import-linter 全绿。Web unit 为
-`49 passed`，Playwright 桌面/移动端为 `20 passed`。Reader 真实基线为
+`50 passed`，Playwright 桌面/移动端为 `20 passed`。Reader 真实基线为
 105/105 个可考节点 exactly-once 覆盖、12 个候选、0 重复、单次请求 8715 prompt tokens。DS-S3 的生产 ingest/
 人工筛选已由 trace `2515ec1af79a4a0a9860993b4a35beb9` 通过只读审计（141 个可考节点、2 批、34 条 exact
 evidence）。DS-S4 生产 trace `46b91c61c1c24ebabc94be97db31bb16` 也已通过 selected search → 3 次 bounded

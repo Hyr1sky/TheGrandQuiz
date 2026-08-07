@@ -1185,13 +1185,17 @@ def test_failed_appeal_can_retry_same_frozen_command_once_provider_recovers(
         appeal_url = f"/api/v1/assessments/{started['session_id']}/questions/{question_id}/appeals"
         client.post(appeal_url, json=command)
         failed = _wait_for_appeal_status(client, started["session_id"], "failed")
+        failed_trace = client.get(f"/api/v1/observability/traces/{started['trace_id']}").json()
         retried = client.post(appeal_url, json=command)
         resolved = _wait_for_appeal_status(client, started["session_id"], "resolved")
+        resolved_trace = client.get(f"/api/v1/observability/traces/{started['trace_id']}").json()
         attempt = client.get(f"/api/v1/learning/attempts/{completed['attempt_id']}").json()
 
     assert failed["appeal"]["status"] == "failed"
+    assert failed_trace["summary"]["status"] == "failed"
     assert retried.status_code == 202
     assert resolved["appeal"]["status"] == "resolved"
+    assert resolved_trace["summary"]["status"] == "completed"
     assert attempt["supplemental_answer"] == command["supplemental_answer"]
     assert attempt["final_verdict"] == "对"
     assert provider.grading_calls == 3

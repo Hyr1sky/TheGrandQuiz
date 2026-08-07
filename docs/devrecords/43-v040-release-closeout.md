@@ -1,8 +1,8 @@
 # v0.4.0 发布收口：把“软件可发布”和“模型策略过门”分开
 
 日期：2026-08-07
-状态：本地 release candidate 已完成；双轴审查发现的申诉生命周期阻断已修复，等待复审、GitHub Actions、
-人工 dogfood 与 owner 对 push/tag/Release 的单独批准
+状态：本地 release candidate 已完成；双轴审查无剩余 P0/P1，等待 GitHub Actions、人工 dogfood 与 owner
+对 push/tag/Release 的单独批准
 
 ## 为什么这一轮可以准备发布
 
@@ -36,6 +36,8 @@
 7. 双轴审查发现最终题完成后再申诉时，重判仍挂在已经闭合的 Assessment span 下，且关闭页面无法取消
    appeal task。现改为每次申诉独立开启/闭合根 span，Trace 可见 running/resolved/failed/cancelled；临时
    Provider 失败可用同一冻结命令安全重试，取消后不会继续写 Verdict Correction 或学习状态。
+8. Standards 复审确认原 P1 已关闭，Spec 审查与 Standards 复审均无剩余 P0/P1；ADR-0011 也已把 flat
+   atomic ExpectedPoint 的当前决策前置，避免历史实验正文误导后续 Agent。
 
 ## 本地验证证据
 
@@ -46,7 +48,7 @@
 - Playwright：完整桌面/移动端 `20/20`，包含申诉、取消、发现、Eval Snapshot、Chat 与安全 Markdown；
 - v0.4.0 sdist/wheel：构建成功；wheel 仓库外安装成功；CLI help、安装包内离线 Eval 17/17、FastAPI
   health、Web 首页和 SPA fallback 均通过；
-- wheel SHA-256：`894ea024540135538f62f8130fdc272dc60c3bf7b33dd4e999813192597c394f`。
+- wheel SHA-256：`809b71c8609775fec2929c170e0f31679ccde5f23fe216fadaf4f171dd1207ca`。
 
 wheel 不包含本记录，因此该哈希可复现。sdist 会包含源代码文档，若把自己的哈希写回本文会形成自引用并
 再次改变哈希；其最终 SHA-256 应随 GitHub Release asset/CI manifest 发布，不写回源树。正式 Release
