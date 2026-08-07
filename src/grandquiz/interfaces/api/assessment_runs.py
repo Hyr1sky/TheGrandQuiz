@@ -55,10 +55,12 @@ AssessmentStatus = Literal[
     "failed",
     "cancelled",
 ]
-AssessmentAppealStatus = Literal["available", "grading", "resolved", "failed"]
+AssessmentAppealStatus = Literal["available", "grading", "resolved", "failed", "cancelled"]
 
 ASSESSMENT_RUN_STARTED = "web.assessment_run.started"
 ASSESSMENT_RUN_ENDED = "web.assessment_run.ended"
+ASSESSMENT_APPEAL_STARTED = "web.assessment_appeal.started"
+ASSESSMENT_APPEAL_ENDED = "web.assessment_appeal.ended"
 _PUBLIC_ASSESSMENT_DIAGNOSES = frozenset(
     {
         "complete",
@@ -255,6 +257,7 @@ class _AssessmentRecord:
     error: str | None = None
     task: asyncio.Task[None] | None = None
     appeal_task: asyncio.Task[None] | None = None
+    appeal_span_id: str | None = None
     next_request_ids: set[str] = field(default_factory=_empty_strings)
     terminal_emitted: bool = False
 
@@ -503,6 +506,8 @@ class AssessmentManager:
                 )
             except AppealSubmissionConflict as exc:
                 raise AssessmentCommandConflict(str(exc)) from exc
+            if record.appeal is not None and record.appeal.status == "failed":
+                self._start_appeal(record, retry=True)
             return record.view()
         if (
             record.status not in {"judged", "completed"}
@@ -519,25 +524,40 @@ class AssessmentManager:
             supplemental_answer=command.supplemental_answer,
         )
         record.appeal_submission = submission
+        self._start_appeal(record, retry=False)
+        return record.view()
+
+    def _start_appeal(self, record: _AssessmentRecord, *, retry: bool) -> None:
+        submission = record.appeal_submission
+        judgement = record.judgement
+        if submission is None or judgement is None or record.question_id is None:
+            raise AssertionError("申诉启动缺少冻结的提交、题目或判决")
+        appeal_span_id = record.emitter.new_span_id()
+        record.appeal_span_id = appeal_span_id
         record.appeal = AssessmentAppealView(
             status="grading",
             supplemental_answer=submission.supplemental_answer,
-            original_verdict=record.judgement.verdict,
+            original_verdict=judgement.verdict,
+        )
+        record.emitter.emit(
+            ASSESSMENT_APPEAL_STARTED,
+            span_id=appeal_span_id,
+            payload={"status": "running", "retry": retry},
         )
         record.emitter.emit(
             LearningEvent.ASSESSMENT_APPEAL_REQUESTED,
-            parent_span_id=record.run_span_id,
+            parent_span_id=appeal_span_id,
             payload={
-                "question_id": question_id,
+                "question_id": record.question_id,
                 "item_id": record.item_id,
                 "attempt_id": record.attempt_id,
+                "retry": retry,
             },
         )
         record.appeal_task = asyncio.create_task(
             self._run_appeal(record),
-            name=f"grandquiz-api-assessment-appeal:{session_id}:{question_id}",
+            name=(f"grandquiz-api-assessment-appeal:{record.session_id}:{record.question_id}"),
         )
-        return record.view()
 
     async def _run_round(self, record: _AssessmentRecord) -> None:
         try:
@@ -601,7 +621,7 @@ class AssessmentManager:
                 submission.answer_for_regrade,
                 provider=self._provider,
                 emitter=record.emitter,
-                parent_span_id=record.run_span_id,
+                parent_span_id=record.appeal_span_id,
                 language=language,
             )
             corrected = self._corrections.apply(
@@ -633,7 +653,7 @@ class AssessmentManager:
             )
             record.emitter.emit(
                 LearningEvent.ASSESSMENT_APPEAL_RESOLVED,
-                parent_span_id=record.run_span_id,
+                parent_span_id=record.appeal_span_id,
                 payload={
                     "question_id": record.question_id,
                     "item_id": record.item_id,
@@ -642,7 +662,15 @@ class AssessmentManager:
                     "final_verdict": verdict.verdict,
                 },
             )
+            self._emit_appeal_terminal(record, "completed")
         except asyncio.CancelledError:
+            record.appeal = AssessmentAppealView(
+                status="cancelled",
+                supplemental_answer=submission.supplemental_answer,
+                original_verdict=original_verdict,
+                reason="补充说明重判已取消",
+            )
+            self._emit_appeal_terminal(record, "cancelled")
             raise
         except Exception as exc:
             record.appeal = AssessmentAppealView(
@@ -653,9 +681,24 @@ class AssessmentManager:
             )
             record.emitter.emit(
                 EventType.ERROR,
-                parent_span_id=record.run_span_id,
+                span_id=record.appeal_span_id,
                 payload={"error_type": type(exc).__name__, "operation": "assessment_appeal"},
             )
+            self._emit_appeal_terminal(record, "failed")
+
+    @staticmethod
+    def _emit_appeal_terminal(
+        record: _AssessmentRecord,
+        status: Literal["completed", "failed", "cancelled"],
+    ) -> None:
+        if record.appeal_span_id is None:
+            return
+        record.emitter.emit(
+            ASSESSMENT_APPEAL_ENDED,
+            span_id=record.appeal_span_id,
+            payload={"status": status, "ok": status == "completed"},
+        )
+        record.appeal_span_id = None
 
     @staticmethod
     def _project_regraded_judgement(
@@ -795,6 +838,10 @@ class AssessmentManager:
         record = self._records.get(session_id)
         if record is None:
             return None
+        if record.appeal_task is not None and not record.appeal_task.done():
+            record.appeal_task.cancel()
+            await asyncio.gather(record.appeal_task, return_exceptions=True)
+            return record.view()
         if record.status in {"completed", "refused", "failed", "cancelled"}:
             return record.view()
 

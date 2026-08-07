@@ -527,7 +527,8 @@
               "available",
               "grading",
               "resolved",
-              "failed"
+              "failed",
+              "cancelled"
             ],
             "title": "Status",
             "type": "string"

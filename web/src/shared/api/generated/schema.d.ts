@@ -1030,7 +1030,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "available" | "grading" | "resolved" | "failed";
+            status: "available" | "grading" | "resolved" | "failed" | "cancelled";
             /** Supplemental Answer */
             supplemental_answer?: string | null;
         };

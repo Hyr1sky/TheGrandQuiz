@@ -309,8 +309,8 @@ export const AssessmentPanel = forwardRef<
     }
   };
 
-  const submitSupplement = async (event: FormEvent) => {
-    event.preventDefault();
+  const submitSupplement = async (event?: FormEvent) => {
+    event?.preventDefault();
     const question = assessment?.question;
     const supplement = supplementalAnswer.trim();
     if (assessment === null || question == null || supplement === "") {
@@ -357,9 +357,10 @@ export const AssessmentPanel = forwardRef<
     }
     if (
       current !== null &&
-      !["completed", "refused", "failed", "cancelled"].includes(
-        current.status,
-      )
+      (current.appeal?.status === "grading" ||
+        !["completed", "refused", "failed", "cancelled"].includes(
+          current.status,
+        ))
     ) {
       try {
         notifyUpdate(await cancelAssessment(current.session_id));
@@ -664,20 +665,34 @@ export const AssessmentPanel = forwardRef<
               </p>
             ) : null}
             {assessment.appeal?.status === "failed" ? (
-              <p className="assessment-panel__error" role="alert">
-                {assessment.appeal.reason}
+              <div>
+                <p className="assessment-panel__error" role="alert">
+                  {assessment.appeal.reason}
+                </p>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void submitSupplement()}
+                >
+                  重新重判
+                </button>
+              </div>
+            ) : null}
+            {assessment.appeal?.status === "cancelled" ? (
+              <p className="assessment-panel__appeal-status" role="status">
+                补充说明重判已取消
               </p>
             ) : null}
             {assessment.status === "judged" ? (
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || assessment.appeal?.status === "grading"}
                 onClick={() => void advance()}
               >
                 下一题
                 <ArrowRightIcon aria-hidden size={19} />
               </button>
-            ) : (
+            ) : assessment.appeal?.status !== "grading" ? (
               <div className="assessment-panel__complete">
                 <p className="assessment-panel__done">
                   <CheckCircleIcon aria-hidden size={20} />
@@ -687,7 +702,7 @@ export const AssessmentPanel = forwardRef<
                   返回阅读
                 </button>
               </div>
-            )}
+            ) : null}
           </section>
         ) : null}
 

@@ -1,8 +1,8 @@
 # v0.4.0 发布收口：把“软件可发布”和“模型策略过门”分开
 
 日期：2026-08-07
-状态：本地 release candidate 已完成；等待 release commit 后的双轴审查、GitHub Actions、人工 dogfood 与
-owner 对 push/tag/Release 的单独批准
+状态：本地 release candidate 已完成；双轴审查发现的申诉生命周期阻断已修复，等待复审、GitHub Actions、
+人工 dogfood 与 owner 对 push/tag/Release 的单独批准
 
 ## 为什么这一轮可以准备发布
 
@@ -33,13 +33,16 @@ owner 对 push/tag/Release 的单独批准
    没有被覆盖。
 6. Web fixture 的题目加入稳定场景编号，并固定提供最高难度所需的 6 个选项；避免两个 viewport 共用
    SQLite 后，历史去重或已累积的难度状态把固定输出耗尽。
+7. 双轴审查发现最终题完成后再申诉时，重判仍挂在已经闭合的 Assessment span 下，且关闭页面无法取消
+   appeal task。现改为每次申诉独立开启/闭合根 span，Trace 可见 running/resolved/failed/cancelled；临时
+   Provider 失败可用同一冻结命令安全重试，取消后不会继续写 Verdict Correction 或学习状态。
 
 ## 本地验证证据
 
-- Python：`1034 passed`；
+- Python：`1036 passed`；
 - 离线 Eval：`17/17`；
 - Ruff lint、format，Pyright，import-linter：通过；
-- Web lint、typecheck、unit：`49 passed`；Sites worker：`4 passed`；production package build：通过；
+- Web lint、typecheck、unit：`50 passed`；Sites worker：`4 passed`；production package build：通过；
 - Playwright：完整桌面/移动端 `20/20`，包含申诉、取消、发现、Eval Snapshot、Chat 与安全 Markdown；
 - v0.4.0 sdist/wheel：构建成功；wheel 仓库外安装成功；CLI help、安装包内离线 Eval 17/17、FastAPI
   health、Web 首页和 SPA fallback 均通过；

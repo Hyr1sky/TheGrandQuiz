@@ -13,9 +13,18 @@ Holdout 03 的 30 条人类答卷达到 90.83% 逐点准确率，但三值一致
 之前的任意 nested `all_of/any_of` 原型又产生结构重试和显著 Token 放大。单段
 `ExpectedPoint.description` 因而仍然过载：既给人解释评分点，又让模型猜里面有哪些不可省略的条件。
 
-## 决策
+## 当前决策（2026-08-06 起）
 
-ExpectedPoint 继续保持扁平，但新题必须为每个 point 提供 1–3 条 `required_claims`。这些 claims 只允许
+默认生产判卷继续使用 **flat atomic ExpectedPoint + 代码校验的 AnswerEvidenceUnit ID**。新题不要求
+`required_claims`，QuestionSpec 中的 claims、历史 Provider 响应与 `answer_grade_claims` 只为旧 cassette、
+审计和独立实验保留兼容读取能力；不得把它们描述成已通过质量门的默认策略。
+
+下面的“原始实验决策”记录当时为什么建立 seam，已经被本文后部的真实实验与退出决定撤回。未来实现者
+应以上述当前决策和“2026-08-06 代码收口”为准。
+
+## 原始实验决策（已撤回）
+
+当时决定 ExpectedPoint 继续保持扁平，但新题必须为每个 point 提供 1–3 条 `required_claims`。这些 claims 只允许
 固定 all-of：模型逐 claim 判断并选择 AnswerEvidenceUnit ID，代码校验覆盖和 Evidence 后推导 point
 label，再按 critical points 推导最终三值。
 

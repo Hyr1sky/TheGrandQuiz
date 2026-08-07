@@ -104,7 +104,7 @@ class _OpenAssessmentProvider:
             payload = _open_question_payload(question)
         else:
             self.grading_calls += 1
-            accepted = self.accept_appeal and self.grading_calls == 2
+            accepted = self.accept_appeal and self.grading_calls >= 2
             answer_unit_ids = re.findall(r"\[(v1e\d+_\d+)\]", messages[-1].content)
             payload = {
                 "verdict": "对" if accepted else "错",
@@ -144,6 +144,50 @@ class _OpenAssessmentProvider:
             text=json.dumps(payload, ensure_ascii=False),
             usage=Usage(prompt_tokens=100, completion_tokens=30),
         )
+
+
+class _BlockingAppealProvider(_OpenAssessmentProvider):
+    def __init__(self) -> None:
+        super().__init__(accept_appeal=True)
+        self.appeal_started = threading.Event()
+        self.appeal_cancelled = threading.Event()
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        if role == "basic" and self.grading_calls == 1:
+            self.grading_calls += 1
+            self.appeal_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                self.appeal_cancelled.set()
+                raise
+            raise AssertionError("阻塞的申诉 Provider 不应自然返回")
+        return await super().complete(messages, role=role, tools=tools)
+
+
+class _FailOnceAppealProvider(_OpenAssessmentProvider):
+    def __init__(self) -> None:
+        super().__init__(accept_appeal=True)
+        self.failed_once = False
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        if role == "basic" and self.grading_calls == 1 and not self.failed_once:
+            self.grading_calls += 1
+            self.failed_once = True
+            raise RuntimeError("temporary provider failure")
+        return await super().complete(messages, role=role, tools=tools)
 
 
 class _MixedPlanAssessmentProvider:
@@ -318,6 +362,7 @@ def test_selected_resource_starts_one_real_question_and_waits_for_answer(
         assert response.status_code == 202
         started = response.json()
         payload = _wait_for_status(client, started["session_id"], "awaiting_answer")
+        trace_snapshot = client.get(f"/api/v1/observability/traces/{started['trace_id']}").json()
 
     assert payload["round_index"] == 1
     assert payload["rounds"] == 1
@@ -332,6 +377,7 @@ def test_selected_resource_starts_one_real_question_and_waits_for_answer(
     }
     assert payload["judgement"] is None
     assert payload["trace_id"]
+    assert trace_snapshot["summary"]["status"] == "waiting_input"
 
 
 def test_fastapi_consumes_mixed_question_type_plan_in_order(tmp_path: Path) -> None:
@@ -1050,3 +1096,102 @@ def test_user_appeal_regrades_once_and_appends_a_reconciled_correction(
     assert attempt["concept_state"] is None
     assert projection["learning_memory_state"] == "not_in_memory"
     assert provider.grading_calls == 2
+
+
+def test_appeal_has_an_independent_trace_lifecycle_and_can_be_cancelled(
+    tmp_path: Path,
+) -> None:
+    resource, _ = _seed_item(tmp_path)
+    provider = _BlockingAppealProvider()
+
+    with TestClient(_app(tmp_path, provider)) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "简答题",
+            },
+        ).json()
+        waiting = _wait_for_status(client, started["session_id"], "awaiting_answer")
+        question_id = waiting["question"]["question_id"]
+        client.post(
+            f"/api/v1/assessments/{started['session_id']}/questions/{question_id}/answers",
+            json={"request_id": "initial-answer", "answer": "它放在文件里。"},
+        )
+        completed = _wait_for_status(client, started["session_id"], "completed")
+        client.post(
+            f"/api/v1/assessments/{started['session_id']}/questions/{question_id}/appeals",
+            json={
+                "request_id": "appeal-blocked",
+                "supplemental_answer": "潜在记忆位于模型内部表示。",
+            },
+        )
+        assert provider.appeal_started.wait(timeout=1)
+
+        running_trace = client.get(f"/api/v1/observability/traces/{started['trace_id']}").json()
+        cancelled = client.delete(f"/api/v1/assessments/{started['session_id']}")
+        attempt = client.get(f"/api/v1/learning/attempts/{completed['attempt_id']}").json()
+        cancelled_trace = client.get(f"/api/v1/observability/traces/{started['trace_id']}").json()
+
+    assert running_trace["summary"]["status"] == "running"
+    assert cancelled.status_code == 200
+    assert cancelled.json()["appeal"]["status"] == "cancelled"
+    assert provider.appeal_cancelled.wait(timeout=1)
+    assert attempt["supplemental_answer"] is None
+    assert attempt["final_verdict"] == "错"
+    assert cancelled_trace["summary"]["status"] == "cancelled"
+
+    trace = TraceStore(tmp_path / "trace.db")
+    try:
+        events = trace.events(started["trace_id"])
+    finally:
+        trace.close()
+    run_end = next(event for event in events if event.type == "web.assessment_run.ended")
+    appeal_start = next(event for event in events if event.type == "web.assessment_appeal.started")
+    appeal_end = next(event for event in events if event.type == "web.assessment_appeal.ended")
+    assert run_end.seq < appeal_start.seq < appeal_end.seq
+    assert appeal_start.span_id == appeal_end.span_id
+    assert appeal_start.parent_span_id is None
+    assert appeal_end.payload["status"] == "cancelled"
+
+
+def test_failed_appeal_can_retry_same_frozen_command_once_provider_recovers(
+    tmp_path: Path,
+) -> None:
+    resource, _ = _seed_item(tmp_path)
+    provider = _FailOnceAppealProvider()
+    command = {
+        "request_id": "appeal-retry",
+        "supplemental_answer": "潜在记忆位于模型内部表示。",
+    }
+
+    with TestClient(_app(tmp_path, provider)) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "简答题",
+            },
+        ).json()
+        waiting = _wait_for_status(client, started["session_id"], "awaiting_answer")
+        question_id = waiting["question"]["question_id"]
+        client.post(
+            f"/api/v1/assessments/{started['session_id']}/questions/{question_id}/answers",
+            json={"request_id": "initial-answer", "answer": "它放在文件里。"},
+        )
+        completed = _wait_for_status(client, started["session_id"], "completed")
+        appeal_url = f"/api/v1/assessments/{started['session_id']}/questions/{question_id}/appeals"
+        client.post(appeal_url, json=command)
+        failed = _wait_for_appeal_status(client, started["session_id"], "failed")
+        retried = client.post(appeal_url, json=command)
+        resolved = _wait_for_appeal_status(client, started["session_id"], "resolved")
+        attempt = client.get(f"/api/v1/learning/attempts/{completed['attempt_id']}").json()
+
+    assert failed["appeal"]["status"] == "failed"
+    assert retried.status_code == 202
+    assert resolved["appeal"]["status"] == "resolved"
+    assert attempt["supplemental_answer"] == command["supplemental_answer"]
+    assert attempt["final_verdict"] == "对"
+    assert provider.grading_calls == 3

@@ -36,11 +36,11 @@ Evidence、逐点评判、申诉和 Trace 组成的人工可纠正产品可作�
 
 ## 4. 仓库与供应链
 
-- [ ] 工作区只包含可解释的 v0.3/v0.4 与 release-prep 变更。
-- [ ] `.env`、API Key、个人绝对路径、数据库、Trace、`.scratch`、`localtemp` 与 Playwright artifact 未进入提交。
-- [ ] wheel/sdist metadata 为 0.4.0、MIT、Python 3.12+，项目链接正确。
-- [ ] wheel 包含 Web 静态资源、prompt、Eval cases/fixtures 和 `vocabulary.v1.yaml`。
-- [ ] 从仓库外安装 wheel，运行 `grandquiz --help`、离线 `grandquiz report`，并启动 `grandquiz-web` 验证
+- [x] 工作区只包含可解释的 v0.3/v0.4 与 release-prep 变更。
+- [x] `.env`、API Key、个人绝对路径、数据库、Trace、`.scratch`、`localtemp` 与 Playwright artifact 未进入提交。
+- [x] wheel/sdist metadata 为 0.4.0、MIT、Python 3.12+，项目链接正确。
+- [x] wheel 包含 Web 静态资源、prompt、Eval cases/fixtures 和 `vocabulary.v1.yaml`。
+- [x] 从仓库外安装 wheel，运行 `grandquiz --help`、离线 `grandquiz report`，并启动 `grandquiz-web` 验证
   health、首页与 SPA fallback。
 
 ## 5. 窄版人工 dogfood

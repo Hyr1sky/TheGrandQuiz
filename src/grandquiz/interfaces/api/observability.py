@@ -265,6 +265,12 @@ def _project_spans(roots: Iterable[Span]) -> list[TraceSpanView]:
 def _trace_status(events: list[AgentEvent]) -> TraceStatus:
     if not events:
         return "idle"
+    if events[-1].type in {
+        "learning.question_asked",
+        "learning.answer_judged",
+        "approval.requested",
+    }:
+        return "waiting_input"
     for event in reversed(events):
         status = event.payload.get("status")
         if status == "cancelled":
@@ -273,14 +279,10 @@ def _trace_status(events: list[AgentEvent]) -> TraceStatus:
             return "failed"
         if status == "completed":
             return "completed"
+        if status == "running":
+            return "running"
         if event.type in {EventType.AGENT_TURN_ENDED, EventType.TURN_ENDED}:
             return "failed" if event.payload.get("ok") is False else "completed"
         if event.type.endswith("run.ended"):
             return "completed"
-    if events[-1].type in {
-        "learning.question_asked",
-        "learning.answer_judged",
-        "approval.requested",
-    }:
-        return "waiting_input"
     return "running"

@@ -364,4 +364,54 @@ describe("AssessmentPanel", () => {
       }),
     ]);
   });
+
+  it("cancels an in-flight appeal when the completed assessment is closed", async () => {
+    const gradingAssessment = {
+      ...readyAssessment,
+      status: "completed",
+      appeal: {
+        status: "grading",
+        supplemental_answer: "补充说明",
+        original_verdict: "错",
+        final_verdict: null,
+        reason: null,
+      },
+    };
+    const cancelledAssessment = {
+      ...gradingAssessment,
+      appeal: { ...gradingAssessment.appeal, status: "cancelled" },
+    };
+    const onClose = vi.fn();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const request = input instanceof Request ? input : new Request(String(input));
+      if (request.method === "POST" && request.url.endsWith("/api/v1/assessments")) {
+        return Response.json(gradingAssessment, { status: 202 });
+      }
+      if (request.method === "DELETE") {
+        return Response.json(cancelledAssessment);
+      }
+      throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AssessmentPanel
+        resourceId="resource-1"
+        questionTypePlan={["简答题"]}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "结束考核" }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(
+      fetchMock.mock.calls.some(([input]) => {
+        const request = input instanceof Request ? input : new Request(String(input));
+        return (
+          request.method === "DELETE" &&
+          request.url.endsWith("/api/v1/assessments/assessment-1")
+        );
+      }),
+    ).toBe(true);
+  });
 });
