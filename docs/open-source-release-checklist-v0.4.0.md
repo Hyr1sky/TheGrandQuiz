@@ -45,11 +45,14 @@ Evidence、逐点评判、申诉和 Trace 组成的人工可纠正产品可作�
 
 ## 5. 窄版人工 dogfood
 
-- [ ] 明确要求混合题型，确认题量、顺序和类型准确。
-- [ ] 完成一道开放题，检查逐评分点反馈、参考作答与一次申诉。
-- [ ] 搜索材料候选，确认批准前零 KB 写入，批准后进入既有 Acquisition 与知识点审批。
-- [ ] 审核一条 Eval 候选并生成 Snapshot，确认 eligible/exploratory 分列且重启可读。
-- [ ] 导入低质量/登录页 URL，确认结构化失败、Trace 可定位且零 KB 污染。
+- [x] 明确要求混合题型，确认题量、顺序和类型准确。
+- [x] 完成一道开放题，检查逐评分点反馈、参考作答与一次申诉。
+- [x] 搜索材料候选，确认批准前零 KB 写入，批准后进入既有 Acquisition 与知识点审批。
+- [x] 审核一条 Eval 候选并生成 Snapshot，确认 eligible/exploratory 分列且重启可读。
+- [x] 导入低质量/登录页 URL，确认结构化失败、Trace 可定位且零 KB 污染。
+
+真实 Provider 结果、Token 与 Trace 见
+[v0.4.0 真实 Provider 发布 Dogfood](devrecords/44-v040-real-provider-dogfood.md)。
 
 真实模型 dogfood 会产生费用并发送内容，必须由仓库所有者显式授权；确定性 fixture 不能替代该项。
 
@@ -58,8 +61,8 @@ Evidence、逐点评判、申诉和 Trace 组成的人工可纠正产品可作�
 创建正式发布前必须满足：
 
 - [ ] release commit 已推送，GitHub Actions 全绿，工作区干净且 `origin/main == HEAD`；
-- [ ] 本地质量门、安装产物 smoke 和窄版 dogfood 通过，没有未解决 P0/P1；
-- [ ] Release Notes 已定稿，模型策略门失败没有被包装成已交付的自动能力；
+- [x] 本地质量门、安装产物 smoke 和窄版 dogfood 通过，没有未解决 P0/P1；
+- [x] Release Notes 已定稿，模型策略门失败没有被包装成已交付的自动能力；
 - [ ] 仓库所有者明确批准创建 `v0.4.0` tag 和 GitHub Release。
 
 批准后执行：

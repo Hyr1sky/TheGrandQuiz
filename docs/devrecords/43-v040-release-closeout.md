@@ -1,8 +1,8 @@
 # v0.4.0 发布收口：把“软件可发布”和“模型策略过门”分开
 
 日期：2026-08-07
-状态：本地 release candidate 已完成；双轴审查无剩余 P0/P1，等待 GitHub Actions、人工 dogfood 与 owner
-对 push/tag/Release 的单独批准
+状态：本地 release candidate 与真实 Provider dogfood 已完成；双轴审查无剩余 P0/P1，等待 push 后的
+GitHub Actions 与 owner 对 tag/Release 的单独批准
 
 ## 为什么这一轮可以准备发布
 
@@ -54,8 +54,14 @@ wheel 不包含本记录，因此该哈希可复现。sdist 会包含源代码�
 再次改变哈希；其最终 SHA-256 应随 GitHub Release asset/CI manifest 发布，不写回源树。正式 Release
 仍必须从最终 release commit 或 CI 重新构建，不能把本地临时文件直接当权威产物。
 
+## 真实 Provider 补充验收
+
+owner 授权后，已用一次性 SQLite、公开自造材料和 `.env` 中的 DeepSeek/DashScope/Tavily 完成窄版
+dogfood：上传审批、三题混合计划、开放题申诉、发现审批、Eval Snapshot 和登录页零污染全部通过；7 次
+模型调用合计 21,125 Token。完整证据见
+[v0.4.0 真实 Provider 发布 Dogfood](44-v040-real-provider-dogfood.md)。
+
 ## 仍未执行的外部动作
 
-- 未调用真实 LLM，因本轮没有新的费用/数据外发授权；
 - 未 push、未创建 tag、未创建 GitHub Release、未上传 PyPI；
 - `.scratch` 中的 PRD/issues、临时构建目录和 Playwright artifacts 均不进入提交。
