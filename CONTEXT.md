@@ -20,6 +20,38 @@ _Avoid_: 框架（不承诺对外 API 稳定性 / semver / 插件文档）
 Eval 层对最终产物的离线质量门，与生产考核的“判决”不是同一概念。Tier-1 用确定性代码核验工具顺序、scope、状态与精确引用；Tier-2 `QualityJudge` 只评预注册 rubric，在通过人工 calibration 后才参与用例 pass/fail，并通过真实 cassette 日常 Replay。两层 verdict、trace 与 token 成本必须分开；首版只给 case15 启用 `grounded_answer`。
 _Avoid_: 用 LLM judge 替代规则门、拿 judge 自己的输出当 calibration 真值、在 report 中隐式调用外部模型、让 Eval 自动修改 prompt 或生产数据
 
+**Development Gold Set**:
+已经有人类可信标签、并且结果已被用于错误分析、Prompt 调整或规则设计的题目与答卷。它适合持续回归和
+复现已知误差，但因为开发者已经看过，不能再次证明对未知数据的泛化能力；合成 challenge 只能作为其中的
+exploratory 分层。
+_Avoid_: 把“有人工标签”等同于“仍然未见”，或把已揭盲开发集反复运行到通过后称为 release gate
+
+**Release Holdout**:
+Gold 数据中在调参期间封存的切片；QuestionSpec、答卷、逐点人工标签与 hash 均在生产 Grader 运行前
+冻结。一旦查看输出并据此修改系统，该切片立即降级为 Development Gold。下一轮发布必须使用新的未见
+切片，并同时报告答卷数、unique QuestionSpec 数和评分点数。
+_Avoid_: 只按 point 数夸大样本量、把同题近重复答案拆到 dev/holdout 两边、失败后改标签或 rubric 再重跑
+
+**Grading Benchmark**:
+Gold 数据、development/holdout 切分、固定 Provider/model/thinking/prompt、指标阈值、隐私审批、冻结哈希
+与 Record/Replay 协议的完整组合。Benchmark 是评测系统；Gold Set 是有标签数据；Holdout 是一种受限用法。
+_Avoid_: 把某个 JSON 报告、某一批 12 条样本或单一准确率称为完整 benchmark
+
+**Answer Provenance**:
+开放题答卷的来源身份：`unassisted_human / assisted_human / model / synthetic_oracle`。只有未见 rubric、
+盲于生产输出且经人工终审的 `unassisted_human` 可以进入 release gate；模型生成、模型辅助和合成 oracle
+即使有人类标签也只能作为 exploratory。来源身份随答卷进入 Compilation 与 Calibration Report，不能靠
+目录名或口头约定推断。
+_Avoid_: 用模型答卷补足人类 Holdout 数量、把人工修改过的模型草稿冒充独立人类回答、报告里只写 eligible
+布尔值却丢失为什么不 eligible
+
+**Calibration Sample Identity**:
+判卷校准中，`question_id` 标识被回答的同一个 `QuestionSpec`，`sample_id` 标识某位答题者的一份独立答案。
+多位答题者可以用不同 `sample_id` 回答同一 `question_id`；人工 annotation 永远按 `sample_id` 绑定答案。
+旧数据未显式提供 `question_id` 时，按 `question_id = sample_id` 解释。规模报告必须分别统计 unique question
+和 response sample，不能把同题多答误报成新题。
+_Avoid_: 用题号同时充当所有答卷 ID、按 `question_id` 覆盖另一位答题者、让一份 annotation 同时标注多份答案
+
 **简历价值**:
 项目的第二目标：面向 AI 应用 / Agent 工程师岗位的叙事——"手写一套可观测、可评测的 agent runtime，并且自己真的在用"。"全面技术栈"指覆盖完整工程生命周期（异步、事件架构、持久化、流式接口、eval、可观测性、CI），不指框架数量。
 _Avoid_: 为凑技术栈引入产品不需要的组件（前端 / 向量库 / k8s 不因简历进入 roadmap）
@@ -63,6 +95,13 @@ raw source offsets，但 Evidence 始终保存原始 source slice；代码节点
 fail closed。旧 quote 无法唯一定位时保留为
 unresolved 审计项，不猜测、不让既有 item 从考核池消失。
 _Avoid_: 只有 quote 的幽灵引文、LLM 自报数据库身份、用模糊匹配伪造精确 locator
+
+**AnswerEvidenceUnit**:
+一次开放题判卷内，由代码把学习者答案按句末标点和换行确定性切出的、互不重叠且保持原文顺序的临时切片。
+每个单元带版本化 offset ID；Grader 只选择 `answer_evidence_ids`，代码校验 ID 后解析出可读原文。
+它不是 KnowledgeItem 的材料 `Evidence`，不作为独立领域实体持久化；报告中的 `answer_evidence` 是兼容
+展示字段，不是模型可以自由填写的事实。
+_Avoid_: 让模型复制、改写或用省略号拼答案证据；把一次判卷的答案切片写成第二套知识库 Evidence
 
 **Agentic Search**（ADR-0008，DS-S4 已实现开放查询基座）:
 开放 ReAct 对 current DocumentNode 的渐进式查询路径：大纲 → FTS5 稀疏搜索 → 展开/有界读取 → 精确 citation。
@@ -154,6 +193,13 @@ active + approved 候选可以组成以内容 SHA-256 寻址的不可变快照�
 release gate，判决纠正固定为 exploratory。快照是获批输入的冻结版本，不是新的学习事实源。
 _Avoid_: 自动上传、自动训练、修改历史快照、把 correction 计入 blind gate、把 operational trace 当数据集
 
+**Calibration Source Pack / Dataset Compilation**:
+Source Pack 是本地、人工拥有的冻结证据包，包含密封 QuestionSpec、独立答卷、终审标签与逐文件 SHA-256；
+它不是运行时数据库。Dataset Compilation 是对该证据包做完整性校验后的确定性产物，只把已终审、盲于
+模型输出且 rubric 无争议的记录转换为 `GradingCalibrationSample`，并显式保留排除项及理由。Compilation
+进入 Eval Inbox 后仍须完成隐私审核，才能形成不可变 Dataset Snapshot。
+_Avoid_: 直接运行未冻结 YAML、跳过人工终审或隐私审核、删除争议样本而不保存排除理由
+
 **LearnerProjection**（Learning Model v2 v1 已实现）:
 从 committed attempts、Learning Memory 和 DifficultyLedger 重建的分析读模型，汇总考核次数、判决分布、
 闭卷次数、当前薄弱状态、难度和经独立 DemandValidator 验证的能力证据。销账/复发、自信校准
@@ -186,14 +232,74 @@ _Avoid_: Web 只传 rounds + 单一 question_type；CLI/Web 分别维护题型�
 
 **QuestionSpec**:
 一道开放题或追问的唯一题目规格：题干、至少一个带原文锚点的 `ExpectedPoint`、只回答本题的
-`reference_answer` 与题目 Evidence。Grader 只能依据该规格判卷，不能重新从整个 KnowledgeItem
-猜测本题想考什么。
+`reference_answer`、题目 Evidence，以及可选的 `critical_point_ids`。Grader 只能依据该规格判卷，不能
+重新从整个 KnowledgeItem 猜测本题想考什么。核心点评级必须在看到学习者答案前随题目规格冻结；为空时
+表示当前 rubric 没有声明核心点，而不是运行时再让模型猜。
 _Avoid_: 出题看 summary、判卷看另一组 Evidence、参考答案再拼整个 item
+
+**ExpectedPoint**:
+一道题必须检验的语义不变量，而不是参考答案所采用的唯一技术实现。定义、机制类问题可以要求明确的
+核心机制；设计、比较、评估类问题应允许满足同一目标和约束的合理替代方案。具体框架、组件或算法只有在
+题面明确限定时才能成为必答项，否则只能作为 `reference_answer` 中的示例。一个 ExpectedPoint
+只表达一个可独立判断的语义不变量；“定位责任层 + 枚举全部扩展职责”等独立必答条件应拆分，
+不得用一个过载评分点迫使 Grader 在“全或无”之间猜测。新题默认保持 flat atomic point；历史实验题
+可能带 Required Claims，但该字段不再由出题入口生成，也不代表更高质量的默认 rubric。
+_Avoid_: 把“BM25 + dense + reranker”等推荐实现直接写成所有合理方案都必须逐字命中的评分点
+
+**Required Claim**:
+ExpectedPoint 内部最小、可独立核验的必要语义断言；同一点的全部 claims 固定为 all-of，学习者 Evidence
+必须逐条支持。真实 Development Gold 实验未证明其优于 flat point，因此当前仅为历史兼容与可审计实验
+字段：新题 Prompt 不再要求它，显式载入或历史 Provider 响应中的旧 QuestionSpec 仍可回放。
+_Avoid_: 参考答案措辞、可选实现、any-of/threshold/exception 树、把可分别计分的题意藏进 claims
+
+**判卷澄清（Grading Clarification，实验 gate 后）**:
+开放题初判明确为 `uncertain`，且只有一个 missing point 的升级会改变代码三值时，面向学习者提出一次
+只针对该 point 的补充问题。补充回答是新的用户 Evidence，不是第二个隐藏 Judge；原答与补答合并后只
+重判一次，仍不确定则进入 `needs_review`，不得写 Learning Memory。当前只实现纯领域 planner/state
+machine；Holdout 03 的 30 条生产判卷中 `uncertain=0`，因此尚未接入 AssessmentSession、CLI 或 Web。
+首个二分类原型证明 grading matched/missing Gold 不能直接派生追问标签；下一实验必须用独立 Interaction
+Gold 区分 `no_support / ambiguous_support / direct_or_equivalent_support`，最后一种进入 `needs_review` 而非
+追问或自动改判。当前 12 条 owner-accepted Interaction Gold 只用于 Development Prototype，不是生产词表
+或 release holdout；真实三态原型 direct support 4/4、ambiguity 0/2，整体 gate 失败，不能接生产。
+_Avoid_: 按 reason 字符串猜不确定性、用 grading Gold 代替 Interaction Gold、每题都追问、循环追问、初判先记账、把内部 retry 冒充用户澄清
+
+**用户判卷申诉（User-initiated Assessment Appeal，Web 已实现）**:
+开放题完成初判后，由学习者主动提交的一次补充说明。原始 `answer_text` 不覆盖；系统把原答与补充按稳定格式
+交给同一个 `QuestionSpec` / Grader 重判，并把结果写成追加式 Verdict Correction，再由代码重放学习状态。
+它不是自动 [判卷澄清]：不预测 ambiguity、不自动发问，也不证明 Interaction classifier 已过 gate。
+_Avoid_: 允许连续补答直到变对、覆盖原答、绕过 Verdict Correction 直接修改 Learning Memory
+
+**核心评分点（Critical Expected Point）**:
+缺失后足以让整题判为“错”的 ExpectedPoint，由 `QuestionSpec.critical_point_ids` 引用。LLM 仍只逐点判断
+命中/缺失；代码确定性聚合：全命中为“对”，零命中或缺任一核心点为“错”，其余为“勉强”。核心性属于
+出题 rubric，不属于答案解释，必须在密封题目时预注册；旧样本没有该字段时不能看过模型结果后补标来改善
+指标。
+_Avoid_: 让 Grader 自己决定哪些点关键、按命中比例设任意阈值、事后为迁就某次输出补核心点
+
+**合理替代方案（Valid Alternative）**:
+没有复述参考实现，但满足题目目标、必要约束和 Evidence 所支持语义的作答。它可以使用不同机制组合；只要
+没有违反安全、隔离、正确性等硬不变量，就不能仅因技术路径不同被判错。
+_Avoid_: 用与参考答案的词面或组件重合度代替语义充分性
+
+**评分标准过约束（Rubric Overconstraint）**:
+`ExpectedPoint` 把可选实现、偏好方案或题面未声明的细节误升格为必答条件，导致合理替代方案产生假阴性。
+发现后当前样本退出质量门，不能事后修改 rubric 迁就已见答案；修订版应由新的独立答案和反例重新验证。
+_Avoid_: 把 rubric 缺陷记成学习者错误，或修改人工标签让既有质量门通过
+
+**Rubric Adjudication**:
+对“答案错误、Grader 错误、评分标准过约束、题目描述不足”进行归因的人工裁决。普通 Grader 只按既有
+rubric 判卷；Rubric Critic 只能在争议路径检查合理替代方案和 rubric 适用性，不能自动改写最终判决。
+_Avoid_: 每题都用第二个模型重复同一 rubric，或让 Rubric Critic 冒充新的生产判卷入口
 
 **判决**:
 判卷的结构化产出：对 / 勉强 / 错三值 + 命中/缺失评分点 + 受控诊断 + 所引证据。选择题为确定性比对；
-开放问答与追问由 LLM 对 QuestionSpec 的评分点逐项判断，代码校验评分点完整覆盖、互不重叠且与三值
-结论一致。薄弱概念指认和状态转移仍由代码完成；判决依据进 trace，并由 CLI/Web 使用同一事件投影。
+开放问答与追问由 LLM 对 QuestionSpec 的 flat atomic 评分点逐项做语义判断，并选择
+AnswerEvidenceUnit ID。显式载入或历史 Provider 响应中的 Required Claims 题仍可按固定 all-of 回放，
+但新题 Prompt 不再要求 claims。代码校验
+评分点/claim 完整覆盖、ID 唯一性与归属，再解析出精确原文，并根据预先冻结的核心点推导最终三值。
+模型自报三值仅作为审计字段，不驱动
+Learning Memory；薄弱概念指认和状态
+转移仍由代码完成。判决依据进 trace，并由 CLI/Web 使用同一事件投影。
 _Avoid_: 评分、分数（无分数概念，三值即全部语义）
 
 **审批门**:

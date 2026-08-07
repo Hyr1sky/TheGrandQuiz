@@ -1,7 +1,7 @@
 """OpenAICompatProvider 测试——mock 掉 AsyncOpenAI，确定性、零网络、不烧 token。
 
 真实连通性由 scripts/smoke_llm.py 手动验（那才碰活 API）；这里只钉住可确定化的行为：
-env 缺变量即报错、messages / response 映射、BYOK provider pin 与 disable_thinking → extra_body。
+env 缺变量即报错、messages / response 映射、BYOK provider pin 与按方言组装 thinking 扩展字段。
 """
 
 import json
@@ -28,7 +28,7 @@ from grandquiz.providers.base import (
     Usage,
     malformed_arguments_raw,
 )
-from grandquiz.providers.llm import OpenAICompatProvider, RoleConfig
+from grandquiz.providers.llm import OpenAICompatProvider, RoleConfig, RoleOverrides
 
 
 class _FakeFunction:
@@ -233,6 +233,28 @@ def test_from_env_raises_on_missing_required_var(monkeypatch: pytest.MonkeyPatch
         OpenAICompatProvider.from_env()
 
 
+def test_from_env_applies_non_secret_basic_role_experiment_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_openrouter_role_env(monkeypatch)
+    provider = OpenAICompatProvider.from_env(
+        role_overrides={
+            "basic": RoleOverrides(
+                model="deepseek-v4-pro",
+                thinking_mode="enabled",
+                reasoning_effort="max",
+                api_dialect="deepseek",
+            )
+        }
+    )
+
+    execution = provider.execution_config_for_role["basic"]
+    assert execution.model == "deepseek-v4-pro"
+    assert execution.provider == "deepseek"
+    assert execution.thinking_mode == "enabled"
+    assert execution.reasoning_effort == "max"
+
+
 async def test_from_env_pins_basic_provider_without_shared_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -306,7 +328,15 @@ async def test_complete_maps_messages_and_response_and_disables_thinking(
         monkeypatch, _FakeResponse("连通正常", prompt_tokens=11, completion_tokens=3)
     )
     provider = OpenAICompatProvider(
-        {"basic": RoleConfig(api_key="k", base_url="u", model="m-basic", disable_thinking=True)}
+        {
+            "basic": RoleConfig(
+                api_key="k",
+                base_url="https://api.deepseek.com/v1",
+                model="deepseek-v4-flash",
+                api_dialect="deepseek",
+                thinking_mode="disabled",
+            )
+        }
     )
 
     reply = await provider.complete([Message(role="user", content="hi")], role="basic")
@@ -315,8 +345,60 @@ async def test_complete_maps_messages_and_response_and_disables_thinking(
     assert reply.usage.prompt_tokens == 11
     assert reply.usage.completion_tokens == 3
     call = captured["client"].chat.completions.calls[0]
-    assert call["model"] == "m-basic"
+    assert call["model"] == "deepseek-v4-flash"
     assert call["messages"] == [{"role": "user", "content": "hi"}]
+    assert call["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
+async def test_deepseek_thinking_mode_and_effort_use_the_official_request_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _patch_client(monkeypatch, _FakeResponse("ok", prompt_tokens=1, completion_tokens=1))
+    provider = OpenAICompatProvider(
+        {
+            "basic": RoleConfig(
+                api_key="k",
+                base_url="https://api.deepseek.com/v1",
+                model="deepseek-v4-pro",
+                api_dialect="deepseek",
+                thinking_mode="enabled",
+                reasoning_effort="high",
+            )
+        }
+    )
+
+    await provider.complete([Message(role="user", content="hi")], role="basic")
+
+    call = captured["client"].chat.completions.calls[0]
+    assert call["extra_body"] == {
+        "thinking": {"type": "enabled"},
+        "reasoning_effort": "high",
+    }
+    execution = provider.execution_config_for_role["basic"]
+    assert execution.model == "deepseek-v4-pro"
+    assert execution.thinking_mode == "enabled"
+    assert execution.replay_identity.endswith("thinking=enabled|effort=high")
+
+
+async def test_dashscope_keeps_its_distinct_thinking_toggle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _patch_client(monkeypatch, _FakeResponse("ok", prompt_tokens=1, completion_tokens=1))
+    provider = OpenAICompatProvider(
+        {
+            "enrich": RoleConfig(
+                api_key="k",
+                base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                model="qwen3.7-plus",
+                api_dialect="dashscope",
+                thinking_mode="disabled",
+            )
+        }
+    )
+
+    await provider.complete([Message(role="user", content="hi")], role="enrich")
+
+    call = captured["client"].chat.completions.calls[0]
     assert call["extra_body"] == {"enable_thinking": False}
 
 
@@ -492,9 +574,7 @@ async def test_complete_omits_extra_body_when_thinking_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = _patch_client(monkeypatch, _FakeResponse("ok", prompt_tokens=1, completion_tokens=1))
-    provider = OpenAICompatProvider(
-        {"basic": RoleConfig(api_key="k", base_url="u", model="m", disable_thinking=False)}
-    )
+    provider = OpenAICompatProvider({"basic": RoleConfig(api_key="k", base_url="u", model="m")})
 
     await provider.complete([Message(role="user", content="hi")], role="basic")
 

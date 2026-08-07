@@ -28,6 +28,40 @@ _QUOTE = "闭包捕获的是变量而非值"
 _POINT_ID = "capture-semantics"
 
 
+def test_expected_point_exposes_explicit_claims_with_legacy_fallback() -> None:
+    explicit = ExpectedPoint(
+        point_id=_POINT_ID,
+        description="说明闭包的捕获语义",
+        required_claims=["捕获的是变量本身", "不是定义时的值快照"],
+        cited_evidence=_QUOTE,
+    )
+    legacy = ExpectedPoint(
+        point_id="legacy",
+        description="旧题只保存了一条语义不变量",
+        cited_evidence=_QUOTE,
+    )
+
+    assert explicit.required_claims == ["捕获的是变量本身", "不是定义时的值快照"]
+    assert explicit.grading_claims == ("捕获的是变量本身", "不是定义时的值快照")
+    assert legacy.required_claims == []
+    assert legacy.grading_claims == ("旧题只保存了一条语义不变量",)
+    assert explicit.model_dump()["required_claims"] == [
+        "捕获的是变量本身",
+        "不是定义时的值快照",
+    ]
+    assert "required_claims" not in legacy.model_dump()
+
+
+def test_expected_point_rejects_duplicate_required_claims() -> None:
+    with pytest.raises(ValueError, match="required_claims"):
+        ExpectedPoint(
+            point_id=_POINT_ID,
+            description="说明捕获语义",
+            required_claims=["捕获变量本身", "捕获变量本身"],
+            cited_evidence=_QUOTE,
+        )
+
+
 def _question_json(**overrides: object) -> str:
     payload: dict[str, object] = {
         "question": "什么是闭包？",
@@ -45,6 +79,45 @@ def _question_json(**overrides: object) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def test_question_spec_rejects_unknown_critical_point() -> None:
+    with pytest.raises(ValueError, match="critical_point_ids"):
+        QuestionSpec(
+            question="什么是闭包？",
+            expected_points=[
+                ExpectedPoint(
+                    point_id=_POINT_ID,
+                    description="说明捕获语义",
+                    cited_evidence=_QUOTE,
+                )
+            ],
+            critical_point_ids=["not-in-rubric"],
+            reference_answer="闭包捕获变量。",
+            cited_evidence=[_QUOTE],
+        )
+
+
+def test_question_spec_rejects_mixed_legacy_and_claim_points() -> None:
+    with pytest.raises(ValueError, match="required_claims"):
+        QuestionSpec(
+            question="什么是闭包？",
+            expected_points=[
+                ExpectedPoint(
+                    point_id="explicit",
+                    description="显式 claim 点",
+                    required_claims=["捕获变量本身"],
+                    cited_evidence=_QUOTE,
+                ),
+                ExpectedPoint(
+                    point_id="legacy",
+                    description="旧版 description 点",
+                    cited_evidence=_QUOTE,
+                ),
+            ],
+            reference_answer="闭包捕获变量。",
+            cited_evidence=[_QUOTE],
+        )
+
+
 class _FixedProvider:
     """返回固定文本、计被调次数、记录每次 role。``role`` 接收后用于断言两槽角色。"""
 
@@ -52,12 +125,14 @@ class _FixedProvider:
         self.text = text
         self.calls = 0
         self.roles: list[Role] = []
+        self.messages: list[list[Message]] = []
 
     async def complete(
         self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
     ) -> Completion:
         self.calls += 1
         self.roles.append(role)
+        self.messages.append(list(messages))
         return Completion(text=self.text, usage=Usage(prompt_tokens=5, completion_tokens=2))
 
 
@@ -79,7 +154,7 @@ def _item() -> KnowledgeItem:
 
 
 async def test_valid_output_becomes_generated_question() -> None:
-    provider = _FixedProvider(_question_json())
+    provider = _FixedProvider(_question_json(critical_point_ids=[_POINT_ID]))
     emitter, events = _emitter()
 
     question = await generate_question(
@@ -96,12 +171,78 @@ async def test_valid_output_becomes_generated_question() -> None:
             cited_evidence=_QUOTE,
         )
     ]
+    assert question.critical_point_ids == [_POINT_ID]
     assert question.reference_answer == "闭包捕获的是变量本身，而不是定义时的值快照。"
     assert question.cited_evidence == [_QUOTE]
     assert provider.calls == 1  # 首次即通过，无重试
     assert provider.roles == ["enrich"]  # 出题走 enrich 角色
     # 照 reader 的 model span 模式发了一对 MODEL_STARTED / MODEL_ENDED
     assert [e.type for e in events] == [EventType.MODEL_STARTED, EventType.MODEL_ENDED]
+
+
+async def test_newly_generated_question_defaults_to_flat_atomic_points() -> None:
+    provider = _FixedProvider(_question_json())
+    emitter, _ = _emitter()
+
+    question = await generate_question(
+        _item(),
+        provider=provider,
+        emitter=emitter,
+        parent_span_id="a",
+        max_attempts=1,
+    )
+
+    assert question.expected_points[0].required_claims == []
+
+
+async def test_generation_preserves_explicit_experimental_claims_for_replay() -> None:
+    provider = _FixedProvider(
+        _question_json(
+            expected_points=[
+                {
+                    "point_id": _POINT_ID,
+                    "description": "说明闭包捕获变量本身，而不是值快照",
+                    "required_claims": ["捕获变量本身", "排除定义时的值快照"],
+                    "cited_evidence": _QUOTE,
+                }
+            ]
+        )
+    )
+    emitter, _ = _emitter()
+
+    question = await generate_question(
+        _item(), provider=provider, emitter=emitter, parent_span_id="a"
+    )
+
+    assert question.expected_points[0].required_claims == [
+        "捕获变量本身",
+        "排除定义时的值快照",
+    ]
+
+
+@pytest.mark.parametrize("prompt_name", ["question_generate", "question_probe"])
+async def test_open_question_prompts_require_atomic_non_overloaded_points(
+    prompt_name: str,
+) -> None:
+    provider = _FixedProvider(_question_json())
+    emitter, _ = _emitter()
+
+    await generate_question(
+        _item(),
+        provider=provider,
+        emitter=emitter,
+        parent_span_id="a",
+        prompt_name=prompt_name,
+    )
+
+    system_prompt = provider.messages[0][0].content
+    assert "一个评分点只表达一个语义不变量" in system_prompt
+    assert "拆成多个评分点" in system_prompt
+    assert "替代实现" in system_prompt
+    assert "示例" in system_prompt
+    assert "不得使用 `all_of` / `any_of`" in system_prompt
+    assert "required_claims" not in system_prompt
+    assert "固定 `all-of`" not in system_prompt
 
 
 async def test_string_cited_evidence_is_coerced_to_list() -> None:

@@ -1,7 +1,10 @@
-"""端到端回放测试——用真实录制的 cassette 逐字节回放单题考核，零 token、无网络。
+"""端到端行为回放——用兼容 cassette 逐字节回放单题考核，零 token、无网络。
 
 cassette 由 scripts/record_assess.py 对真实 qwen（出题/enrich）+ deepseek（判卷/basic）录制；
 此处用 ReplayProvider 重放整条 assess_once（两槽落两条 cassette 键，靠 role+model 区分）。
+答案 Evidence 单元 ID 生产化后，fixture 只把原响应的自由复制字段机械映射成同一原文单元 ID，
+并迁移请求指纹；
+因此本 fixture 只证明行为可回放，不作为新 Prompt 的质量或 Token 成本证据。
 若改了 prompts/{question_generate,answer_grade}.md 或下方场景常量，messages 变 → replay_key 变 →
 ReplayMiss，本测试会红——即"prompt / 场景漂移需重录"的信号（golden fixture 的预期维护流）。
 

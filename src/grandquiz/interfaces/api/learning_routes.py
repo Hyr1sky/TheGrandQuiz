@@ -9,7 +9,6 @@ from grandquiz.domain.learning.assessment.grading import VerdictLabel
 from grandquiz.domain.learning.assessment.selection import apply_scope
 from grandquiz.domain.learning.assessment_history import (
     DEMAND_VALIDATED,
-    VERDICT_CORRECTED,
     AssessmentAttemptV1,
     CognitiveDemand,
     DemandValidationV1,
@@ -18,8 +17,6 @@ from grandquiz.domain.learning.assessment_history import (
     project_assessment_attempts,
     project_demand_validations,
     project_learner,
-    rebuild_learning_state,
-    verdict_correction_fact,
 )
 from grandquiz.domain.learning.classification import (
     KnowledgeClassificationV1,
@@ -45,6 +42,12 @@ from grandquiz.domain.learning.knowledge_facets import (
 )
 from grandquiz.domain.learning.models import derive_id
 from grandquiz.domain.learning.persistence import LearningPersistence
+from grandquiz.domain.learning.verdict_corrections import (
+    AssessmentAttemptNotFound,
+    VerdictCorrectionCommand,
+    VerdictCorrectionConflict,
+    VerdictCorrectionService,
+)
 from grandquiz.interfaces.api.errors import ApiError
 from grandquiz.interfaces.learning_outbox import publish_pending_learning_facts
 from grandquiz.kernel.clock import Clock
@@ -275,73 +278,29 @@ async def correct_attempt_verdict(
     command: VerdictCorrectionRequest,
     request: Request,
 ) -> AssessmentAttemptV1:
-    persistence = _persistence(request)
-    facts = persistence.learning_facts.facts()
-    attempts = project_assessment_attempts(facts)
-    attempt = next((item for item in attempts if item.attempt_id == attempt_id), None)
-    if attempt is None:
+    service = VerdictCorrectionService(_persistence(request), _clock(request))
+    try:
+        corrected = service.apply(
+            attempt_id,
+            VerdictCorrectionCommand(
+                request_id=command.request_id,
+                final_verdict=command.final_verdict,
+                reason=command.reason,
+            ),
+        )
+    except AssessmentAttemptNotFound as exc:
         raise ApiError(
             status_code=404,
             code="assessment_attempt_not_found",
             message=f"考核记录不存在：{attempt_id}",
-        )
-    event_id = derive_id(attempt.attempt_id, VERDICT_CORRECTED, command.request_id)
-    existing_fact = next((fact for fact in facts if fact.event_id == event_id), None)
-    if existing_fact is not None:
-        if (
-            existing_fact.payload.get("final_verdict") != command.final_verdict
-            or existing_fact.payload.get("reason") != command.reason
-        ):
-            raise ApiError(
-                status_code=409,
-                code="idempotency_conflict",
-                message="相同 request_id 已用于不同的判卷纠正",
-            )
-        _publish_learning_outbox(request)
-        return next(
-            item for item in project_assessment_attempts(facts) if item.attempt_id == attempt_id
-        )
-    previous_corrections = sorted(
-        (
-            fact
-            for fact in facts
-            if fact.event_type == VERDICT_CORRECTED and fact.payload.get("attempt_id") == attempt_id
-        ),
-        key=lambda fact: int(fact.payload.get("revision", 1)),
-    )
-    revision = len(previous_corrections) + 1
-    fact = verdict_correction_fact(
-        attempt=attempt,
-        request_id=command.request_id,
-        final_verdict=command.final_verdict,
-        reason=command.reason,
-        source_event_ts=_clock(request).now(),
-        revision=revision,
-        supersedes_id=(None if not previous_corrections else previous_corrections[-1].event_id),
-    )
-    corrected_attempts = project_assessment_attempts([*facts, fact])
-    memory_record, difficulty_progress = rebuild_learning_state(
-        corrected_attempts,
-        item_id=attempt.item_id,
-    )
-    reconciliation = {
-        "item_id": attempt.item_id,
-        "learning_memory_state": (
-            "not_in_memory" if memory_record is None else memory_record.state
-        ),
-        "difficulty_tier": int(difficulty_progress.tier),
-        "through_event_id": fact.event_id,
-    }
-    fact = fact.model_copy(update={"payload": {**fact.payload, "reconciliation": reconciliation}})
-    with persistence.transaction_owner.transaction():
-        persistence.learning_facts.append(fact)
-        persistence.memory.replace_record(attempt.item_id, memory_record)
-        persistence.difficulty.replace_progress(
-            attempt.item_id,
-            difficulty_progress,
-        )
+        ) from exc
+    except VerdictCorrectionConflict as exc:
+        raise ApiError(
+            status_code=409,
+            code="idempotency_conflict",
+            message=str(exc),
+        ) from exc
     _publish_learning_outbox(request)
-    corrected = next(item for item in corrected_attempts if item.attempt_id == attempt_id)
     return corrected
 
 

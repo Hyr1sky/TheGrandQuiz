@@ -147,6 +147,28 @@ export async function submitAnswer(
   return data;
 }
 
+export async function submitAppeal(
+  sessionId: string,
+  questionId: string,
+  supplementalAnswer: string,
+  requestId: string,
+): Promise<AssessmentView> {
+  const { data, error } = await apiClient.POST(
+    "/api/v1/assessments/{session_id}/questions/{question_id}/appeals",
+    {
+      params: { path: { session_id: sessionId, question_id: questionId } },
+      body: {
+        request_id: requestId,
+        supplemental_answer: supplementalAnswer,
+      },
+    },
+  );
+  if (error !== undefined) {
+    throw toApiRequestError(error);
+  }
+  return data;
+}
+
 export async function nextRound(
   sessionId: string,
   requestId: string,

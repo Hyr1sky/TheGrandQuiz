@@ -52,6 +52,8 @@ class LearningEvent:
     EVIDENCE_REVEALED = "learning.evidence_revealed"  # 用户在作答前主动或悬停揭示已校验的出题证据
     ANSWER_JUDGED = "learning.answer_judged"  # 判卷：verdict + weak_item_id（LLM 判卷，代码记账）
     ASSESSMENT_JUDGEMENT_COMMITTED = "learning.assessment_judgement_committed"
+    ASSESSMENT_APPEAL_REQUESTED = "learning.assessment_appeal_requested"
+    ASSESSMENT_APPEAL_RESOLVED = "learning.assessment_appeal_resolved"
 
     # M3.3 薄弱记忆 + 三态状态机：每轮判卷后代码记账（写 Learning Memory）都发此事件、把记账结果
     # 上脊柱（eval case 4 / 6，payload 含 from_state / to_state / consecutive_correct）。

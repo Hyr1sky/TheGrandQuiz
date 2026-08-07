@@ -21,6 +21,9 @@ hook、trace、流式输出、eval replay **不是四个独立模块，而是同
 完整运行审计进入 `trace.db`；v2 长期学习事实进入 `learning.db` 的 journal/outbox，二者消费同一事件、
 不复制领域逻辑。AssessmentAttempt 从 Journal 重建，Markdown/JSONL 只能作为脱敏审查导出，详见
 [ADR-0010](adr/0010-durable-learning-facts-separate-from-operational-trace.md)。
+开放题默认使用 flat atomic ExpectedPoint + AnswerEvidenceUnit ID；受限 Required Claims 的真实实验未
+通过，现只保留历史兼容与审计分支，详见
+[ADR-0011](adr/0011-bounded-required-claims-for-grading.md)。
 
 Learning Model v2 的 Module seam 按职责而非数据表划分：`learning_facts.py` 暴露 durable Journal
 Interface，`assessment_history.py` 隐藏 Attempt/Demand/Learner 的重建规则；`classification.py` 保持纯契约
@@ -39,11 +42,12 @@ Interface，`assessment_history.py` 隐藏 Attempt/Demand/Learner 的重建规�
 
 | 决策 | 谁做 | 为什么 |
 | --- | --- | --- |
-| 判一道题 对/勉强/错 | LLM（工具，结构化输出 + 证据锚定） | 语义判断，无法确定性化 |
+| 逐项判断学习者答案是否语义命中评分点 | LLM（工具，结构化输出） | 同义表达与合理替代方案无法确定性编码 |
 | 生成一道带证据的题 | LLM（工具，grounded on 选中的 KnowledgeItem） | 同上 |
 | 多题题型顺序 | **AssessmentPlan（代码）** | 单题型/分段输入只在一个领域接口展开，CLI/Web/FastAPI 不各自解释 |
 | 本题评分标准与参考作答 | **QuestionSpec（出题结构化输出）** | 让出题、判卷、反馈共用同一 rubric，避免重新猜题意 |
-| 评分点覆盖与三值一致性 | **代码校验 LLM 结构化判卷** | LLM 判断语义命中；代码保证 matched/missing 完整、不重叠且与 verdict 自洽 |
+| 评分点覆盖、答案证据与三值聚合 | **代码校验并聚合** | 新题默认逐 flat atomic point 选择 AnswerEvidenceUnit ID；历史 claim 题只作兼容回放；matched 引文逐字存在于答案，再按预注册核心点推导对/勉强/错 |
+| 是否向学习者澄清 | **代码 planner（实验，生产关闭）** | 只在 Grader 明确 uncertain 且单个 missing point 会改变三值时提出一次；二分类与三态信号原型均未过门，尤其 ambiguity 0/2，尚无可靠自动触发信号 |
 | 薄弱概念状态转移（错→薄弱→观察中→销账） | **代码** | 判决的确定性后果；LLM 来做则 replay / eval 对不齐 |
 | Learning Memory 写入 | **代码** | 同上——eval case 4/6 可断言性的命门 |
 | 选题候选集构造（薄弱优先） | **代码** | eval case 5 可断言性的命门 |
@@ -168,6 +172,7 @@ schema v11；受 prompt/tool schema 影响的真实 cassette 已重录，生产�
 | **注入防护** | 学习 agent 读网页 / GitHub，抓回内容是不可信输入。工具结果打"不可信"标记 + system prompt 硬约束 + fetch 层做大小 / 超时 / 域名限制。学习场景相对学者场景**新增的攻击面**，进 MVP |
 | **结构化输出契约** | subagent 与 LLM 工具（出题 / 判卷）的返回结果用 pydantic schema 强制校验，失败自动重试——"output can be verified" 的落地机制 |
 | **跨接口一致性** | CLI、Web Chat 与 FastAPI 只做输入/事件投影；多题编排必须进入同一个 `AssessmentPlan`，判卷反馈必须来自同一个 `QuestionSpec` / `ANSWER_JUDGED` 信封。OpenAPI 只验证 HTTP 形状，跨 adapter 的语义一致性由 conformance tests 保证 |
+| **判卷申诉写路径** | Web 的一次补充仍使用同一 `QuestionSpec` / Grader；初判不可变，重判结果经共享 `VerdictCorrectionService` 追加事实并重放 Memory / Difficulty，接口层不得各自复制纠正事务 |
 | **中断与取消 / 审批挂起** | 长 turn（深度阅读 40s+）的用户中断、优雅终止、半成品落 trace。CLI 保留同步筛选；Web Acquisition 已用持久六态、单次过期 token 与同 trace sequence 实现跨进程 suspend/resume。后续长 turn 继续复用这套形状，不另起阻塞协议 |
 | **确定性基建** | 时钟 / 随机数走注入（`Clock` 抽象 + 种子化 RNG），否则 replay 永远对不齐。第一天避开这个坑 |
 | **Token / 成本核算** | 每 turn 用量进 trace，eval 报告带成本列 |

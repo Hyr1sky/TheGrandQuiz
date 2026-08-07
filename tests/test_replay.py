@@ -43,6 +43,23 @@ class _CountingProvider:
         )
 
 
+class _SequenceProvider:
+    """同一公开请求每次返回不同结果，模拟随机模型在 retry 中的真实漂移。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        del messages, role, tools
+        self.calls += 1
+        return Completion(
+            text=f"attempt-{self.calls}",
+            usage=Usage(prompt_tokens=10 * self.calls, completion_tokens=self.calls),
+        )
+
+
 def _summ(spans: list[Span]) -> list[dict[str, Any]]:
     return [
         {
@@ -110,6 +127,62 @@ async def test_replay_returns_completion_identical_in_text_and_usage() -> None:
     assert restored.usage.model_dump() == original.usage.model_dump()
     assert restored.usage.total_tokens == original.usage.total_tokens
     assert inner.calls == 1  # 回放没有触碰 inner
+
+
+async def test_recording_provider_checkpoints_each_paid_completion(tmp_path: Path) -> None:
+    path = tmp_path / "calibration" / "cassette.json"
+    inner = _CountingProvider()
+    recording = RecordingProvider(
+        inner,
+        Cassette(),
+        _MODELS,
+        checkpoint_path=path,
+        reuse_existing=True,
+    )
+
+    await recording.complete([Message(role="user", content="paid request")], role="basic")
+    await recording.complete([Message(role="user", content="paid request")], role="basic")
+
+    assert path.is_file()
+    assert inner.calls == 1
+    replay = ReplayProvider(Cassette.load(path), _MODELS)
+    restored = await replay.complete([Message(role="user", content="paid request")], role="basic")
+    assert restored.text == "answer to: paid request"
+
+
+async def test_identical_requests_replay_each_recorded_completion_in_order(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "cassette.json"
+    messages = [Message(role="user", content="same retry request")]
+    inner = _SequenceProvider()
+    recording = RecordingProvider(inner, Cassette(), _MODELS, checkpoint_path=path)
+
+    first = await recording.complete(messages, role="basic")
+    second = await recording.complete(messages, role="basic")
+
+    replay = ReplayProvider(Cassette.load(path), _MODELS)
+    restored_first = await replay.complete(messages, role="basic")
+    restored_second = await replay.complete(messages, role="basic")
+
+    assert (first.text, second.text) == ("attempt-1", "attempt-2")
+    assert (restored_first.text, restored_second.text) == ("attempt-1", "attempt-2")
+    assert restored_first.usage == Usage(prompt_tokens=10, completion_tokens=1)
+    assert restored_second.usage == Usage(prompt_tokens=20, completion_tokens=2)
+    with pytest.raises(ReplayMiss, match="序列已耗尽"):
+        await replay.complete(messages, role="basic")
+
+
+async def test_legacy_single_completion_remains_repeatable_after_reload(tmp_path: Path) -> None:
+    path = tmp_path / "legacy-single.json"
+    messages = [Message(role="user", content="legacy request")]
+    recording = RecordingProvider(_CountingProvider(), Cassette(), _MODELS, checkpoint_path=path)
+    await recording.complete(messages, role="basic")
+
+    replay = ReplayProvider(Cassette.load(path), _MODELS)
+
+    assert (await replay.complete(messages, role="basic")).text == "answer to: legacy request"
+    assert (await replay.complete(messages, role="basic")).text == "answer to: legacy request"
 
 
 def test_replay_key_includes_role_and_model() -> None:

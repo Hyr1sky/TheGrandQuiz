@@ -1,7 +1,10 @@
 # v0.3 证据闭环：让分类、判卷与纠正真正产生用途
 
 日期：2026-07-31
-状态：代码 RC 完成；真实人工盲标校准门尚待样本，不能据此启用自动学习策略。
+状态：代码 RC 完成；后续真实校准与契约收窄见
+[27-real-grading-calibration-preparation.md](27-real-grading-calibration-preparation.md) 与
+[28-grading-contract-and-model-pilot.md](28-grading-contract-and-model-pilot.md)。新 holdout 通过前仍不能启用
+自动学习策略。
 
 ## 为什么做这一轮
 

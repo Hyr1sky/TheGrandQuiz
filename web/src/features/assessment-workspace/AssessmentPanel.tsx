@@ -6,6 +6,7 @@
 
 import {
   ArrowRightIcon,
+  ChatCircleDotsIcon,
   CheckCircleIcon,
   EyeIcon,
   XCircleIcon,
@@ -25,6 +26,7 @@ import {
   nextRound,
   revealEvidence,
   startAssessment,
+  submitAppeal,
   submitAnswer,
   type AssessmentView,
 } from "./api";
@@ -55,6 +57,8 @@ export const AssessmentPanel = forwardRef<
   const [assessment, setAssessment] = useState<AssessmentView | null>(null);
   const assessmentRef = useRef<AssessmentView | null>(null);
   const [answer, setAnswer] = useState("");
+  const [appealOpen, setAppealOpen] = useState(false);
+  const [supplementalAnswer, setSupplementalAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoverCountdown, setHoverCountdown] = useState<number | null>(null);
@@ -69,6 +73,11 @@ export const AssessmentPanel = forwardRef<
   const nextCommand = useRef<{ roundIndex: number; requestId: string } | null>(
     null,
   );
+  const appealCommand = useRef<{
+    questionId: string;
+    supplementalAnswer: string;
+    requestId: string;
+  } | null>(null);
   const startRequest = useRef<{
     key: string;
     promise: Promise<AssessmentView>;
@@ -125,7 +134,8 @@ export const AssessmentPanel = forwardRef<
   useEffect(() => {
     if (
       assessment === null ||
-      !["preparing", "grading"].includes(assessment.status)
+      (!["preparing", "grading"].includes(assessment.status) &&
+        assessment.appeal?.status !== "grading")
     ) {
       pollDelay.current = 1000;
       return;
@@ -286,11 +296,51 @@ export const AssessmentPanel = forwardRef<
         command.requestId,
       );
       setAnswer("");
+      setAppealOpen(false);
+      setSupplementalAnswer("");
       revealRequested.current = null;
       answerCommand.current = null;
+      appealCommand.current = null;
       notifyUpdate(next);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法进入下一题");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitSupplement = async (event: FormEvent) => {
+    event.preventDefault();
+    const question = assessment?.question;
+    const supplement = supplementalAnswer.trim();
+    if (assessment === null || question == null || supplement === "") {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const existing = appealCommand.current;
+      const command =
+        existing?.questionId === question.question_id &&
+        existing.supplementalAnswer === supplement
+          ? existing
+          : {
+              questionId: question.question_id,
+              supplementalAnswer: supplement,
+              requestId: commandId("appeal"),
+            };
+      appealCommand.current = command;
+      notifyUpdate(
+        await submitAppeal(
+          assessment.session_id,
+          question.question_id,
+          supplement,
+          command.requestId,
+        ),
+      );
+      setAppealOpen(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "无法提交补充说明");
     } finally {
       setBusy(false);
     }
@@ -556,6 +606,67 @@ export const AssessmentPanel = forwardRef<
                 <summary>查看参考答案</summary>
                 <p>{assessment.judgement.correct_answer}</p>
               </details>
+            ) : null}
+            {assessment.appeal?.status === "available" ? (
+              appealOpen ? (
+                <form
+                  className="assessment-panel__appeal"
+                  onSubmit={submitSupplement}
+                >
+                  <label>
+                    <span>补充说明</span>
+                    <textarea
+                      aria-label="补充说明"
+                      value={supplementalAnswer}
+                      disabled={busy}
+                      onChange={(event) =>
+                        setSupplementalAnswer(event.target.value)
+                      }
+                      placeholder="只补充你认为原判遗漏的表达；原回答会完整保留。"
+                    />
+                  </label>
+                  <div>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setAppealOpen(false)}
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={busy || supplementalAnswer.trim() === ""}
+                    >
+                      提交补充并重判
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setAppealOpen(true)}
+                >
+                  <ChatCircleDotsIcon aria-hidden size={19} />
+                  补充说明 / 判卷有异议
+                </button>
+              )
+            ) : null}
+            {assessment.appeal?.status === "grading" ? (
+              <p className="assessment-panel__appeal-status" role="status">
+                正在结合原回答与补充说明重新判卷...
+              </p>
+            ) : null}
+            {assessment.appeal?.status === "resolved" ? (
+              <p className="assessment-panel__appeal-result">
+                原判：{assessment.appeal.original_verdict}；重判：
+                {assessment.appeal.final_verdict}
+              </p>
+            ) : null}
+            {assessment.appeal?.status === "failed" ? (
+              <p className="assessment-panel__error" role="alert">
+                {assessment.appeal.reason}
+              </p>
             ) : null}
             {assessment.status === "judged" ? (
               <button

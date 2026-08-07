@@ -101,6 +101,7 @@ class AssessmentAttemptV1(BaseModel):
     grading: GradingProvenance
     difficulty_tier: int | None = None
     appeal_status: Literal["none", "pending", "upheld", "overturned"] = "none"
+    supplemental_answer: str | None = None
     active_demand_validation_id: str | None = None
     source_event_cursor: SourceEventCursor
 
@@ -269,12 +270,28 @@ def project_assessment_attempts(
         if attempt is None:
             continue
         final_verdict = cast("VerdictLabel", fact.payload["final_verdict"])
+        reconciliation = fact.payload.get("reconciliation")
+        reconciled_state: Literal["薄弱", "观察中"] | None = attempt.concept_state
+        reconciled_tier: int | None = attempt.difficulty_tier
+        if isinstance(reconciliation, Mapping):
+            projected = cast("Mapping[str, object]", reconciliation)
+            state = projected.get("learning_memory_state")
+            if state == "not_in_memory":
+                reconciled_state = None
+            elif state in {"薄弱", "观察中"}:
+                reconciled_state = cast("Literal['薄弱', '观察中']", state)
+            tier = projected.get("difficulty_tier")
+            if isinstance(tier, int):
+                reconciled_tier = tier
         updated = attempt.model_copy(
             update={
                 "final_verdict": final_verdict,
                 "appeal_status": (
                     "overturned" if final_verdict != attempt.initial_verdict else "upheld"
                 ),
+                "supplemental_answer": fact.payload.get("supplemental_answer"),
+                "concept_state": reconciled_state,
+                "difficulty_tier": reconciled_tier,
             }
         )
         by_id[attempt.attempt_id] = updated
@@ -300,6 +317,7 @@ def verdict_correction_fact(
     revision: int = 1,
     supersedes_id: str | None = None,
     reconciliation: Mapping[str, Any] | None = None,
+    supplemental_answer: str | None = None,
 ) -> LearningFactEnvelope:
     """Build an idempotent append-only correction fact."""
 
@@ -322,6 +340,7 @@ def verdict_correction_fact(
             "reason": reason,
             "request_id": request_id,
             "reconciliation": reconciliation,
+            "supplemental_answer": supplemental_answer,
         },
     )
 

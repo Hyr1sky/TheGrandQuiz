@@ -269,4 +269,99 @@ describe("AssessmentPanel", () => {
     expect(screen.getByText("说明握手会产生额外成本")).toBeInTheDocument();
     expect(screen.getByText("方向正确，但遗漏了连接建立成本。")).toBeInTheDocument();
   });
+
+  it("submits one supplemental explanation and renders the revised judgement", async () => {
+    const judgedAssessment = {
+      ...readyAssessment,
+      status: "completed",
+      attempt_id: "attempt-1",
+      question: {
+        ...readyAssessment.question,
+        question_type: "简答题",
+        options: [],
+      },
+      judgement: {
+        verdict: "错",
+        reason: "没有说明模型内部表示。",
+        diagnosis: "wrong_focus",
+        matched_points: [],
+        missing_points: [
+          { point_id: "location", description: "指出位于模型内部表示" },
+        ],
+        concept_state: "薄弱",
+        correct_answer: "潜在记忆位于模型内部表示。",
+      },
+      appeal: {
+        status: "available",
+        supplemental_answer: null,
+        original_verdict: "错",
+        final_verdict: null,
+        reason: null,
+      },
+    };
+    const resolvedAssessment = {
+      ...judgedAssessment,
+      judgement: {
+        ...judgedAssessment.judgement,
+        verdict: "对",
+        reason: "结合补充说明，已经覆盖位置要点。",
+        diagnosis: "complete",
+        matched_points: [
+          { point_id: "location", description: "指出位于模型内部表示" },
+        ],
+        missing_points: [],
+        concept_state: null,
+      },
+      appeal: {
+        status: "resolved",
+        supplemental_answer: "我指的是模型内部的隐式表示。",
+        original_verdict: "错",
+        final_verdict: "对",
+        reason: "结合补充说明，已经覆盖位置要点。",
+      },
+    };
+    const appealBodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request = input instanceof Request ? input : new Request(String(input));
+        if (request.url.endsWith("/api/v1/assessments")) {
+          return Response.json(judgedAssessment, { status: 202 });
+        }
+        if (request.url.endsWith("/appeals") && request.method === "POST") {
+          appealBodies.push(await request.clone().json());
+          return Response.json(resolvedAssessment, { status: 202 });
+        }
+        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+      }),
+    );
+
+    render(
+      <AssessmentPanel
+        resourceId="resource-1"
+        questionTypePlan={["简答题"]}
+        onClose={() => undefined}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "补充说明 / 判卷有异议" }),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "补充说明" }), {
+      target: { value: "我指的是模型内部的隐式表示。" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "提交补充并重判" }));
+
+    expect(
+      await screen.findByText("结合补充说明，已经覆盖位置要点。"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("原判：错；重判：对")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "补充说明 / 判卷有异议" }))
+      .not.toBeInTheDocument();
+    expect(appealBodies).toEqual([
+      expect.objectContaining({
+        supplemental_answer: "我指的是模型内部的隐式表示。",
+      }),
+    ]);
+  });
 });

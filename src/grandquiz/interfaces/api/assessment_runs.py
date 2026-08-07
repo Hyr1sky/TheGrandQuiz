@@ -9,30 +9,38 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field, field_validator
 
-from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
-from grandquiz.domain.learning.assessment.grading import AssessmentDiagnosisKind
+from grandquiz.domain.learning.assessment.appeal import (
+    AppealSubmission,
+    AppealSubmissionConflict,
+)
+from grandquiz.domain.learning.assessment.grading import (
+    AssessmentDiagnosisKind,
+    Verdict,
+    grade_answer,
+)
 from grandquiz.domain.learning.assessment.plan import AssessmentPlan
+from grandquiz.domain.learning.assessment.question import QuestionSpec
 from grandquiz.domain.learning.assessment.scope import SelectedScope
 from grandquiz.domain.learning.assessment.selection import Focus, apply_scope
 from grandquiz.domain.learning.assessment.session import AssessmentSession
 from grandquiz.domain.learning.classification import KnowledgeKind
-from grandquiz.domain.learning.difficulty import DifficultyLedger
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.knowledge_facets import (
-    ApprovedClassificationReader,
     KnowledgeFacetFilter,
     select_knowledge_facets,
 )
-from grandquiz.domain.learning.learning_facts import LearningFactJournal
-from grandquiz.domain.learning.memory import Memory
-from grandquiz.domain.learning.preference import PreferenceMemory
+from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.domain.learning.responder import (
     AnswerSubmissionMetadata,
     Responder,
 )
-from grandquiz.domain.learning.store import Store
+from grandquiz.domain.learning.verdict_corrections import (
+    VerdictCorrectionCommand,
+    VerdictCorrectionService,
+)
 from grandquiz.interfaces.api.observability import TraceObservatory
-from grandquiz.kernel.clock import SystemClock
+from grandquiz.interfaces.learning_outbox import publish_pending_learning_facts
+from grandquiz.kernel.clock import Clock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Provider
@@ -47,6 +55,7 @@ AssessmentStatus = Literal[
     "failed",
     "cancelled",
 ]
+AssessmentAppealStatus = Literal["available", "grading", "resolved", "failed"]
 
 ASSESSMENT_RUN_STARTED = "web.assessment_run.started"
 ASSESSMENT_RUN_ENDED = "web.assessment_run.ended"
@@ -113,6 +122,19 @@ class NextRoundRequest(BaseModel):
         return normalized
 
 
+class AssessmentAppealRequest(BaseModel):
+    request_id: str = Field(min_length=1)
+    supplemental_answer: str = Field(min_length=1)
+
+    @field_validator("request_id", "supplemental_answer")
+    @classmethod
+    def value_is_not_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("字段不能为空")
+        return normalized
+
+
 class AssessmentCommandConflict(ValueError):
     """同一道题已经被另一个 command 提交，不能再次驱动记账。"""
 
@@ -150,6 +172,14 @@ class AssessmentJudgementView(BaseModel):
     correct_answer: str | None = None
 
 
+class AssessmentAppealView(BaseModel):
+    status: AssessmentAppealStatus
+    supplemental_answer: str | None = None
+    original_verdict: str
+    final_verdict: str | None = None
+    reason: str | None = None
+
+
 class AssessmentView(BaseModel):
     session_id: str
     trace_id: str
@@ -159,6 +189,7 @@ class AssessmentView(BaseModel):
     attempt_id: str | None = None
     question: AssessmentQuestionView | None = None
     judgement: AssessmentJudgementView | None = None
+    appeal: AssessmentAppealView | None = None
     error: str | None = None
 
 
@@ -213,11 +244,17 @@ class _AssessmentRecord:
     evidence: list[str] | None = None
     evidence_revealed: bool = False
     judgement: AssessmentJudgementView | None = None
+    question_spec: QuestionSpec | None = None
+    original_answer: str | None = None
+    grading_language: str | None = None
+    appeal_submission: AppealSubmission | None = None
+    appeal: AssessmentAppealView | None = None
     answer_request_id: str | None = None
     submitted_answer: str | None = None
     attempt_id: str | None = None
     error: str | None = None
     task: asyncio.Task[None] | None = None
+    appeal_task: asyncio.Task[None] | None = None
     next_request_ids: set[str] = field(default_factory=_empty_strings)
     terminal_emitted: bool = False
 
@@ -247,6 +284,7 @@ class _AssessmentRecord:
             attempt_id=self.attempt_id,
             question=question,
             judgement=self.judgement,
+            appeal=self.appeal,
             error=self.error,
         )
 
@@ -257,26 +295,24 @@ class AssessmentManager:
     def __init__(
         self,
         *,
-        store: Store,
+        persistence: LearningPersistence,
         provider: Provider,
-        memory: Memory,
-        asked_questions: AskedQuestionsLedger,
-        preferences: PreferenceMemory,
-        difficulty: DifficultyLedger,
-        learning_facts: LearningFactJournal,
-        classifications: ApprovedClassificationReader,
         trace_store: TraceStore,
+        clock: Clock,
         trace_observatory: TraceObservatory | None = None,
     ) -> None:
-        self._store = store
+        self._persistence = persistence
+        self._store = persistence.store
         self._provider = provider
-        self._memory = memory
-        self._asked_questions = asked_questions
-        self._preferences = preferences
-        self._difficulty = difficulty
-        self._learning_facts = learning_facts
-        self._classifications = classifications
+        self._memory = persistence.memory
+        self._asked_questions = persistence.asked_questions
+        self._preferences = persistence.preferences
+        self._difficulty = persistence.difficulty
+        self._learning_facts = persistence.learning_facts
+        self._classifications = persistence.classifications
         self._trace_store = trace_store
+        self._clock = clock
+        self._corrections = VerdictCorrectionService(persistence, clock)
         self._trace_observatory = trace_observatory
         self._records: dict[str, _AssessmentRecord] = {}
 
@@ -290,7 +326,7 @@ class AssessmentManager:
         sink.register_durable(self._trace_store)
         if self._trace_observatory is not None:
             sink.register(self._trace_observatory)
-        emitter = EventEmitter(sink, SystemClock(), trace_id=trace_id)
+        emitter = EventEmitter(sink, self._clock, trace_id=trace_id)
         run_span_id = emitter.new_span_id()
         session = AssessmentSession(
             store=self._store,
@@ -419,6 +455,8 @@ class AssessmentManager:
             return None
         if command.request_id in record.next_request_ids:
             return record.view()
+        if record.appeal is not None and record.appeal.status == "grading":
+            raise AssessmentCommandConflict("补充说明正在重判，暂时不能进入下一题")
         if record.status != "judged" or record.round_index >= record.plan.rounds:
             raise AssessmentCommandConflict("当前考核不能进入下一题")
         record.next_request_ids.add(command.request_id)
@@ -432,12 +470,72 @@ class AssessmentManager:
         record.evidence = None
         record.evidence_revealed = False
         record.judgement = None
+        record.question_spec = None
+        record.original_answer = None
+        record.grading_language = None
+        record.appeal_submission = None
+        record.appeal = None
         record.attempt_id = None
         record.answer_request_id = None
         record.submitted_answer = None
         record.task = asyncio.create_task(
             self._run_round(record),
             name=f"grandquiz-api-assessment:{session_id}:{record.round_index}",
+        )
+        return record.view()
+
+    def submit_appeal(
+        self,
+        session_id: str,
+        question_id: str,
+        command: AssessmentAppealRequest,
+    ) -> AssessmentView | None:
+        """Accept one explicit supplement without reopening automatic clarification."""
+
+        record = self._records.get(session_id)
+        if record is None or record.question_id != question_id:
+            return None
+        if record.appeal_submission is not None:
+            try:
+                record.appeal_submission.accept_retry(
+                    request_id=command.request_id,
+                    supplemental_answer=command.supplemental_answer,
+                )
+            except AppealSubmissionConflict as exc:
+                raise AssessmentCommandConflict(str(exc)) from exc
+            return record.view()
+        if (
+            record.status not in {"judged", "completed"}
+            or record.question_spec is None
+            or record.original_answer is None
+            or record.grading_language is None
+            or record.attempt_id is None
+            or record.judgement is None
+        ):
+            raise AssessmentCommandConflict("当前题目不接受补充说明")
+        submission = AppealSubmission.create(
+            request_id=command.request_id,
+            original_answer=record.original_answer,
+            supplemental_answer=command.supplemental_answer,
+        )
+        record.appeal_submission = submission
+        record.appeal = AssessmentAppealView(
+            status="grading",
+            supplemental_answer=submission.supplemental_answer,
+            original_verdict=record.judgement.verdict,
+        )
+        record.emitter.emit(
+            LearningEvent.ASSESSMENT_APPEAL_REQUESTED,
+            parent_span_id=record.run_span_id,
+            payload={
+                "question_id": question_id,
+                "item_id": record.item_id,
+                "attempt_id": record.attempt_id,
+            },
+        )
+        record.appeal_task = asyncio.create_task(
+            self._run_appeal(record),
+            name=f"grandquiz-api-assessment-appeal:{session_id}:{question_id}",
         )
         return record.view()
 
@@ -454,6 +552,14 @@ class AssessmentManager:
                 record.status = "refused"
                 self._emit_terminal(record, "failed")
             else:
+                record.question_spec = result.question_spec
+                record.original_answer = result.answer_text
+                record.grading_language = result.grading_language
+                if result.question_spec is not None and record.judgement is not None:
+                    record.appeal = AssessmentAppealView(
+                        status="available",
+                        original_verdict=record.judgement.verdict,
+                    )
                 record.status = (
                     "completed" if record.round_index == record.plan.rounds else "judged"
                 )
@@ -473,6 +579,108 @@ class AssessmentManager:
                 payload={"error_type": type(exc).__name__},
             )
             self._emit_terminal(record, "failed")
+
+    async def _run_appeal(self, record: _AssessmentRecord) -> None:
+        submission = record.appeal_submission
+        question = record.question_spec
+        attempt_id = record.attempt_id
+        judgement = record.judgement
+        language = record.grading_language
+        if (
+            submission is None
+            or question is None
+            or attempt_id is None
+            or judgement is None
+            or language is None
+        ):
+            raise AssertionError("申诉重判缺少冻结的题目、答案或判决")
+        original_verdict = judgement.verdict
+        try:
+            verdict = await grade_answer(
+                question,
+                submission.answer_for_regrade,
+                provider=self._provider,
+                emitter=record.emitter,
+                parent_span_id=record.run_span_id,
+                language=language,
+            )
+            corrected = self._corrections.apply(
+                attempt_id,
+                VerdictCorrectionCommand(
+                    request_id=submission.request_id,
+                    final_verdict=verdict.verdict,
+                    reason=verdict.reason,
+                    supplemental_answer=submission.supplemental_answer,
+                ),
+            )
+            publish_pending_learning_facts(
+                self._persistence.learning_facts,
+                self._trace_store,
+                clock=self._clock,
+            )
+            record.judgement = self._project_regraded_judgement(
+                question,
+                verdict,
+                concept_state=corrected.concept_state,
+                correct_answer=judgement.correct_answer,
+            )
+            record.appeal = AssessmentAppealView(
+                status="resolved",
+                supplemental_answer=submission.supplemental_answer,
+                original_verdict=original_verdict,
+                final_verdict=verdict.verdict,
+                reason=verdict.reason,
+            )
+            record.emitter.emit(
+                LearningEvent.ASSESSMENT_APPEAL_RESOLVED,
+                parent_span_id=record.run_span_id,
+                payload={
+                    "question_id": record.question_id,
+                    "item_id": record.item_id,
+                    "attempt_id": attempt_id,
+                    "original_verdict": original_verdict,
+                    "final_verdict": verdict.verdict,
+                },
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            record.appeal = AssessmentAppealView(
+                status="failed",
+                supplemental_answer=submission.supplemental_answer,
+                original_verdict=original_verdict,
+                reason="补充说明重判失败，请通过 trace_id 查看详情",
+            )
+            record.emitter.emit(
+                EventType.ERROR,
+                parent_span_id=record.run_span_id,
+                payload={"error_type": type(exc).__name__, "operation": "assessment_appeal"},
+            )
+
+    @staticmethod
+    def _project_regraded_judgement(
+        question: QuestionSpec,
+        verdict: Verdict,
+        *,
+        concept_state: str | None,
+        correct_answer: str | None,
+    ) -> AssessmentJudgementView:
+        points = {point.point_id: point.description for point in question.expected_points}
+        return AssessmentJudgementView(
+            verdict=verdict.verdict,
+            reason=verdict.reason,
+            diagnosis=verdict.diagnosis,
+            matched_points=[
+                AssessmentPointFeedbackView(point_id=point_id, description=points[point_id])
+                for point_id in verdict.matched_points
+            ],
+            missing_points=[
+                AssessmentPointFeedbackView(point_id=point_id, description=points[point_id])
+                for point_id in verdict.missing_points
+            ],
+            concept_state=concept_state,
+            correct_answer=correct_answer,
+        )
 
     @staticmethod
     def _emit_terminal(
@@ -606,5 +814,8 @@ class AssessmentManager:
             if record.task is not None and not record.task.done():
                 record.task.cancel()
                 tasks.append(record.task)
+            if record.appeal_task is not None and not record.appeal_task.done():
+                record.appeal_task.cancel()
+                tasks.append(record.appeal_task)
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)

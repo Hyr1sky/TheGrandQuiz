@@ -39,6 +39,7 @@ from grandquiz.domain.learning.assessment.grading import (
     VerdictLabel,
     grade_answer,
     grade_multiple_choice,
+    grading_prompt_version,
 )
 from grandquiz.domain.learning.assessment.question import (
     MultipleChoiceQuestion,
@@ -142,6 +143,9 @@ class AssessmentResult(BaseModel):
     weak_item_id: str | None = None
     concept_state: str | None = None
     question_type: QuestionType | None = None
+    question_spec: QuestionSpec | None = None
+    answer_text: str | None = None
+    grading_language: str | None = None
 
 
 async def assess_once(
@@ -398,6 +402,7 @@ async def assess_once(
             asked_payload["expected_points"] = [
                 point.model_dump(mode="json") for point in question_spec.expected_points
             ]
+            asked_payload["critical_point_ids"] = list(question_spec.critical_point_ids)
         # 接住返回的 AgentEvent（带注入 Clock 的 .ts）——SE-S3 决策 B：本轮答题耗时近似 =
         # (ANSWER_JUDGED.ts − QUESTION_ASKED.ts)。接住返回值不改变发射行为、零副作用（replay 下
         # ManualClock 使其确定、生产 SystemClock 下是真实墙上时间——都对）；耗时只被销账证据读取。
@@ -427,6 +432,7 @@ async def assess_once(
         # → 空串）。additive 进 ANSWER_JUDGED 供 printer 展示；**不参与记账**（weak_item_id 仍按
         # verdict 算）。
         verdict_reason = ""
+        model_verdict: VerdictLabel | None = None
         matched_points: list[dict[str, str]] = []
         missing_points: list[dict[str, str]] = []
         if mc is not None:
@@ -453,6 +459,7 @@ async def assess_once(
                 language=language,
             )
             verdict_label = verdict.verdict
+            model_verdict = verdict.model_verdict
             verdict_reason = verdict.reason
             judged_evidence = list(verdict.cited_evidence)
             points_by_id = {
@@ -477,6 +484,7 @@ async def assess_once(
             payload={
                 "item_id": target.item_id,
                 "verdict": verdict_label,
+                "model_verdict": model_verdict,
                 "weak_item_id": weak_item_id,
                 "answer": answer,
                 "reason": verdict_reason,
@@ -489,6 +497,11 @@ async def assess_once(
 
         # i. 持久状态原子提交：已问题目、Learning Memory 与 Difficulty 要么全成、要么全回滚。
         elapsed_ms = round((j_event.ts - q_event.ts) * 1000)
+        if mc is not None:
+            grading_version = "multiple-choice-exact.v1"
+        else:
+            assert question_spec is not None
+            grading_version = grading_prompt_version(question_spec)
         committed = LearningStateWriter(
             memory=memory,
             asked_questions=asked_questions,
@@ -524,11 +537,7 @@ async def assess_once(
                         else ("question_probe" if effective == "追问" else "question_generate")
                     ).version,
                     grading_kind="deterministic" if mc is not None else "model",
-                    grading_version=(
-                        "multiple-choice-exact.v1"
-                        if mc is not None
-                        else load_prompt("answer_grade").version
-                    ),
+                    grading_version=grading_version,
                 )
                 if learning_facts is not None
                 else None
@@ -598,6 +607,9 @@ async def assess_once(
             weak_item_id=weak_item_id,
             concept_state=memory.state_of(target.item_id),
             question_type=effective,
+            question_spec=question_spec,
+            answer_text=answer,
+            grading_language=language,
         )
     except Exception as exc:
         # 非领域异常（QuestionError / GradingError / ReplayMiss / provider 基础设施错误 / bug）：

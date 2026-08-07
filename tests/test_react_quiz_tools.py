@@ -15,6 +15,7 @@ LLM 槽本身经脚本化 / 回放 provider 验证（不 unit-TDD LLM）。start
 """
 
 import json
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -55,11 +56,13 @@ def _open_question_payload(question: str) -> dict[str, Any]:
             {
                 "point_id": "core",
                 "description": "说明核心含义",
+                "required_claims": ["说明核心含义"],
                 "cited_evidence": _QUOTE,
             },
             {
                 "point_id": "boundary",
                 "description": "说明关键区分",
+                "required_claims": ["说明关键区分"],
                 "cited_evidence": _QUOTE,
             },
         ],
@@ -68,7 +71,7 @@ def _open_question_payload(question: str) -> dict[str, Any]:
     }
 
 
-def _verdict_payload(verdict: str) -> dict[str, Any]:
+def _verdict_payload(verdict: str, *, answer_evidence_ids: list[str]) -> dict[str, Any]:
     if verdict == "对":
         matched, missing, diagnosis = ["core", "boundary"], [], "complete"
     elif verdict == "勉强":
@@ -77,8 +80,23 @@ def _verdict_payload(verdict: str) -> dict[str, Any]:
         matched, missing, diagnosis = [], ["core", "boundary"], "wrong_focus"
     return {
         "verdict": verdict,
-        "matched_points": matched,
-        "missing_points": missing,
+        "point_assessments": [
+            {
+                "point_id": point_id,
+                "label": "matched" if point_id in matched else "missing",
+                "answer_evidence_ids": [],
+                "claim_assessments": [
+                    {
+                        "claim_id": f"{point_id}.claim_1",
+                        "label": "matched" if point_id in matched else "missing",
+                        "answer_evidence_ids": (answer_evidence_ids if point_id in matched else []),
+                        "reason": "测试用 claim 判定。",
+                    }
+                ],
+                "reason": "测试用逐点评判。",
+            }
+            for point_id in [*matched, *missing]
+        ],
         "diagnosis": diagnosis,
         "reason": "测试判卷反馈",
         "cited_evidence": [_QUOTE],
@@ -172,7 +190,14 @@ class _OpenProvider:
         if role == "enrich":
             payload = _open_question_payload("请解释闭包如何捕获变量？")
         else:
-            payload = _verdict_payload(self._verdict)
+            payload = _verdict_payload(
+                self._verdict,
+                answer_evidence_ids=re.findall(
+                    r"^- \[(v1e\d+_\d+)\]",
+                    messages[-1].content,
+                    flags=re.MULTILINE,
+                ),
+            )
         return Completion(
             text=json.dumps(payload, ensure_ascii=False),
             usage=Usage(prompt_tokens=7, completion_tokens=3),
@@ -767,7 +792,14 @@ class _SegmentProvider:
             else:
                 payload = _open_question_payload(f"请解释闭包如何捕获变量？#{self.calls}")
         else:
-            payload = _verdict_payload("对")
+            payload = _verdict_payload(
+                "对",
+                answer_evidence_ids=re.findall(
+                    r"^- \[(v1e\d+_\d+)\]",
+                    messages[-1].content,
+                    flags=re.MULTILINE,
+                ),
+            )
         return Completion(
             text=json.dumps(payload, ensure_ascii=False),
             usage=Usage(prompt_tokens=7, completion_tokens=3),

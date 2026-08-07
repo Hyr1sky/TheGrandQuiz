@@ -7,6 +7,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from grandquiz.domain.learning.assessment.grading import VerdictLabel
 from grandquiz.domain.learning.assessment.question import QuestionSpec
 
+AnswerProvenance = Literal[
+    "unassisted_human",
+    "assisted_human",
+    "model",
+    "synthetic_oracle",
+]
+
 
 class GradingCalibrationSample(BaseModel):
     """One explicit human label for a production question and learner answer."""
@@ -15,8 +22,15 @@ class GradingCalibrationSample(BaseModel):
 
     schema_version: Literal["grading-calibration-sample.v1"] = "grading-calibration-sample.v1"
     sample_id: str = Field(min_length=1)
+    question_id: str | None = Field(
+        default=None,
+        min_length=1,
+        exclude_if=lambda value: value is None,
+    )
     annotator: str = Field(min_length=1)
     blind_to_model_output: bool
+    answer_provenance: AnswerProvenance = "unassisted_human"
+    respondent_model: str | None = None
     question: QuestionSpec
     learner_answer: str = Field(min_length=1)
     human_verdict: VerdictLabel
@@ -40,4 +54,14 @@ class GradingCalibrationSample(BaseModel):
 
     @property
     def eligible(self) -> bool:
-        return self.blind_to_model_output and bool(self.annotator.strip())
+        return (
+            self.answer_provenance == "unassisted_human"
+            and self.blind_to_model_output
+            and bool(self.annotator.strip())
+        )
+
+    @property
+    def resolved_question_id(self) -> str:
+        """Return the explicit question identity or the legacy sample identity."""
+
+        return self.question_id or self.sample_id

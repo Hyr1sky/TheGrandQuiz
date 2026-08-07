@@ -13,6 +13,7 @@
 """
 
 import json
+import re
 from collections.abc import Sequence
 
 import pytest
@@ -117,6 +118,7 @@ def _open_json(question: str) -> str:
                 {
                     "point_id": "capture",
                     "description": "说明闭包捕获变量",
+                    "required_claims": ["说明闭包捕获变量"],
                     "cited_evidence": _QUOTE,
                 }
             ],
@@ -224,8 +226,24 @@ class _DupProvider:
         else:  # 判卷恒判对（让薄弱 item 转观察中、仍留在薄弱优先集，复考锁定同一 item）
             payload = {
                 "verdict": "对",
-                "matched_points": ["capture"],
-                "missing_points": [],
+                "point_assessments": [
+                    {
+                        "point_id": "capture",
+                        "label": "matched",
+                        "answer_evidence_ids": [],
+                        "claim_assessments": [
+                            {
+                                "claim_id": "capture.claim_1",
+                                "label": "matched",
+                                "answer_evidence_ids": re.findall(
+                                    r"^- \[(v1e\d+_\d+)\]", text, flags=re.MULTILINE
+                                ),
+                                "reason": "测试用 claim 判定。",
+                            }
+                        ],
+                        "reason": "测试用逐点评判。",
+                    }
+                ],
                 "diagnosis": "complete",
                 "reason": "回答覆盖了评分点。",
                 "cited_evidence": [_QUOTE],

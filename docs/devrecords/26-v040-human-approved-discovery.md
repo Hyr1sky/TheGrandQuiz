@@ -1,7 +1,9 @@
 # v0.4 人工授权闭环：先形成候选，再让用户决定
 
 日期：2026-08-01
-状态：代码 RC 完成；真实人工盲标 calibration 与分类质量观察仍在并行积累。
+状态：代码 RC 完成；首批真实人工盲标已通过本轮 inbox 形成 Snapshot，后续校准证据见
+[27-real-grading-calibration-preparation.md](27-real-grading-calibration-preparation.md) 与
+[28-grading-contract-and-model-pilot.md](28-grading-contract-and-model-pilot.md)。
 
 ## 为什么这一轮不直接做“自动数据飞轮”
 
@@ -77,3 +79,5 @@ snapshot_id = sha256(canonical_json(approved_items))
 
 下一步不是再加字段，而是把正在进行的真实盲标放入 inbox，固定一个明确 snapshot，再运行 v0.3 的生产
 grader calibration。只有 gate 给出证据后，才讨论 v0.5 是否消费这些数据做更主动的学习策略。
+
+该步骤随后已完成；第一次 gate 失败后的契约收窄、模型对照与新 holdout 要求见上述 27/28 记录。

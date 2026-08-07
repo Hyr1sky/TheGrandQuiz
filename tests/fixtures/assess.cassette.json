@@ -1,26 +1,26 @@
 {
-  "a0459e158df4769f57d9cdf626e1d23a63ea40c8b2c0a788640937c0e3cf5b07": {
-    "fingerprint_version": 2,
-    "model": "deepseek-v4-flash",
-    "role": "basic",
-    "text": "{\"verdict\": \"错\", \"matched_points\": [], \"missing_points\": [\"definition\"], \"diagnosis\": \"off_topic\", \"reason\": \"作答内容是关于闭包的描述，与 pass@k 指标的定义完全无关，未指出“k 次尝试中至少有一次成功”这一要点。\", \"cited_evidence\": [\"pass@k means success in at least one of k attempts\"]}",
-    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-    "usage": {
-      "completion_tokens": 320,
-      "prompt_tokens": 1086,
-      "total_tokens": 1406
-    }
-  },
-  "bc93ba40ee6e008fbbfbbe851c633940e1b7246e3122f3d0dd75e1036448dc2b": {
+  "90019554718984fdd16833e2febee18adea2850d57f893c539a3421d1013cba7": {
     "fingerprint_version": 2,
     "model": "qwen3.7-plus",
     "role": "enrich",
-    "text": "{\n  \"question\": \"请解释 pass@k 指标的具体含义。\",\n  \"expected_points\": [\n    {\n      \"point_id\": \"definition\",\n      \"description\": \"指出 pass@k 意味着在 k 次尝试中至少有一次成功。\",\n      \"cited_evidence\": \"pass@k means success in at least one of k attempts\"\n    }\n  ],\n  \"reference_answer\": \"pass@k 表示在 k 次尝试中至少有一次成功。\",\n  \"cited_evidence\": [\n    \"pass@k means success in at least one of k attempts\"\n  ]\n}",
+    "text": "{\"question\":\"请解释 pass@k 指标的具体含义。\",\"expected_points\":[{\"point_id\":\"definition\",\"description\":\"指出 pass@k 意味着在 k 次尝试中至少有一次成功。\",\"cited_evidence\":\"pass@k means success in at least one of k attempts\",\"required_claims\":[\"指出 pass@k 意味着在 k 次尝试中至少有一次成功。\"]}],\"critical_point_ids\":[\"definition\"],\"reference_answer\":\"pass@k 指的是在 k 次尝试中至少有一次获得成功。\",\"cited_evidence\":[\"pass@k means success in at least one of k attempts\"]}",
     "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "usage": {
-      "completion_tokens": 141,
-      "prompt_tokens": 519,
-      "total_tokens": 660
+      "completion_tokens": 157,
+      "prompt_tokens": 650,
+      "total_tokens": 807
+    }
+  },
+  "99baeef08e6f96caa6cadc17a67506852bbcb8705f76fe9fb5e058aa6c7f930c": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "{\"verdict\":\"错\",\"point_assessments\":[{\"point_id\":\"definition\",\"label\":\"missing\",\"answer_evidence_ids\":[],\"reason\":\"未提及pass@k及成功条件。\",\"claim_assessments\":[{\"claim_id\":\"definition.claim_1\",\"label\":\"missing\",\"answer_evidence_ids\":[],\"reason\":\"未提及pass@k及成功条件。\"}]}],\"diagnosis\":\"off_topic\",\"reason\":\"答非所问，内容与指标无关。\",\"cited_evidence\":[\"pass@k means success in at least one of k attempts\"]}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 79,
+      "prompt_tokens": 787,
+      "total_tokens": 866
     }
   }
 }

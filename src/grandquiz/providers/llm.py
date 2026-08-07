@@ -1,8 +1,9 @@
 """OpenAICompatProvider——OpenAI 兼容的真实 LLM provider（basic=deepseek / enrich=qwen）。
 
-两个命名角色各自从 ``.env`` 读 base_url / api_key / model / timeout / disable_thinking；deepseek 与
-qwen 都提供 OpenAI 兼容端点，故用同一个 ``AsyncOpenAI`` 客户端类 + 各自 base_url。密钥只经环境变量
-注入，绝不进代码 / git（见 CLAUDE.md 密钥纪律）。
+两个命名角色各自从 ``.env`` 读 base_url / api_key / model / timeout / dialect / thinking
+mode；DeepSeek 与 Qwen 都提供 OpenAI 兼容端点，但 thinking 扩展字段不同，故共用
+``AsyncOpenAI`` 客户端、在本边界按方言组装请求。密钥只经环境变量注入，绝不进代码 / git
+（见 AGENTS.md 密钥纪律）。
 
 实现 ``providers/base.py`` 的 ``Provider`` 协议——因此在 ingest / Reader 里可与 DemoEcho /
 Record / Replay 互换：测试传假件、录制传 ``RecordingProvider(OpenAICompatProvider.from_env())``、
@@ -13,9 +14,10 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import AsyncIterator, Sequence
-from dataclasses import dataclass
-from typing import Any, cast
+from collections.abc import AsyncIterator, Mapping, Sequence
+from dataclasses import dataclass, replace
+from typing import Any, Literal, cast
+from urllib.parse import urlparse
 
 from openai import AsyncOpenAI, Omit, omit
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
@@ -35,6 +37,9 @@ from grandquiz.providers.base import (
 )
 
 _TRUTHY = {"1", "true", "yes", "on"}
+ProviderDialect = Literal["deepseek", "dashscope", "generic"]
+ThinkingMode = Literal["provider_default", "enabled", "disabled"]
+ReasoningEffort = Literal["high", "max"]
 
 
 def _to_oai_messages(messages: Sequence[Message]) -> list[ChatCompletionMessageParam]:
@@ -137,9 +142,31 @@ class RoleConfig:
     timeout_seconds: float = 60.0
     # OpenRouter BYOK 可选约束：指定后只允许该 provider，且禁用共享端点 fallback。
     only_provider: str | None = None
-    # 思考模式开关。Qwen3/DashScope 用 extra_body 的 enable_thinking=False 关（非流式往往必须关）；
-    # deepseek 侧是否认同名参数由 smoke 验证（见 scripts/smoke_llm.py）。
-    disable_thinking: bool = False
+    api_dialect: ProviderDialect = "generic"
+    thinking_mode: ThinkingMode = "provider_default"
+    reasoning_effort: ReasoningEffort | None = None
+
+
+@dataclass(frozen=True)
+class RoleOverrides:
+    """Non-secret experiment overrides applied after role credentials are loaded."""
+
+    model: str | None = None
+    api_dialect: ProviderDialect | None = None
+    thinking_mode: ThinkingMode | None = None
+    reasoning_effort: ReasoningEffort | Literal["none"] | None = None
+
+
+@dataclass(frozen=True)
+class ProviderExecutionConfig:
+    """Non-secret resolved request identity for audit and replay separation."""
+
+    provider: ProviderDialect
+    endpoint_host: str
+    model: str
+    thinking_mode: ThinkingMode
+    reasoning_effort: ReasoningEffort | None
+    replay_identity: str
 
 
 @dataclass(frozen=True)
@@ -160,13 +187,41 @@ def _read_role(prefix: str) -> RoleConfig:
             raise RuntimeError(f"缺少环境变量 {name}（见 .env.example）")
         return value
 
+    base_url = required(f"{prefix}BASE_URL")
+    dialect_value = os.environ.get(f"{prefix}API_DIALECT", "").strip().casefold()
+    if dialect_value:
+        if dialect_value not in {"deepseek", "dashscope", "generic"}:
+            raise ValueError(f"{prefix}API_DIALECT 必须是 deepseek/dashscope/generic")
+        dialect = cast("ProviderDialect", dialect_value)
+    else:
+        host = (urlparse(base_url).hostname or "").casefold()
+        dialect = (
+            "deepseek"
+            if host == "api.deepseek.com"
+            else "dashscope"
+            if host == "dashscope.aliyuncs.com"
+            else "generic"
+        )
+    thinking_value = os.environ.get(f"{prefix}THINKING_MODE", "").strip().casefold()
+    if thinking_value:
+        if thinking_value not in {"provider_default", "enabled", "disabled"}:
+            raise ValueError(f"{prefix}THINKING_MODE 必须是 provider_default/enabled/disabled")
+        thinking_mode = cast("ThinkingMode", thinking_value)
+    else:
+        legacy_disabled = os.environ.get(f"{prefix}DISABLE_THINKING", "").strip().lower() in _TRUTHY
+        thinking_mode = "disabled" if legacy_disabled else "provider_default"
+    effort_value = os.environ.get(f"{prefix}REASONING_EFFORT", "").strip().casefold()
+    if effort_value and effort_value not in {"high", "max"}:
+        raise ValueError(f"{prefix}REASONING_EFFORT 必须是 high/max")
     return RoleConfig(
         api_key=required(f"{prefix}API_KEY"),
-        base_url=required(f"{prefix}BASE_URL"),
+        base_url=base_url,
         model=required(f"{prefix}MODEL"),
         timeout_seconds=float(os.environ.get(f"{prefix}TIMEOUT_SECONDS", "60")),
         only_provider=os.environ.get(f"{prefix}ONLY_PROVIDER", "").strip() or None,
-        disable_thinking=os.environ.get(f"{prefix}DISABLE_THINKING", "").strip().lower() in _TRUTHY,
+        api_dialect=dialect,
+        thinking_mode=thinking_mode,
+        reasoning_effort=cast("ReasoningEffort | None", effort_value or None),
     )
 
 
@@ -183,14 +238,57 @@ class OpenAICompatProvider:
         }
 
     @classmethod
-    def from_env(cls) -> OpenAICompatProvider:
+    def from_env(
+        cls,
+        *,
+        role_overrides: Mapping[Role, RoleOverrides] | None = None,
+    ) -> OpenAICompatProvider:
         """从 .env 读两角色：``LLM_*`` → basic（deepseek）、``ENRICH_LLM_*`` → enrich（qwen）。"""
-        return cls({"basic": _read_role("LLM_"), "enrich": _read_role("ENRICH_LLM_")})
+
+        configs: dict[Role, RoleConfig] = {
+            "basic": _read_role("LLM_"),
+            "enrich": _read_role("ENRICH_LLM_"),
+        }
+        for role, override in (role_overrides or {}).items():
+            current = configs[role]
+            configs[role] = replace(
+                current,
+                model=override.model or current.model,
+                api_dialect=override.api_dialect or current.api_dialect,
+                thinking_mode=override.thinking_mode or current.thinking_mode,
+                reasoning_effort=(
+                    None
+                    if override.reasoning_effort == "none"
+                    else override.reasoning_effort
+                    if override.reasoning_effort is not None
+                    else current.reasoning_effort
+                ),
+            )
+        return cls(configs)
 
     @property
     def model_for_role(self) -> dict[Role, str]:
         """各角色解析后的 model id——喂 Recording/Replay 算 replay 键（防跨模型串键）。"""
         return {role: cfg.model for role, cfg in self._configs.items()}
+
+    @property
+    def execution_config_for_role(self) -> dict[Role, ProviderExecutionConfig]:
+        """Return safe experiment identity; API keys never cross this Interface."""
+
+        return {
+            role: ProviderExecutionConfig(
+                provider=cfg.api_dialect,
+                endpoint_host=urlparse(cfg.base_url).hostname or "unknown",
+                model=cfg.model,
+                thinking_mode=cfg.thinking_mode,
+                reasoning_effort=cfg.reasoning_effort,
+                replay_identity=(
+                    f"{cfg.model}|provider={cfg.api_dialect}|thinking={cfg.thinking_mode}|"
+                    f"effort={cfg.reasoning_effort or 'none'}"
+                ),
+            )
+            for role, cfg in self._configs.items()
+        }
 
     def _prepare_request(
         self,
@@ -201,8 +299,20 @@ class OpenAICompatProvider:
     ) -> _PreparedChatRequest:
         config = self._configs[role]
         extra_body: dict[str, object] = {}
-        if config.disable_thinking:
-            extra_body["enable_thinking"] = False
+        if config.api_dialect == "deepseek":
+            if config.thinking_mode != "provider_default":
+                extra_body["thinking"] = {"type": config.thinking_mode}
+            if config.reasoning_effort is not None:
+                if config.thinking_mode == "disabled":
+                    raise ValueError("DeepSeek reasoning_effort 不能与 disabled thinking 同时使用")
+                extra_body["reasoning_effort"] = config.reasoning_effort
+        elif config.api_dialect == "dashscope":
+            if config.thinking_mode != "provider_default":
+                extra_body["enable_thinking"] = config.thinking_mode == "enabled"
+            if config.reasoning_effort is not None:
+                raise ValueError("DashScope 角色不支持 DeepSeek reasoning_effort 契约")
+        elif config.thinking_mode != "provider_default":
+            extra_body["enable_thinking"] = config.thinking_mode == "enabled"
         if config.only_provider is not None:
             extra_body["provider"] = {
                 "only": [config.only_provider],

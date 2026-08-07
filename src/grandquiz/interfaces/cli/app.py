@@ -15,6 +15,7 @@ CLI 是事件脊柱的消费者：``quiz`` / ``react`` 把 ``QuizEventPrinter`` 
 import argparse
 import asyncio
 import contextlib
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -22,7 +23,12 @@ from dotenv import load_dotenv
 
 # 各命令的公开编排（re-export，见 __all__）+ 私有 CLI handler（main 分发调用）。
 from grandquiz.interfaces.cli.commands.audit import run_document_dogfood_audit_cli
-from grandquiz.interfaces.cli.commands.calibration import run_live_grading_calibration_cli
+from grandquiz.interfaces.cli.commands.calibration import (
+    compare_grading_calibration_cli,
+    prepare_grading_calibration_cli,
+    run_live_grading_calibration_cli,
+    run_live_snapshot_grading_calibration_cli,
+)
 from grandquiz.interfaces.cli.commands.ingest import _run_ingest_cli, run_ingest
 from grandquiz.interfaces.cli.commands.learning import run_learning_export_cli
 from grandquiz.interfaces.cli.commands.quiz import _run_quiz_cli, run_quiz
@@ -180,11 +186,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="输出目录",
     )
 
+    p_prepare_calibration = sub.add_parser(
+        "prepare-grading-calibration",
+        help="校验人工盲标包，导入 Eval Inbox 并冻结本地 Dataset Snapshot（不调用模型）",
+    )
+    p_prepare_calibration.add_argument("--pack", type=Path, required=True, help="人工盲标包目录")
+    p_prepare_calibration.add_argument(
+        "--db", type=Path, required=True, help="本地 Eval Inbox SQLite"
+    )
+    p_prepare_calibration.add_argument("--out", type=Path, required=True, help="审计产物输出目录")
+    p_prepare_calibration.add_argument("--reviewer", required=True, help="隐私审核人")
+    p_prepare_calibration.add_argument(
+        "--review-reason",
+        required=True,
+        help="隐私审核理由（确认不含密钥和非必要个人信息）",
+    )
+    p_prepare_calibration.add_argument(
+        "--request-id",
+        default=None,
+        help="可选幂等命令 ID；默认由 compilation content hash 派生",
+    )
+
     p_calibration = sub.add_parser(
         "calibrate-grading",
-        help="用人工盲标 YAML 校准生产逐点评分，并报告误判与 Token 成本",
+        help="用人工盲标 YAML 或已审批 Snapshot 校准生产逐点评分",
     )
-    p_calibration.add_argument("--samples", type=Path, required=True, help="人工标注 YAML")
+    calibration_source = p_calibration.add_mutually_exclusive_group(required=True)
+    calibration_source.add_argument("--samples", type=Path, help="人工标注 YAML")
+    calibration_source.add_argument("--snapshot", help="已审批 Dataset Snapshot ID")
+    p_calibration.add_argument(
+        "--db",
+        type=Path,
+        default=_DEFAULT_DB,
+        help="Snapshot 所在 SQLite；使用 --samples 时忽略",
+    )
     p_calibration.add_argument(
         "--out",
         type=Path,
@@ -197,6 +232,44 @@ def build_parser() -> argparse.ArgumentParser:
         default=10,
         help="打开质量门所需的最少盲标样本数（默认 10）",
     )
+    p_calibration.add_argument("--model", default=None, help="本次实验覆盖 basic 角色模型")
+    p_calibration.add_argument(
+        "--thinking-mode",
+        choices=("provider_default", "enabled", "disabled"),
+        default=None,
+        help="显式控制本次实验的 Thinking 模式",
+    )
+    p_calibration.add_argument(
+        "--reasoning-effort",
+        choices=("high", "max"),
+        default=None,
+        help="Thinking enabled 时的推理强度",
+    )
+    p_calibration.add_argument(
+        "--cassette",
+        type=Path,
+        default=None,
+        help="本地敏感 Record/Replay cassette；存在时复用已录响应",
+    )
+    p_calibration.add_argument(
+        "--sample-id",
+        action="append",
+        default=None,
+        help="只运行指定 Snapshot sample_id，可重复传入",
+    )
+
+    p_compare_calibration = sub.add_parser(
+        "compare-grading-calibration",
+        help="校验固定样本/Prompt 身份并比较多份判卷校准报告",
+    )
+    p_compare_calibration.add_argument(
+        "--report",
+        type=Path,
+        action="append",
+        required=True,
+        help="grading-calibration-report.v2 路径；至少传入两次",
+    )
+    p_compare_calibration.add_argument("--out", type=Path, required=True, help="对比 JSON 路径")
 
     return parser
 
@@ -257,14 +330,51 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
     elif args.command == "export-learning":
         run_learning_export_cli(db_path=args.db, out_dir=args.out)
-    elif args.command == "calibrate-grading":
-        asyncio.run(
-            run_live_grading_calibration_cli(
-                samples_path=args.samples,
-                out_path=args.out,
-                min_samples=args.min_samples,
-            )
+    elif args.command == "prepare-grading-calibration":
+        prepare_grading_calibration_cli(
+            pack_dir=args.pack,
+            db_path=args.db,
+            out_dir=args.out,
+            reviewer=args.reviewer,
+            review_reason=args.review_reason,
+            request_id=args.request_id,
+            now=time.time(),
         )
+    elif args.command == "calibrate-grading":
+        if args.samples is not None and args.sample_id:
+            parser.error("--sample-id 只能与 --snapshot 一起使用")
+        if args.snapshot is not None:
+            asyncio.run(
+                run_live_snapshot_grading_calibration_cli(
+                    snapshot_id=args.snapshot,
+                    db_path=args.db,
+                    out_path=args.out,
+                    min_samples=args.min_samples,
+                    model=args.model,
+                    thinking_mode=args.thinking_mode,
+                    reasoning_effort=args.reasoning_effort,
+                    cassette_path=args.cassette,
+                    sample_ids=args.sample_id,
+                )
+            )
+        else:
+            if not isinstance(args.samples, Path):
+                parser.error("--samples 路径缺失")
+            asyncio.run(
+                run_live_grading_calibration_cli(
+                    samples_path=args.samples,
+                    out_path=args.out,
+                    min_samples=args.min_samples,
+                    model=args.model,
+                    thinking_mode=args.thinking_mode,
+                    reasoning_effort=args.reasoning_effort,
+                    cassette_path=args.cassette,
+                )
+            )
+    elif args.command == "compare-grading-calibration":
+        if len(args.report) < 2:
+            parser.error("--report 至少传入两次")
+        compare_grading_calibration_cli(report_paths=args.report, out_path=args.out)
     else:
         parser.print_help()
 

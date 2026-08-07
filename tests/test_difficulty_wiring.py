@@ -637,11 +637,13 @@ class _HintCapturingProvider:
                     {
                         "point_id": "core",
                         "description": "说明核心含义",
+                        "required_claims": ["说明核心含义"],
                         "cited_evidence": quote,
                     },
                     {
                         "point_id": "boundary",
                         "description": "说明关键区分",
+                        "required_claims": ["说明关键区分"],
                         "cited_evidence": quote,
                     },
                 ],
@@ -660,8 +662,27 @@ class _HintCapturingProvider:
             matched, missing, diagnosis = [], ["core", "boundary"], "wrong_focus"
         payload = {
             "verdict": self._verdict,
-            "matched_points": matched,
-            "missing_points": missing,
+            "point_assessments": [
+                {
+                    "point_id": point_id,
+                    "label": "matched" if point_id in matched else "missing",
+                    "answer_evidence_ids": [],
+                    "claim_assessments": [
+                        {
+                            "claim_id": f"{point_id}.claim_1",
+                            "label": "matched" if point_id in matched else "missing",
+                            "answer_evidence_ids": (
+                                re.findall(r"^- \[(v1e\d+_\d+)\]", text, flags=re.MULTILINE)
+                                if point_id in matched
+                                else []
+                            ),
+                            "reason": "测试用 claim 判定。",
+                        }
+                    ],
+                    "reason": "测试用逐点评判。",
+                }
+                for point_id in [*matched, *missing]
+            ],
             "diagnosis": diagnosis,
             "reason": "测试判卷反馈",
             "cited_evidence": [quote],

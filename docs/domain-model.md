@@ -31,7 +31,7 @@ QUESTION_ASKED + ANSWER_JUDGED
 | `DifficultyLedger` | 调整每个 item 的题目难度 | 1–5 离散档；不等于用户掌握度 |
 | `AskedQuestionsLedger` | 避免跨会话机械重复 | 与薄弱状态、难度分别演化 |
 | `AssessmentPlan` | 把多题请求规范化为逐位置题型意图 | 1–20 题；顺序不可丢；所有 interface 共用 |
-| `QuestionSpec` | 保存单道开放题的题干、评分点、参考作答与 Evidence | 每个评分点 ID 唯一且锚定本题 Evidence；Grader 不读取题外 rubric |
+| `QuestionSpec` | 保存单道开放题的题干、评分点、预注册核心点、参考作答与 Evidence | 每个评分点 ID 唯一且锚定本题 Evidence；critical ID 必须引用已有评分点；Grader 不读取题外 rubric |
 | `MaterialDiscoveryBatch / Candidate` | 保存一次只读搜索及其待审核材料 | 搜索不写 KB；只有 eligible + approved 候选可启动 Acquisition |
 | `EvalInboxCandidate` | 汇合可审核的纠正与盲标候选 | 来源版本替换时旧候选 superseded；审核前不进入快照 |
 | `DatasetSnapshot` | 冻结一次明确授权的 Eval 输入集合 | 按内容哈希标识且不可变；eligible blind 与 exploratory 分开核算 |
@@ -114,6 +114,66 @@ Discovery 是 Acquisition 前的候选收件箱，不拥有 fetch/Reader/KB 提�
 不修改 LearningFactJournal 或盲标原件。两者都使用稳定 request id 保证重试幂等；快照复制审核 request、
 reason 与时间作为授权证据。关键决定只把 ID、类别和
 计数投影到 Trace，原始 query、URL 与样本正文不进入 operational event payload。
+
+### 真实判卷校准的数据链
+
+```text
+Calibration Source Pack
+  ├─ sealed QuestionSpec + SHA-256
+  ├─ 独立闭卷 responses + SHA-256
+  └─ human-adjudicated annotations + rubric exclusions
+                 │
+                 ▼
+GradingDatasetCompilation
+  ├─ GradingCalibrationSample[]
+  └─ RubricExclusion[]
+                 │ explicit local privacy review
+                 ▼
+EvalInboxCandidate[] → DatasetSnapshot → production Grader → GradingCalibrationReport
+```
+
+| 契约 | 职责 | 不变量 |
+| --- | --- | --- |
+| `Calibration Source Pack` | 保存答题来源、裁决和冻结哈希 | grader 未运行；答题者未见 rubric；每题至少一份答卷；每份答卷恰好一份标签；answer provenance 不得丢失 |
+| `GradingDatasetCompilationV1` | 校验并翻译人工原件 | 纯函数式产物；不写 DB、不调用模型；争议 rubric 只排除、不改标签 |
+| `GradingCalibrationSample` | 生产 Grader 可消费的一份答案金标准 | `sample_id` 唯一标识独立答卷，`question_id` 指向 QuestionSpec；matched/missing 精确分割全部 ExpectedPoint；明确 annotator、blind 状态与 `answer_provenance`；只有 `unassisted_human` 可 eligible |
+| `EvalInboxCandidate` | 保存本地隐私审核生命周期 | pending 不得进入快照；payload 更新会 supersede 旧候选 |
+| `DatasetSnapshotV1` | 冻结一次明确批准的输入集合 | 内容寻址、不可变，保留 review request/reason/time |
+| `GradingCalibrationReport v4` | 保存运行身份、答卷 provenance、人工/模型逐点判定、模型所引学习者答案片段、raw/derived verdict、输出契约有效性、诊断、错误、延迟与 Token | 语义准确率只统计有合法输出的 eligible blind `unassisted_human`；合法输出率独立报告且 gate 要求 100%；Provider/model/thinking/dataset/prompt 必须可审计；v2/v3 历史报告仍可读，密钥与完整 prompt 不入报告 |
+
+开放题的语义判断与状态后果分为两层。新 QuestionSpec 默认只生成 flat atomic `ExpectedPoint`，LLM 把
+全部 point 分区为 matched/missing。历史实验 QuestionSpec 可能保存 1–3 条固定 all-of 的
+`required_claims`；该兼容分支仍能逐 claim 回放，但两轮 Development Gold 原型未证明其语义收益，新题
+Prompt 不再要求该字段，不引入 any-of/threshold/exception Boolean tree。判卷前，代码把学习者答案
+确定性切成保持原文顺序、互不重叠的 `AnswerEvidenceUnit`；模型只能选择当前调用内存在的 ID。
+代码校验完整覆盖、ID 唯一性与归属，再按 source offset 解析出兼容展示字段 `answer_evidence`，因此模型
+无法用省略号、改写或跨段拼接伪造原文。`AnswerEvidenceUnit` 只是一轮判卷内的临时输入契约，不是
+KnowledgeItem 的长期材料 `Evidence`，也不独立持久化。随后代码使用密封题目中预注册的
+`critical_point_ids` 聚合最终三值：全命中为“对”，零命中或缺任一
+核心点为“错”，其余为“勉强”。模型自报 verdict 保留为 `model_verdict` 供漂移审计，产品只消费
+`derived_verdict`。历史 Snapshot 的 required claims 保持可读，flat point 序列化不补空字段；没有预注册
+核心点时也不得看过输出后补标。旧数据仍可比较逐点质量，但不能验证
+核心点聚合策略。
+
+一次性判卷澄清目前只有纯领域候选 seam：`plan_clarification(QuestionSpec, Verdict)` 只在诊断明确为
+`uncertain` 且单个 missing point 升级会改变三值时，返回一个 `ClarificationRequest`；不可变
+`ClarificationFlow` 只允许提交一次补充、重判一次，之后必须进入 `resolved` 或 `needs_review`。它不调用
+Provider、不写 Learning Memory，也尚未接入 AssessmentSession。对 Holdout 03 的零网络审计得到
+`uncertain=0/30`，因此当前没有生产触发信号，不能仅凭 reason 或 disagreement 猜测后强行追问。真实
+二分类原型又证明 point 的 grading Gold 不能派生追问标签：后续实验必须把 `no_support`、
+`ambiguous_support` 与 `direct_or_equivalent_support` 作为独立 Interaction Gold；后者只能进入
+`needs_review`，不能自动改判，也不应要求用户重复已经给出的答案。首批 12 条 owner-accepted 三态标签
+只冻结了实验目标；真实原型识别 direct support 4/4，却识别 ambiguity 0/2 且整体 gate 失败，因此三态
+没有成为运行时领域契约。
+
+`output_valid` 回答“本次模型输出是否通过生产 Grader 契约”，`failure_kind` 区分判卷契约失败与
+Provider/runtime 失败。`verdict_agreement` 与 `point_accuracy` 只回答合法输出上的语义质量；
+`eligible_valid_output_rate` 单独回答可用性。release gate 同时要求质量达标和 eligible 输出全部合法，
+所以结构失败不会伪装成语义判错，也不会被排除后偷偷开门。
+
+Compiler 位于 `evals/`，因为它翻译评测证据而不拥有学习领域事实；Inbox/Snapshot 仍由
+`domain/learning/eval_inbox.py` 拥有授权语义；CLI 只装配路径、SQLite 与显式命令。运行真实模型前，
+Source Pack、Compilation、Snapshot 三个 hash 都已固定，因此失败可以复现，也无法靠事后改人工标签“刷绿”。
 
 ## Learning Model v2 的边界
 
@@ -270,7 +330,7 @@ effective_route: {format: QuestionFormat, strategy: QuestionStrategy}
 routing_source: adaptive | user_override
 input_modality: InputModality
 answer_format: AnswerFormat
-answer_text, initial_verdict, final_verdict
+answer_text, supplemental_answer?, initial_verdict, final_verdict
 concept_state, evidence_revealed_before_answer, elapsed_ms
 question_generation: {kind: rule | model, version}
 grading: {kind: deterministic | model, version}
@@ -280,7 +340,9 @@ source_event_cursor: {first_seq, last_seq}
 
 Attempt 是 assessment span 内事件的物化投影，不是新的判卷写入口。`initial_verdict` 同时覆盖代码判卷和
 LLM 判卷的原始结果；`final_verdict` 初始与其相等，若申诉成立则追加裁决并保留原判断。确定性 grader
-必须携带规则版本，例如 `multiple-choice-exact.v1`。第一阶段按需
+必须携带规则版本，例如 `multiple-choice-exact.v1`。用户主动申诉时 `answer_text` 仍是初答，唯一一次
+补充另存为 `supplemental_answer`；两者只在重判调用中按稳定格式组合，不能覆盖成一段无法审计的新答案。
+第一阶段按需
 离线重建；只有查询性能出现真实需求时才增加
 `assessment_attempts` 缓存表，并且该表必须支持从事件全量删除重建。
 
@@ -341,7 +403,7 @@ schema_version: verdict-correction.v1
 correction_id := deterministic(attempt_id + request_id)
 attempt_id, item_id, revision, supersedes_id
 from_verdict, final_verdict
-reason, request_id, reconciliation
+reason, request_id, reconciliation, supplemental_answer?
 trace_id, source_event_seq, source_event_ts
 ```
 
@@ -349,6 +411,7 @@ trace_id, source_event_seq, source_event_ts
 correction 计算 `final_verdict`。Learning Memory 与 DifficultyLedger 不能对当前值做局部 `undo`：
 reconciler 应按事件顺序重放该 item 的全部 final verdict，确定性写回结果并发出 reconciliation 事件。
 AskedQuestionsLedger 不变，因为问题确实发生过。
+人工直接纠错不含 `supplemental_answer`；用户主动补充重判则保存它，并与原 Attempt 的 `answer_text` 分离。
 
 ### AnswerDiagnosisV1
 

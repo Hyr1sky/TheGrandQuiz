@@ -20,6 +20,8 @@
 ApplicabilityAssertion 仅保留契约；CompetencyBlueprint、复习排期、主动发现、知识关系与 ASR 继续后置。
 详细字段见 [domain-model.md](domain-model.md)，长期事实边界见
 [ADR-0010](adr/0010-durable-learning-facts-separate-from-operational-trace.md)。
+判卷候选的受限 Required Claims 契约见
+[ADR-0011](adr/0011-bounded-required-claims-for-grading.md)。
 
 ## 已完成：v0.2 功能 RC 收口
 
@@ -37,8 +39,95 @@ v0.3 已完成三个窄消费者：人工批准的知识分类可在 Web 考核�
 生产逐点评判器并统计误判、重试与 Token；用户判决纠正可导出为明确标记隐私审核和非盲标属性的本地 Eval
 候选。完整实现记录见 [v0.3 证据闭环](devrecords/25-v030-evidence-loop.md)。
 
-代码 RC 不等于质量 gate 已通过。下一步须用 10–30 条真实人工盲标样本校准并记录分类审核成本；未达到
-gate 的自动 Judge、Diagnosis/Misconception、能力蓝图和自适应选题继续只保留在文档或 proposal 层。
+这里的质量 gate 专指“能否把当前模型判卷策略当成足够稳定的无人值守策略”，不是软件版本能否作为
+local-first 早期版本发布。代码 RC 不等于该模型策略 gate 已通过。首批 20 条真实独立答卷已完成 owner
+终审，其中 19 条进入 eligible
+Dataset Snapshot，1 条因 rubric overconstraint 显式排除。第一次生产校准得到 63.16% verdict agreement、
+79.17% point accuracy、0 次严重跨档误判、1 次结构重试和 66,894 tokens，质量门按设计失败。其后的收窄已
+完成：Report v2 保存安全运行身份与逐题审计字段；QuestionSpec 可预注册核心评分点，最终三值由代码聚合；
+DeepSeek/DashScope thinking 方言分离；本地 cassette 支持逐请求 checkpoint/replay；固定 10 条开发样本的
+Flash/Pro × thinking 2×2 pilot 已完成。当前候选是 `deepseek-v4-pro + thinking off`，但开发集不能充当新的
+release holdout。随后的 12 条独立答卷确认该候选仍未过门（81.25% 逐点准确率、50% 三值一致率）；
+误差主要来自同义表达召回不足与对未写细节的过度推断。当前收口为：生产 Grader 逐点绑定学习者答案
+原文片段，Calibration Report 升级 v3，并用实现前冻结的合成挑战集做定向回归。复测将已见 12 条
+开发误差集的逐点准确率提升到 87.50%、三值一致率提升到 66.67%，但 Token 增加 28.11%且仍未过门；
+对四个残余分歧的 append-only 人工裁决又将公平口径修订为 89.58% / 75.00%，但该 cohort 已用于开发，
+仍不具备自动策略晋升资格。v3.1 在同模型、同 cohort 的真实复测中保持全部 48 个逐点决定不变，人工裁决口径仍为
+89.58% / 75.00%、严重 FN/FP 为 0/0，同时总 Token 从 25,530 降至 21,596（-15.41%）；
+合成挑战 12/12 通过，但已被强制投影为 exploratory / `insufficient_evidence`。随后冻结的 12 条新真实
+blind holdout 在 Pro/Thinking Off 上仅得到 68.75% 逐点准确率、58.33% 三值一致率和 3 个 serious FN，
+判卷策略 gate 失败；已见开发集的改善不能外推。下一步先分离评分点 acceptance semantics 与说明示例，并
+消除自由复制 Evidence 导致的结构失败。Evidence 可靠性补丁已移除 80 字诱导、加入连续原文约束与
+可操作重试，并用 Report v4 分列合法输出率和合法输出上的语义质量。真实开发回归中最终合法输出率从
+91.67% 升至 100%，重试从 2 降至 1，但首轮 H10 仍使用省略号；统一合法输出口径后新旧逐点准确率均为
+75%，不能视为语义质量改善。随后完成的真实小型 prototype 表明：把自由复制 Evidence 改为唯一答案
+单元 ID 后，首轮合法输出由 11/12 提升为 12/12、重试由 1 降为 0、Token 下降 10.73%，逐点语义指标
+保持不变。该契约现已进入生产 Grader：代码切分并校验 ID，模型只选择，报告/UI 继续读取由代码解析的
+精确原文；全量 Python 与离线 Replay 均通过。随后 4 条已揭盲样本的 acceptance-semantics prototype
+验证 nested `all_of/any_of` 虽修复 H02/H10 并正确表达 H07，却只有 3/4 合法输出、4 次重试、24,019
+tokens；flat baseline 为 4/4 合法、0 重试、6,275 tokens。H08 还暴露“把参考实现示例升格为必答条件”的
+过约束，因此生产继续使用 flat atomic ExpectedPoint，只加强出题 authoring/lint，不新增 Boolean rubric
+schema。实验同时发现同 key 的多次随机 retry 会覆盖 cassette；Record/Replay 现改为有序响应序列，旧单条
+fixture 继续可读。flat rubric authoring guard 已落地；答卷来源现固定为
+`unassisted_human / assisted_human / model / synthetic_oracle`，后三种即使人工标注也只能 exploratory。
+首批 Synthetic Respondents 已在 12 道揭盲 Development Gold 题上生成 30 条 DeepSeek V4 Pro / Thinking
+Off 答卷（12 完整 / 12 部分 / 6 合理误区），共 7,665 Token，只用于提前发现 failure mode。Holdout 03
+仍必须另用至少 20 个新 QuestionSpec 收集 24–30 条独立人类答卷；首批 10 个新 QuestionSpec / 40 个
+原子评分点已经冻结并通过固定源码 Evidence 逐字校验，owner 首批答卷也已锁定，后续由朋友体验补齐。
+30 条模型答卷的 assistant screening 已完成（对 6 / 勉强 12 / 错 12），但仍需 owner 复核 6 组 rubric
+边界。owner 的 10 条独立闭卷答卷也已锁定，并接受 Codex 的对 3 / 勉强 5 / 错 2 初筛；确定性编译得到
+10 条 eligible / 0 excluded，全部来源均为 `unassisted_human`。生产 Grader 尚未运行；不能拿模型答卷、
+已揭盲开发集或只有 10 条答卷的首批新题宣布发布质量。第二批 GQ4-H11–H20 的 10 个新 QuestionSpec /
+40 个原子评分点也已独立冻结并通过 Evidence、排重与防泄漏校验，两批题目合计达到 20 个新
+QuestionSpec。owner 的第二批 10 条闭卷答卷现已锁定，Codex 初筛为对 5 / 勉强 5 /
+错 0，owner 随后接受全部初筛，第二批编译得到 10 eligible / 0 excluded。两批合计为 20 个新题、
+80 个评分点和 20 条 eligible（对 8 / 勉强 10 / 错 2）；Compilation 已拆开 `question_id` 与独立答卷
+`sample_id`，同题多位答题者不会互相覆盖。两位朋友随后各自闭卷完成 5 条自然答案，owner 接受逐点初筛；
+正式 cohort 达到 30 条人类答卷、20 个 unique QuestionSpec、120 个逐点评判（对 17 / 勉强 11 / 错 2）。
+本地隐私审核冻结的 30 eligible / 0 exploratory Dataset Snapshot
+`71a504b0725e41e9992e217de1daf89429f1b126faaa281c7d8822558d306743` 已运行固定 DeepSeek V4 Pro /
+Thinking Off 正式 gate。合法输出率 100%、逐点准确率 90.83%、严重 FN/FP 0/0 均通过，但三值一致率
+25/30 = 83.33% 低于 85%，因此 gate 按设计失败。五个分歧均为单点 false negative，集中在组合表达、
+等价机制和非参考实现名的语义召回；该 cohort 已揭盲，只能作为 Development Gold。下一步先做小型
+contrastive entailment prototype，胜出后仍需新的未见人类 Holdout。2026-08-04 的四组原型均未同时满足
+“修回至少 4/5、零新增逐点错误、Token 增幅不超过 15%”，因此没有继续堆 Prompt。当前生产候选改为
+受限数据契约：ExpectedPoint 保持扁平，新增 1–3 条固定 all-of 的 `required_claims`，逐 claim 绑定答案
+Evidence 并由代码聚合；仍禁止任意 `all_of/any_of` Boolean tree。该实现只打开新的验证路径，不改变
+Holdout 03 的失败结论。2026-08-06 的真实 Development Gold 原型进一步得到 12/12 合法输出，但 verdict
+仅从 7/12 到 8/12、point 仍为 37/48、新增六个逐点分歧，Token 增加 50.68%；预注册契约失败。
+因此暂不消耗新的未见人类 QuestionSpec/答卷，required claims 只保留为可审计实验 seam。随后在已见
+开发集预注册并真实运行“紧凑 claim 输出 + 仅对改变三值的 missing claim 聚焦复核”：紧凑首阶段解决
+4/4 个高影响目标，并以 18,561 Token 低于 flat baseline；但 5 次聚焦复核没有修复任何错误，反而新增
+一个 point false positive，使 aligned point 从 37/43 降到 36/43、三值从 9/12 降到 8/12。该路线按
+预注册退出条件否决，不再叠加 Judge、放宽阈值或消耗新 holdout。代码收口已把新题生成与默认判卷恢复为
+flat atomic ExpectedPoint + AnswerEvidenceUnit ID；显式载入或历史 cassette 返回的 claims 仍可兼容回放，
+claim-aware 分支只保留兼容与实验入口。下一候选是一次用户可见的判卷澄清：纯领域 planner/state machine
+已能只选择会改变三值的 uncertain missing point，并强制一次补充、一次重判后停止；但 Holdout 03 的
+30 条生产报告中 diagnosis 分布为 complete 13 / missing_key_point 15 / off_topic 2 / uncertain 0，现有
+触发信号不可用，因此尚未接入 AssessmentSession、CLI/Web 或 Learning Memory。随后冻结的 12 个决定性
+missing point 二分类原型得到合法 12/12、找回 2/5、误追问 1/7、precision 66.67%、9,587 Token，未过
+预注册门。误差证明 grading Gold 不能直接充当 Interaction Gold：答案直接支持但初判冲突、答案存在真实
+歧义、答案确实缺失必须拆成三态。owner 已接受 12 条独立三态 Interaction Gold（6 / 2 / 4）；第二轮
+Support Relationship 原型真实得到合法 11/12、exact 9/12、no support 5/6、ambiguity 0/2、direct
+support 4/4、3 次重试、12,342 Token，预注册失败。自动 ambiguity 信号继续关闭；direct-support
+abstention 与用户主动澄清若继续推进，必须作为新的窄实验，不能从本轮直接上线。
+
+自动澄清仍按上述结论关闭；其旁路的**用户主动申诉竖切已完成**：开放题允许一次补充，原答不可变，按同一
+rubric 重判并经追加式 Verdict Correction 重放学习状态。它解决“模型误解后用户无法解释”的体验问题，
+不计作自动 Interaction classifier 的质量提升。见
+[用户主动补充与判卷申诉竖切](devrecords/42-user-initiated-assessment-appeal.md)。
+完整证据见 [Grader 语义匹配收口](devrecords/29-grading-semantic-matcher-closeout.md) 和
+[Evidence 契约可靠性补丁](devrecords/30-grading-evidence-contract-reliability.md) 和
+[答案 Evidence 单元生产化](devrecords/31-grading-answer-evidence-units.md) 和
+[Benchmark 规模与 acceptance semantics 收口](devrecords/32-grading-benchmark-and-replay-sequences.md) 和
+[答卷来源隔离与 Synthetic Respondents](devrecords/33-answer-provenance-and-synthetic-respondents.md) 和
+[Holdout 03 正式 Release Gate](devrecords/34-holdout-03-release-gate.md) 和
+[Required Claims 真实开发集原型](devrecords/37-required-claims-development-gold-prototype.md) 和
+[紧凑 Claims 与聚焦复核真实原型](devrecords/38-compact-claim-focused-review-prototype.md) 和
+[flat 基座回撤与一次性判卷澄清 seam](devrecords/39-flat-grading-and-clarification-seam.md) 和
+[判卷澄清二分类原型](devrecords/40-clarification-signal-prototype.md) 和
+[三态 Support Relationship 真实原型](devrecords/41-support-relationship-prototype.md)。未达到新 holdout gate 前，自动 Judge、
+Diagnosis/Misconception、能力蓝图和自适应选题继续只保留在文档或 proposal 层。
 批量入库、Reader batch 并发、candidate-level LLM repair 和 Trace explain 也没有进入本轮。
 
 ## 代码 RC 已完成：v0.4 人工授权的发现与数据晋升
@@ -51,8 +140,18 @@ v0.4 没有越过尚未通过的质量 gate，而是把两条“候选 → 人�
 4. 只有 active + approved 候选可组成按内容哈希标识的不可变快照；盲标 eligible 与纠正 exploratory 分列。
 5. Web 提供发现历史、材料审核、盲标 JSON 导入、敏感内容折叠审核和快照结果；关键决定进入事件脊柱。
 
-完整证据见 [v0.4 人工授权闭环](devrecords/26-v040-human-approved-discovery.md)。真实校准仍与代码开发并行，
-质量 gate 未通过前不启用自动入库、自动数据晋升、定时发现或学习策略。
+完整证据见 [v0.4 人工授权闭环](devrecords/26-v040-human-approved-discovery.md)；首批真实数据集的编译、
+隐私审批和 Snapshot 证据见 [真实判卷校准准备](devrecords/27-real-grading-calibration-preparation.md)。生产
+Grader calibration 已完成首次真实运行但未通过，完整证据和下一步见同一记录。自动策略 quality gate
+未通过前不启用
+自动入库、自动数据晋升、定时发现或学习策略。
+
+## 当前：v0.4.0 软件发布收口
+
+v0.4.0 的发布对象是上述人工授权工作流和可纠正的 local-first 产品，不是“判卷模型已经达到无人监督可靠”。
+发布前只处理版本一致性、v0.2 数据升级兼容、浏览器申诉链、安装产物、文档与回归门；不再新增功能。
+模型策略 gate 的失败作为已知限制公开，默认仍保留 exact Evidence、逐点评判、用户一次申诉和 Trace 审计。
+当前发布动作见 [v0.4.0 发布清单](open-source-release-checklist-v0.4.0.md)。
 
 This document records the initial architecture discussion for building an assessment-driven,
 observable, recoverable, and evaluable learning agent.

@@ -284,6 +284,49 @@
   color: var(--text-strong);
 }
 
+.assessment-panel__appeal {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-quiet);
+}
+
+.assessment-panel__appeal label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.assessment-panel__appeal textarea {
+  min-height: 88px;
+  resize: vertical;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--text);
+  font: 400 14px/1.65 var(--font-reading);
+}
+
+.assessment-panel__appeal > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.assessment-panel__appeal-status,
+.assessment-panel__appeal-result {
+  margin: 16px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--evidence);
+  background: var(--evidence-soft);
+  color: var(--text);
+}
+
 .assessment-panel__complete {
   display: flex;
   justify-content: space-between;

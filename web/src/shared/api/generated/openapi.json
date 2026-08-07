@@ -474,6 +474,83 @@
         "title": "ApprovalRequest",
         "type": "object"
       },
+      "AssessmentAppealRequest": {
+        "properties": {
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "supplemental_answer": {
+            "minLength": 1,
+            "title": "Supplemental Answer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "supplemental_answer"
+        ],
+        "title": "AssessmentAppealRequest",
+        "type": "object"
+      },
+      "AssessmentAppealView": {
+        "properties": {
+          "final_verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Verdict"
+          },
+          "original_verdict": {
+            "title": "Original Verdict",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "grading",
+              "resolved",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "supplemental_answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplemental Answer"
+          }
+        },
+        "required": [
+          "status",
+          "original_verdict"
+        ],
+        "title": "AssessmentAppealView",
+        "type": "object"
+      },
       "AssessmentAttemptList": {
         "properties": {
           "items": {
@@ -640,6 +717,17 @@
           },
           "source_event_cursor": {
             "$ref": "#/components/schemas/SourceEventCursor"
+          },
+          "supplemental_answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplemental Answer"
           },
           "taxonomy_version": {
             "title": "Taxonomy Version",
@@ -900,6 +988,16 @@
       },
       "AssessmentView": {
         "properties": {
+          "appeal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssessmentAppealView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "attempt_id": {
             "anyOf": [
               {
@@ -1924,7 +2022,7 @@
         "type": "object"
       },
       "ExpectedPoint": {
-        "description": "一道开放题的可审计评分点；每个点必须绑定该题引用的一条原文证据。",
+        "description": "一道开放题的可审计评分点；每个点必须绑定该题引用的一条原文证据。\n\n``required_claims`` 是该点内部固定 ``all-of`` 的原子接受条件。旧题没有该字段时，\n``grading_claims`` 退回单条 ``description``，使历史 Snapshot 继续可读、可回放。",
         "properties": {
           "cited_evidence": {
             "minLength": 1,
@@ -1940,6 +2038,15 @@
             "minLength": 1,
             "title": "Point Id",
             "type": "string"
+          },
+          "required_claims": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 3,
+            "title": "Required Claims",
+            "type": "array"
           }
         },
         "required": [
@@ -1980,6 +2087,17 @@
             "title": "Annotator",
             "type": "string"
           },
+          "answer_provenance": {
+            "default": "unassisted_human",
+            "enum": [
+              "unassisted_human",
+              "assisted_human",
+              "model",
+              "synthetic_oracle"
+            ],
+            "title": "Answer Provenance",
+            "type": "string"
+          },
           "blind_to_model_output": {
             "title": "Blind To Model Output",
             "type": "boolean"
@@ -2014,6 +2132,29 @@
           },
           "question": {
             "$ref": "#/components/schemas/QuestionSpec"
+          },
+          "question_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Id"
+          },
+          "respondent_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Respondent Model"
           },
           "sample_id": {
             "minLength": 1,
@@ -3165,13 +3306,21 @@
         "type": "object"
       },
       "QuestionSpec": {
-        "description": "开放题的唯一题目规格：题干、评分点、参考作答与原文证据。\n\n``question`` 非空（``NonEmptyStr``，strip 后为空也拒）；``cited_evidence`` 的非空与\"锚定\n被考 item 证据（子串即可）\"由 ``generate_question`` 的校验门把关。``expected_points`` 是判卷\n的唯一 rubric；``reference_answer`` 回答的必须是本题，而不是泛化复述整个 KnowledgeItem。\n刻意不产 ``item_id`` / ``weak_item_id``——出题不记账，被考 item 由调用方指定、记账由判卷后的\n代码算（ADR-0004）。",
+        "description": "开放题的唯一题目规格：题干、评分点、参考作答与原文证据。\n\n``question`` 非空（``NonEmptyStr``，strip 后为空也拒）；``cited_evidence`` 的非空与\"锚定\n被考 item 证据（子串即可）\"由 ``generate_question`` 的校验门把关。``expected_points`` 是判卷\n的唯一 rubric；``critical_point_ids`` 在出题时预注册缺失即足以判错的核心点；\n``reference_answer`` 回答的必须是本题，而不是泛化复述整个 KnowledgeItem。\n刻意不产 ``item_id`` / ``weak_item_id``——出题不记账，被考 item 由调用方指定、记账由判卷后的\n代码算（ADR-0004）。",
         "properties": {
           "cited_evidence": {
             "items": {
               "type": "string"
             },
             "title": "Cited Evidence",
+            "type": "array"
+          },
+          "critical_point_ids": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Critical Point Ids",
             "type": "array"
           },
           "expected_points": {
@@ -4319,7 +4468,7 @@
   },
   "info": {
     "title": "TheGrandQuiz Local API",
-    "version": "0.2.0"
+    "version": "0.4.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -4842,6 +4991,67 @@
           }
         },
         "summary": "Submit Assessment Answer",
+        "tags": [
+          "assessments"
+        ]
+      }
+    },
+    "/api/v1/assessments/{session_id}/questions/{question_id}/appeals": {
+      "post": {
+        "operationId": "submit_assessment_appeal_api_v1_assessments__session_id__questions__question_id__appeals_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssessmentAppealRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Assessment Appeal",
         "tags": [
           "assessments"
         ]

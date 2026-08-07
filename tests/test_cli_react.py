@@ -12,6 +12,7 @@
 """
 
 import json
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -496,6 +497,7 @@ class _ScopeTypeScriptProvider:
                             {
                                 "point_id": "capture",
                                 "description": "说明闭包捕获变量",
+                                "required_claims": ["说明闭包捕获变量"],
                                 "cited_evidence": _QUOTE,
                             }
                         ],
@@ -511,8 +513,26 @@ class _ScopeTypeScriptProvider:
                 text=json.dumps(
                     {
                         "verdict": "对",
-                        "matched_points": ["capture"],
-                        "missing_points": [],
+                        "point_assessments": [
+                            {
+                                "point_id": "capture",
+                                "label": "matched",
+                                "answer_evidence_ids": [],
+                                "claim_assessments": [
+                                    {
+                                        "claim_id": "capture.claim_1",
+                                        "label": "matched",
+                                        "answer_evidence_ids": re.findall(
+                                            r"^- \[(v1e\d+_\d+)\]",
+                                            messages[-1].content,
+                                            flags=re.MULTILINE,
+                                        ),
+                                        "reason": "回答覆盖了 claim。",
+                                    }
+                                ],
+                                "reason": "回答覆盖了评分点。",
+                            }
+                        ],
                         "diagnosis": "complete",
                         "reason": "回答覆盖了评分点。",
                         "cited_evidence": [_QUOTE],

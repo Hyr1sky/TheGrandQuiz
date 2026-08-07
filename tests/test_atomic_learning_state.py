@@ -1,6 +1,7 @@
 """SH-S5：判决产生的三类学习状态共享提交/回滚语义。"""
 
 import json
+import re
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -131,6 +132,7 @@ class _OpenCorrectProvider:
                     {
                         "point_id": "core",
                         "description": "说明闭包的核心含义",
+                        "required_claims": ["说明闭包的核心含义"],
                         "cited_evidence": _QUOTE,
                     }
                 ],
@@ -140,8 +142,26 @@ class _OpenCorrectProvider:
             if role == "enrich"
             else {
                 "verdict": "对",
-                "matched_points": ["core"],
-                "missing_points": [],
+                "point_assessments": [
+                    {
+                        "point_id": "core",
+                        "label": "matched",
+                        "answer_evidence_ids": [],
+                        "claim_assessments": [
+                            {
+                                "claim_id": "core.claim_1",
+                                "label": "matched",
+                                "answer_evidence_ids": re.findall(
+                                    r"^- \[(v1e\d+_\d+)\]",
+                                    messages[-1].content,
+                                    flags=re.MULTILINE,
+                                ),
+                                "reason": "测试用 claim 判定。",
+                            }
+                        ],
+                        "reason": "测试用逐点评判。",
+                    }
+                ],
                 "diagnosis": "complete",
                 "reason": "回答正确",
                 "cited_evidence": [_QUOTE],

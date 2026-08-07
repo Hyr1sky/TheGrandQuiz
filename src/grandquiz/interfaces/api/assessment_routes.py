@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 
 from grandquiz.interfaces.api.assessment_runs import (
     AnswerSubmissionRequest,
+    AssessmentAppealRequest,
     AssessmentCommandConflict,
     AssessmentManager,
     AssessmentStartRequest,
@@ -75,6 +76,38 @@ async def submit_assessment_answer(
         raise ApiError(
             status_code=409,
             code="assessment_answer_conflict",
+            message=str(exc),
+        ) from exc
+    if assessment is None:
+        raise ApiError(
+            status_code=404,
+            code="assessment_question_not_found",
+            message=f"当前考核题目不存在：{session_id}:{question_id}",
+        )
+    return assessment
+
+
+@router.post(
+    "/{session_id}/questions/{question_id}/appeals",
+    response_model=AssessmentView,
+    status_code=202,
+)
+async def submit_assessment_appeal(
+    session_id: str,
+    question_id: str,
+    command: AssessmentAppealRequest,
+    request: Request,
+) -> AssessmentView:
+    try:
+        assessment = assessment_manager_from(request).submit_appeal(
+            session_id,
+            question_id,
+            command,
+        )
+    except AssessmentCommandConflict as exc:
+        raise ApiError(
+            status_code=409,
+            code="assessment_appeal_conflict",
             message=str(exc),
         ) from exc
     if assessment is None:

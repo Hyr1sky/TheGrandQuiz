@@ -88,15 +88,10 @@ def create_app(
             trace_observatory=trace_observatory,
         )
         assessment_manager = AssessmentManager(
-            store=persistence.store,
+            persistence=persistence,
             provider=provider,
-            memory=persistence.memory,
-            asked_questions=persistence.asked_questions,
-            preferences=persistence.preferences,
-            difficulty=persistence.difficulty,
-            learning_facts=persistence.learning_facts,
-            classifications=persistence.classifications,
             trace_store=trace_store,
+            clock=app_clock,
             trace_observatory=trace_observatory,
         )
         chat_manager = ChatManager(

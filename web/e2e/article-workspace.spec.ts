@@ -309,6 +309,43 @@ test("navigates from Chat to Assessment and closes the trace", async ({ page }) 
   );
 });
 
+test("appeals an open-answer verdict without replacing the original answer", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await dismissOnboarding(page);
+  const composer = page.getByRole("textbox", { name: "发送消息" });
+  await composer.fill("请用简答题考我一题，我要测试判卷申诉");
+  await page.getByRole("button", { name: "发送" }).click();
+
+  await expect(
+    page.getByRole("heading", {
+      name: /durable processor|不完整状态/,
+    }),
+  ).toBeVisible();
+  const originalAnswer = "我觉得主要是为了让系统运行得更快。";
+  await page.getByRole("textbox", { name: "你的回答" }).fill(originalAnswer);
+  await page.getByRole("button", { name: "提交答案" }).click();
+  await expect(page.getByText("判断：错")).toBeVisible();
+
+  await page
+    .getByRole("button", { name: "补充说明 / 判卷有异议" })
+    .click();
+  await page
+    .getByRole("textbox", { name: "补充说明" })
+    .fill("继续执行会让后续副作用依赖不完整状态，所以必须阻断当前 turn。");
+  await page.getByRole("button", { name: "提交补充并重判" }).click();
+
+  await expect(page.getByText("判断：对")).toBeVisible();
+  await expect(page.getByText("原判：错；重判：对")).toBeVisible();
+  await expect(
+    page.getByText("结合补充说明，已覆盖阻断原因。"),
+  ).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "你的回答" })).toHaveValue(
+    originalAnswer,
+  );
+});
+
 test("cancels an abandoned Assessment before returning to reading", async ({
   page,
 }) => {

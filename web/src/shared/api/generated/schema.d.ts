@@ -159,6 +159,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assessments/{session_id}/questions/{question_id}/appeals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Assessment Appeal */
+        post: operations["submit_assessment_appeal_api_v1_assessments__session_id__questions__question_id__appeals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assessments/{session_id}/questions/{question_id}/evidence/reveal": {
         parameters: {
             query?: never;
@@ -994,6 +1011,29 @@ export interface components {
             /** Resume Token */
             resume_token: string;
         };
+        /** AssessmentAppealRequest */
+        AssessmentAppealRequest: {
+            /** Request Id */
+            request_id: string;
+            /** Supplemental Answer */
+            supplemental_answer: string;
+        };
+        /** AssessmentAppealView */
+        AssessmentAppealView: {
+            /** Final Verdict */
+            final_verdict?: string | null;
+            /** Original Verdict */
+            original_verdict: string;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "available" | "grading" | "resolved" | "failed";
+            /** Supplemental Answer */
+            supplemental_answer?: string | null;
+        };
         /** AssessmentAttemptList */
         AssessmentAttemptList: {
             /** Items */
@@ -1069,6 +1109,8 @@ export interface components {
              */
             schema_version: "assessment-attempt.v1";
             source_event_cursor: components["schemas"]["SourceEventCursor"];
+            /** Supplemental Answer */
+            supplemental_answer?: string | null;
             /** Taxonomy Version */
             taxonomy_version: string;
             /** Trace Id */
@@ -1139,6 +1181,7 @@ export interface components {
         };
         /** AssessmentView */
         AssessmentView: {
+            appeal?: components["schemas"]["AssessmentAppealView"] | null;
             /** Attempt Id */
             attempt_id?: string | null;
             /** Error */
@@ -1520,6 +1563,9 @@ export interface components {
         /**
          * ExpectedPoint
          * @description 一道开放题的可审计评分点；每个点必须绑定该题引用的一条原文证据。
+         *
+         *     ``required_claims`` 是该点内部固定 ``all-of`` 的原子接受条件。旧题没有该字段时，
+         *     ``grading_claims`` 退回单条 ``description``，使历史 Snapshot 继续可读、可回放。
          */
         ExpectedPoint: {
             /** Cited Evidence */
@@ -1528,6 +1574,8 @@ export interface components {
             description: string;
             /** Point Id */
             point_id: string;
+            /** Required Claims */
+            required_claims?: string[];
         };
         /** GenerationProvenance */
         GenerationProvenance: {
@@ -1546,6 +1594,12 @@ export interface components {
         GradingCalibrationSample: {
             /** Annotator */
             annotator: string;
+            /**
+             * Answer Provenance
+             * @default unassisted_human
+             * @enum {string}
+             */
+            answer_provenance: "unassisted_human" | "assisted_human" | "model" | "synthetic_oracle";
             /** Blind To Model Output */
             blind_to_model_output: boolean;
             /** Human Matched Points */
@@ -1560,6 +1614,10 @@ export interface components {
             /** Learner Answer */
             learner_answer: string;
             question: components["schemas"]["QuestionSpec"];
+            /** Question Id */
+            question_id?: string | null;
+            /** Respondent Model */
+            respondent_model?: string | null;
             /** Sample Id */
             sample_id: string;
             /**
@@ -2018,13 +2076,16 @@ export interface components {
          *
          *     ``question`` 非空（``NonEmptyStr``，strip 后为空也拒）；``cited_evidence`` 的非空与"锚定
          *     被考 item 证据（子串即可）"由 ``generate_question`` 的校验门把关。``expected_points`` 是判卷
-         *     的唯一 rubric；``reference_answer`` 回答的必须是本题，而不是泛化复述整个 KnowledgeItem。
+         *     的唯一 rubric；``critical_point_ids`` 在出题时预注册缺失即足以判错的核心点；
+         *     ``reference_answer`` 回答的必须是本题，而不是泛化复述整个 KnowledgeItem。
          *     刻意不产 ``item_id`` / ``weak_item_id``——出题不记账，被考 item 由调用方指定、记账由判卷后的
          *     代码算（ADR-0004）。
          */
         QuestionSpec: {
             /** Cited Evidence */
             cited_evidence: string[];
+            /** Critical Point Ids */
+            critical_point_ids?: string[];
             /** Expected Points */
             expected_points: components["schemas"]["ExpectedPoint"][];
             /** Question */
@@ -2780,6 +2841,42 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AnswerSubmissionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_assessment_appeal_api_v1_assessments__session_id__questions__question_id__appeals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssessmentAppealRequest"];
             };
         };
         responses: {

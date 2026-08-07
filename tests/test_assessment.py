@@ -14,6 +14,7 @@ M3.4（题型路由 + 追问）后，assess_once 按被考概念在 Learning Mem
 """
 
 import json
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -98,18 +99,22 @@ class _AssessProvider:
                         {
                             "point_id": "core",
                             "description": "说明核心含义",
+                            "required_claims": ["说明核心含义"],
                             "cited_evidence": quote,
                         },
                         {
                             "point_id": "boundary",
                             "description": "说明关键区分",
+                            "required_claims": ["说明关键区分"],
                             "cited_evidence": quote,
                         },
                     ],
+                    "critical_point_ids": ["core"],
                     "reference_answer": f"参考作答：{quote}",
                     "cited_evidence": [quote],
                 }
         else:  # basic → 判卷
+            answer_evidence_ids = re.findall(r"^- \[(v1e\d+_\d+)\]", text, flags=re.MULTILINE)
             if self._verdict == "对":
                 matched_points = ["core", "boundary"]
                 missing_points: list[str] = []
@@ -124,8 +129,25 @@ class _AssessProvider:
                 diagnosis = "wrong_focus"
             payload = {
                 "verdict": self._verdict,
-                "matched_points": matched_points,
-                "missing_points": missing_points,
+                "point_assessments": [
+                    {
+                        "point_id": point_id,
+                        "label": "matched" if point_id in matched_points else "missing",
+                        "answer_evidence_ids": [],
+                        "claim_assessments": [
+                            {
+                                "claim_id": f"{point_id}.claim_1",
+                                "label": ("matched" if point_id in matched_points else "missing"),
+                                "answer_evidence_ids": (
+                                    answer_evidence_ids if point_id in matched_points else []
+                                ),
+                                "reason": "测试用 claim 判定。",
+                            }
+                        ],
+                        "reason": "测试用逐点评判。",
+                    }
+                    for point_id in [*matched_points, *missing_points]
+                ],
                 "diagnosis": diagnosis,
                 "reason": self._reason,
                 "cited_evidence": [quote],
@@ -376,6 +398,7 @@ async def test_observing_concept_routes_to_open_with_llm_grade_and_followup(
     # 路由决策上脊柱（与选择题 / 追问对称）：开放这条也在 QUESTION_ASKED 事件上断言。
     asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
     assert asked.payload["question_type"] == "开放"
+    assert asked.payload["critical_point_ids"] == ["core"]
 
     if followup_expected:
         target_item = next(i for i in store.all_items() if i.item_id == target)
@@ -433,6 +456,7 @@ async def test_llm_verdict_reason_is_carried_into_answer_judged_payload() -> Non
 
     judged = next(e for e in events if e.type == LearningEvent.ANSWER_JUDGED)
     assert judged.payload["reason"] == "方向对但没点出是变量本身"
+    assert judged.payload["model_verdict"] == "勉强"
     # 记账不受 reason 影响：勉强 → 仍按 verdict 记薄弱。
     assert judged.payload["verdict"] == "勉强"
     assert judged.payload["weak_item_id"] == target

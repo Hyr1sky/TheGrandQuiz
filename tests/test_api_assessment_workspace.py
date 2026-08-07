@@ -3,11 +3,12 @@
 import asyncio
 import hashlib
 import json
+import re
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi.testclient import TestClient
 
@@ -40,6 +41,7 @@ def _open_question_payload(question: str) -> dict[str, object]:
             {
                 "point_id": "location",
                 "description": "指出潜在记忆位于模型内部表示",
+                "required_claims": ["指出潜在记忆位于模型内部表示"],
                 "cited_evidence": _QUOTE,
             }
         ],
@@ -78,8 +80,10 @@ class _AssessmentProvider:
 
 
 class _OpenAssessmentProvider:
-    def __init__(self) -> None:
+    def __init__(self, *, accept_appeal: bool = False) -> None:
         self.question_calls = 0
+        self.grading_calls = 0
+        self.accept_appeal = accept_appeal
 
     async def complete(
         self,
@@ -89,6 +93,7 @@ class _OpenAssessmentProvider:
         tools: Sequence[ToolSpec] | None = None,
     ) -> Completion:
         assert tools is None
+        payload: dict[str, Any]
         if role == "enrich":
             self.question_calls += 1
             question = (
@@ -98,12 +103,41 @@ class _OpenAssessmentProvider:
             )
             payload = _open_question_payload(question)
         else:
+            self.grading_calls += 1
+            accepted = self.accept_appeal and self.grading_calls == 2
+            answer_unit_ids = re.findall(r"\[(v1e\d+_\d+)\]", messages[-1].content)
             payload = {
-                "verdict": "错",
-                "matched_points": [],
-                "missing_points": ["location"],
-                "diagnosis": "wrong_focus",
-                "reason": "回答没有指出模型内部表示。",
+                "verdict": "对" if accepted else "错",
+                "point_assessments": [
+                    {
+                        "point_id": "location",
+                        "label": "matched" if accepted else "missing",
+                        "answer_evidence_ids": [],
+                        "claim_assessments": [
+                            {
+                                "claim_id": "location.claim_1",
+                                "label": "matched" if accepted else "missing",
+                                "answer_evidence_ids": ([answer_unit_ids[-1]] if accepted else []),
+                                "reason": (
+                                    "补充说明明确指出模型内部表示。"
+                                    if accepted
+                                    else "没有说明模型内部表示。"
+                                ),
+                            }
+                        ],
+                        "reason": (
+                            "补充说明明确指出模型内部表示。"
+                            if accepted
+                            else "没有说明模型内部表示。"
+                        ),
+                    }
+                ],
+                "diagnosis": "complete" if accepted else "wrong_focus",
+                "reason": (
+                    "结合补充说明，回答已经覆盖位置要点。"
+                    if accepted
+                    else "回答没有指出模型内部表示。"
+                ),
                 "cited_evidence": [_QUOTE],
             }
         return Completion(
@@ -125,10 +159,29 @@ class _MixedPlanAssessmentProvider:
     ) -> Completion:
         assert tools is None
         if role == "basic":
+            answer_evidence_ids = re.findall(
+                r"^- \[(v1e\d+_\d+)\]",
+                messages[-1].content,
+                flags=re.MULTILINE,
+            )
             payload = {
                 "verdict": "对",
-                "matched_points": ["location"],
-                "missing_points": [],
+                "point_assessments": [
+                    {
+                        "point_id": "location",
+                        "label": "matched",
+                        "answer_evidence_ids": [],
+                        "claim_assessments": [
+                            {
+                                "claim_id": "location.claim_1",
+                                "label": "matched",
+                                "answer_evidence_ids": answer_evidence_ids,
+                                "reason": "回答命中了模型内部表示。",
+                            }
+                        ],
+                        "reason": "回答命中了模型内部表示。",
+                    }
+                ],
                 "diagnosis": "complete",
                 "reason": "回答命中了模型内部表示。",
                 "cited_evidence": [_QUOTE],
@@ -228,6 +281,24 @@ def _wait_for_status(
         time.sleep(0.01)
         payload = client.get(f"/api/v1/assessments/{session_id}").json()
     raise AssertionError(f"考核未进入 {expected}：{payload}")
+
+
+def _wait_for_appeal_status(
+    client: TestClient,
+    session_id: str,
+    expected: str,
+) -> dict[str, Any]:
+    payload = client.get(f"/api/v1/assessments/{session_id}").json()
+    for _ in range(50):
+        appeal = payload.get("appeal")
+        appeal_payload = (
+            cast("Mapping[str, object]", appeal) if isinstance(appeal, Mapping) else None
+        )
+        if appeal_payload is not None and appeal_payload.get("status") == expected:
+            return payload
+        time.sleep(0.01)
+        payload = client.get(f"/api/v1/assessments/{session_id}").json()
+    raise AssertionError(f"申诉未进入 {expected}：{payload}")
 
 
 def test_selected_resource_starts_one_real_question_and_waits_for_answer(
@@ -904,3 +975,78 @@ def test_open_question_wrong_answer_waits_for_explicit_next_round(tmp_path: Path
     assert second["question"]["question_id"] != first_question_id
     assert second["question"]["text"] == "潜在记忆为什么不等于外部文件？"
     assert provider.question_calls == 2
+
+
+def test_user_appeal_regrades_once_and_appends_a_reconciled_correction(
+    tmp_path: Path,
+) -> None:
+    resource, item = _seed_item(tmp_path)
+    provider = _OpenAssessmentProvider(accept_appeal=True)
+
+    with TestClient(_app(tmp_path, provider)) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "简答题",
+            },
+        ).json()
+        waiting = _wait_for_status(client, started["session_id"], "awaiting_answer")
+        question_id = waiting["question"]["question_id"]
+        original_answer = "它放在文件里。"
+        client.post(
+            f"/api/v1/assessments/{started['session_id']}/questions/{question_id}/answers",
+            json={"request_id": "initial-answer", "answer": original_answer},
+        )
+        completed = _wait_for_status(client, started["session_id"], "completed")
+
+        assert completed["appeal"] == {
+            "status": "available",
+            "supplemental_answer": None,
+            "original_verdict": "错",
+            "final_verdict": None,
+            "reason": None,
+        }
+        command = {
+            "request_id": "appeal-command-1",
+            "supplemental_answer": "潜在记忆实际位于模型内部表示。",
+        }
+        submitted = client.post(
+            f"/api/v1/assessments/{started['session_id']}/questions/{question_id}/appeals",
+            json=command,
+        )
+        retried = client.post(
+            f"/api/v1/assessments/{started['session_id']}/questions/{question_id}/appeals",
+            json=command,
+        )
+        resolved = _wait_for_appeal_status(client, started["session_id"], "resolved")
+        second = client.post(
+            f"/api/v1/assessments/{started['session_id']}/questions/{question_id}/appeals",
+            json={
+                "request_id": "appeal-command-2",
+                "supplemental_answer": "再补一次。",
+            },
+        )
+        attempt = client.get(f"/api/v1/learning/attempts/{completed['attempt_id']}").json()
+        projection = client.get(f"/api/v1/learning/projections/{item.item_id}").json()
+
+    assert submitted.status_code == 202
+    assert retried.status_code == 202
+    assert resolved["judgement"]["verdict"] == "对", resolved
+    assert resolved["appeal"] == {
+        "status": "resolved",
+        "supplemental_answer": "潜在记忆实际位于模型内部表示。",
+        "original_verdict": "错",
+        "final_verdict": "对",
+        "reason": "结合补充说明，回答已经覆盖位置要点。",
+    }
+    assert second.status_code == 409
+    assert attempt["answer_text"] == original_answer
+    assert attempt["supplemental_answer"] == "潜在记忆实际位于模型内部表示。"
+    assert attempt["initial_verdict"] == "错"
+    assert attempt["final_verdict"] == "对"
+    assert attempt["appeal_status"] == "overturned"
+    assert attempt["concept_state"] is None
+    assert projection["learning_memory_state"] == "not_in_memory"
+    assert provider.grading_calls == 2

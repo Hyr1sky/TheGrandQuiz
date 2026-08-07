@@ -22,7 +22,7 @@ import json
 import unicodedata
 from collections.abc import Sequence
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from grandquiz.domain.learning.difficulty import distractor_meets_floor
 from grandquiz.domain.learning.judge import DistractorLabel, judge_distractor
@@ -134,11 +134,32 @@ class ModelRetry(Exception):
 
 
 class ExpectedPoint(BaseModel):
-    """一道开放题的可审计评分点；每个点必须绑定该题引用的一条原文证据。"""
+    """一道开放题的可审计评分点；每个点必须绑定该题引用的一条原文证据。
+
+    ``required_claims`` 是该点内部固定 ``all-of`` 的原子接受条件。旧题没有该字段时，
+    ``grading_claims`` 退回单条 ``description``，使历史 Snapshot 继续可读、可回放。
+    """
 
     point_id: NonEmptyStr
     description: NonEmptyStr
+    required_claims: list[NonEmptyStr] = Field(
+        default_factory=list,
+        max_length=3,
+        exclude_if=lambda value: not value,
+    )
     cited_evidence: NonEmptyStr
+
+    @model_validator(mode="after")
+    def _required_claims_are_unique(self) -> "ExpectedPoint":
+        if len(self.required_claims) != len(set(self.required_claims)):
+            raise ValueError("required_claims 不得重复")
+        return self
+
+    @property
+    def grading_claims(self) -> tuple[str, ...]:
+        """Return the explicit all-of claims, or the legacy single-description contract."""
+
+        return tuple(self.required_claims or [self.description])
 
 
 class QuestionSpec(BaseModel):
@@ -146,15 +167,34 @@ class QuestionSpec(BaseModel):
 
     ``question`` 非空（``NonEmptyStr``，strip 后为空也拒）；``cited_evidence`` 的非空与"锚定
     被考 item 证据（子串即可）"由 ``generate_question`` 的校验门把关。``expected_points`` 是判卷
-    的唯一 rubric；``reference_answer`` 回答的必须是本题，而不是泛化复述整个 KnowledgeItem。
+    的唯一 rubric；``critical_point_ids`` 在出题时预注册缺失即足以判错的核心点；
+    ``reference_answer`` 回答的必须是本题，而不是泛化复述整个 KnowledgeItem。
     刻意不产 ``item_id`` / ``weak_item_id``——出题不记账，被考 item 由调用方指定、记账由判卷后的
     代码算（ADR-0004）。
     """
 
     question: NonEmptyStr
     expected_points: list[ExpectedPoint] = Field(min_length=1)
+    critical_point_ids: list[NonEmptyStr] = Field(default_factory=list)
     reference_answer: NonEmptyStr
     cited_evidence: CitedEvidence
+
+    @model_validator(mode="after")
+    def _critical_points_belong_to_the_rubric(self) -> "QuestionSpec":
+        claim_modes = [bool(point.required_claims) for point in self.expected_points]
+        if any(claim_modes) and not all(claim_modes):
+            raise ValueError(
+                "同一 QuestionSpec 的 expected_points 必须全部提供 required_claims，"
+                "或全部保持旧版 description 契约"
+            )
+        critical = list(self.critical_point_ids)
+        if len(critical) != len(set(critical)):
+            raise ValueError("critical_point_ids 不得重复")
+        expected = {point.point_id for point in self.expected_points}
+        unknown = set(critical) - expected
+        if unknown:
+            raise ValueError(f"critical_point_ids 必须引用已有评分点：{sorted(unknown)}")
+        return self
 
 
 # 兼容既有导入名；领域内的新权威术语是 QuestionSpec。

@@ -21,6 +21,7 @@ import asyncio
 import hashlib
 import html
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -185,11 +186,13 @@ class AssessFakeProvider:
                         {
                             "point_id": "core",
                             "description": "说明核心含义",
+                            "required_claims": ["说明核心含义"],
                             "cited_evidence": quote,
                         },
                         {
                             "point_id": "boundary",
                             "description": "说明关键区分",
+                            "required_claims": ["说明关键区分"],
                             "cited_evidence": quote,
                         },
                     ],
@@ -197,6 +200,7 @@ class AssessFakeProvider:
                     "cited_evidence": [quote],
                 }
         else:  # basic → 判卷
+            answer_evidence_ids = re.findall(r"^- \[(v1e\d+_\d+)\]", text, flags=re.MULTILINE)
             if self._verdict == "对":
                 matched, missing, diagnosis = ["core", "boundary"], [], "complete"
             elif self._verdict == "勉强":
@@ -205,8 +209,25 @@ class AssessFakeProvider:
                 matched, missing, diagnosis = [], ["core", "boundary"], "wrong_focus"
             payload = {
                 "verdict": self._verdict,
-                "matched_points": matched,
-                "missing_points": missing,
+                "point_assessments": [
+                    {
+                        "point_id": point_id,
+                        "label": "matched" if point_id in matched else "missing",
+                        "answer_evidence_ids": [],
+                        "claim_assessments": [
+                            {
+                                "claim_id": f"{point_id}.claim_1",
+                                "label": "matched" if point_id in matched else "missing",
+                                "answer_evidence_ids": (
+                                    answer_evidence_ids if point_id in matched else []
+                                ),
+                                "reason": "确定性 eval claim 判定。",
+                            }
+                        ],
+                        "reason": "确定性 eval 逐点判卷。",
+                    }
+                    for point_id in [*matched, *missing]
+                ],
                 "diagnosis": diagnosis,
                 "reason": "确定性 eval 判卷反馈",
                 "cited_evidence": [quote],
@@ -282,12 +303,28 @@ class LanguageEchoAssessProvider:
         self.roles.append(role)
         quote = _extract_quote(messages)
         if role != "enrich":  # basic 判卷：恒判对（健康态 MC 不走这里，仅回归时兜底）
+            text = "\n".join(m.content for m in messages)
+            answer_evidence_ids = re.findall(r"^- \[(v1e\d+_\d+)\]", text, flags=re.MULTILINE)
             return Completion(
                 text=json.dumps(
                     {
                         "verdict": "对",
-                        "matched_points": ["core"],
-                        "missing_points": [],
+                        "point_assessments": [
+                            {
+                                "point_id": "core",
+                                "label": "matched",
+                                "answer_evidence_ids": [],
+                                "claim_assessments": [
+                                    {
+                                        "claim_id": "core.claim_1",
+                                        "label": "matched",
+                                        "answer_evidence_ids": answer_evidence_ids,
+                                        "reason": "回答覆盖了 claim。",
+                                    }
+                                ],
+                                "reason": "回答覆盖了评分点。",
+                            }
+                        ],
                         "diagnosis": "complete",
                         "reason": "回答覆盖了评分点。",
                         "cited_evidence": [quote],
@@ -345,6 +382,7 @@ class DedupAssessProvider:
                     {
                         "point_id": "core",
                         "description": "说明核心含义",
+                        "required_claims": ["说明核心含义"],
                         "cited_evidence": quote,
                     }
                 ],
@@ -352,10 +390,26 @@ class DedupAssessProvider:
                 "cited_evidence": [quote],
             }
         else:  # basic：恒判对（让薄弱 item 转观察中、留在薄弱优先集，复考锁定同一 item）
+            text = "\n".join(m.content for m in messages)
+            answer_evidence_ids = re.findall(r"^- \[(v1e\d+_\d+)\]", text, flags=re.MULTILINE)
             payload = {
                 "verdict": "对",
-                "matched_points": ["core"],
-                "missing_points": [],
+                "point_assessments": [
+                    {
+                        "point_id": "core",
+                        "label": "matched",
+                        "answer_evidence_ids": [],
+                        "claim_assessments": [
+                            {
+                                "claim_id": "core.claim_1",
+                                "label": "matched",
+                                "answer_evidence_ids": answer_evidence_ids,
+                                "reason": "回答覆盖了 claim。",
+                            }
+                        ],
+                        "reason": "回答覆盖了评分点。",
+                    }
+                ],
                 "diagnosis": "complete",
                 "reason": "回答覆盖了评分点。",
                 "cited_evidence": [quote],

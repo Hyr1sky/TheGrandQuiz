@@ -5,7 +5,7 @@
     uv run --env-file .env python scripts/smoke_llm.py
 
 只打印模型是否连通 / 回复片段 / token 用量，**绝不打印密钥**。会真实消耗少量 token。
-若某角色的 disable_thinking 参数被端点拒绝（如 deepseek 不认 enable_thinking），这里会立刻暴露。
+若某角色的方言或 thinking 参数被端点拒绝，这里会立刻暴露。
 """
 
 import asyncio
@@ -23,7 +23,7 @@ async def main() -> None:
             try:
                 reply = await provider.complete(messages, role=role)
             except Exception as exc:
-                # 冒烟脚本：把任何失败原样报给人看（含端点拒绝 disable_thinking 参数的情形）。
+                # 冒烟脚本：把任何失败原样报给人看（含端点拒绝 thinking 扩展字段）。
                 print(f"[{role}] 失败：{exc!r}")
                 continue
             snippet = reply.text.strip().replace("\n", " ")[:50]

@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import tempfile
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
@@ -163,6 +164,39 @@ class _FixtureProvider:
                 )
         if role == "enrich":
             self._question_calls += 1
+            if any("expected_points" in message.content for message in messages):
+                open_questions = [
+                    "durable processor 失败后为什么要阻断当前 turn？",
+                    "为什么继续当前 turn 会破坏 durable processor 的恢复边界？",
+                    "durable processor 应如何处理建立在不完整状态上的后续副作用？",
+                    "当前 turn 持久化失败时，durable processor 为什么不能继续执行？",
+                ]
+                return Completion(
+                    text=json.dumps(
+                        {
+                            "question": (
+                                open_questions[(self._question_calls - 1) % len(open_questions)]
+                                + f"（fixture {self._question_calls}）"
+                            ),
+                            "expected_points": [
+                                {
+                                    "point_id": "incomplete_state",
+                                    "description": "说明继续执行会让后续副作用依赖不完整状态",
+                                    "cited_evidence": (
+                                        "失败后继续当前 turn 会让后续副作用依赖不完整状态"
+                                    ),
+                                }
+                            ],
+                            "critical_point_ids": ["incomplete_state"],
+                            "reference_answer": (
+                                "继续执行会让后续副作用建立在不完整状态上，所以必须阻断当前 turn。"
+                            ),
+                            "cited_evidence": ["失败后继续当前 turn 会让后续副作用依赖不完整状态"],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    usage=Usage(prompt_tokens=180, completion_tokens=45),
+                )
             questions = [
                 "durable processor 失败后为什么要阻断当前 turn？",
                 "继续执行会怎样破坏事件历史的因果一致性？",
@@ -172,7 +206,10 @@ class _FixtureProvider:
             return Completion(
                 text=json.dumps(
                     {
-                        "question": questions[(self._question_calls - 1) % len(questions)],
+                        "question": (
+                            questions[(self._question_calls - 1) % len(questions)]
+                            + f"（fixture {self._question_calls}）"
+                        ),
                         "options": [
                             "避免后续副作用依赖不完整状态",
                             "允许后续副作用跳过事件持久化",
@@ -198,6 +235,42 @@ class _FixtureProvider:
                 ),
                 usage=Usage(prompt_tokens=90, completion_tokens=20),
             )
+        if role == "basic" and any("本题原子评分点" in message.content for message in messages):
+            grading_input = messages[-1].content
+            answer_units = re.findall(
+                r"^- \[(v1e\d+_\d+)\] (.+)$",
+                grading_input,
+                flags=re.MULTILINE,
+            )
+            accepted = any("依赖不完整状态" in text for _, text in answer_units)
+            return Completion(
+                text=json.dumps(
+                    {
+                        "verdict": "对" if accepted else "错",
+                        "point_assessments": [
+                            {
+                                "point_id": "incomplete_state",
+                                "label": "matched" if accepted else "missing",
+                                "answer_evidence_ids": ([answer_units[-1][0]] if accepted else []),
+                                "reason": (
+                                    "明确说明了不完整状态依赖。"
+                                    if accepted
+                                    else "没有说明不完整状态依赖。"
+                                ),
+                            }
+                        ],
+                        "diagnosis": "complete" if accepted else "wrong_focus",
+                        "reason": (
+                            "结合补充说明，已覆盖阻断原因。"
+                            if accepted
+                            else "原回答没有解释阻断原因。"
+                        ),
+                        "cited_evidence": ["失败后继续当前 turn 会让后续副作用依赖不完整状态"],
+                    },
+                    ensure_ascii=False,
+                ),
+                usage=Usage(prompt_tokens=130, completion_tokens=35),
+            )
         if tools is not None:
             user_text = next(
                 (message.content for message in reversed(messages) if message.role == "user"),
@@ -216,7 +289,7 @@ class _FixtureProvider:
                             arguments={
                                 "resource_id": self._resource_id,
                                 "rounds": 1,
-                                "question_type": "选择题",
+                                "question_type": ("简答题" if "简答题" in user_text else "选择题"),
                             },
                         )
                     ],

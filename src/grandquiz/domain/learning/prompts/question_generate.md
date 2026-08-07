@@ -9,10 +9,17 @@
   - `point_id`：单题内唯一、稳定的英文短标识；
   - `description`：学习者需要答到的具体内容，不要写成宽泛主题；
   - `cited_evidence`：支撑该评分点的一条逐字原文证据，且必须同时列入顶层 `cited_evidence`。
+- 一个评分点只表达一个语义不变量。若题目同时要求定位责任层、列出机制或说明边界，就按可独立判断的必答语义
+  拆成多个评分点；不要把一个核心要求和一组示例/延伸职责捆成一个过载评分点。
+- 只有题干明确要求分别回答的条件，才拆成多个独立必答点。替代实现、同义表达和帮助理解的示例应留在同一个
+  接受边界内；除非题干明确限定，否则不得把某个示例升格成学习者必须提到的条件。
+- `expected_points` 必须保持扁平；不得使用 `all_of` / `any_of` 或其他嵌套布尔 rubric。
+- `critical_point_ids`：从 `expected_points.point_id` 中选择零个或少量核心点。只有当缺失该点足以说明
+  学习者答错了问题的核心方向时才列入；普通细节遗漏不要列入。必须在出题时确定，无法合理区分时返回空列表。
 - `reference_answer`：只回答当前题目、覆盖全部 `expected_points` 的简洁参考作答；不要泛化复述
   整个知识点，也不得加入材料没有支持的内容。
 - `cited_evidence`：本题所锚定的原文证据列表，**非空**；其中每一条都必须**逐字**取自上文"可引用的原文证据"之一——一字不改、不得改写、不得拼接、不得编造。这保证题锚定真实存在的知识点与真实证据（防幽灵题）。
-- 只输出 JSON，形如 `{"question": "……", "expected_points": [{"point_id": "point_1", "description": "……", "cited_evidence": "……"}], "reference_answer": "……", "cited_evidence": ["……"]}`，不要任何额外解释、不要 markdown 代码块围栏。
+- 只输出 JSON，形如 `{"question": "……", "expected_points": [{"point_id": "point_1", "description": "……", "cited_evidence": "……"}], "critical_point_ids": ["point_1"], "reference_answer": "……", "cited_evidence": ["……"]}`，不要任何额外解释、不要 markdown 代码块围栏。
 
 软约束：
 
