@@ -43,11 +43,11 @@ owner 对 push/tag/Release 的单独批准
 - Playwright：完整桌面/移动端 `20/20`，包含申诉、取消、发现、Eval Snapshot、Chat 与安全 Markdown；
 - v0.4.0 sdist/wheel：构建成功；wheel 仓库外安装成功；CLI help、安装包内离线 Eval 17/17、FastAPI
   health、Web 首页和 SPA fallback 均通过；
-- sdist SHA-256：`aaf4505e1a97c19b57ae9d088dc6b5e8d3de715db4951476f518d13ccbfea12d`；
 - wheel SHA-256：`894ea024540135538f62f8130fdc272dc60c3bf7b33dd4e999813192597c394f`。
 
-这些哈希只对应当前未提交工作区的本地候选，用于证明打包形状；正式 GitHub Release asset 必须从最终
-release commit 或 CI 重新构建，不能把本地临时文件直接当权威产物。
+wheel 不包含本记录，因此该哈希可复现。sdist 会包含源代码文档，若把自己的哈希写回本文会形成自引用并
+再次改变哈希；其最终 SHA-256 应随 GitHub Release asset/CI manifest 发布，不写回源树。正式 Release
+仍必须从最终 release commit 或 CI 重新构建，不能把本地临时文件直接当权威产物。
 
 ## 仍未执行的外部动作
 
