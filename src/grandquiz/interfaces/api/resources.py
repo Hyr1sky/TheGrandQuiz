@@ -48,6 +48,8 @@ class DocumentNodeSummary(BaseModel):
     depth: int
     title: str | None
     section_path: str
+    start_offset: int
+    end_offset: int
     synthetic: bool
 
     @classmethod
@@ -69,6 +71,13 @@ class DocumentNodeReadResponse(BaseModel):
     end_offset: int
     content: str
     has_more: bool
+    untrusted: bool
+
+
+class DocumentReadResponse(BaseModel):
+    resource_id: str
+    revision_id: str
+    content: str
     untrusted: bool
 
 
@@ -105,6 +114,26 @@ async def get_document_outline(
     return DocumentOutlineResponse(
         resource_id=resource_id,
         nodes=[DocumentNodeSummary.from_node(node) for node in nodes],
+    )
+
+
+@router.get(
+    "/{resource_id}/document",
+    response_model=DocumentReadResponse,
+)
+async def read_document(resource_id: str, request: Request) -> DocumentReadResponse:
+    revision = persistence_from(request).store.current_revision(resource_id)
+    if revision is None:
+        raise ApiError(
+            status_code=404,
+            code="resource_not_found",
+            message=f"资源不存在或没有当前版本：{resource_id}",
+        )
+    return DocumentReadResponse(
+        resource_id=resource_id,
+        revision_id=revision.revision_id,
+        content=revision.raw_content,
+        untrusted=not revision.trusted,
     )
 
 

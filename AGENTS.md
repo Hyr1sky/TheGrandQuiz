@@ -84,10 +84,13 @@ precision 66.67%，预注册失败；误差证明下一轮必须用独立三态 
 第二轮 Support Relationship 真实原型得到合法 11/12、exact 9/12、no support 5/6、ambiguity 0/2、
 direct support 4/4、3 次重试、12,342 Token；预注册失败且未接生产。其旁路的用户主动申诉竖切已落地：
 开放题允许一次补充，原答不可变，同一 Grader 重判后经追加式 Verdict Correction 重放学习状态；这不代表
-自动 ambiguity classifier 已获准。当前 pytest 为
-`1036 passed`，
-Ruff、Pyright 与 import-linter 全绿。Web unit 为
-`50 passed`，Playwright 桌面/移动端为 `20 passed`。Reader 真实基线为
+自动 ambiguity classifier 已获准。v0.5 Voice Interview 的 S1–S4 与离线 S5 已落地：revision 级
+RecognitionLexicon、exact-item TranscriptionHints、DashScope/Replay 语音 Provider、持久 VoiceRun，以及
+桌面 Web 录音—回放—草稿审查—唯一 Assessment 提交已经贯通；四条固定音频的 hints off/on 真实 dogfood
+8/8 成功并通过 8/8 离线 replay，目标术语改善且负样本/自然回答零术语插入。Web 本地设置页已接通
+出题语言、`foundation/adaptive/challenge` 难度倾向与材料词表热更新；API Key 只投影安全配置状态，原文
+仍由 `.env` 管理。当前 pytest 为 `1076 passed`，Web unit 为 `67 passed`，Playwright 桌面/移动端为
+`23 passed / 1 skipped`。Reader 真实基线为
 105/105 个可考节点 exactly-once 覆盖、12 个候选、0 重复、单次请求 8715 prompt tokens。DS-S3 的生产 ingest/
 人工筛选已由 trace `2515ec1af79a4a0a9860993b4a35beb9` 通过只读审计（141 个可考节点、2 批、34 条 exact
 evidence）。DS-S4 生产 trace `46b91c61c1c24ebabc94be97db31bb16` 也已通过 selected search → 3 次 bounded
@@ -99,10 +102,11 @@ DS-S5 KnowledgeRelation 因没有关系增益证据而按 eval gate 关闭，本
 - [CONTEXT.md](CONTEXT.md) — 领域语言权威表（先读这个统一术语）
 - [docs/architecture.md](docs/architecture.md) — 目标架构、两条核心设计判断、搭建顺序
 - [docs/roadmap.md](docs/roadmap.md) — MVP 考核竖切、领域模型、eval 用例
-- [docs/adr/](docs/adr/) — 十一个不可逆决策（0001 提取式迁移 / 0002 概念同一性 / 0003 记忆四收二 /
+- [docs/adr/](docs/adr/) — 十二个不可逆决策（0001 提取式迁移 / 0002 概念同一性 / 0003 记忆四收二 /
   0004 循环是 workflow / 0005 全局 KB·消解 LearningTask / 0006 用户显式题型覆盖 / 0007 稳定资源修订与
   item 身份 / 0008 修订化文档树·精确溯源·分层知识图 / 0009 Local-first Web Interface /
-  0010 长期学习事实与完整运行 Trace 分离 / 0011 受限 Required Claims 判卷契约）
+  0010 长期学习事实与完整运行 Trace 分离 / 0011 受限 Required Claims 判卷契约 /
+  0012 语音转写是可审查输入而非正式答案）
 
 ## 常用命令
 
@@ -140,7 +144,7 @@ src/grandquiz/
 │                 #   memory / recovery / trace / subagent / approval
 ├── providers/    # LLM provider（OpenAI 兼容 + DemoEcho）、Record/Replay、token 用量
 ├── domain/learning/  # 学习领域：全局 KB（LearningResource → KnowledgeItem）+ 考核 / 记忆 / 难度
-├── interfaces/   # 可插拔通道：api/（FastAPI REST+SSE）、cli/（开发期主力界面）、asr/（语音）
+├── interfaces/   # 可插拔通道：api/（FastAPI REST+SSE）、cli/（开发期主力界面）
 └── evals/        # 用例 DSL（YAML）+ 规则断言 / LLM judge + harness
 ```
 

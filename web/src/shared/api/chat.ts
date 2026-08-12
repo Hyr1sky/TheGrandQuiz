@@ -14,6 +14,23 @@ export interface TurnCancelled {
   status: "cancelled";
 }
 
+export interface ChatStatusView {
+  session_id: string;
+  trace_id: string;
+  status: "idle" | "running" | "closed";
+  context: {
+    estimated_tokens: number;
+    budget_tokens: number;
+    remaining_tokens: number;
+    estimation: "heuristic";
+  } | null;
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
 export interface ChatUiEvent {
   sequence: number;
   type: string;
@@ -33,6 +50,18 @@ export async function createSession(): Promise<SessionView> {
     throw new Error("无法创建对话会话");
   }
   return (await response.json()) as SessionView;
+}
+
+export async function getChatStatus(sessionId: string): Promise<ChatStatusView> {
+  const response = await globalThis.fetch(
+    new Request(
+      `${baseUrl()}/api/v1/chat/sessions/${encodeURIComponent(sessionId)}/status`,
+    ),
+  );
+  if (!response.ok) {
+    throw new Error("无法读取会话状态");
+  }
+  return (await response.json()) as ChatStatusView;
 }
 
 export async function sendMessage(

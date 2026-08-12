@@ -28,8 +28,11 @@ import {
   startAssessment,
   submitAppeal,
   submitAnswer,
+  submitVoiceRun,
   type AssessmentView,
+  type VoiceRunView,
 } from "./api";
+import { VoiceAnswerControl } from "./VoiceAnswerControl";
 import "./assessment-panel.css";
 
 interface AssessmentPanelProps {
@@ -57,6 +60,9 @@ export const AssessmentPanel = forwardRef<
   const [assessment, setAssessment] = useState<AssessmentView | null>(null);
   const assessmentRef = useRef<AssessmentView | null>(null);
   const [answer, setAnswer] = useState("");
+  const [voiceDraft, setVoiceDraft] = useState<VoiceRunView | null>(null);
+  const [voiceMergePending, setVoiceMergePending] = useState<string | null>(null);
+  const answerBeforeVoiceCapture = useRef("");
   const [appealOpen, setAppealOpen] = useState(false);
   const [supplementalAnswer, setSupplementalAnswer] = useState("");
   const [busy, setBusy] = useState(false);
@@ -261,14 +267,24 @@ export const AssessmentPanel = forwardRef<
               requestId: commandId("answer"),
             };
       answerCommand.current = command;
-      notifyUpdate(
-        await submitAnswer(
-          assessment.session_id,
-          question.question_id,
+      if (voiceDraft?.status === "reviewable") {
+        await submitVoiceRun(
+          voiceDraft.voice_run_id,
           answer.trim(),
           command.requestId,
-        ),
-      );
+        );
+        setVoiceDraft(null);
+        notifyUpdate(await getAssessment(assessment.session_id));
+      } else {
+        notifyUpdate(
+          await submitAnswer(
+            assessment.session_id,
+            question.question_id,
+            answer.trim(),
+            command.requestId,
+          ),
+        );
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法提交答案");
     } finally {
@@ -296,6 +312,8 @@ export const AssessmentPanel = forwardRef<
         command.requestId,
       );
       setAnswer("");
+      setVoiceDraft(null);
+      setVoiceMergePending(null);
       setAppealOpen(false);
       setSupplementalAnswer("");
       revealRequested.current = null;
@@ -490,15 +508,79 @@ export const AssessmentPanel = forwardRef<
               ))}
             </fieldset>
           ) : (
-            <label className="assessment-panel__open">
-              <span>你的回答</span>
-              <textarea
-                value={answer}
-                disabled={!waiting || busy}
-                onChange={(event) => setAnswer(event.target.value)}
-                placeholder="先给出自己的理解..."
-              />
-            </label>
+            <>
+              {waiting ? (
+                <VoiceAnswerControl
+                  key={question.question_id}
+                  assessmentSessionId={assessment.session_id}
+                  questionId={question.question_id}
+                  disabled={busy}
+                  onCaptureStart={() => {
+                    answerBeforeVoiceCapture.current = answer;
+                    setVoiceMergePending(null);
+                  }}
+                  onReviewable={(run) => {
+                    setVoiceDraft(run);
+                    const transcript = run.reviewable_transcript ?? "";
+                    if (
+                      answerBeforeVoiceCapture.current.trim() === "" &&
+                      answer === answerBeforeVoiceCapture.current
+                    ) {
+                      setAnswer(transcript);
+                      setVoiceMergePending(null);
+                    } else {
+                      setVoiceMergePending(transcript);
+                    }
+                  }}
+                  onReset={() => {
+                    setVoiceDraft(null);
+                    setVoiceMergePending(null);
+                  }}
+                />
+              ) : null}
+              {voiceMergePending !== null ? (
+                <aside className="voice-answer__merge" aria-label="合并语音草稿">
+                  <p>录音期间文字回答发生了变化。请选择如何使用识别草稿：</p>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAnswer(voiceMergePending);
+                        setVoiceMergePending(null);
+                      }}
+                    >
+                      替换现有回答
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAnswer((current) =>
+                          [current.trim(), voiceMergePending.trim()]
+                            .filter(Boolean)
+                            .join("\n\n"),
+                        );
+                        setVoiceMergePending(null);
+                      }}
+                    >
+                      追加到回答
+                    </button>
+                  </div>
+                </aside>
+              ) : null}
+              <label className="assessment-panel__open">
+                <span>
+                  {voiceDraft?.status === "reviewable"
+                    ? "识别草稿（请确认或修改后提交）"
+                    : "你的回答"}
+                </span>
+                <textarea
+                  value={answer}
+                  disabled={!waiting || busy}
+                  onChange={(event) => setAnswer(event.target.value)}
+                  placeholder="先给出自己的理解..."
+                />
+              </label>
+            </>
           )}
 
           <section

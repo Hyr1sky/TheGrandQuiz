@@ -24,6 +24,8 @@ const outline = {
       depth: 0,
       title: "Runtime",
       section_path: "Runtime",
+      start_offset: 0,
+      end_offset: 66,
       synthetic: false,
     },
     {
@@ -35,6 +37,8 @@ const outline = {
       depth: 1,
       title: "Events",
       section_path: "Runtime > Events",
+      start_offset: 11,
+      end_offset: 66,
       synthetic: false,
     },
   ],
@@ -83,6 +87,27 @@ function baseFetchMock(extras?: (url: string, request: Request) => Response | nu
     if (url.endsWith(`/api/v1/resources/${resource.resource_id}/outline`)) {
       return Response.json(outline);
     }
+    if (url.endsWith(`/api/v1/resources/${resource.resource_id}/document`)) {
+      return Response.json({
+        resource_id: resource.resource_id,
+        revision_id: "revision-1",
+        content: "# Runtime\n\n## Events\n\n事件是系统的数据脊柱，所有状态变化都写入事件流。",
+        untrusted: true,
+      });
+    }
+    if (url.endsWith("/api/v1/settings") && request.method === "GET") {
+      return Response.json({
+        schema_version: "settings.v1",
+        preferences: {
+          question_language: "中文",
+          difficulty_mode: "adaptive",
+          asr_material_hints_enabled: false,
+          asr_material_hints_source: "environment_default",
+        },
+        difficulty: { default_tier: 3, item_count: 0, average_tier: null, tier_counts: { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0 } },
+        providers: [],
+      });
+    }
     if (url.endsWith("/api/v1/chat/sessions") && request.method === "POST") {
       return Response.json({ session_id: "session-test" }, { status: 201 });
     }
@@ -106,28 +131,13 @@ afterEach(() => {
 
 describe("Article Workspace", () => {
   it("loads the first material, its outline, and the selected node", async () => {
-    const fetchMock = baseFetchMock((url) => {
-      if (url.includes("/nodes/events")) {
-        return Response.json({
-          resource_id: resource.resource_id,
-          revision_id: "revision-1",
-          node_id: "events",
-          section_path: "Runtime > Events",
-          start_offset: 10,
-          end_offset: 46,
-          content: "事件是系统的数据脊柱，所有状态变化都写入事件流。",
-          has_more: false,
-          untrusted: true,
-        });
-      }
-      return null;
-    });
+    const fetchMock = baseFetchMock();
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: "Agent Runtime" })).toBeInTheDocument();
-    await screen.findByRole("button", { name: /Events/ }).then((button) => button.click());
+    expect(await screen.findByRole("button", { name: /Events/ })).toBeInTheDocument();
     expect(
       await screen.findByText("事件是系统的数据脊柱，所有状态变化都写入事件流。"),
     ).toBeInTheDocument();
@@ -140,7 +150,8 @@ describe("Article Workspace", () => {
 
     render(<App />);
 
-    const toggle = await screen.findByRole("button", { name: "切换至亮色模式" });
+    await user.click(await screen.findByRole("button", { name: "打开应用设置" }));
+    const toggle = await screen.findByRole("button", { name: "当前：暗色" });
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
     await user.click(toggle);
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
@@ -222,6 +233,9 @@ describe("Article Workspace", () => {
         if (url.endsWith(`/api/v1/resources/${resource.resource_id}/outline`)) {
           return Response.json(outline);
         }
+        if (url.endsWith(`/api/v1/resources/${resource.resource_id}/document`)) {
+          return Response.json({ resource_id: resource.resource_id, revision_id: "revision-1", content: "# Runtime", untrusted: true });
+        }
         if (url.endsWith(`/api/v1/resources/${secondResource.resource_id}/outline`)) {
           return Response.json({
             resource_id: secondResource.resource_id,
@@ -235,6 +249,9 @@ describe("Article Workspace", () => {
               },
             ],
           });
+        }
+        if (url.endsWith(`/api/v1/resources/${secondResource.resource_id}/document`)) {
+          return Response.json({ resource_id: secondResource.resource_id, revision_id: "revision-2", content: "# Recovery\n\n恢复设计。", untrusted: true });
         }
         if (url.endsWith("/api/v1/chat/sessions") && request.method === "POST") {
           return Response.json({ session_id: "session-test" }, { status: 201 });

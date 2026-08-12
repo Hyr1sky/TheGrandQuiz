@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel } from "./ChatPanel";
@@ -45,6 +45,109 @@ afterEach(() => {
 });
 
 describe("ChatPanel", () => {
+  it("handles /status locally without sending an LLM turn", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const request = input instanceof Request ? input : new Request(String(input));
+      if (request.url.endsWith("/api/v1/chat/sessions") && request.method === "POST") {
+        return Response.json({ session_id: "session-status", trace_id: "trace-status" }, { status: 201 });
+      }
+      if (request.url.endsWith("/api/v1/chat/sessions/session-status/status")) {
+        return Response.json({
+          session_id: "session-status",
+          trace_id: "trace-status",
+          status: "idle",
+          context: {
+            estimated_tokens: 2400,
+            budget_tokens: 20000,
+            remaining_tokens: 17600,
+            estimation: "heuristic",
+          },
+          usage: { prompt_tokens: 1200, completion_tokens: 300, total_tokens: 1500 },
+        });
+      }
+      throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<ChatPanel activeResourceLabel="Agent Runtime" />);
+    const input = await screen.findByRole("textbox", { name: "发送消息" });
+    await user.type(input, "/status");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByText("1,500 tokens")).toBeInTheDocument();
+    expect(screen.getByText("17,600")).toBeInTheDocument();
+    expect(screen.getByText(/上下文为本地启发式估算/)).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([inputValue]) => {
+      const request = inputValue instanceof Request ? inputValue : new Request(String(inputValue));
+      return request.url.includes("/messages");
+    })).toBe(false);
+    expect(FakeEventSource.instances).toHaveLength(0);
+  });
+
+  it("expands the compact session status on demand", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request = input instanceof Request ? input : new Request(String(input));
+        if (request.url.endsWith("/api/v1/chat/sessions") && request.method === "POST") {
+          return Response.json({ session_id: "session-details", trace_id: "trace-details" }, { status: 201 });
+        }
+        if (request.url.endsWith("/api/v1/chat/sessions/session-details/status")) {
+          return Response.json({
+            session_id: "session-details",
+            trace_id: "trace-details",
+            status: "idle",
+            context: {
+              estimated_tokens: 2400,
+              budget_tokens: 20000,
+              remaining_tokens: 17600,
+              estimation: "heuristic",
+            },
+            usage: { prompt_tokens: 1200, completion_tokens: 300, total_tokens: 1500 },
+          });
+        }
+        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<ChatPanel activeResourceLabel="Agent Runtime" />);
+    const trigger = await screen.findByRole("button", { name: "查看会话状态详情" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("1,500 tokens")).not.toBeInTheDocument();
+
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("1,500 tokens")).toBeInTheDocument();
+
+    await user.click(trigger);
+    expect(screen.queryByText("1,500 tokens")).not.toBeInTheDocument();
+  });
+
+  it("grows the composer until its maximum height, then scrolls", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request = input instanceof Request ? input : new Request(String(input));
+        if (request.url.endsWith("/api/v1/chat/sessions") && request.method === "POST") {
+          return Response.json({ session_id: "session-grow" }, { status: 201 });
+        }
+        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+      }),
+    );
+
+    render(<ChatPanel />);
+    const input = await screen.findByRole("textbox", { name: "发送消息" });
+    Object.defineProperty(input, "scrollHeight", { configurable: true, value: 112 });
+    fireEvent.change(input, { target: { value: "第一行\n第二行\n第三行" } });
+    expect(input).toHaveStyle({ height: "112px", overflowY: "hidden" });
+
+    Object.defineProperty(input, "scrollHeight", { configurable: true, value: 260 });
+    fireEvent.change(input, { target: { value: "第一行\n第二行\n第三行\n第四行" } });
+    expect(input).toHaveStyle({ height: "160px", overflowY: "auto" });
+  });
+
   it("offers honest example prompts in the empty state", async () => {
     vi.stubGlobal(
       "fetch",

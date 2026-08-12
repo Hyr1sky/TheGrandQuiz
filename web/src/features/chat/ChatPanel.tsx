@@ -1,10 +1,16 @@
 import {
+  ChartDonutIcon,
+  CaretDownIcon,
+  CaretUpIcon,
+  PaperclipIcon,
   PaperPlaneTiltIcon,
+  SidebarSimpleIcon,
   StopIcon,
 } from "@phosphor-icons/react";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type FormEvent,
@@ -13,7 +19,9 @@ import {
 import {
   cancelTurn,
   createSession,
+  getChatStatus,
   sendMessage,
+  type ChatStatusView,
   type ChatUiEvent,
 } from "../../shared/api/chat";
 import { SafeMarkdown } from "../../shared/components/SafeMarkdown";
@@ -29,6 +37,9 @@ interface ChatPanelProps {
   onNavigation?: (nav: NavigationEvent) => void;
   onTraceChange?: (traceId: string) => void;
   activeResourceId?: string | null;
+  activeResourceLabel?: string | null;
+  collapsed?: boolean;
+  onCollapse?: () => void;
   assessmentStatus?:
     | "preparing"
     | "awaiting_answer"
@@ -44,7 +55,8 @@ interface ChatPanelProps {
 interface ChatMessage {
   role: "user" | "agent" | "system";
   content: string;
-  kind?: "assessment-status";
+  kind?: "assessment-status" | "runtime-status";
+  status?: ChatStatusView;
   turnId?: string;
 }
 
@@ -75,6 +87,9 @@ export function ChatPanel({
   onNavigation,
   onTraceChange,
   activeResourceId = null,
+  activeResourceLabel = null,
+  collapsed = false,
+  onCollapse,
   assessmentStatus = null,
 }: ChatPanelProps) {
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -87,11 +102,26 @@ export function ChatPanel({
   const [connection, setConnection] = useState<
     "connected" | "disconnected"
   >("connected");
+  const [runtimeStatus, setRuntimeStatus] = useState<ChatStatusView | null>(null);
+  const [statusExpanded, setStatusExpanded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const stopStream = useRef<(() => void) | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastSequence = useRef(0);
   const lastSubmittedInput = useRef<string | null>(null);
+
+  const fitTextarea = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (textarea === null) return;
+    textarea.style.height = "auto";
+    const nextHeight = Math.max(24, Math.min(textarea.scrollHeight, 160));
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > 160 ? "auto" : "hidden";
+  }, []);
+
+  useLayoutEffect(() => {
+    fitTextarea();
+  }, [fitTextarea, input]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -110,6 +140,11 @@ export function ChatPanel({
           lastSequence.current = 0;
           setSessionId(view.session_id);
           onTraceChange?.(view.trace_id);
+          void getChatStatus(view.session_id)
+            .then((status) => {
+              if (active) setRuntimeStatus(status);
+            })
+            .catch(() => undefined);
         }
       })
       .catch(() => {
@@ -122,6 +157,12 @@ export function ChatPanel({
       stopStream.current?.();
     };
   }, [onTraceChange]);
+
+  const refreshStatus = useCallback(async (id: string) => {
+    const status = await getChatStatus(id);
+    setRuntimeStatus(status);
+    return status;
+  }, []);
 
   // Stable ref to avoid re-creating the SSE callback when onNavigation changes
   const onNavigationRef = useRef(onNavigation);
@@ -244,6 +285,7 @@ export function ChatPanel({
         setLoading(false);
         setActiveTurnId(null);
         setToolCall(null);
+        if (sessionId !== null) void refreshStatus(sessionId).catch(() => undefined);
         break;
       }
       case "chat.turn_cancelled":
@@ -254,6 +296,7 @@ export function ChatPanel({
         setLoading(false);
         setActiveTurnId(null);
         setToolCall(null);
+        if (sessionId !== null) void refreshStatus(sessionId).catch(() => undefined);
         break;
       case "chat.error": {
         const errorType =
@@ -267,7 +310,7 @@ export function ChatPanel({
         break;
       }
     }
-  }, []);
+  }, [refreshStatus, sessionId]);
 
   const send = async (event: FormEvent) => {
     event.preventDefault();
@@ -275,10 +318,26 @@ export function ChatPanel({
     if (sessionId === null || text === "" || loading) {
       return;
     }
+    if (text === "/status") {
+      setInput("");
+      setStatusExpanded(false);
+      setError(null);
+      try {
+        const status = await refreshStatus(sessionId);
+        setMessages((previous) => [
+          ...previous,
+          { role: "system", content: "", kind: "runtime-status", status },
+        ]);
+      } catch {
+        setError("无法读取会话状态");
+      }
+      return;
+    }
     setError(null);
     lastSubmittedInput.current = text;
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setInput("");
+    setStatusExpanded(false);
     setLoading(true);
 
     try {
@@ -339,10 +398,27 @@ export function ChatPanel({
 
   return (
     <aside
-      className="chat-panel"
+      className={`chat-panel${collapsed ? " chat-panel--collapsed" : ""}`}
       aria-label="Agent 对话"
       data-onboarding="chat"
     >
+      {collapsed ? (
+        <button className="chat-panel__expand" type="button" aria-label="展开对话栏" onClick={onCollapse}>
+          <SidebarSimpleIcon aria-hidden size={17} /><strong>对话</strong>
+        </button>
+      ) : (
+      <>
+      <header className="chat-panel__header">
+        <div>
+          <strong>材料对话</strong>
+          <span>{connection === "connected" ? "已连接" : "重连中"}</span>
+        </div>
+        {onCollapse ? (
+          <button type="button" aria-label="收起对话栏" onClick={onCollapse}>
+            <SidebarSimpleIcon aria-hidden size={17} />
+          </button>
+        ) : null}
+      </header>
       <div className="chat-messages" role="log" aria-live="polite">
         {messages.length === 0 && !loading ? (
           <div className="chat-empty">
@@ -390,7 +466,9 @@ export function ChatPanel({
                     : "chat-bubble--agent"
               }
             >
-              {message.role === "agent" ? (
+              {message.kind === "runtime-status" && message.status ? (
+                <RuntimeStatusCard status={message.status} />
+              ) : message.role === "agent" ? (
                 <SafeMarkdown content={content} />
               ) : (
                 <div>{content}</div>
@@ -420,35 +498,83 @@ export function ChatPanel({
         ) : null}
         <div ref={messagesEndRef} />
       </div>
-      <form className="chat-input" onSubmit={send}>
+      <form className="chat-composer" onSubmit={send}>
         <textarea
           ref={textareaRef}
           aria-label="发送消息"
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="输入消息..."
+          placeholder="向材料提问，或输入 /status..."
           disabled={sessionId === null}
         />
-        {loading ? (
+        <div className="chat-composer__footer">
           <button
+            className="chat-composer__meta"
             type="button"
-            aria-label="停止生成"
-            disabled={activeTurnId === null}
-            onClick={() => void cancel()}
+            aria-label="查看会话状态详情"
+            aria-expanded={statusExpanded}
+            aria-controls="chat-runtime-status-details"
+            onClick={() => setStatusExpanded((value) => !value)}
           >
-            <StopIcon aria-hidden size={19} weight="fill" />
+            <span>
+              <PaperclipIcon aria-hidden size={14} />
+              {activeResourceLabel ?? "无材料"}
+            </span>
+            {runtimeStatus?.context ? (
+              <span>
+                <ChartDonutIcon aria-hidden size={14} />
+                {formatCompact(runtimeStatus.context.estimated_tokens)} / {formatCompact(runtimeStatus.context.budget_tokens)}
+              </span>
+            ) : null}
+            {statusExpanded ? <CaretDownIcon aria-hidden size={11} /> : <CaretUpIcon aria-hidden size={11} />}
           </button>
-        ) : (
-          <button
-            type="submit"
-            aria-label="发送"
-            disabled={sessionId === null || input.trim() === ""}
-          >
-            <PaperPlaneTiltIcon aria-hidden size={19} />
-          </button>
-        )}
+          {loading ? (
+            <button
+              type="button"
+              aria-label="停止生成"
+              disabled={activeTurnId === null}
+              onClick={() => void cancel()}
+            >
+              <StopIcon aria-hidden size={17} weight="fill" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              aria-label="发送"
+              disabled={sessionId === null || input.trim() === ""}
+            >
+              <PaperPlaneTiltIcon aria-hidden size={17} weight="fill" />
+            </button>
+          )}
+        </div>
+        {statusExpanded && runtimeStatus !== null ? (
+          <div className="chat-composer__status-popover" id="chat-runtime-status-details">
+            <RuntimeStatusCard status={runtimeStatus} />
+          </div>
+        ) : null}
       </form>
+      </>
+      )}
     </aside>
+  );
+}
+
+function formatCompact(value: number): string {
+  return value >= 1000 ? `${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)}k` : String(value);
+}
+
+function RuntimeStatusCard({ status }: { status: ChatStatusView }) {
+  return (
+    <div className="runtime-status-card" role="status">
+      <div><strong>会话状态</strong><span>{status.status === "running" ? "运行中" : "就绪"}</span></div>
+      <dl>
+        <div><dt>本会话累计</dt><dd>{status.usage.total_tokens.toLocaleString()} tokens</dd></div>
+        <div><dt>输入 / 输出</dt><dd>{status.usage.prompt_tokens.toLocaleString()} / {status.usage.completion_tokens.toLocaleString()}</dd></div>
+        <div><dt>上下文估算</dt><dd>{status.context ? `${status.context.estimated_tokens.toLocaleString()} / ${status.context.budget_tokens.toLocaleString()}` : "暂不可用"}</dd></div>
+        <div><dt>估算余量</dt><dd>{status.context ? status.context.remaining_tokens.toLocaleString() : "—"}</dd></div>
+      </dl>
+      <p>上下文为本地启发式估算；Token 累计来自模型真实 usage。</p>
+    </div>
   );
 }

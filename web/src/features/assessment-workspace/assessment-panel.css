@@ -132,6 +132,110 @@
   font: 400 15px/1.7 var(--font-reading);
 }
 
+/* ---- Voice answer ---- */
+
+.voice-answer {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background:
+    linear-gradient(120deg, var(--evidence-soft), transparent 60%),
+    var(--surface-quiet);
+}
+
+.voice-answer__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.voice-answer__toolbar p {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.voice-answer__toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-strong);
+}
+
+.voice-answer__pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--danger) 15%, transparent);
+  animation: voice-pulse 1.4s ease-in-out infinite;
+}
+
+.voice-answer__player {
+  width: 100%;
+  height: 34px;
+}
+
+.voice-answer__meta,
+.voice-answer__error {
+  margin: 0;
+  font-size: 12px;
+}
+
+.voice-answer__merge {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--evidence-soft);
+}
+
+.voice-answer__merge p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.voice-answer__merge div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.voice-answer__meta {
+  color: var(--muted);
+}
+
+.voice-answer__error {
+  color: var(--danger);
+}
+
+@keyframes voice-pulse {
+  50% {
+    transform: scale(0.82);
+    opacity: 0.62;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-answer__pulse {
+    animation: none;
+  }
+}
+
 /* ---- Evidence ---- */
 
 .assessment-panel__evidence {

@@ -9,6 +9,8 @@ export type KnowledgeKind = NonNullable<
 >[number];
 export type VerdictLabel =
   components["schemas"]["VerdictCorrectionRequest"]["final_verdict"];
+export type VoiceRunView = components["schemas"]["VoiceRunView"];
+export type VoiceRuntimeConfig = components["schemas"]["VoiceRuntimeConfig"];
 
 export type AssessmentStartPlan =
   | {
@@ -178,6 +180,118 @@ export async function nextRound(
     {
       params: { path: { session_id: sessionId } },
       body: { request_id: requestId },
+    },
+  );
+  if (error !== undefined) {
+    throw toApiRequestError(error);
+  }
+  return data;
+}
+
+export async function getVoiceRuntimeConfig(): Promise<VoiceRuntimeConfig> {
+  const { data, error } = await apiClient.GET("/api/v1/voice/config");
+  if (error !== undefined) {
+    throw toApiRequestError(error);
+  }
+  return data;
+}
+
+async function rawAudioRequest(
+  path: string,
+  audio: Blob,
+  requestId: string,
+  extraHeaders: Record<string, string> = {},
+  signal?: AbortSignal,
+): Promise<VoiceRunView> {
+  const response = await globalThis.fetch(path, {
+    method: "POST",
+    headers: {
+      "Content-Type": audio.type,
+      "Idempotency-Key": requestId,
+      ...extraHeaders,
+    },
+    body: audio,
+    signal,
+  });
+  const payload: unknown = await response.json();
+  if (!response.ok) {
+    throw toApiRequestError(payload);
+  }
+  return payload as VoiceRunView;
+}
+
+export async function startVoiceRun(
+  sessionId: string,
+  questionId: string,
+  audio: Blob,
+  durationMs: number,
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<VoiceRunView> {
+  return rawAudioRequest(
+    `/api/v1/assessments/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(questionId)}/voice-runs`,
+    audio,
+    requestId,
+    { "X-Client-Duration-Ms": String(durationMs) },
+    signal,
+  );
+}
+
+export async function cancelVoiceRequest(requestId: string): Promise<void> {
+  const response = await globalThis.fetch(
+    `/api/v1/voice-requests/${encodeURIComponent(requestId)}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok) {
+    const payload: unknown = await response.json();
+    throw toApiRequestError(payload);
+  }
+}
+
+export async function getVoiceRun(voiceRunId: string): Promise<VoiceRunView> {
+  const { data, error } = await apiClient.GET(
+    "/api/v1/voice-runs/{voice_run_id}",
+    { params: { path: { voice_run_id: voiceRunId } } },
+  );
+  if (error !== undefined) {
+    throw toApiRequestError(error);
+  }
+  return data;
+}
+
+export async function cancelVoiceRun(voiceRunId: string): Promise<VoiceRunView> {
+  const { data, error } = await apiClient.DELETE(
+    "/api/v1/voice-runs/{voice_run_id}",
+    { params: { path: { voice_run_id: voiceRunId } } },
+  );
+  if (error !== undefined) {
+    throw toApiRequestError(error);
+  }
+  return data;
+}
+
+export async function retryVoiceRun(
+  voiceRunId: string,
+  audio: Blob,
+  requestId: string,
+): Promise<VoiceRunView> {
+  return rawAudioRequest(
+    `/api/v1/voice-runs/${encodeURIComponent(voiceRunId)}/retry`,
+    audio,
+    requestId,
+  );
+}
+
+export async function submitVoiceRun(
+  voiceRunId: string,
+  editedText: string,
+  requestId: string,
+): Promise<VoiceRunView> {
+  const { data, error } = await apiClient.POST(
+    "/api/v1/voice-runs/{voice_run_id}/submit",
+    {
+      params: { path: { voice_run_id: voiceRunId } },
+      body: { request_id: requestId, edited_text: editedText },
     },
   );
   if (error !== undefined) {

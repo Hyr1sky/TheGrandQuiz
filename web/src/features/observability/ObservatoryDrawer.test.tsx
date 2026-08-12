@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ObservatoryDrawer } from "./ObservatoryDrawer";
@@ -135,5 +135,22 @@ describe("ObservatoryDrawer", () => {
       await screen.findByRole("button", { name: "关闭运行观测" }),
     );
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the close control circular and the icon upright on hover", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(snapshot)));
+    vi.stubGlobal("EventSource", FakeEventSource);
+
+    render(<ObservatoryDrawer open traceId="trace-1" onClose={vi.fn()} />);
+    const close = await screen.findByRole("button", { name: "关闭运行观测" });
+    fireEvent.mouseEnter(close);
+
+    expect(close).toHaveStyle({
+      width: "36px",
+      height: "36px",
+      minHeight: "36px",
+      aspectRatio: "1 / 1",
+      transform: "none",
+    });
   });
 });

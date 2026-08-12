@@ -193,6 +193,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assessments/{session_id}/questions/{question_id}/voice-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Voice Run */
+        post: operations["start_voice_run_api_v1_assessments__session_id__questions__question_id__voice_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chat/sessions": {
         parameters: {
             query?: never;
@@ -238,6 +255,23 @@ export interface paths {
         put?: never;
         /** Send Message */
         post: operations["send_message_api_v1_chat_sessions__session_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/sessions/{session_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Session Status */
+        get: operations["get_session_status_api_v1_chat_sessions__session_id__status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -778,6 +812,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/resources/{resource_id}/document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Document */
+        get: operations["read_document_api_v1_resources__resource_id__document_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/resources/{resource_id}/nodes/{node_id}": {
         parameters: {
             query?: never;
@@ -872,6 +923,113 @@ export interface paths {
         };
         /** Stream Run Events */
         get: operations["stream_run_events_api_v1_runs__run_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Settings */
+        get: operations["get_settings_api_v1_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Settings */
+        patch: operations["update_settings_api_v1_settings_patch"];
+        trace?: never;
+    };
+    "/api/v1/voice-requests/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Cancel Voice Request
+         * @description Reserve cancellation even when an upload has not returned its VoiceRun ID yet.
+         */
+        delete: operations["cancel_voice_request_api_v1_voice_requests__request_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/voice-runs/{voice_run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Voice Run */
+        get: operations["get_voice_run_api_v1_voice_runs__voice_run_id__get"];
+        put?: never;
+        post?: never;
+        /** Cancel Voice Run */
+        delete: operations["cancel_voice_run_api_v1_voice_runs__voice_run_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/voice-runs/{voice_run_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Voice Run */
+        post: operations["retry_voice_run_api_v1_voice_runs__voice_run_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/voice-runs/{voice_run_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Voice Run */
+        post: operations["submit_voice_run_api_v1_voice_runs__voice_run_id__submit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/voice/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Voice Runtime Config */
+        get: operations["get_voice_runtime_config_api_v1_voice_config_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1214,6 +1372,20 @@ export interface components {
             /** Resume Token */
             resume_token: string;
         };
+        /** ChatStatusView */
+        ChatStatusView: {
+            context: components["schemas"]["ContextBudgetStatus"] | null;
+            /** Session Id */
+            session_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "idle" | "running" | "closed";
+            /** Trace Id */
+            trace_id: string;
+            usage: components["schemas"]["ChatUsageView"];
+        };
         /** ChatUiEvent */
         ChatUiEvent: {
             /** Data */
@@ -1226,6 +1398,15 @@ export interface components {
             session_id: string;
             /** Type */
             type: string;
+        };
+        /** ChatUsageView */
+        ChatUsageView: {
+            /** Completion Tokens */
+            completion_tokens: number;
+            /** Prompt Tokens */
+            prompt_tokens: number;
+            /** Total Tokens */
+            total_tokens: number;
         };
         /** ClassificationProposal */
         ClassificationProposal: {
@@ -1271,6 +1452,24 @@ export interface components {
              * @enum {string}
              */
             review_status: "proposed" | "approved" | "rejected";
+        };
+        /**
+         * ContextBudgetStatus
+         * @description Safe, content-free estimate for one assembled provider context.
+         */
+        ContextBudgetStatus: {
+            /** Budget Tokens */
+            budget_tokens: number;
+            /** Estimated Tokens */
+            estimated_tokens: number;
+            /**
+             * Estimation
+             * @default heuristic
+             * @constant
+             */
+            estimation: "heuristic";
+            /** Remaining Tokens */
+            remaining_tokens: number;
         };
         /** CreateAcquisitionRequest */
         CreateAcquisitionRequest: {
@@ -1415,6 +1614,23 @@ export interface components {
             /** Validator Version */
             validator_version: string;
         };
+        /** DifficultySettingView */
+        DifficultySettingView: {
+            /** Average Tier */
+            average_tier: number | null;
+            /**
+             * Default Tier
+             * @default 3
+             * @constant
+             */
+            default_tier: 3;
+            /** Item Count */
+            item_count: number;
+            /** Tier Counts */
+            tier_counts: {
+                [key: string]: number;
+            };
+        };
         /** DiscoveryList */
         DiscoveryList: {
             /** Items */
@@ -1445,6 +1661,8 @@ export interface components {
         DocumentNodeSummary: {
             /** Depth */
             depth: number;
+            /** End Offset */
+            end_offset: number;
             /**
              * Kind
              * @enum {string}
@@ -1460,6 +1678,8 @@ export interface components {
             revision_id: string;
             /** Section Path */
             section_path: string;
+            /** Start Offset */
+            start_offset: number;
             /** Synthetic */
             synthetic: boolean;
             /** Title */
@@ -1471,6 +1691,17 @@ export interface components {
             nodes: components["schemas"]["DocumentNodeSummary"][];
             /** Resource Id */
             resource_id: string;
+        };
+        /** DocumentReadResponse */
+        DocumentReadResponse: {
+            /** Content */
+            content: string;
+            /** Resource Id */
+            resource_id: string;
+            /** Revision Id */
+            revision_id: string;
+            /** Untrusted */
+            untrusted: boolean;
         };
         /** ErrorResponse */
         ErrorResponse: {
@@ -2052,6 +2283,54 @@ export interface components {
             /** Request Id */
             request_id: string;
         };
+        /** PreferenceSettingView */
+        PreferenceSettingView: {
+            /** Asr Material Hints Enabled */
+            asr_material_hints_enabled: boolean;
+            /**
+             * Asr Material Hints Source
+             * @enum {string}
+             */
+            asr_material_hints_source: "preference" | "environment_default";
+            /**
+             * Difficulty Mode
+             * @enum {string}
+             */
+            difficulty_mode: "foundation" | "adaptive" | "challenge";
+            /**
+             * Question Language
+             * @enum {string}
+             */
+            question_language: "中文" | "英文";
+        };
+        /** ProviderSettingView */
+        ProviderSettingView: {
+            /** Configured */
+            configured: boolean;
+            /**
+             * Credential Source
+             * @default environment
+             * @constant
+             */
+            credential_source: "environment";
+            /**
+             * Editable In Web
+             * @default false
+             * @constant
+             */
+            editable_in_web: false;
+            /** Endpoint Host */
+            endpoint_host: string | null;
+            /** Model */
+            model: string | null;
+            /** Required Env Vars */
+            required_env_vars: string[];
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "basic" | "enrich" | "speech";
+        };
         /** QuestionRequest */
         QuestionRequest: {
             /** Query */
@@ -2214,6 +2493,28 @@ export interface components {
             /** Trace Id */
             trace_id: string;
         };
+        /** SettingsPatch */
+        SettingsPatch: {
+            /** Asr Material Hints Enabled */
+            asr_material_hints_enabled?: boolean | null;
+            /** Difficulty Mode */
+            difficulty_mode?: ("foundation" | "adaptive" | "challenge") | null;
+            /** Question Language */
+            question_language?: ("中文" | "英文") | null;
+        };
+        /** SettingsView */
+        SettingsView: {
+            difficulty: components["schemas"]["DifficultySettingView"];
+            preferences: components["schemas"]["PreferenceSettingView"];
+            /** Providers */
+            providers: components["schemas"]["ProviderSettingView"][];
+            /**
+             * Schema Version
+             * @default settings.v1
+             * @constant
+             */
+            schema_version: "settings.v1";
+        };
         /** SourceEventCursor */
         SourceEventCursor: {
             /** First Seq */
@@ -2347,16 +2648,28 @@ export interface components {
         };
         /** TraceSummary */
         TraceSummary: {
+            /** Completion Tokens */
+            completion_tokens: number;
+            /** Context Budget Tokens */
+            context_budget_tokens: number | null;
+            /** Context Estimation */
+            context_estimation: "heuristic" | null;
             /** Error Count */
             error_count: number;
+            /** Estimated Context Tokens */
+            estimated_context_tokens: number | null;
             /** Event Count */
             event_count: number;
             /** Latency Ms */
             latency_ms: number | null;
             /** Model Calls */
             model_calls: number;
+            /** Prompt Tokens */
+            prompt_tokens: number;
             /** Recovery Count */
             recovery_count: number;
+            /** Remaining Context Tokens */
+            remaining_context_tokens: number | null;
             /** Started At */
             started_at: number | null;
             /**
@@ -2489,6 +2802,106 @@ export interface components {
             taxonomy_version: string;
             /** Term Id */
             term_id: string;
+        };
+        /** VoiceRunErrorView */
+        VoiceRunErrorView: {
+            /** Code */
+            code: string;
+            /** Reason */
+            reason: string;
+            /** Retryable */
+            retryable: boolean;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "validation" | "provider" | "runtime" | "submit";
+        };
+        /** VoiceRunSubmitCommand */
+        VoiceRunSubmitCommand: {
+            /** Edited Text */
+            edited_text: string;
+            /** Request Id */
+            request_id: string;
+        };
+        /** VoiceRunView */
+        VoiceRunView: {
+            /** Active Provider Attempt Id */
+            active_provider_attempt_id?: string | null;
+            /** Assessment Session Id */
+            assessment_session_id: string;
+            /** Audio Sha256 */
+            audio_sha256: string;
+            /** Byte Count */
+            byte_count: number;
+            /** Client Duration Ms */
+            client_duration_ms: number;
+            /** Created At */
+            created_at: number;
+            error?: components["schemas"]["VoiceRunErrorView"] | null;
+            /** Expires At */
+            expires_at?: number | null;
+            /** Hint Count */
+            hint_count: number;
+            /** Hint Set Id */
+            hint_set_id: string;
+            /** Hints Applied */
+            hints_applied: boolean;
+            /** Item Id */
+            item_id: string;
+            /** Mime Type */
+            mime_type: string;
+            /** Provider Attempt Count */
+            provider_attempt_count: number;
+            /** Question Id */
+            question_id: string;
+            /** Request Id */
+            request_id: string;
+            /**
+             * Retryable
+             * @default false
+             */
+            retryable: boolean;
+            /** Reviewable Transcript */
+            reviewable_transcript?: string | null;
+            /**
+             * Schema Version
+             * @default voice-run.v1
+             * @constant
+             */
+            schema_version: "voice-run.v1";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "accepted" | "transcribing" | "reviewable" | "submitted" | "failed" | "cancelled" | "expired";
+            /** Trace Id */
+            trace_id: string;
+            /** Updated At */
+            updated_at: number;
+            /** Version */
+            version: number;
+            /** Voice Run Id */
+            voice_run_id: string;
+        };
+        /** VoiceRuntimeConfig */
+        VoiceRuntimeConfig: {
+            /** Enabled */
+            enabled: boolean;
+            /** Hints Enabled */
+            hints_enabled: boolean;
+            /** Max Audio Bytes */
+            max_audio_bytes: number;
+            /** Max Duration Ms */
+            max_duration_ms: number;
+            /** Max Hint Entries */
+            max_hint_entries: number;
+            /** Max Provider Attempts */
+            max_provider_attempts: number;
+            /** Mime Types */
+            mime_types: string[];
+            /** Review Ttl Seconds */
+            review_ttl_seconds: number;
         };
     };
     responses: never;
@@ -2936,6 +3349,72 @@ export interface operations {
             };
         };
     };
+    start_voice_run_api_v1_assessments__session_id__questions__question_id__voice_runs_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                "X-Client-Duration-Ms": number;
+            };
+            path: {
+                session_id: string;
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "audio/webm": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceRunView"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Audio payload exceeds the v0.5 limit */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported audio media type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid audio recording or request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     create_session_api_v1_chat_sessions_post: {
         parameters: {
             query?: never;
@@ -3012,6 +3491,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_status_api_v1_chat_sessions__session_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatStatusView"];
                 };
             };
             /** @description Validation Error */
@@ -4087,6 +4597,37 @@ export interface operations {
             };
         };
     };
+    read_document_api_v1_resources__resource_id__document_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resource_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentReadResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_document_node_api_v1_resources__resource_id__nodes__node_id__get: {
         parameters: {
             query?: {
@@ -4279,6 +4820,278 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_settings_api_v1_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsView"];
+                };
+            };
+        };
+    };
+    update_settings_api_v1_settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_voice_request_api_v1_voice_requests__request_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_voice_run_api_v1_voice_runs__voice_run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voice_run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceRunView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_voice_run_api_v1_voice_runs__voice_run_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voice_run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceRunView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_voice_run_api_v1_voice_runs__voice_run_id__retry_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                voice_run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "audio/webm": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceRunView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Audio payload exceeds the v0.5 limit */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported audio media type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid audio recording or request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    submit_voice_run_api_v1_voice_runs__voice_run_id__submit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voice_run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoiceRunSubmitCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceRunView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_voice_runtime_config_api_v1_voice_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceRuntimeConfig"];
                 };
             };
         };

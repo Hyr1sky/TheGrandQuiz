@@ -1121,6 +1121,49 @@
         "title": "CancelRequest",
         "type": "object"
       },
+      "ChatStatusView": {
+        "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextBudgetStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "idle",
+              "running",
+              "closed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/ChatUsageView"
+          }
+        },
+        "required": [
+          "session_id",
+          "trace_id",
+          "status",
+          "context",
+          "usage"
+        ],
+        "title": "ChatStatusView",
+        "type": "object"
+      },
       "ChatUiEvent": {
         "properties": {
           "data": {
@@ -1148,6 +1191,29 @@
           "session_id"
         ],
         "title": "ChatUiEvent",
+        "type": "object"
+      },
+      "ChatUsageView": {
+        "properties": {
+          "completion_tokens": {
+            "title": "Completion Tokens",
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "title": "Prompt Tokens",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "prompt_tokens",
+          "completion_tokens",
+          "total_tokens"
+        ],
+        "title": "ChatUsageView",
         "type": "object"
       },
       "ClassificationProposal": {
@@ -1237,6 +1303,36 @@
           "review_status"
         ],
         "title": "ClassificationReviewRequest",
+        "type": "object"
+      },
+      "ContextBudgetStatus": {
+        "description": "Safe, content-free estimate for one assembled provider context.",
+        "properties": {
+          "budget_tokens": {
+            "title": "Budget Tokens",
+            "type": "integer"
+          },
+          "estimated_tokens": {
+            "title": "Estimated Tokens",
+            "type": "integer"
+          },
+          "estimation": {
+            "const": "heuristic",
+            "default": "heuristic",
+            "title": "Estimation",
+            "type": "string"
+          },
+          "remaining_tokens": {
+            "title": "Remaining Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "estimated_tokens",
+          "budget_tokens",
+          "remaining_tokens"
+        ],
+        "title": "ContextBudgetStatus",
         "type": "object"
       },
       "CreateAcquisitionRequest": {
@@ -1631,6 +1727,45 @@
         "title": "DemandValidationV1",
         "type": "object"
       },
+      "DifficultySettingView": {
+        "properties": {
+          "average_tier": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Tier"
+          },
+          "default_tier": {
+            "const": 3,
+            "default": 3,
+            "title": "Default Tier",
+            "type": "integer"
+          },
+          "item_count": {
+            "title": "Item Count",
+            "type": "integer"
+          },
+          "tier_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Tier Counts",
+            "type": "object"
+          }
+        },
+        "required": [
+          "item_count",
+          "average_tier",
+          "tier_counts"
+        ],
+        "title": "DifficultySettingView",
+        "type": "object"
+      },
       "DiscoveryList": {
         "properties": {
           "items": {
@@ -1706,6 +1841,10 @@
             "title": "Depth",
             "type": "integer"
           },
+          "end_offset": {
+            "title": "End Offset",
+            "type": "integer"
+          },
           "kind": {
             "enum": [
               "document",
@@ -1745,6 +1884,10 @@
             "title": "Section Path",
             "type": "string"
           },
+          "start_offset": {
+            "title": "Start Offset",
+            "type": "integer"
+          },
           "synthetic": {
             "title": "Synthetic",
             "type": "boolean"
@@ -1770,6 +1913,8 @@
           "depth",
           "title",
           "section_path",
+          "start_offset",
+          "end_offset",
           "synthetic"
         ],
         "title": "DocumentNodeSummary",
@@ -1794,6 +1939,34 @@
           "nodes"
         ],
         "title": "DocumentOutlineResponse",
+        "type": "object"
+      },
+      "DocumentReadResponse": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "revision_id": {
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "untrusted": {
+            "title": "Untrusted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "resource_id",
+          "revision_id",
+          "content",
+          "untrusted"
+        ],
+        "title": "DocumentReadResponse",
         "type": "object"
       },
       "ErrorResponse": {
@@ -3266,6 +3439,114 @@
         "title": "NextRoundRequest",
         "type": "object"
       },
+      "PreferenceSettingView": {
+        "properties": {
+          "asr_material_hints_enabled": {
+            "title": "Asr Material Hints Enabled",
+            "type": "boolean"
+          },
+          "asr_material_hints_source": {
+            "enum": [
+              "preference",
+              "environment_default"
+            ],
+            "title": "Asr Material Hints Source",
+            "type": "string"
+          },
+          "difficulty_mode": {
+            "enum": [
+              "foundation",
+              "adaptive",
+              "challenge"
+            ],
+            "title": "Difficulty Mode",
+            "type": "string"
+          },
+          "question_language": {
+            "enum": [
+              "中文",
+              "英文"
+            ],
+            "title": "Question Language",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question_language",
+          "difficulty_mode",
+          "asr_material_hints_enabled",
+          "asr_material_hints_source"
+        ],
+        "title": "PreferenceSettingView",
+        "type": "object"
+      },
+      "ProviderSettingView": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "credential_source": {
+            "const": "environment",
+            "default": "environment",
+            "title": "Credential Source",
+            "type": "string"
+          },
+          "editable_in_web": {
+            "const": false,
+            "default": false,
+            "title": "Editable In Web",
+            "type": "boolean"
+          },
+          "endpoint_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Host"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "required_env_vars": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Env Vars",
+            "type": "array"
+          },
+          "role": {
+            "enum": [
+              "basic",
+              "enrich",
+              "speech"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "configured",
+          "model",
+          "endpoint_host",
+          "required_env_vars"
+        ],
+        "title": "ProviderSettingView",
+        "type": "object"
+      },
       "QuestionRequest": {
         "properties": {
           "query": {
@@ -3680,6 +3961,85 @@
         "title": "SessionView",
         "type": "object"
       },
+      "SettingsPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "asr_material_hints_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asr Material Hints Enabled"
+          },
+          "difficulty_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "foundation",
+                  "adaptive",
+                  "challenge"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Mode"
+          },
+          "question_language": {
+            "anyOf": [
+              {
+                "enum": [
+                  "中文",
+                  "英文"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Language"
+          }
+        },
+        "title": "SettingsPatch",
+        "type": "object"
+      },
+      "SettingsView": {
+        "properties": {
+          "difficulty": {
+            "$ref": "#/components/schemas/DifficultySettingView"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/PreferenceSettingView"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderSettingView"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": "settings.v1",
+            "default": "settings.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preferences",
+          "difficulty",
+          "providers"
+        ],
+        "title": "SettingsView",
+        "type": "object"
+      },
       "SourceEventCursor": {
         "properties": {
           "first_seq": {
@@ -4049,9 +4409,47 @@
       },
       "TraceSummary": {
         "properties": {
+          "completion_tokens": {
+            "title": "Completion Tokens",
+            "type": "integer"
+          },
+          "context_budget_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Budget Tokens"
+          },
+          "context_estimation": {
+            "anyOf": [
+              {
+                "const": "heuristic",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Estimation"
+          },
           "error_count": {
             "title": "Error Count",
             "type": "integer"
+          },
+          "estimated_context_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Context Tokens"
           },
           "event_count": {
             "title": "Event Count",
@@ -4072,9 +4470,24 @@
             "title": "Model Calls",
             "type": "integer"
           },
+          "prompt_tokens": {
+            "title": "Prompt Tokens",
+            "type": "integer"
+          },
           "recovery_count": {
             "title": "Recovery Count",
             "type": "integer"
+          },
+          "remaining_context_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Context Tokens"
           },
           "started_at": {
             "anyOf": [
@@ -4131,7 +4544,13 @@
           "tool_calls",
           "error_count",
           "recovery_count",
+          "prompt_tokens",
+          "completion_tokens",
           "total_tokens",
+          "estimated_context_tokens",
+          "context_budget_tokens",
+          "remaining_context_tokens",
+          "context_estimation",
           "started_at",
           "updated_at",
           "latency_ms"
@@ -4463,6 +4882,272 @@
           "taxonomy_version"
         ],
         "title": "VocabularyTermView",
+        "type": "object"
+      },
+      "VoiceRunErrorView": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "stage": {
+            "enum": [
+              "validation",
+              "provider",
+              "runtime",
+              "submit"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "stage",
+          "reason",
+          "retryable"
+        ],
+        "title": "VoiceRunErrorView",
+        "type": "object"
+      },
+      "VoiceRunSubmitCommand": {
+        "properties": {
+          "edited_text": {
+            "minLength": 1,
+            "title": "Edited Text",
+            "type": "string"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "edited_text"
+        ],
+        "title": "VoiceRunSubmitCommand",
+        "type": "object"
+      },
+      "VoiceRunView": {
+        "properties": {
+          "active_provider_attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Provider Attempt Id"
+          },
+          "assessment_session_id": {
+            "title": "Assessment Session Id",
+            "type": "string"
+          },
+          "audio_sha256": {
+            "title": "Audio Sha256",
+            "type": "string"
+          },
+          "byte_count": {
+            "title": "Byte Count",
+            "type": "integer"
+          },
+          "client_duration_ms": {
+            "title": "Client Duration Ms",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceRunErrorView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "hint_count": {
+            "title": "Hint Count",
+            "type": "integer"
+          },
+          "hint_set_id": {
+            "title": "Hint Set Id",
+            "type": "string"
+          },
+          "hints_applied": {
+            "title": "Hints Applied",
+            "type": "boolean"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "provider_attempt_count": {
+            "title": "Provider Attempt Count",
+            "type": "integer"
+          },
+          "question_id": {
+            "title": "Question Id",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "reviewable_transcript": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewable Transcript"
+          },
+          "schema_version": {
+            "const": "voice-run.v1",
+            "default": "voice-run.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "accepted",
+              "transcribing",
+              "reviewable",
+              "submitted",
+              "failed",
+              "cancelled",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "number"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "voice_run_id": {
+            "title": "Voice Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "voice_run_id",
+          "request_id",
+          "assessment_session_id",
+          "question_id",
+          "item_id",
+          "status",
+          "version",
+          "mime_type",
+          "byte_count",
+          "client_duration_ms",
+          "audio_sha256",
+          "hint_set_id",
+          "hint_count",
+          "hints_applied",
+          "provider_attempt_count",
+          "trace_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "VoiceRunView",
+        "type": "object"
+      },
+      "VoiceRuntimeConfig": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "hints_enabled": {
+            "title": "Hints Enabled",
+            "type": "boolean"
+          },
+          "max_audio_bytes": {
+            "title": "Max Audio Bytes",
+            "type": "integer"
+          },
+          "max_duration_ms": {
+            "title": "Max Duration Ms",
+            "type": "integer"
+          },
+          "max_hint_entries": {
+            "title": "Max Hint Entries",
+            "type": "integer"
+          },
+          "max_provider_attempts": {
+            "title": "Max Provider Attempts",
+            "type": "integer"
+          },
+          "mime_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Mime Types",
+            "type": "array"
+          },
+          "review_ttl_seconds": {
+            "title": "Review Ttl Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "mime_types",
+          "max_duration_ms",
+          "max_audio_bytes",
+          "max_provider_attempts",
+          "review_ttl_seconds",
+          "max_hint_entries",
+          "hints_enabled"
+        ],
+        "title": "VoiceRuntimeConfig",
         "type": "object"
       }
     }
@@ -5119,6 +5804,119 @@
         ]
       }
     },
+    "/api/v1/assessments/{session_id}/questions/{question_id}/voice-runs": {
+      "post": {
+        "operationId": "start_voice_run_api_v1_assessments__session_id__questions__question_id__voice_runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "title": "Question Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Duration-Ms",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "X-Client-Duration-Ms",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "audio/webm": {
+              "schema": {
+                "contentMediaType": "application/octet-stream",
+                "default": "",
+                "title": "Audio Bytes",
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceRunView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Audio payload exceeds the v0.5 limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported audio media type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid audio recording or request"
+          }
+        },
+        "summary": "Start Voice Run",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
     "/api/v1/chat/sessions": {
       "post": {
         "operationId": "create_session_api_v1_chat_sessions_post",
@@ -5245,6 +6043,48 @@
           }
         },
         "summary": "Send Message",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/chat/sessions/{session_id}/status": {
+      "get": {
+        "operationId": "get_session_status_api_v1_chat_sessions__session_id__status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatStatusView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Session Status",
         "tags": [
           "chat"
         ]
@@ -6726,6 +7566,48 @@
         ]
       }
     },
+    "/api/v1/resources/{resource_id}/document": {
+      "get": {
+        "operationId": "read_document_api_v1_resources__resource_id__document_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentReadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Document",
+        "tags": [
+          "resources"
+        ]
+      }
+    },
     "/api/v1/resources/{resource_id}/nodes/{node_id}": {
       "get": {
         "operationId": "read_document_node_api_v1_resources__resource_id__nodes__node_id__get",
@@ -7022,6 +7904,361 @@
         "summary": "Stream Run Events",
         "tags": [
           "runs"
+        ]
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "operationId": "get_settings_api_v1_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Settings",
+        "tags": [
+          "settings"
+        ]
+      },
+      "patch": {
+        "operationId": "update_settings_api_v1_settings_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/voice-requests/{request_id}": {
+      "delete": {
+        "description": "Reserve cancellation even when an upload has not returned its VoiceRun ID yet.",
+        "operationId": "cancel_voice_request_api_v1_voice_requests__request_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Voice Request",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
+    "/api/v1/voice-runs/{voice_run_id}": {
+      "delete": {
+        "operationId": "cancel_voice_run_api_v1_voice_runs__voice_run_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_run_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceRunView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Voice Run",
+        "tags": [
+          "voice"
+        ]
+      },
+      "get": {
+        "operationId": "get_voice_run_api_v1_voice_runs__voice_run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_run_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceRunView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Voice Run",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
+    "/api/v1/voice-runs/{voice_run_id}/retry": {
+      "post": {
+        "operationId": "retry_voice_run_api_v1_voice_runs__voice_run_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_run_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "audio/webm": {
+              "schema": {
+                "contentMediaType": "application/octet-stream",
+                "default": "",
+                "title": "Audio Bytes",
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceRunView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Audio payload exceeds the v0.5 limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported audio media type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid audio recording or request"
+          }
+        },
+        "summary": "Retry Voice Run",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
+    "/api/v1/voice-runs/{voice_run_id}/submit": {
+      "post": {
+        "operationId": "submit_voice_run_api_v1_voice_runs__voice_run_id__submit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_run_id",
+            "required": true,
+            "schema": {
+              "title": "Voice Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceRunSubmitCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceRunView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Voice Run",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
+    "/api/v1/voice/config": {
+      "get": {
+        "operationId": "get_voice_runtime_config_api_v1_voice_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceRuntimeConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Voice Runtime Config",
+        "tags": [
+          "voice"
         ]
       }
     }

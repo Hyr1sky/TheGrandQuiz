@@ -56,8 +56,9 @@ The approved direction is Anthropic-like in tone—humanist, editorial, calm—n
 
 - Reading: `"Iowan Old Style"`, `Charter`, `"Songti SC"`, `"Noto Serif CJK SC"`,
   `"Source Han Serif SC"`, serif.
-- Interface: `"Avenir Next"`, `Avenir`, `"Helvetica Neue"`, `"SF Pro Text"`,
-  `"PingFang SC"`, `"Noto Sans CJK SC"`, `"Microsoft YaHei"`, system-ui, sans-serif.
+- Interface: `system-ui`, `-apple-system`, `"Segoe UI"`, `"PingFang SC"`,
+  `"Noto Sans CJK SC"`, `"Microsoft YaHei"`, sans-serif. The system stack is deliberately
+  identical in light and dark themes; theme changes never switch typography.
 - Long-form body: 15–17px, line height 1.8–2.0, comfortable line length around 60 Chinese
   characters.
 - No more than these two families appear on a screen.
@@ -85,9 +86,34 @@ The approved direction is Anthropic-like in tone—humanist, editorial, calm—n
 ## Responsive intent
 
 - `>= 1180px`: outline/progress / article-or-assessment / Chat three-column workspace.
+- On desktop, the outline and Chat rails are independently resizable and collapsible. Their
+  last expanded widths are local display preferences, not learning-domain state.
+- Reading renders the current revision as one continuous document. The outline navigates exact
+  section anchors and follows the viewport; selecting an outline item does not replace the
+  article with a node excerpt.
+- The current article title is centered on the same reading measure as the paper body, so rail
+  resizing does not visually attach the title to either side.
 - `760–1179px`: compact outline rail above a full-width Chat row.
 - `< 760px`: article-or-assessment and Chat stack vertically; the outline rail is not persistent,
   and no header, table, code block, or composer may widen the page viewport.
+
+## Header and conversation hierarchy
+
+- The header has three groups: identity, current material plus acquisition, and secondary
+  management controls. Settings, tutorial, Eval, and theme are not presented as equal primary
+  actions; management-only destinations live behind the management menu or settings sheet.
+- Header secondary controls are 36px icon buttons with concise Chinese hover/focus tooltips and
+  the same focus treatment. Popover menus close on outside click or `Escape`.
+- Drawer close controls are fixed square icon buttons. Hover may change semantic color or surface,
+  but must not rotate the icon or distort the circular hit target.
+- Chat uses one integrated composer surface. The textarea grows with content up to a bounded
+  height, then becomes internally scrollable; pointer focus does not add a second border around
+  the composer. Context label and budget estimate form a disclosure control in its lower utility
+  row, while send/stop is a prominent round action inside the composer.
+- `/status` is a local interface command. It reads the persisted session usage plus the runtime's
+  deterministic context estimate and must not create a model turn, SSE stream, or learning fact.
+- Token usage is labelled as actual provider usage; context occupancy and remaining capacity are
+  explicitly labelled heuristic estimates until the provider exposes an authoritative measure.
 
 ## Interaction states
 

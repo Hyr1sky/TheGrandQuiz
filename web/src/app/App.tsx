@@ -3,11 +3,14 @@ import {
   CompassIcon,
   ExamIcon,
   FolderPlusIcon,
+  GearSixIcon,
   ShieldCheckIcon,
   ListBulletsIcon,
+  DotsThreeIcon,
   QuestionIcon,
+  SidebarSimpleIcon,
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { ChatPanel, type NavigationEvent } from "../features/chat/ChatPanel";
 import { AcquisitionDrawer } from "../features/acquisition/AcquisitionDrawer";
 import { ObservatoryDrawer } from "../features/observability/ObservatoryDrawer";
@@ -25,18 +28,37 @@ import type { AssessmentView } from "../features/assessment-workspace/api";
 import {
   getOutline,
   listResources,
-  readNode,
-  type DocumentNodeRead,
+  readDocument,
+  type DocumentRead,
   type DocumentNodeSummary,
   type ResourceSummary,
 } from "../features/article-workspace/api";
-import { SafeMarkdown } from "../shared/components/SafeMarkdown";
-import { ThemeToggle } from "../shared/components/ThemeToggle";
+import { ContinuousDocument } from "../features/article-workspace/ContinuousDocument";
 import { ThemeProvider } from "./ThemeProvider";
+import { SettingsDrawer } from "../features/settings/SettingsDrawer";
 
 type WorkspaceMode = "reading" | "assessment";
 type SidebarView = "outline" | "progress";
 const ONBOARDING_STORAGE_KEY = "grandquiz.onboarding.v1";
+const WORKSPACE_LAYOUT_STORAGE_KEY = "grandquiz.workspace-layout.v1";
+
+function initialWorkspaceLayout() {
+  const fallback = { outlineWidth: 224, chatWidth: 380, outlineCollapsed: false, chatCollapsed: false };
+  const raw = globalThis.localStorage?.getItem(WORKSPACE_LAYOUT_STORAGE_KEY);
+  if (!raw) return fallback;
+  try {
+    const saved = JSON.parse(raw) as Partial<typeof fallback>;
+    return {
+      outlineWidth: typeof saved.outlineWidth === "number" ? saved.outlineWidth : fallback.outlineWidth,
+      chatWidth: typeof saved.chatWidth === "number" ? saved.chatWidth : fallback.chatWidth,
+      outlineCollapsed: typeof saved.outlineCollapsed === "boolean" ? saved.outlineCollapsed : false,
+      chatCollapsed: typeof saved.chatCollapsed === "boolean" ? saved.chatCollapsed : false,
+    };
+  } catch {
+    globalThis.localStorage?.removeItem(WORKSPACE_LAYOUT_STORAGE_KEY);
+    return fallback;
+  }
+}
 
 interface AssessmentParams {
   resource_id: string;
@@ -44,15 +66,23 @@ interface AssessmentParams {
 }
 
 export function App() {
+  const [initialLayout] = useState(initialWorkspaceLayout);
   const [resources, setResources] = useState<ResourceSummary[]>([]);
   const [resource, setResource] = useState<ResourceSummary | null>(null);
   const [outline, setOutline] = useState<DocumentNodeSummary[]>([]);
-  const [node, setNode] = useState<DocumentNodeRead | null>(null);
+  const [documentView, setDocumentView] = useState<DocumentRead | null>(null);
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [chatTraceId, setChatTraceId] = useState<string | null>(null);
   const [observatoryOpen, setObservatoryOpen] = useState(false);
   const [acquisitionOpen, setAcquisitionOpen] = useState(false);
   const [evalOpen, setEvalOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [managementOpen, setManagementOpen] = useState(false);
+  const [outlineWidth, setOutlineWidth] = useState(initialLayout.outlineWidth);
+  const [chatWidth, setChatWidth] = useState(initialLayout.chatWidth);
+  const [outlineCollapsed, setOutlineCollapsed] = useState(initialLayout.outlineCollapsed);
+  const [chatCollapsed, setChatCollapsed] = useState(initialLayout.chatCollapsed);
   const [onboardingOpen, setOnboardingOpen] = useState(
     () =>
       globalThis.localStorage?.getItem(ONBOARDING_STORAGE_KEY) !==
@@ -64,7 +94,38 @@ export function App() {
     useState<AssessmentParams | null>(null);
   const [assessmentEpoch, setAssessmentEpoch] = useState(0);
   const assessmentPanelRef = useRef<AssessmentPanelHandle>(null);
+  const managementMenuRef = useRef<HTMLDivElement>(null);
   const navigationPendingRef = useRef(false);
+
+  useEffect(() => {
+    if (!managementOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !managementMenuRef.current?.contains(event.target)
+      ) {
+        setManagementOpen(false);
+      }
+    };
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setManagementOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [managementOpen]);
+
+  useEffect(() => {
+    globalThis.localStorage?.setItem(WORKSPACE_LAYOUT_STORAGE_KEY, JSON.stringify({
+      outlineWidth,
+      chatWidth,
+      outlineCollapsed,
+      chatCollapsed,
+    }));
+  }, [chatCollapsed, chatWidth, outlineCollapsed, outlineWidth]);
 
   // Assessment state lifted for sidebar progress
   const [assessment, setAssessment] = useState<AssessmentView | null>(null);
@@ -134,9 +195,14 @@ export function App() {
           return;
         }
         setResource(first);
-        const nodes = await getOutline(first.resource_id);
+        const [nodes, document] = await Promise.all([
+          getOutline(first.resource_id),
+          readDocument(first.resource_id),
+        ]);
         if (active) {
           setOutline(nodes);
+          setDocumentView(document);
+          setActiveNodeId(nodes[0]?.node_id ?? null);
         }
       })
       .catch((reason: unknown) => {
@@ -154,9 +220,16 @@ export function App() {
   const changeResource = async (next: ResourceSummary) => {
     setResource(next);
     setOutline([]);
-    setNode(null);
+    setDocumentView(null);
+    setActiveNodeId(null);
     try {
-      setOutline(await getOutline(next.resource_id));
+      const [nodes, document] = await Promise.all([
+        getOutline(next.resource_id),
+        readDocument(next.resource_id),
+      ]);
+      setOutline(nodes);
+      setDocumentView(document);
+      setActiveNodeId(nodes[0]?.node_id ?? null);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "无法读取文档大纲",
@@ -181,17 +254,39 @@ export function App() {
     }
   };
 
-  const selectNode = async (nodeId: string) => {
-    if (resource === null) {
-      return;
+  const selectNode = (nodeId: string) => {
+    setActiveNodeId(nodeId);
+    const section = document.getElementById(`document-section-${nodeId}`);
+    if (typeof section?.scrollIntoView === "function") {
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-    try {
-      setNode(await readNode(resource.resource_id, nodeId));
-    } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "无法读取文档节点",
-      );
-    }
+  };
+
+  const startResize = (side: "outline" | "chat", event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const initial = side === "outline" ? outlineWidth : chatWidth;
+    const move = (moveEvent: PointerEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const next = side === "outline" ? initial + delta : initial - delta;
+      const clamped = Math.min(side === "outline" ? 360 : 520, Math.max(side === "outline" ? 176 : 300, next));
+      if (side === "outline") setOutlineWidth(clamped);
+      else setChatWidth(clamped);
+    };
+    const finish = () => {
+      globalThis.removeEventListener("pointermove", move);
+      globalThis.removeEventListener("pointerup", finish);
+    };
+    globalThis.addEventListener("pointermove", move);
+    globalThis.addEventListener("pointerup", finish, { once: true });
+  };
+
+  const resizeWithKeyboard = (side: "outline" | "chat", event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const delta = event.key === "ArrowRight" ? 16 : -16;
+    if (side === "outline") setOutlineWidth((width) => Math.min(360, Math.max(176, width + delta)));
+    else setChatWidth((width) => Math.min(520, Math.max(300, width - delta)));
   };
 
   const handleNavigation = useCallback(
@@ -273,11 +368,12 @@ export function App() {
   const renderSidebar = () => {
     return (
       <nav
-        className="app-sidebar"
+        className={`app-sidebar${outlineCollapsed ? " app-sidebar--collapsed" : ""}`}
         data-onboarding="sidebar"
         aria-label={sidebarView === "outline" ? "文档大纲" : "考核进度"}
       >
         <div className="sidebar__header">
+          {outlineCollapsed ? null : (
           <button
             type="button"
             className="sidebar__toggle"
@@ -296,8 +392,17 @@ export function App() {
               </>
             )}
           </button>
+          )}
+          <button
+            type="button"
+            className="sidebar__collapse"
+            aria-label={outlineCollapsed ? "展开大纲栏" : "收起大纲栏"}
+            onClick={() => setOutlineCollapsed((value) => !value)}
+          >
+            <SidebarSimpleIcon aria-hidden size={17} />
+          </button>
         </div>
-        {sidebarView === "outline" ? (
+        {outlineCollapsed ? null : sidebarView === "outline" ? (
           <div className="sidebar__content">
             {outline.map((item, index) => (
               <button
@@ -305,9 +410,9 @@ export function App() {
                 key={item.node_id}
                 type="button"
                 aria-current={
-                  node?.node_id === item.node_id ? "location" : undefined
+                  activeNodeId === item.node_id ? "location" : undefined
                 }
-                onClick={() => void selectNode(item.node_id)}
+                onClick={() => selectNode(item.node_id)}
               >
                 <span aria-hidden>
                   {String(index + 1).padStart(2, "0")}
@@ -366,16 +471,14 @@ export function App() {
               <h1 className="content-title">{resource.topic}</h1>
             ) : null}
             <article className="reading-article" tabIndex={-1}>
-              <p className="section-path">
-                {node?.section_path ?? "选择一个章节"}
-              </p>
-              {node === null ? (
-                <p>从星图中选择一个章节开始阅读。</p>
+              {documentView === null ? (
+                <p>正在展开完整材料...</p>
               ) : (
-                <SafeMarkdown
-                  className="reading-markdown"
-                  content={node.content}
-                  stripLeadingHeading
+                <ContinuousDocument
+                  activeNodeId={activeNodeId}
+                  content={documentView.content}
+                  outline={outline}
+                  onActiveNodeChange={setActiveNodeId}
                 />
               )}
             </article>
@@ -396,7 +499,13 @@ export function App() {
 
   return (
     <ThemeProvider>
-      <div className="app-shell">
+      <div
+        className={`app-shell${outlineCollapsed ? " app-shell--outline-collapsed" : ""}${chatCollapsed ? " app-shell--chat-collapsed" : ""}`}
+        style={{
+          "--outline-width": `${outlineWidth}px`,
+          "--chat-width": `${chatWidth}px`,
+        } as CSSProperties}
+      >
         <div
           className="star-map-backdrop"
           data-visual="observatory"
@@ -404,75 +513,72 @@ export function App() {
         />
         <header className="app-header" aria-label="顶栏">
           <p className="app-header__eyebrow">TheGrandQuiz · 本地模式</p>
-          <div
-            className="app-header__controls"
-            data-onboarding="resource"
-          >
+          <div className="app-header__context" data-onboarding="resource">
             {resource !== null ? (
               <label className="resource-picker">
                 <span>当前材料</span>
-                <select
-                  aria-label="当前材料"
-                  value={resource.resource_id}
-                  onChange={(event) => {
-                    const next = resources.find(
-                      (c) => c.resource_id === event.target.value,
-                    );
-                    if (next !== undefined) {
-                      void changeResource(next);
-                    }
-                  }}
-                >
-                  {resources.map((candidate) => (
-                    <option
-                      key={candidate.resource_id}
-                      value={candidate.resource_id}
-                    >
-                      {candidate.topic ?? candidate.url}
-                    </option>
-                  ))}
+                <select aria-label="当前材料" value={resource.resource_id} onChange={(event) => {
+                  const next = resources.find((candidate) => candidate.resource_id === event.target.value);
+                  if (next) void changeResource(next);
+                }}>
+                  {resources.map((candidate) => <option key={candidate.resource_id} value={candidate.resource_id}>{candidate.topic ?? candidate.url}</option>)}
                 </select>
               </label>
             ) : null}
+            <button type="button" className="acquisition-launcher" aria-label="添加与管理材料" aria-expanded={acquisitionOpen} onClick={() => setAcquisitionOpen(true)}>
+              <FolderPlusIcon aria-hidden size={17} /><span>添加材料</span>
+            </button>
+          </div>
+          <div
+            className="app-header__utilities"
+            data-onboarding="resource"
+          >
+            <div className="management-menu" ref={managementMenuRef}>
+              <button type="button" className="header-control" data-tooltip="管理" aria-label="打开管理菜单" aria-haspopup="menu" aria-expanded={managementOpen} onClick={() => setManagementOpen((value) => !value)}>
+                <DotsThreeIcon aria-hidden size={19} weight="bold" />
+              </button>
+              {managementOpen ? (
+                <div className="management-menu__popover" role="menu">
+                  <button type="button" role="menuitem" onClick={() => { setEvalOpen(true); setManagementOpen(false); }}><ShieldCheckIcon aria-hidden size={17} />Eval 数据</button>
+                </div>
+              ) : null}
+            </div>
             <button
               type="button"
-              className="acquisition-launcher"
-              aria-label="添加与管理材料"
-              aria-expanded={acquisitionOpen}
-              onClick={() => setAcquisitionOpen(true)}
+              className="header-control"
+              data-tooltip="设置"
+              aria-label="打开应用设置"
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen(true)}
             >
-              <FolderPlusIcon aria-hidden size={17} />
-              <span>添加材料</span>
+              <GearSixIcon aria-hidden size={17} />
             </button>
             <button
               type="button"
-              className="acquisition-launcher"
-              aria-label="管理 Eval 数据"
-              aria-expanded={evalOpen}
-              onClick={() => setEvalOpen(true)}
-            >
-              <ShieldCheckIcon aria-hidden size={17} />
-              <span>Eval 数据</span>
-            </button>
-            <button
-              type="button"
-              className="onboarding-help"
+              className="header-control"
+              data-tooltip="教程"
               aria-label="打开新手指南"
               onClick={() => setOnboardingOpen(true)}
             >
               <QuestionIcon aria-hidden size={17} />
             </button>
-            <ThemeToggle />
           </div>
         </header>
 
         {renderSidebar()}
 
+        <div className="workspace-resizer workspace-resizer--outline" role="separator" aria-label="调整大纲栏宽度" aria-orientation="vertical" aria-valuemin={176} aria-valuemax={360} aria-valuenow={outlineWidth} tabIndex={outlineCollapsed ? -1 : 0} onPointerDown={(event) => startResize("outline", event)} onKeyDown={(event) => resizeWithKeyboard("outline", event)} />
+
         {renderMainContent()}
+
+        <div className="workspace-resizer workspace-resizer--chat" role="separator" aria-label="调整对话栏宽度" aria-orientation="vertical" aria-valuemin={300} aria-valuemax={520} aria-valuenow={chatWidth} tabIndex={chatCollapsed ? -1 : 0} onPointerDown={(event) => startResize("chat", event)} onKeyDown={(event) => resizeWithKeyboard("chat", event)} />
 
         <ChatPanel
           activeResourceId={resource?.resource_id ?? null}
+          activeResourceLabel={resource?.topic ?? resource?.url ?? null}
           assessmentStatus={assessment?.status ?? null}
+          collapsed={chatCollapsed}
+          onCollapse={() => setChatCollapsed((value) => !value)}
           onNavigation={handleNavigation}
           onTraceChange={handleChatTraceChange}
         />
@@ -519,6 +625,7 @@ export function App() {
           }}
         />
         <EvalDrawer open={evalOpen} onClose={() => setEvalOpen(false)} />
+        <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
         {onboardingOpen ? (
           <OnboardingTour onComplete={completeOnboarding} />
         ) : null}

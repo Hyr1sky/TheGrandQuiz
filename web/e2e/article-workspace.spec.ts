@@ -17,6 +17,11 @@ async function dismissOnboarding(
   }
 }
 
+async function openEvalData(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "打开管理菜单" }).click();
+  await page.getByRole("menuitem", { name: "Eval 数据" }).click();
+}
+
 test.beforeEach(async ({ page }) => {
   browserErrors = [];
   observedTraceIds = [];
@@ -80,6 +85,44 @@ test("guides the first run and can be reopened", async ({ page }) => {
   await page.getByRole("button", { name: "跳过指南" }).click();
 });
 
+test("changes local runtime preferences from the unified settings drawer", async ({
+  page,
+}) => {
+  const reset = await page.request.patch("/api/v1/settings", {
+    data: {
+      asr_material_hints_enabled: false,
+      difficulty_mode: "adaptive",
+    },
+  });
+  expect(reset.ok()).toBe(true);
+  await page.goto("/");
+  await dismissOnboarding(page);
+  await page.getByRole("button", { name: "打开应用设置" }).click();
+  const drawer = page.getByRole("dialog", { name: "应用设置" });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByText("Provider 与密钥")).toBeVisible();
+
+  const materialHints = drawer.getByRole("switch", { name: "启用材料词表" });
+  await expect(materialHints).not.toBeChecked();
+  await materialHints.click();
+  await expect(materialHints).toBeChecked();
+  await drawer.getByRole("radio", { name: "偏挑战" }).click();
+  await expect(drawer.getByRole("radio", { name: "偏挑战" })).toBeChecked();
+  await expect(drawer.getByRole("status")).toHaveText("设置已保存");
+
+  await drawer.getByRole("button", { name: "关闭应用设置" }).click();
+  await page.getByRole("button", { name: "打开应用设置" }).click();
+  await expect(page.getByRole("switch", { name: "启用材料词表" })).toBeChecked();
+  await expect(page.getByRole("radio", { name: "偏挑战" })).toBeChecked();
+  const restore = await page.request.patch("/api/v1/settings", {
+    data: {
+      asr_material_hints_enabled: false,
+      difficulty_mode: "adaptive",
+    },
+  });
+  expect(restore.ok()).toBe(true);
+});
+
 test("uploads, approves, and switches to a new material", async ({ page }) => {
   await page.goto("/");
   await dismissOnboarding(page);
@@ -128,7 +171,7 @@ test("discovers candidates and enters Acquisition only after human approval", as
 test("reviews blind labels before creating a dataset snapshot", async ({ page }) => {
   await page.goto("/");
   await dismissOnboarding(page);
-  await page.getByRole("button", { name: "管理 Eval 数据" }).click();
+  await openEvalData(page);
   const drawer = page.getByRole("dialog", { name: "Eval 数据管理" });
   await drawer
     .locator('input[type="file"]')
@@ -149,7 +192,7 @@ test("reviews blind labels before creating a dataset snapshot", async ({ page })
   await expect(drawer.getByText("1 条 · 发布门 1 · 探索 0")).toBeVisible();
   await drawer.getByRole("button", { name: "关闭 Eval 数据管理" }).click();
   await page.reload();
-  await page.getByRole("button", { name: "管理 Eval 数据" }).click();
+  await openEvalData(page);
   const restored = page.getByRole("dialog", { name: "Eval 数据管理" });
   await expect(
     restored.getByRole("region", { name: "数据集快照历史" }),
@@ -344,6 +387,73 @@ test("appeals an open-answer verdict without replacing the original answer", asy
   await expect(page.getByRole("textbox", { name: "你的回答" })).toHaveValue(
     originalAnswer,
   );
+});
+
+test("records a voice answer, reviews the transcript, and submits it once", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "v0.5 voice capture targets desktop Chromium");
+  await page.addInitScript(() => {
+    const track = { stop: () => undefined };
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: async () => ({ getTracks: () => [track] }) },
+    });
+    class FixtureMediaRecorder {
+      static isTypeSupported() {
+        return true;
+      }
+      state = "inactive";
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      constructor(
+        readonly stream: unknown,
+        readonly options: { mimeType?: string } = {},
+      ) {}
+      start() {
+        this.state = "recording";
+      }
+      stop() {
+        this.state = "inactive";
+        this.ondataavailable?.({
+          data: new Blob(["fixture-voice"], {
+            type: this.options.mimeType,
+          }),
+        });
+        this.onstop?.();
+      }
+    }
+    Object.defineProperty(globalThis, "MediaRecorder", {
+      configurable: true,
+      value: FixtureMediaRecorder,
+    });
+  });
+
+  await page.goto("/");
+  await dismissOnboarding(page);
+  await page.getByRole("textbox", { name: "发送消息" }).fill("请用简答题考我一题");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByRole("heading", { name: /durable processor|不完整状态/ })).toBeVisible();
+
+  const answerBox = page.getByRole("textbox", { name: "你的回答" });
+  await answerBox.fill("我先写下的文字草稿。");
+  await page.getByRole("button", { name: "开始语音回答" }).click();
+  await expect(page.getByRole("status")).toContainText("正在录音");
+  await page.getByRole("button", { name: "结束录音并识别" }).click();
+
+  const transcript = "继续执行会让后续副作用依赖不完整状态，所以必须阻断当前 turn。";
+  await expect(page.getByText("请选择如何使用识别草稿")).toBeVisible();
+  const draft = page.getByRole("textbox", {
+    name: "识别草稿（请确认或修改后提交）",
+  });
+  await expect(draft).toHaveValue("我先写下的文字草稿。");
+  await page.getByRole("button", { name: "追加到回答" }).click();
+  await expect(draft).toHaveValue(`我先写下的文字草稿。\n\n${transcript}`);
+  await draft.fill(`${transcript} 这是我确认后的表述。`);
+  await page.getByRole("button", { name: "提交答案" }).click();
+
+  await expect(page.getByText("判断：对")).toBeVisible();
+  await expect(page.getByText("本轮完成")).toBeVisible();
 });
 
 test("cancels an abandoned Assessment before returning to reading", async ({

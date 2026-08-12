@@ -200,6 +200,8 @@ def test_document_outline_projects_navigation_without_body(tmp_path: Path) -> No
     ]
     assert [node["title"] for node in payload["nodes"]] == ["Runtime", "Events"]
     assert all(node["kind"] == "section" for node in payload["nodes"])
+    assert [node["start_offset"] for node in payload["nodes"]] == [0, 11]
+    assert all(node["end_offset"] > node["start_offset"] for node in payload["nodes"])
     assert all("content" not in node for node in payload["nodes"])
 
 
@@ -223,6 +225,21 @@ def test_node_read_is_explicitly_bounded_and_marked_untrusted(tmp_path: Path) ->
     assert len(payload["content"]) == 12
     assert payload["has_more"] is True
     assert payload["untrusted"] is True
+
+
+def test_document_read_returns_one_exact_continuous_markdown_source(tmp_path: Path) -> None:
+    resource = _seed_document(tmp_path)
+
+    with TestClient(_app(tmp_path)) as client:
+        response = client.get(f"/api/v1/resources/{resource.resource_id}/document")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "resource_id": resource.resource_id,
+        "revision_id": resource.current_revision_id,
+        "content": "# Runtime\n\n## Events\n\n事件是系统的数据脊柱。\n",
+        "untrusted": False,
+    }
 
 
 def test_question_starts_an_identified_background_run(tmp_path: Path) -> None:

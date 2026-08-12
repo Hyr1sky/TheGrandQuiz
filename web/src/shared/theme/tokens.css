@@ -3,8 +3,8 @@
   color-scheme: dark;
   --font-reading: "Iowan Old Style", Charter, "Songti SC", "Noto Serif CJK SC",
     "Source Han Serif SC", serif;
-  --font-interface: "Avenir Next", Avenir, "Helvetica Neue", "SF Pro Text",
-    "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-interface: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
   --canvas: #071521;
   --surface: rgb(9 24 37 / 88%);
   --surface-quiet: rgb(8 21 33 / 68%);

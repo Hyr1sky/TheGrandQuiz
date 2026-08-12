@@ -25,6 +25,8 @@ const outline = {
       depth: 0,
       title: "Runtime",
       section_path: "Runtime",
+      start_offset: 0,
+      end_offset: 128,
       synthetic: false,
     },
   ],
@@ -79,12 +81,38 @@ function baseFetchMock() {
     if (url.endsWith("/api/v1/resources")) {
       return Response.json({ items: [resource] });
     }
+    if (url.endsWith("/api/v1/settings") && request.method === "GET") {
+      return Response.json({
+        schema_version: "settings.v1",
+        preferences: {
+          question_language: "中文",
+          difficulty_mode: "adaptive",
+          asr_material_hints_enabled: false,
+          asr_material_hints_source: "environment_default",
+        },
+        difficulty: {
+          default_tier: 3,
+          item_count: 1,
+          average_tier: 3,
+          tier_counts: { "1": 0, "2": 0, "3": 1, "4": 0, "5": 0 },
+        },
+        providers: [],
+      });
+    }
     if (
       url.endsWith(
         `/api/v1/resources/${resource.resource_id}/outline`,
       )
     ) {
       return Response.json(outline);
+    }
+    if (url.endsWith(`/api/v1/resources/${resource.resource_id}/document`)) {
+      return Response.json({
+        resource_id: resource.resource_id,
+        revision_id: "revision-1",
+        content: "# Runtime\n\n这是连续文档正文。",
+        untrusted: false,
+      });
     }
     if (
       url.endsWith("/api/v1/chat/sessions") &&
@@ -108,6 +136,54 @@ afterEach(() => {
 });
 
 describe("Sidebar context switching", () => {
+  it("resizes and collapses both workspace rails with persistent layout state", async () => {
+    vi.stubGlobal("fetch", baseFetchMock());
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Agent Runtime" });
+    const outlineResize = screen.getByRole("separator", { name: "调整大纲栏宽度" });
+    outlineResize.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(outlineResize).toHaveAttribute("aria-valuenow", "240");
+
+    await user.click(screen.getByRole("button", { name: "收起大纲栏" }));
+    expect(screen.getByRole("button", { name: "展开大纲栏" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "收起对话栏" }));
+    expect(screen.getByRole("button", { name: "展开对话栏" })).toBeInTheDocument();
+
+    expect(JSON.parse(localStorage.getItem("grandquiz.workspace-layout.v1") ?? "{}"))
+      .toMatchObject({ outlineWidth: 240, outlineCollapsed: true, chatCollapsed: true });
+  });
+
+  it("opens the unified application settings from the top bar", async () => {
+    vi.stubGlobal("fetch", baseFetchMock());
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Agent Runtime" });
+    await user.click(screen.getByRole("button", { name: "打开应用设置" }));
+
+    expect(await screen.findByRole("dialog", { name: "应用设置" })).toBeInTheDocument();
+  });
+
+  it("closes the management menu when the user clicks elsewhere", async () => {
+    vi.stubGlobal("fetch", baseFetchMock());
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Agent Runtime" });
+    const launcher = screen.getByRole("button", { name: "打开管理菜单" });
+    expect(launcher).toHaveAttribute("data-tooltip", "管理");
+
+    await user.click(launcher);
+    expect(screen.getByRole("menuitem", { name: "Eval 数据" })).toBeInTheDocument();
+    await user.click(screen.getByRole("heading", { name: "Agent Runtime" }));
+
+    expect(screen.queryByRole("menuitem", { name: "Eval 数据" })).not.toBeInTheDocument();
+    expect(launcher).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("shows a versioned first-run tour that can be dismissed and reopened", async () => {
     vi.stubGlobal("fetch", baseFetchMock());
     const user = userEvent.setup();
@@ -217,6 +293,9 @@ describe("Sidebar context switching", () => {
     expect(
       screen.getByRole("button", { name: /Runtime/ }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Agent Runtime" }),
+    ).toHaveStyle({ textAlign: "center" });
   });
 
   it("renders selected document nodes as Markdown", async () => {
@@ -226,21 +305,12 @@ describe("Sidebar context switching", () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const request =
         input instanceof Request ? input : new Request(String(input));
-      if (
-        request.url.includes(
-          `/api/v1/resources/${resource.resource_id}/nodes/runtime`,
-        )
-      ) {
+      if (request.url.endsWith(`/api/v1/resources/${resource.resource_id}/document`)) {
         return Response.json({
           resource_id: resource.resource_id,
           revision_id: "revision-1",
-          node_id: "runtime",
-          section_path: "Runtime",
-          start_offset: 0,
-          end_offset: 128,
           content:
             `# Runtime\n\n## 核心结构\n\n- 事件脊柱\n- 确定性 workflow\n\n![超宽流程图](https://example.com/wide-diagram.png)\n\n\`\`\`text\n${longFlow}\n\`\`\`\n\n| 模块 | 作用 | 输入 | 输出 | 状态 | 恢复 | 观测 | 评测 |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| trace | 回放 | 一段很长的事件输入 | 一段很长的事件输出 | completed | checkpoint | sequence | replay |`,
-          has_more: false,
           untrusted: true,
         });
       }
@@ -312,6 +382,14 @@ describe("Sidebar context switching", () => {
       }
       if (url.endsWith(`/api/v1/resources/${resource.resource_id}/outline`)) {
         return Response.json(outline);
+      }
+      if (url.endsWith(`/api/v1/resources/${resource.resource_id}/document`)) {
+        return Response.json({
+          resource_id: resource.resource_id,
+          revision_id: "revision-1",
+          content: "# Runtime\n\n这是连续文档正文。",
+          untrusted: false,
+        });
       }
       if (url.endsWith("/api/v1/chat/sessions") && request.method === "POST") {
         return Response.json({ session_id: "session-auto" }, { status: 201 });

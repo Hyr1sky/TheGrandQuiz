@@ -57,28 +57,31 @@
 
 .observatory-drawer__close {
   display: inline-flex;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  flex: 0 0 36px;
+  aspect-ratio: 1;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: 50%;
   background: transparent;
   color: var(--muted);
-  font: 300 25px/1 var(--font-interface);
   cursor: pointer;
   transition:
     color 140ms ease,
     border-color 140ms ease,
-    background 140ms ease,
-    transform 140ms ease;
+    background 140ms ease;
 }
 
 .observatory-drawer__close:hover {
   border-color: var(--line-strong);
   background: var(--evidence-soft);
   color: var(--text-strong);
-  transform: rotate(6deg);
+  transform: none;
 }
 
 .observatory-drawer__close:active {

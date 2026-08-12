@@ -8,6 +8,7 @@ import {
 export { listResources, type ResourceSummary };
 export type DocumentNodeSummary = components["schemas"]["DocumentNodeSummary"];
 export type DocumentNodeRead = components["schemas"]["DocumentNodeReadResponse"];
+export type DocumentRead = components["schemas"]["DocumentReadResponse"];
 export type RunView = components["schemas"]["RunView"];
 export type GroundedAnswerResult = components["schemas"]["GroundedAnswerResult"];
 export type ResolvedCitation = components["schemas"]["ResolvedCitation"];
@@ -21,6 +22,17 @@ export async function getOutline(resourceId: string): Promise<DocumentNodeSummar
     throw toApiRequestError(error);
   }
   return data.nodes;
+}
+
+export async function readDocument(resourceId: string): Promise<DocumentRead> {
+  const { data, error } = await apiClient.GET(
+    "/api/v1/resources/{resource_id}/document",
+    { params: { path: { resource_id: resourceId } } },
+  );
+  if (error !== undefined) {
+    throw toApiRequestError(error);
+  }
+  return data;
 }
 
 export async function readNode(

@@ -3,6 +3,34 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssessmentPanel } from "./AssessmentPanel";
 
+vi.mock("./VoiceAnswerControl", () => ({
+  VoiceAnswerControl: ({
+    onCaptureStart,
+    onReviewable,
+  }: {
+    onCaptureStart: () => void;
+    onReviewable: (run: Record<string, unknown>) => void;
+  }) => (
+    <div>
+      <button type="button" onClick={onCaptureStart}>
+        模拟开始录音
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          onReviewable({
+            status: "reviewable",
+            voice_run_id: "voice-1",
+            reviewable_transcript: "语音识别草稿",
+          })
+        }
+      >
+        模拟识别完成
+      </button>
+    </div>
+  ),
+}));
+
 const readyAssessment = {
   session_id: "assessment-1",
   status: "awaiting_answer",
@@ -27,6 +55,38 @@ afterEach(() => {
 });
 
 describe("AssessmentPanel", () => {
+  it("asks before replacing a text draft with a voice transcript", async () => {
+    const openAssessment = {
+      ...readyAssessment,
+      question: {
+        ...readyAssessment.question,
+        question_type: "开放",
+        options: [],
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(openAssessment, { status: 202 })),
+    );
+    render(
+      <AssessmentPanel
+        resourceId="resource-1"
+        questionTypePlan={["简答题"]}
+        onClose={() => undefined}
+      />,
+    );
+
+    const answer = await screen.findByPlaceholderText("先给出自己的理解...");
+    fireEvent.change(answer, { target: { value: "我的文字草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "模拟开始录音" }));
+    fireEvent.click(screen.getByRole("button", { name: "模拟识别完成" }));
+
+    expect(answer).toHaveValue("我的文字草稿");
+    expect(screen.getByRole("button", { name: "替换现有回答" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "追加到回答" }));
+    expect(answer).toHaveValue("我的文字草稿\n\n语音识别草稿");
+  });
+
   it("shows the generated question when mounted in React StrictMode", async () => {
     const startBodies: unknown[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
