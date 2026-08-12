@@ -89,8 +89,8 @@ RecognitionLexicon、exact-item TranscriptionHints、DashScope/Replay 语音 Pro
 桌面 Web 录音—回放—草稿审查—唯一 Assessment 提交已经贯通；四条固定音频的 hints off/on 真实 dogfood
 8/8 成功并通过 8/8 离线 replay，目标术语改善且负样本/自然回答零术语插入。Web 本地设置页已接通
 出题语言、`foundation/adaptive/challenge` 难度倾向与材料词表热更新；API Key 只投影安全配置状态，原文
-仍由 `.env` 管理。当前 pytest 为 `1076 passed`，Web unit 为 `67 passed`，Playwright 桌面/移动端为
-`23 passed / 1 skipped`。Reader 真实基线为
+仍由 `.env` 管理。当前 pytest 为 `1076 passed`，Web unit 为 `69 passed`，Playwright 桌面/移动端为
+`23 passed / 1 skipped`（跳过项是本版明确不承诺的移动端语音）。Reader 真实基线为
 105/105 个可考节点 exactly-once 覆盖、12 个候选、0 重复、单次请求 8715 prompt tokens。DS-S3 的生产 ingest/
 人工筛选已由 trace `2515ec1af79a4a0a9860993b4a35beb9` 通过只读审计（141 个可考节点、2 批、34 条 exact
 evidence）。DS-S4 生产 trace `46b91c61c1c24ebabc94be97db31bb16` 也已通过 selected search → 3 次 bounded

@@ -18,6 +18,7 @@
 .settings-radio-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding-top: 14px; }
 .settings-radio-group label { position: relative; display: flex; min-height: 74px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); cursor: pointer; }
 .settings-radio-group label:has(input:checked) { border-color: var(--evidence); background: var(--evidence-soft); }
+.settings-radio-group label:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 3px; }
 .settings-radio-group input { position: absolute; opacity: 0; }
 .settings-radio-group span { display: grid; gap: 5px; }
 .settings-radio-group small { color: var(--muted); font-size: 10px; line-height: 1.45; }

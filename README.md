@@ -44,7 +44,7 @@ flowchart LR
 TheGrandQuiz 同时包含一套可观测、可恢复、可评测的 Agent Runtime。Runtime 是产品的工程内核，
 不是对外承诺稳定 API 的通用框架。
 
-## v0.4.0 能做什么
+## v0.5.0 能做什么
 
 | 能力 | 当前体验 | 工程保证 |
 | --- | --- | --- |
@@ -52,15 +52,16 @@ TheGrandQuiz 同时包含一套可观测、可恢复、可评测的 Agent Runtim
 | **材料发现** | 按主题搜索候选，再选择是否抓取与深读 | Search 不等于 Fetch；批准前不调用 Reader、不写知识库 |
 | **材料对话** | 通过 CLI ReAct 或 Local Web 围绕当前材料提问 | exact scope，不能静默扩大到全库 |
 | **逐题考核** | 选择题、开放问答、薄弱点复考；开放题可提交一次补充说明 | LLM 逐点评判，代码聚合、记账并以追加事实修正状态 |
+| **语音作答** | 桌面 Chromium 录音，转写后先审查/编辑再提交 | 原始音频不落盘；VoiceRun 幂等、可取消、可重试并接入既有 Assessment |
 | **精确 Evidence** | 从答案和考题回到原文依据 | 定位到 revision / node / source span |
 | **学习记忆** | 记录暴露出的薄弱概念 | 下一轮选题优先复考，而非只存聊天记录 |
 | **可纠正学习事实** | 审查答题记录、分类和判决纠正 | append-only Journal/outbox，可重建投影 |
 | **本地 Eval 数据闭环** | 审核纠正/盲标候选并固定不可变数据集快照 | 隐私审核、来源身份和 release-eligible / exploratory 强制分层 |
 | **可信运行** | 浏览 trace、执行树、token、错误与恢复状态 | Record/Replay + 17 条离线 Eval |
-| **Local Web** | 三栏 Chat、文章阅读、Evidence 揭示与考核 | 同源 SPA、安全 Markdown、稳定 SSE |
+| **Local Web** | 可调三栏、连续文章、Chat `/status`、设置、Evidence 与考核 | 同源 SPA、安全 Markdown、稳定 SSE、可见上下文预算 |
 
 > [!NOTE]
-> v0.4.0 是**本机单用户版本**，不支持账号、多用户、云同步或公网服务。Web 已提供材料发现、导入与
+> v0.5.0 是**本机单用户版本**，不支持账号、多用户、云同步或公网服务。Web 已提供材料发现、导入与
 > 可恢复审批，但完整的文章/知识点维护操作和连续“掌握度分数”仍属于后续版本；现有 Web 服务也
 > 不应直接暴露到局域网或公网。
 
@@ -71,6 +72,7 @@ TheGrandQuiz 默认把数据保存在本机：
 ```text
 ~/.grandquiz/learning.db   # 材料、revision、KnowledgeItem、Evidence、Learning Memory
 ~/.grandquiz/trace.db      # 用户消息、模型/工具事件、token、错误与执行树
+~/.grandquiz/voice.db      # 短期 VoiceRun 草稿与 Provider attempt；终态/过期后清除正文
 ~/.grandquiz/eval-report/  # 离线 Eval HTML
 ```
 
@@ -100,6 +102,9 @@ cp .env.example .env
 
 编辑 `.env`。`LLM_*` 是 basic 角色（判卷、基础判断），`ENRICH_LLM_*` 是 enrich 角色（Reader、出题）。
 两个角色可以指向同一个 provider/model，但仍需分别填写两组变量，避免隐藏 fallback。
+
+语音答题是可选能力：配置 `DASHSCOPE_API_KEY` 后，桌面 Chromium 的开放题会出现录音入口。机器转写只会
+生成可编辑草稿，不会自动提交；材料词表可在 Web 设置中开关。
 
 ### 2. 导入第一份材料
 
@@ -144,7 +149,7 @@ uv run grandquiz-web
 
 浏览器打开 `http://127.0.0.1:8000`。服务同时提供打包后的 React 页面与 `/api/v1`，并且只监听
 loopback。Web 可完成上传/URL 导入、状态观察、候选知识点审批与失败/取消重试；CLI 继续作为批量 ingest、
-恢复和 trace 审计入口。完整的资源删除、revision/知识点维护仍不在 v0.4 范围内。
+恢复和 trace 审计入口。完整的资源删除、revision/知识点维护仍不在 v0.5 范围内。
 
 修改前端源码时再使用两个终端进入开发模式：
 
@@ -234,12 +239,12 @@ PR 要求见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 | [docs/roadmap.md](docs/roadmap.md) | 后续阶段与验收顺序 |
 | [docs/adr/](docs/adr/) | 不可逆架构决策 |
 | [docs/devrecords/](docs/devrecords/) | 实现、dogfood、成本与门禁记录 |
-| [docs/releases/v0.4.0.md](docs/releases/v0.4.0.md) | v0.4.0 发布说明与已知限制 |
-| [docs/open-source-release-checklist-v0.4.0.md](docs/open-source-release-checklist-v0.4.0.md) | v0.4.0 发布门 |
+| [docs/releases/v0.5.0.md](docs/releases/v0.5.0.md) | v0.5.0 发布说明与已知限制 |
+| [docs/open-source-release-checklist-v0.5.0.md](docs/open-source-release-checklist-v0.5.0.md) | v0.5.0 发布门 |
 
 ## 反馈与合作
 
-v0.4.0 仍是个人维护的早期版本：核心学习闭环已经可用，但判卷校准、资源维护和个性化学习策略还有很长的
+v0.5.0 仍是个人维护的早期版本：核心学习闭环已经可用，但判卷校准、资源维护和个性化学习策略还有很长的
 深化空间。如果你有好的 idea、真实学习场景或不佳体验，欢迎在 issue 中讨论；Bug 请尽量附上版本、
 最小复现和脱敏后的 `trace_id`。
 

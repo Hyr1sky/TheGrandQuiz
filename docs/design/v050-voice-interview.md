@@ -36,7 +36,7 @@ v0.5 为桌面 Web 的逐题考核增加一种新的作答输入方式：用户�
 - 持久、幂等、可取消、可查询的 VoiceRun；服务重启后状态可解释。
 - 用户审查/编辑 transcript 后，通过唯一 Assessment seam 提交语音答案。
 - 安全错误映射、AgentEvent span、Provider Attempt 审计和 Record/Replay 测试。
-- Web 录音、状态、重试、取消、审查与提交的完整桌面交互。
+- Web 录音、状态、重试、取消、转写草稿审查与提交的完整桌面交互。
 
 ### Non-goals
 
@@ -162,19 +162,23 @@ provider_auth | provider_rate_limited | provider_timeout
 provider_unavailable
 ```
 
-错误信封向 Web 暴露 `code / stage / reason / retryable`；不暴露 API Key、完整 Provider body 或堆栈。
+创建 VoiceRun 之后的持久错误向 Web 暴露 `code / stage / reason / retryable`；尚未创建 VoiceRun 的 HTTP
+边界失败复用全局安全信封 `code / message / retryable / trace_id`。两者都不暴露 API Key、完整 Provider body
+或堆栈。
 
 ## 6. 两个状态机
 
 ### 6.1 浏览器 CaptureSession（不进入后端领域模型）
 
 ```text
-idle -> requesting_permission -> recording -> recorded -> uploading -> reviewing
+idle -> requesting_permission -> recording -> uploading -> reviewing
   \             \                \           \             \
    cancelled     failed           failed      failed         failed
 ```
 
-离开录音态必须停止全部 `MediaStreamTrack`。浏览器刷新会丢失尚未上传的 Blob，这是 v0.5 的明确限制。
+“结束录音并识别”是一次明确的用户动作：离开录音态后停止全部 `MediaStreamTrack` 并立即上传完整 Blob；本版
+不增加一个上传前的本地确认阶段。上传后保留本地回放，转写只进入可编辑草稿，仍需再次确认才会成为正式答案。
+浏览器刷新会丢失尚未上传的 Blob，这是 v0.5 的明确限制。
 
 ### 6.2 服务端 VoiceRun（持久应用状态）
 
@@ -267,7 +271,7 @@ Observatory 继续使用有限 UI event 映射，不能直接暴露内部事件�
 3. Replay Adapter 覆盖成功、403、429、timeout、畸形响应；普通测试不访问真实 Provider。
 4. VoiceRun 幂等、冲突、取消迟到响应、显式重试、重启收敛和 TTL 清理均由确定性测试覆盖。
 5. voice submit 只调用一次既有 Assessment submission，并产生 `input_modality=voice` 的 AssessmentAttempt。
-6. Web 覆盖权限拒绝、录音/回放、大小/时长限制、上传、取消、错误、编辑草稿和提交。
+6. Web 覆盖权限拒绝、结束并识别、上传后回放、大小/时长限制、上传、取消、错误、编辑草稿和提交。
 7. 固定音频对照证明 hints 改善目标术语且不新增未说出的词表术语，才允许默认开启术语增强。
 8. 一次显式授权的真实 Provider dogfood 保存脱敏 report/cassette；原始音频默认留在 gitignored 本地目录。
 9. Python、Web unit、OpenAPI、Playwright、lint/typecheck/build 全绿，再做 Standards + Spec 双轴审查。
