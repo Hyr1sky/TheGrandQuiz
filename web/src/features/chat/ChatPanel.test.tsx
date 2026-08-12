@@ -121,7 +121,13 @@ describe("ChatPanel", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("1,500 tokens")).toBeInTheDocument();
 
+    await user.click(screen.getByRole("textbox", { name: "发送消息" }));
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("1,500 tokens")).not.toBeInTheDocument();
+
     await user.click(trigger);
+    await user.keyboard("{Escape}");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("1,500 tokens")).not.toBeInTheDocument();
   });
 

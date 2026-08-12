@@ -40,7 +40,7 @@
 .onboarding-tour p {
   margin: 0 0 18px;
   color: var(--text);
-  font: 400 14px/1.7 var(--font-reading);
+  font: 400 14px/1.7 var(--font-interface);
 }
 
 .onboarding-tour button,

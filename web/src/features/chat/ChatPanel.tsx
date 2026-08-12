@@ -25,6 +25,7 @@ import {
   type ChatUiEvent,
 } from "../../shared/api/chat";
 import { SafeMarkdown } from "../../shared/components/SafeMarkdown";
+import { useDismissibleLayer } from "../../shared/hooks/useDismissibleLayer";
 import { streamChatEvents } from "./chatEvents";
 import "./chat-panel.css";
 
@@ -104,6 +105,10 @@ export function ChatPanel({
   >("connected");
   const [runtimeStatus, setRuntimeStatus] = useState<ChatStatusView | null>(null);
   const [statusExpanded, setStatusExpanded] = useState(false);
+  const statusDisclosureRef = useDismissibleLayer<HTMLDivElement>({
+    open: statusExpanded,
+    onDismiss: () => setStatusExpanded(false),
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const stopStream = useRef<(() => void) | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -509,26 +514,36 @@ export function ChatPanel({
           disabled={sessionId === null}
         />
         <div className="chat-composer__footer">
-          <button
-            className="chat-composer__meta"
-            type="button"
-            aria-label="查看会话状态详情"
-            aria-expanded={statusExpanded}
-            aria-controls="chat-runtime-status-details"
-            onClick={() => setStatusExpanded((value) => !value)}
+          <div
+            className="chat-composer__status-disclosure"
+            ref={statusDisclosureRef}
           >
-            <span>
-              <PaperclipIcon aria-hidden size={14} />
-              {activeResourceLabel ?? "无材料"}
-            </span>
-            {runtimeStatus?.context ? (
+            <button
+              className="chat-composer__meta"
+              type="button"
+              aria-label="查看会话状态详情"
+              aria-expanded={statusExpanded}
+              aria-controls="chat-runtime-status-details"
+              onClick={() => setStatusExpanded((value) => !value)}
+            >
               <span>
-                <ChartDonutIcon aria-hidden size={14} />
-                {formatCompact(runtimeStatus.context.estimated_tokens)} / {formatCompact(runtimeStatus.context.budget_tokens)}
+                <PaperclipIcon aria-hidden size={14} />
+                {activeResourceLabel ?? "无材料"}
               </span>
+              {runtimeStatus?.context ? (
+                <span>
+                  <ChartDonutIcon aria-hidden size={14} />
+                  {formatCompact(runtimeStatus.context.estimated_tokens)} / {formatCompact(runtimeStatus.context.budget_tokens)}
+                </span>
+              ) : null}
+              {statusExpanded ? <CaretDownIcon aria-hidden size={11} /> : <CaretUpIcon aria-hidden size={11} />}
+            </button>
+            {statusExpanded && runtimeStatus !== null ? (
+              <div className="chat-composer__status-popover" id="chat-runtime-status-details">
+                <RuntimeStatusCard status={runtimeStatus} />
+              </div>
             ) : null}
-            {statusExpanded ? <CaretDownIcon aria-hidden size={11} /> : <CaretUpIcon aria-hidden size={11} />}
-          </button>
+          </div>
           {loading ? (
             <button
               type="button"
@@ -548,11 +563,6 @@ export function ChatPanel({
             </button>
           )}
         </div>
-        {statusExpanded && runtimeStatus !== null ? (
-          <div className="chat-composer__status-popover" id="chat-runtime-status-details">
-            <RuntimeStatusCard status={runtimeStatus} />
-          </div>
-        ) : null}
       </form>
       </>
       )}

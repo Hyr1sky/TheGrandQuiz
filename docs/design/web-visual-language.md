@@ -56,9 +56,12 @@ The approved direction is Anthropic-like in tone—humanist, editorial, calm—n
 
 - Reading: `"Iowan Old Style"`, `Charter`, `"Songti SC"`, `"Noto Serif CJK SC"`,
   `"Source Han Serif SC"`, serif.
-- Interface: `system-ui`, `-apple-system`, `"Segoe UI"`, `"PingFang SC"`,
-  `"Noto Sans CJK SC"`, `"Microsoft YaHei"`, sans-serif. The system stack is deliberately
-  identical in light and dark themes; theme changes never switch typography.
+- Interface: `"Avenir Next"`, `Avenir`, `"Helvetica Neue"`, `"PingFang SC"`,
+  `"Noto Sans CJK SC"`, `"Microsoft YaHei"`, `Arial`, sans-serif. The interface deliberately
+  avoids the generic `system-ui` face and remains identical in light and dark themes.
+- The reading family is reserved for article text, questions, answers, and quoted Evidence.
+  Menus, settings, drawers, labels, control values, and runtime metrics always use the interface
+  family; native form controls must not choose their own platform font.
 - Long-form body: 15–17px, line height 1.8–2.0, comfortable line length around 60 Chinese
   characters.
 - No more than these two families appear on a screen.
@@ -104,6 +107,9 @@ The approved direction is Anthropic-like in tone—humanist, editorial, calm—n
   actions; management-only destinations live behind the management menu or settings sheet.
 - Header secondary controls are 36px icon buttons with concise Chinese hover/focus tooltips and
   the same focus treatment. Popover menus close on outside click or `Escape`.
+- Hover tooltips close on pointer leave or focus loss. Lightweight menus, status disclosures,
+  and read-only non-modal panels close on outside click or `Escape`; guided tours and task
+  dialogs keep an explicit close action so incidental workspace clicks do not interrupt them.
 - Drawer close controls are fixed square icon buttons. Hover may change semantic color or surface,
   but must not rotate the icon or distort the circular hit target.
 - Chat uses one integrated composer surface. The textarea grows with content up to a bounded

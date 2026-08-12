@@ -1,5 +1,6 @@
 import { XIcon } from "@phosphor-icons/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { useDismissibleLayer } from "../../shared/hooks/useDismissibleLayer";
 import {
   getTraceSnapshot,
   type TraceSnapshot,
@@ -11,6 +12,7 @@ interface ObservatoryDrawerProps {
   open: boolean;
   traceId: string | null;
   onClose: () => void;
+  anchorRef?: RefObject<HTMLElement | null>;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -43,6 +45,7 @@ export function ObservatoryDrawer({
   open,
   traceId,
   onClose,
+  anchorRef,
 }: ObservatoryDrawerProps) {
   const [snapshot, setSnapshot] = useState<TraceSnapshot | null>(null);
   const [error, setError] = useState<{
@@ -53,6 +56,11 @@ export function ObservatoryDrawer({
     "connected" | "disconnected"
   >("connected");
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const drawerRef = useDismissibleLayer<HTMLElement>({
+    open,
+    onDismiss: onClose,
+    ignoredRefs: anchorRef === undefined ? [] : [anchorRef],
+  });
 
   useEffect(() => {
     if (!open || traceId === null) {
@@ -120,6 +128,7 @@ export function ObservatoryDrawer({
 
   return (
     <aside
+      ref={drawerRef}
       id="runtime-observatory"
       className="observatory-drawer"
       role="dialog"

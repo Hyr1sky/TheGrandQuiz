@@ -326,6 +326,11 @@
   gap: 8px;
 }
 
+.chat-composer__status-disclosure {
+  display: flex;
+  min-width: 0;
+}
+
 .chat-composer__meta {
   display: flex;
   width: auto;

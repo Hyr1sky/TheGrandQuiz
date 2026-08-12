@@ -137,6 +137,30 @@ describe("ObservatoryDrawer", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
+  it("dismisses the read-only panel from an outside click or Escape", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(snapshot)));
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const close = vi.fn();
+    const user = userEvent.setup();
+
+    const { rerender } = render(
+      <ObservatoryDrawer open traceId="trace-1" onClose={close} />,
+    );
+    await screen.findByRole("dialog", { name: "运行观测" });
+
+    await user.click(document.body);
+    expect(close).toHaveBeenCalledOnce();
+
+    rerender(
+      <ObservatoryDrawer open={false} traceId="trace-1" onClose={close} />,
+    );
+    rerender(
+      <ObservatoryDrawer open traceId="trace-1" onClose={close} />,
+    );
+    await user.keyboard("{Escape}");
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps the close control circular and the icon upright on hover", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json(snapshot)));
     vi.stubGlobal("EventSource", FakeEventSource);

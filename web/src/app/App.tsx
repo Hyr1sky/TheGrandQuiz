@@ -36,6 +36,7 @@ import {
 import { ContinuousDocument } from "../features/article-workspace/ContinuousDocument";
 import { ThemeProvider } from "./ThemeProvider";
 import { SettingsDrawer } from "../features/settings/SettingsDrawer";
+import { useDismissibleLayer } from "../shared/hooks/useDismissibleLayer";
 
 type WorkspaceMode = "reading" | "assessment";
 type SidebarView = "outline" | "progress";
@@ -94,29 +95,12 @@ export function App() {
     useState<AssessmentParams | null>(null);
   const [assessmentEpoch, setAssessmentEpoch] = useState(0);
   const assessmentPanelRef = useRef<AssessmentPanelHandle>(null);
-  const managementMenuRef = useRef<HTMLDivElement>(null);
+  const observatoryTriggerRef = useRef<HTMLButtonElement>(null);
+  const managementMenuRef = useDismissibleLayer<HTMLDivElement>({
+    open: managementOpen,
+    onDismiss: () => setManagementOpen(false),
+  });
   const navigationPendingRef = useRef(false);
-
-  useEffect(() => {
-    if (!managementOpen) return;
-    const closeOutside = (event: PointerEvent) => {
-      if (
-        event.target instanceof Node &&
-        !managementMenuRef.current?.contains(event.target)
-      ) {
-        setManagementOpen(false);
-      }
-    };
-    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setManagementOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [managementOpen]);
 
   useEffect(() => {
     globalThis.localStorage?.setItem(WORKSPACE_LAYOUT_STORAGE_KEY, JSON.stringify({
@@ -585,6 +569,7 @@ export function App() {
 
         <footer className="app-footer" aria-label="状态栏">
           <button
+            ref={observatoryTriggerRef}
             type="button"
             className="compass-nav"
             data-onboarding="observatory"
@@ -616,6 +601,7 @@ export function App() {
           open={observatoryOpen}
           traceId={assessment?.trace_id ?? chatTraceId}
           onClose={() => setObservatoryOpen(false)}
+          anchorRef={observatoryTriggerRef}
         />
         <AcquisitionDrawer
           open={acquisitionOpen}

@@ -262,6 +262,14 @@ describe("Sidebar context switching", () => {
     expect(
       await screen.findByRole("dialog", { name: "运行观测" }),
     ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("heading", { name: "Agent Runtime" }));
+    expect(
+      screen.queryByRole("dialog", { name: "运行观测" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "打开运行观测" }),
+    ).toHaveAttribute("aria-expanded", "false");
   });
 
   it("keeps the observatory map decorative and outside the interaction layer", async () => {

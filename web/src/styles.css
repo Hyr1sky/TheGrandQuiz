@@ -19,10 +19,12 @@ body {
 }
 
 button,
+input,
 select,
 textarea {
   color: inherit;
   font: inherit;
+  font-family: var(--font-interface);
 }
 
 button,
@@ -290,6 +292,7 @@ article:focus-visible {
   border: 0;
   border-radius: 7px;
   background: transparent;
+  font-family: var(--font-interface);
   text-align: left;
 }
 

@@ -46,7 +46,7 @@
 }
 
 .observatory-drawer h2 {
-  font: 500 20px/1.3 var(--font-reading);
+  font: 600 20px/1.3 var(--font-interface);
 }
 
 .observatory-drawer h3 {
@@ -168,7 +168,7 @@
   margin-top: 4px;
   overflow: hidden;
   color: var(--text-strong);
-  font: 550 16px/1.2 var(--font-reading);
+  font: 600 16px/1.2 var(--font-interface);
   text-overflow: ellipsis;
 }
 
