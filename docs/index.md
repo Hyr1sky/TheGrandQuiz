@@ -11,6 +11,7 @@
 | 查一个领域术语的准确含义 | [领域语言](../CONTEXT.md) |
 | 理解实体、状态和不变量 | [领域模型](domain-model.md) |
 | 理解代码分层与事件脊柱 | [架构](architecture.md) |
+| 理解 v0.5 语音答题契约 | [Voice Interview 设计](design/v050-voice-interview.md) |
 | 了解下一步而不是过去做过什么 | [路线图](roadmap.md) |
 | 理解不可逆决策及其理由 | [ADR](adr/) |
 | 复盘某次实现、验收和 dogfood | [开发记录](devrecords/) |
@@ -57,3 +58,10 @@ direct support 4/4 但 ambiguity 0/2、合法 11/12，仍未过门；Web 已改�
 按同一 rubric 重判并追加式纠正。自动 Demand Judge、AnswerDiagnosis/
 Misconception 晋升、新学习指标和知识关系仍受 Eval/消费者 gate 限制，不能因字段已写入
 蓝图就描述成已交付能力。
+
+v0.5 Voice Interview 代码竖切已实现：转写只生成可编辑草稿，用户确认后才进入既有 Assessment；材料词表是
+revision 级可重建投影，单次运行只冻结 exact-item TranscriptionHints。离线 Provider Replay、VoiceRun
+重启/TTL/取消测试和桌面 Scenario Bot 已通过；四条固定音频的 paired-audio 质量门、真实 dogfood 与 8/8
+离线 replay 也已完成。术语增强由 `ASR_ENABLE_HINTS` 提供首次默认，并可在 Web 设置页显式热更新，避免把小样本结论外推为通用 ASR 精度。见
+[ADR-0012](adr/0012-voice-transcript-is-reviewable-input.md) 与
+[v0.5 设计契约](design/v050-voice-interview.md)。

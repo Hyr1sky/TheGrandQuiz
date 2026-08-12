@@ -10,6 +10,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
 from fastapi.testclient import TestClient
 
 from grandquiz.domain.learning.citations import ground_items
@@ -21,6 +22,11 @@ from grandquiz.interfaces.api.app import ApiSettings, create_app
 from grandquiz.interfaces.api.assessment_runs import project_assessment_diagnosis
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, ToolSpec, Usage
+from grandquiz.providers.speech import (
+    SpeechRecognitionProvider,
+    TranscriptionRequest,
+    TranscriptionResult,
+)
 
 _QUOTE = "潜在记忆以隐式形式承载在模型内部表示中。"
 _CORRECT = "模型内部表示"
@@ -275,14 +281,50 @@ class _BlockingAssessmentProvider:
         return Completion(text="{}", usage=Usage())
 
 
-def _app(tmp_path: Path, provider: Provider | None = None):
+def _app(
+    tmp_path: Path,
+    provider: Provider | None = None,
+    speech_provider: SpeechRecognitionProvider | None = None,
+):
     return create_app(
         settings=ApiSettings(
             learning_db_path=tmp_path / "learning.db",
             trace_db_path=tmp_path / "trace.db",
         ),
         provider=provider or _AssessmentProvider(),
+        speech_provider=speech_provider,
     )
+
+
+class _ApiSpeechProvider:
+    provider_identity = "api-speech-fake"
+
+    def __init__(self, transcript: str = _CORRECT) -> None:
+        self.requests: list[TranscriptionRequest] = []
+        self.transcript = transcript
+
+    async def transcribe(self, request: TranscriptionRequest) -> TranscriptionResult:
+        self.requests.append(request)
+        return TranscriptionResult(
+            transcript=self.transcript,
+            provider_request_id="speech-request-1",
+            provider_audio_duration_ms=1_000,
+            latency_ms=25,
+        )
+
+
+def _wait_for_voice_status(
+    client: TestClient,
+    voice_run_id: str,
+    expected: str,
+) -> dict[str, Any]:
+    payload = client.get(f"/api/v1/voice-runs/{voice_run_id}").json()
+    for _ in range(50):
+        if payload["status"] == expected:
+            return payload
+        time.sleep(0.01)
+        payload = client.get(f"/api/v1/voice-runs/{voice_run_id}").json()
+    raise AssertionError(f"语音任务未进入 {expected}：{payload}")
 
 
 def _seed_item(tmp_path: Path) -> tuple[LearningResource, KnowledgeItem]:
@@ -689,6 +731,121 @@ def test_attempt_records_route_grader_and_pre_answer_evidence(tmp_path: Path) ->
     assert attempt["question_generation"]["kind"] == "model"
     assert attempt["question_generation"]["version"].startswith("question_multiple_choice@")
     assert attempt["source_event_cursor"]["first_seq"] < attempt["source_event_cursor"]["last_seq"]
+
+
+def test_voice_run_http_flow_submits_one_voice_assessment_attempt(tmp_path: Path) -> None:
+    resource, _ = _seed_item(tmp_path)
+    voice_answer = "潜在记忆以隐式形式承载在模型内部表示中。"
+    speech = _ApiSpeechProvider(voice_answer)
+
+    with TestClient(
+        _app(tmp_path, provider=_OpenAssessmentProvider(), speech_provider=speech)
+    ) as client:
+        config = client.get("/api/v1/voice/config")
+        assert config.status_code == 200
+        assert config.json()["enabled"] is True
+        settings = client.patch(
+            "/api/v1/settings",
+            json={"asr_material_hints_enabled": True},
+        )
+        assert settings.status_code == 200
+
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "简答题",
+            },
+        ).json()
+        waiting = _wait_for_status(client, started["session_id"], "awaiting_answer")
+        question_id = waiting["question"]["question_id"]
+        voice_response = client.post(
+            (f"/api/v1/assessments/{started['session_id']}/questions/{question_id}/voice-runs"),
+            content=b"private-webm-audio",
+            headers={
+                "Content-Type": "audio/webm;codecs=opus",
+                "Idempotency-Key": "voice-http-start-1",
+                "X-Client-Duration-Ms": "1000",
+            },
+        )
+        assert voice_response.status_code == 202
+        reviewable = _wait_for_voice_status(
+            client,
+            voice_response.json()["voice_run_id"],
+            "reviewable",
+        )
+        assert reviewable["reviewable_transcript"] == voice_answer
+
+        submitted = client.post(
+            f"/api/v1/voice-runs/{reviewable['voice_run_id']}/submit",
+            json={"request_id": "voice-http-submit-1", "edited_text": voice_answer},
+        )
+        assert submitted.status_code == 202
+        assert submitted.json()["status"] == "submitted"
+        _wait_for_status(client, started["session_id"], "completed")
+        attempts = client.get(
+            "/api/v1/learning/attempts",
+            params={"trace_id": started["trace_id"]},
+        ).json()["items"]
+
+    assert len(speech.requests) == 1
+    assert speech.requests[0].material_hints_enabled is True
+    assert len(attempts) == 1
+    assert attempts[0]["input_modality"] == "voice"
+    assert attempts[0]["answer_text"] == voice_answer
+
+
+@pytest.mark.parametrize(
+    ("audio", "content_type", "expected_status", "expected_code"),
+    [
+        (b"", "audio/webm;codecs=opus", 422, "invalid_audio"),
+        (b"wav-audio", "audio/wav", 415, "unsupported_media"),
+        (b"x" * 7_000_001, "audio/webm;codecs=opus", 413, "payload_too_large"),
+    ],
+)
+def test_voice_http_boundary_returns_stable_audio_errors(
+    tmp_path: Path,
+    audio: bytes,
+    content_type: str,
+    expected_status: int,
+    expected_code: str,
+) -> None:
+    resource, _ = _seed_item(tmp_path)
+    with TestClient(
+        _app(
+            tmp_path,
+            provider=_OpenAssessmentProvider(),
+            speech_provider=_ApiSpeechProvider(),
+        )
+    ) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "简答题",
+            },
+        ).json()
+        waiting = _wait_for_status(client, started["session_id"], "awaiting_answer")
+        response = client.post(
+            "/api/v1/assessments/"
+            f"{started['session_id']}/questions/{waiting['question']['question_id']}/voice-runs",
+            content=audio,
+            headers={
+                "Content-Type": content_type,
+                "Idempotency-Key": f"voice-error-{expected_code}",
+                "X-Client-Duration-Ms": "1000",
+            },
+        )
+
+    assert response.status_code == expected_status
+    assert response.json() == {
+        "code": expected_code,
+        "message": response.json()["message"],
+        "retryable": False,
+        "trace_id": None,
+    }
 
 
 def test_learner_projection_distinguishes_not_in_memory_from_never_attempted(

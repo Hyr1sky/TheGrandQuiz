@@ -34,6 +34,7 @@ _LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 # 离散 5 档难度（1 最易、5 最难）。PRD 决策 1：必须离散，不做连续分数。
 DifficultyTier = Literal[1, 2, 3, 4, 5]
+DifficultyMode = Literal["foundation", "adaptive", "challenge"]
 
 _MIN_TIER: DifficultyTier = 1
 _MAX_TIER: DifficultyTier = 5
@@ -44,6 +45,13 @@ DIRECT_CORRECTS_TO_PROMOTE = 2
 # 档梯，供 next_tier 的钳制与 DB 读回的 int→Literal 收敛（索引 tuple[DifficultyTier, ...]
 # 返回的元素类型即 DifficultyTier，免 cast）。
 _TIER_LADDER: tuple[DifficultyTier, ...] = (1, 2, 3, 4, 5)
+
+
+def effective_difficulty_tier(tier: DifficultyTier, mode: DifficultyMode) -> DifficultyTier:
+    """Apply a bounded question-time bias without mutating the learned item tier."""
+    offset = -1 if mode == "foundation" else 1 if mode == "challenge" else 0
+    index = max(0, min(len(_TIER_LADDER) - 1, tier - _MIN_TIER + offset))
+    return _TIER_LADDER[index]
 
 
 # ============================================================================

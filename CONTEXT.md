@@ -80,6 +80,36 @@ DocumentNode 树。LearningResource 仍按稳定 locator 定位，只把 current
 不参与默认搜索和考核，但保留给历史 trace 与引用解析。
 _Avoid_: 把 URL 当内容版本、重 ingest 时原地覆盖后无法解释历史引用、把 revision hash 当 resource_id
 
+**RecognitionLexicon**（v0.5）:
+由某个已获批 ResourceRevision 的原文、DocumentNode 与 KnowledgeItem 派生出的语音识别词表投影；其中一个
+RecognitionLexiconEntry 只表示该投影内的一个候选术语及其来源。投影可由相同 revision 和构建规则重新生成，
+不是新的学习事实；人工确认的拼写、读音或别名属于独立的持久输入，重建时再叠加，不能随投影删除。
+_Avoid_: 全局原始总词表、把单个 Entry 当整张词表、把 Provider 专有参数写入学习领域、丢失人工修正
+
+**TranscriptionHints**（v0.5）:
+一次 VoiceRun 根据精确考核范围从 RecognitionLexicon 选出的有界术语快照。它随本次运行冻结并可在 Trace 中
+追溯，再由 Provider adapter 映射为厂商所需的词表或上下文参数；它不是长期知识事实，也不反向修改词表。
+是否向 Provider 应用这份快照由本地设置 `asr_material_hints_enabled` 决定：环境变量只提供首次默认，Web
+可以热更新 Preference Memory；设置变更只影响随后创建的 VoiceRun，不能改写已经接受的运行。
+_Avoid_: 每次请求携带整库术语、跨材料污染、运行后按新词表静默重写历史输入、把提示词表当正确答案泄露
+
+**Difficulty Mode**（v0.5 Web Settings）:
+用户对下一次出题的全局倾向：`foundation / adaptive / challenge` 分别在知识点当前 1–5 档上做 -1 / 0 / +1
+的有界问题时偏移。它是显式 Preference，不改写 DifficultyLedger，也不伪造学习证据；难度演化仍只由真实
+判决与既有确定性规则记账。
+_Avoid_: 把全库知识点直接批量改档、把偏好后的有效档写回历史、用一个全局难度替代逐 item 难度台账
+
+**Local Settings**（v0.5 Web Settings）:
+本机单用户的安全配置投影。浏览器主题留在当前浏览器；出题语言、Difficulty Mode 与材料词表开关进入
+learning.db 的 Preference Memory 并供 CLI/Web 共用；LLM/ASR Provider 只投影配置状态、模型和 endpoint
+host，Key 原文仍只存在于 `.env`，不经 HTTP 返回，也不能在 Web 中编辑。
+_Avoid_: 把 API Key 存入 localStorage、通过 GET 回显掩码前原文、让各页面各自读取环境变量
+
+**VoiceRun**（v0.5）:
+一次完整录音从后端接受、外部转写到可审查草稿的应用运行。草稿只有经用户确认或修改，并通过既有
+Assessment answer submission 后才成为正式答案；VoiceRun 不拥有出题、判卷或学习记账。
+_Avoid_: 语音版 Assessment、把 ASR 草稿直接当答案、把 Provider task id 当 voice_run_id、取消后接纳迟到结果
+
 **DocumentNode**（ADR-0008，DS-S1–S4 已实现）:
 ResourceRevision 内可导航、可精确定位的原文结构节点，形成 document / section / paragraph / table / code 等
 父子树，携带 node_id、section_path、顺序与 source span。它回答“原文在哪里、怎样组织”，不回答“知识点之间

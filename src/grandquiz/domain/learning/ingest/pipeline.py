@@ -62,6 +62,15 @@ class IngestClassificationRepository(Protocol):
     ) -> None: ...
 
 
+class IngestRecognitionLexiconProjection(Protocol):
+    """获批 snapshot 提交后，同事务重建 revision 词表所需的最小 Interface。"""
+
+    @property
+    def transaction_owner(self) -> LearningDatabase: ...
+
+    def rebuild_revision(self, revision_id: str) -> object: ...
+
+
 IngestFailureStage = Literal["fetch", "reader", "evidence_validation"]
 IngestFailureCode = Literal[
     "invalid_url",
@@ -415,6 +424,7 @@ def persist_prepared_ingest(
     approved: list[KnowledgeItem],
     store: Store,
     classifications: IngestClassificationRepository | None = None,
+    lexicons: IngestRecognitionLexiconProjection | None = None,
     trace_id: str | None = None,
 ) -> IngestResult:
     """只提交获批快照，不发事件；调用方可把它纳入更大的原子事务。"""
@@ -424,11 +434,14 @@ def persist_prepared_ingest(
 
     if classifications is not None and trace_id is None:
         raise ValueError("写入分类 proposal 时必须提供 trace_id")
-    transaction = (
-        nullcontext()
-        if classifications is None
-        else classifications.transaction_owner.transaction()
-    )
+    owners = [
+        participant.transaction_owner
+        for participant in (classifications, lexicons)
+        if participant is not None
+    ]
+    if owners and any(owner is not owners[0] for owner in owners[1:]):
+        raise ValueError("分类与 RecognitionLexicon 必须共享同一 LearningDatabase")
+    transaction = nullcontext() if not owners else owners[0].transaction()
     with transaction:
         store.replace_snapshot(prepared.resource, approved)
         committed_revision = store.current_revision(prepared.resource.resource_id)
@@ -442,6 +455,8 @@ def persist_prepared_ingest(
                     ingest_id=prepared.revision_id,
                     trace_id=trace_id,
                 )
+        if lexicons is not None:
+            lexicons.rebuild_revision(prepared.revision_id)
     return IngestResult(
         status="read",
         resource_id=prepared.resource.resource_id,
@@ -493,6 +508,7 @@ def commit_prepared_ingest(
     store: Store,
     emitter: EventEmitter,
     classifications: IngestClassificationRepository | None = None,
+    lexicons: IngestRecognitionLexiconProjection | None = None,
 ) -> IngestResult:
     """兼容同步入口：提交获批快照，并在提交成功后闭合 ingest span。"""
     result = persist_prepared_ingest(
@@ -500,6 +516,7 @@ def commit_prepared_ingest(
         approved=approved,
         store=store,
         classifications=classifications,
+        lexicons=lexicons,
         trace_id=emitter.trace_id,
     )
     emit_prepared_ingest_committed(prepared, result, emitter=emitter)
@@ -531,6 +548,7 @@ async def ingest_resource(
     max_bytes: int,
     allowed_domains: Collection[str] | Literal["*"],
     classifications: IngestClassificationRepository | None = None,
+    lexicons: IngestRecognitionLexiconProjection | None = None,
 ) -> IngestResult:
     """兼容 CLI/ReAct 的单次工作流：准备 → 同步审批 → 原子提交。"""
     prepared = await prepare_ingest(
@@ -555,4 +573,5 @@ async def ingest_resource(
         store=store,
         emitter=emitter,
         classifications=classifications,
+        lexicons=lexicons,
     )

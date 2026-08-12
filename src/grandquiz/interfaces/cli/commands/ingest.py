@@ -75,6 +75,7 @@ async def run_ingest(
             max_bytes=max(_DEFAULT_MAX_BYTES, len(content.encode("utf-8")) + 1),
             allowed_domains={_LOCAL_HOST},
             classifications=persistence.classifications,
+            lexicons=persistence.recognition_lexicons,
         )
     finally:
         persistence.close()

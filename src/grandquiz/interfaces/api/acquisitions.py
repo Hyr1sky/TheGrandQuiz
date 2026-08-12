@@ -325,6 +325,7 @@ class AcquisitionManager:
                     approved=approved,
                     store=self._persistence.store,
                     classifications=self._persistence.classifications,
+                    lexicons=self._persistence.recognition_lexicons,
                     trace_id=run.trace_id,
                 )
                 updated = self._ledger.mark_succeeded(

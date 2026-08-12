@@ -73,6 +73,9 @@ class LearningPersistence:
         from grandquiz.domain.learning.learning_facts import SqliteLearningFactJournal
         from grandquiz.domain.learning.memory import SqliteLearningMemory
         from grandquiz.domain.learning.preference import SqlitePreferenceMemory
+        from grandquiz.domain.learning.recognition_lexicon import (
+            SqliteRecognitionLexiconProjection,
+        )
         from grandquiz.domain.learning.store import SqliteLearningStore
         from grandquiz.domain.learning.vocabulary import load_vocabulary
 
@@ -90,6 +93,13 @@ class LearningPersistence:
             vocabulary=load_vocabulary(),
             learning_facts=self.learning_facts,
             clock=clock,
+        )
+        self.recognition_lexicons: SqliteRecognitionLexiconProjection = (
+            SqliteRecognitionLexiconProjection(
+                self._database,
+                store=self.store,
+                tags=self.classifications,
+            )
         )
         self.acquisitions: AcquisitionLedger = AcquisitionLedger(self._database)
         self.material_discoveries: MaterialDiscoveryLedger = MaterialDiscoveryLedger(self._database)

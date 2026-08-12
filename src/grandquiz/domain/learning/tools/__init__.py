@@ -35,7 +35,10 @@ from grandquiz.domain.learning.approval import ApprovalGate
 from grandquiz.domain.learning.asked_questions import AskedQuestionsLedger
 from grandquiz.domain.learning.difficulty import DifficultyLedger
 from grandquiz.domain.learning.ingest.fetch import FetchSource
-from grandquiz.domain.learning.ingest.pipeline import IngestClassificationRepository
+from grandquiz.domain.learning.ingest.pipeline import (
+    IngestClassificationRepository,
+    IngestRecognitionLexiconProjection,
+)
 from grandquiz.domain.learning.ingest.web_search import SearchProvider
 from grandquiz.domain.learning.learning_facts import LearningFactJournal
 from grandquiz.domain.learning.memory import Memory
@@ -72,6 +75,7 @@ def register_learning_tools(
     search_provider: SearchProvider | None = None,
     learning_facts: LearningFactJournal | None = None,
     classifications: IngestClassificationRepository | None = None,
+    lexicons: IngestRecognitionLexiconProjection | None = None,
 ) -> None:
     """组装点：注册 ``ingest`` / ``query_weak_concepts`` /（有 responder 时）``start_quiz``。
 
@@ -94,6 +98,7 @@ def register_learning_tools(
             max_bytes=max_bytes,
             allowed_domains=allowed_domains,
             classifications=classifications,
+            lexicons=lexicons,
         )
     )
     registry.register(make_query_weak_concepts_tool(store=store, memory=memory))

@@ -57,6 +57,7 @@ class Store(Protocol):
     def all_resources(self) -> list[LearningResource]: ...
     def set_resource_status(self, resource_id: str, status: ResourceStatus) -> None: ...
     def add_items(self, items: list[KnowledgeItem]) -> None: ...
+    def get_item(self, item_id: str) -> KnowledgeItem | None: ...
     def evidence_for_item(self, item_id: str) -> list[Evidence]: ...
     def unresolved_evidence(self) -> list[EvidenceAuditEntry]: ...
     def replace_snapshot(self, resource: LearningResource, items: list[KnowledgeItem]) -> None: ...
@@ -107,6 +108,9 @@ class LearningStore:
         """按 ``item_id`` 逐个入库（资源内唯一，ADR-0002）。仅获批 item 应流到此处。"""
         for item in items:
             self._items[item.item_id] = item
+
+    def get_item(self, item_id: str) -> KnowledgeItem | None:
+        return self._items.get(item_id)
 
     def evidence_for_item(self, item_id: str) -> list[Evidence]:
         """按 Reader 原始顺序返回 item 的证据；item 不存在时返回空列表。"""
@@ -506,6 +510,14 @@ class SqliteLearningStore:
             (resource_id,),
         )
         return [_row_to_item(row) for row in cursor.fetchall()]
+
+    def get_item(self, item_id: str) -> KnowledgeItem | None:
+        row = self._conn.execute(
+            "SELECT item_id, resource_id, concept, summary, evidence, confidence, concept_key "
+            "FROM knowledge_items WHERE item_id = ?",
+            (item_id,),
+        ).fetchone()
+        return None if row is None else _row_to_item(row)
 
     def all_items(self) -> list[KnowledgeItem]:
         """**全库**所有 item，按 ``item_id`` 升序——全局 KB 唯一的选题读（不按 resource 过滤）。

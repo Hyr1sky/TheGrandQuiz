@@ -184,7 +184,10 @@ def test_v020_learning_database_upgrades_without_losing_learning_state(tmp_path:
         assert memory is not None
         assert memory.state == "薄弱"
         assert memory.verdict_history == ["错"]
-        assert _user_version(persistence.transaction_owner.connection) == 16
+        highest = max(
+            int(path.name.split("_", 1)[0]) for path in _LEARNING_MIGRATIONS.glob("*.sql")
+        )
+        assert _user_version(persistence.transaction_owner.connection) == highest
         assert {
             "material_discovery_batches",
             "material_candidates",

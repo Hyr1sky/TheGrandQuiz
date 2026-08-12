@@ -12,6 +12,7 @@ from grandquiz import __version__
 from grandquiz.domain.learning.ingest.fetch import FetchSource
 from grandquiz.domain.learning.ingest.web_search import SearchProvider
 from grandquiz.domain.learning.persistence import LearningPersistence
+from grandquiz.domain.learning.preference import resolve_asr_material_hints
 from grandquiz.interfaces.api.acquisition_routes import router as acquisitions_router
 from grandquiz.interfaces.api.acquisitions import AcquisitionManager
 from grandquiz.interfaces.api.assessment_routes import router as assessments_router
@@ -29,10 +30,15 @@ from grandquiz.interfaces.api.observability_routes import router as observabilit
 from grandquiz.interfaces.api.resources import router as resources_router
 from grandquiz.interfaces.api.run_routes import router as runs_router
 from grandquiz.interfaces.api.runs import RunManager
+from grandquiz.interfaces.api.settings import LocalSettings
+from grandquiz.interfaces.api.settings_routes import router as settings_router
+from grandquiz.interfaces.api.voice_routes import router as voice_router
+from grandquiz.interfaces.api.voice_runs import VoiceRunManager
 from grandquiz.interfaces.learning_outbox import publish_pending_learning_facts
 from grandquiz.kernel.clock import Clock, SystemClock
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Provider
+from grandquiz.providers.speech import SpeechRecognitionProvider
 
 
 @dataclass(frozen=True)
@@ -41,6 +47,7 @@ class ApiSettings:
 
     learning_db_path: Path
     trace_db_path: Path
+    voice_db_path: Path | None = None
 
     @classmethod
     def default(cls) -> "ApiSettings":
@@ -48,7 +55,11 @@ class ApiSettings:
         return cls(
             learning_db_path=data_dir / "learning.db",
             trace_db_path=data_dir / "trace.db",
+            voice_db_path=data_dir / "voice.db",
         )
+
+    def resolved_voice_db_path(self) -> Path:
+        return self.voice_db_path or self.learning_db_path.with_name("voice.db")
 
 
 class HealthResponse(BaseModel):
@@ -68,6 +79,8 @@ def create_app(
     clock: Clock | None = None,
     search_provider: SearchProvider | None = None,
     acquisition_http_source: FetchSource | None = None,
+    speech_provider: SpeechRecognitionProvider | None = None,
+    asr_hints_default: bool = False,
 ) -> FastAPI:
     """创建可注入 provider/DB 的 app；模块导入本身不触碰 `.env` 或数据库。"""
 
@@ -93,6 +106,30 @@ def create_app(
             trace_store=trace_store,
             clock=app_clock,
             trace_observatory=trace_observatory,
+        )
+        voice_run_manager = (
+            None
+            if speech_provider is None
+            else VoiceRunManager(
+                db_path=settings.resolved_voice_db_path(),
+                speech_provider=speech_provider,
+                hints=persistence.recognition_lexicons,
+                assessments=assessment_manager,
+                clock=app_clock,
+                trace_store=trace_store,
+                trace_observatory=trace_observatory,
+                hints_enabled=resolve_asr_material_hints(
+                    persistence.preferences,
+                    default=asr_hints_default,
+                ),
+            )
+        )
+        local_settings = LocalSettings(
+            persistence=persistence,
+            provider=provider,
+            speech_provider=speech_provider,
+            voice_hint_policy=voice_run_manager,
+            asr_hints_default=asr_hints_default,
         )
         chat_manager = ChatManager(
             persistence=persistence,
@@ -124,6 +161,8 @@ def create_app(
         app.state.settings = settings
         app.state.run_manager = run_manager
         app.state.assessment_manager = assessment_manager
+        app.state.voice_run_manager = voice_run_manager
+        app.state.local_settings = local_settings
         app.state.chat_manager = chat_manager
         app.state.acquisition_manager = acquisition_manager
         app.state.discovery_manager = discovery_manager
@@ -134,6 +173,8 @@ def create_app(
         try:
             yield
         finally:
+            if voice_run_manager is not None:
+                await voice_run_manager.aclose()
             await acquisition_manager.aclose()
             await chat_manager.aclose()
             await assessment_manager.aclose()
@@ -162,6 +203,8 @@ def create_app(
     app.include_router(discoveries_router)
     app.include_router(runs_router)
     app.include_router(assessments_router)
+    app.include_router(voice_router)
+    app.include_router(settings_router)
     app.include_router(learning_router)
     app.include_router(eval_router)
     app.include_router(chat_router)

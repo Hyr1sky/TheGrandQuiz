@@ -65,14 +65,20 @@ from grandquiz.domain.learning.assessment_history import assessment_fact
 from grandquiz.domain.learning.difficulty import (
     DEFAULT_TIER,
     DifficultyLedger,
+    DifficultyTier,
     difficulty_prompt_hint,
     distractor_quality_floor,
+    effective_difficulty_tier,
     target_option_count,
 )
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.learning_facts import LearningFactJournal
 from grandquiz.domain.learning.memory import Memory
-from grandquiz.domain.learning.preference import QUESTION_LANGUAGE_KEY, PreferenceMemory
+from grandquiz.domain.learning.preference import (
+    QUESTION_LANGUAGE_KEY,
+    PreferenceMemory,
+    resolve_difficulty_mode,
+)
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.responder import (
     AnswerSubmissionMetadata,
@@ -115,6 +121,18 @@ def _resolve_language(preferences: PreferenceMemory | None) -> str:
         if pref is not None and pref.value:
             return pref.value
     return "中文"
+
+
+def _effective_tier(
+    difficulty: DifficultyLedger | None,
+    preferences: PreferenceMemory | None,
+    item_id: str,
+) -> DifficultyTier | None:
+    if difficulty is None:
+        return None
+    learned = difficulty.tier_of(item_id)
+    mode = "adaptive" if preferences is None else resolve_difficulty_mode(preferences)
+    return effective_difficulty_tier(learned, mode)
 
 
 def _compose_multiple_choice_solution(question: MultipleChoiceQuestion) -> str:
@@ -328,7 +346,7 @@ async def assess_once(
             # generate_multiple_choice 发出的 message / replay_key 逐字节等价改动前。刻意只在
             # "已适应"概念上加杠杆：新概念保持出题官自然给的选项数（不把"默认 MC 提到 4 项硬底"
             # 这个独立的题面质量变更混进本增量，也免默认路径重试耗尽风险）；升/降档后才收紧/放宽。
-            current_tier = difficulty.tier_of(target.item_id) if difficulty is not None else None
+            current_tier = _effective_tier(difficulty, preferences, target.item_id)
             num_options = (
                 target_option_count(current_tier)
                 if current_tier is not None and current_tier != DEFAULT_TIER
@@ -368,7 +386,7 @@ async def assess_once(
             # → generate_question 不追加任何 message、发出的 message / replay_key / prompt 版本号
             # 逐字节等价改动前（cassette 不破的命根）。**软性如实标注**：这条比 MC 硬杠杆软——只保证
             # 不同档追加不同提示，不保证高档题真的更难（深度主观、超出确定性可断言范围）。
-            current_tier = difficulty.tier_of(target.item_id) if difficulty is not None else None
+            current_tier = _effective_tier(difficulty, preferences, target.item_id)
             difficulty_hint = (
                 difficulty_prompt_hint(current_tier) if current_tier is not None else None
             )

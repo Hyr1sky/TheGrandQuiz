@@ -1,5 +1,6 @@
 """`grandquiz-web` 的 loopback-only 本地启动入口。"""
 
+import os
 from pathlib import Path
 
 import uvicorn
@@ -12,11 +13,19 @@ from starlette.types import Scope
 
 from grandquiz.interfaces.api.app import ApiSettings, create_app
 from grandquiz.interfaces.search_config import search_provider_from_env
+from grandquiz.providers.dashscope_speech import DashScopeSpeechRecognitionAdapter
 from grandquiz.providers.llm import OpenAICompatProvider
 
 _HOST = "127.0.0.1"
 _PORT = 8000
 _STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _env_flag(name: str, *, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().casefold() in {"1", "true", "yes", "on"}
 
 
 class _SpaStaticFiles(StaticFiles):
@@ -49,11 +58,18 @@ def create_default_app() -> FastAPI:
     """由 uvicorn factory 调用；读取 `.env`，但 DB 仍延迟到 lifespan 打开。"""
     load_dotenv()
     provider = OpenAICompatProvider.from_env()
+    speech_provider = (
+        DashScopeSpeechRecognitionAdapter.from_env()
+        if os.environ.get("DASHSCOPE_API_KEY") and os.environ.get("DASHSCOPE_WORKSPACE_ID")
+        else None
+    )
     app = create_app(
         settings=ApiSettings.default(),
         provider=provider,
         provider_close=provider.aclose,
         search_provider=search_provider_from_env(),
+        speech_provider=speech_provider,
+        asr_hints_default=_env_flag("ASR_ENABLE_HINTS"),
     )
     mount_web_static(app)
     return app

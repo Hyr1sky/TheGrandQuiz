@@ -32,6 +32,9 @@ QUESTION_ASKED + ANSWER_JUDGED
 | `AskedQuestionsLedger` | 避免跨会话机械重复 | 与薄弱状态、难度分别演化 |
 | `AssessmentPlan` | 把多题请求规范化为逐位置题型意图 | 1–20 题；顺序不可丢；所有 interface 共用 |
 | `QuestionSpec` | 保存单道开放题的题干、评分点、预注册核心点、参考作答与 Evidence | 每个评分点 ID 唯一且锚定本题 Evidence；critical ID 必须引用已有评分点；Grader 不读取题外 rubric |
+| `RecognitionLexicon` | 保存某个获批 revision 的语音识别术语投影 | 内容寻址、可重建；不向 KnowledgeItem 反写 ASR 字段 |
+| `TranscriptionHints` | 冻结一次 VoiceRun 使用的有限术语选择 | 只来自当前 Assessment item 范围；不成为长期知识事实 |
+| `VoiceRun` | 管理完整录音转写到可审查草稿的应用状态 | 草稿不是答案；只有用户确认后才进入唯一 Assessment submission |
 | `MaterialDiscoveryBatch / Candidate` | 保存一次只读搜索及其待审核材料 | 搜索不写 KB；只有 eligible + approved 候选可启动 Acquisition |
 | `EvalInboxCandidate` | 汇合可审核的纠正与盲标候选 | 来源版本替换时旧候选 superseded；审核前不进入快照 |
 | `DatasetSnapshot` | 冻结一次明确授权的 Eval 输入集合 | 按内容哈希标识且不可变；eligible blind 与 exploratory 分开核算 |
@@ -95,6 +98,51 @@ flowchart TB
 `TraceStore` 横跨所有运行阶段，但只负责完整审计；它不是长期学习事实的唯一存储。
 [ADR-0010](adr/0010-durable-learning-facts-separate-from-operational-trace.md) 固定了两个事件消费者的
 保留边界。
+
+### v0.5 的语音输入边界
+
+```text
+ResourceRevision / DocumentNode / KnowledgeItem
+                  │ 可重建派生
+                  ▼
+        RecognitionLexicon
+                  │ 当前 item 有界选择
+                  ▼
+         TranscriptionHints
+                  │
+audio artifact -> VoiceRun -> reviewable transcript -> user-confirmed answer
+                                                    -> Assessment workflow
+```
+
+`RecognitionLexiconEntry` 是 revision 词表内的一个术语及来源，不是“全局原始词库”；
+`RecognitionLexicon` 是不可变、内容寻址的 revision 投影；`TranscriptionHints` 才是一次 VoiceRun 冻结的动态
+子集。首版来源只包括 KnowledgeItem 名、结构标题、代码标识符和 approved tag，不为抽词额外调用 LLM。
+
+```text
+RecognitionLexiconV1
+  schema_version, lexicon_id, revision_id, builder_version
+  entries[{entry_id, term, normalized_term, source_kind, source_refs, priority}]
+
+TranscriptionHintsV1
+  schema_version, hint_set_id, lexicon_ids, item_ids, selector_version
+  entries[{entry_id, term, priority}]
+
+VoiceRunV1
+  schema_version, voice_run_id, request_id
+  assessment_session_id, question_id, item_id
+  status, version
+  mime_type, byte_count, client_duration_ms, audio_sha256
+  hint_set_id, hint_count, provider_attempt_count
+  reviewable_transcript?, retryable, error_code?
+  created_at, updated_at, expires_at
+```
+
+VoiceRun 的服务端状态为
+`accepted -> transcribing -> reviewable -> submitted`，允许进入 `failed / cancelled / expired`；每个外部调用
+使用独立 ProviderAttempt。原始音频不长期持久化，reviewable transcript 只为短期恢复保留并在终态/TTL 后清理。
+用户最终确认的文本仍由现有 `AssessmentAttempt.answer_text + input_modality=voice` 表达。完整决策见
+[ADR-0012](adr/0012-voice-transcript-is-reviewable-input.md)，可调整限制与接口见
+[v0.5 Voice Interview 设计契约](design/v050-voice-interview.md)。
 
 ### v0.4 的两条授权边界
 

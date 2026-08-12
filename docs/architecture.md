@@ -80,12 +80,14 @@ src/grandquiz/
 ├── providers/
 │   ├── llm.py               # OpenAICompatProvider + DemoEchoProvider
 │   ├── replay.py            # Record/Replay Provider（eval 确定性的基石）
+│   ├── speech.py            # 语音识别 Provider 中立 Interface
+│   ├── dashscope_speech.py  # 百炼完整录音转写 Adapter（v0.5）
+│   ├── speech_replay.py     # 语音识别 Record/Replay Adapter（v0.5）
 │   └── usage.py             # token 用量 / 成本核算
 ├── domain/learning/         # 学习领域（roadmap.md 中 learning/ 的全部内容）
 ├── interfaces/              # 可插拔通道，产品形态不绑定 Web
-│   ├── api/                 # FastAPI（REST + SSE）
-│   ├── cli/                 # CLI REPL 聊天客户端 + trace 查看器（开发期主力界面）
-│   └── asr/                 # 语音通道
+│   ├── api/                 # FastAPI（REST + SSE；v0.5 VoiceRun 也在这里编排）
+│   └── cli/                 # CLI REPL 聊天客户端 + trace 查看器（开发期主力界面）
 └── evals/
     ├── cases/               # 用例 DSL（YAML）
     ├── graders/             # 规则断言 + LLM judge
@@ -214,8 +216,8 @@ schema v11；受 prompt/tool schema 影响的真实 cassette 已重录，生产�
 > 和分层规则不变。
 
 - 后端核心不绑定具体通道；FastAPI/React 与 CLI 都是 `interfaces` adapter，不复制领域逻辑
-- 语音（ASR）链路保留在路线图，但加硬门（2026-06-12）：只在"面试 subagent"立项时一起立项
-  （口头面试模拟是语音唯一站得住的场景），不进 MVP、不占近期优先级；persona 降为
-  system prompt 中的考官语气设定，不做形象
+- 语音旧加硬门已在 2026-08-11 被真实口头答题原型满足：v0.5 只批准“完整录音上传 → 可编辑转写草稿
+  → 既有 Assessment 提交”的面试基建，不提前实现实时双工 Interview subagent、TTS 或数字人形象；
+  浏览器采集属于 Web interface，外部 ASR 属于 Provider adapter，不能混成平行 `interfaces/asr` 系统
 - 旧仓库不减负、不改动，作只读参考（ADR-0001）
 - 旧仓库泄漏的 DashScope key 需轮换，新仓库密钥只走 `.env`

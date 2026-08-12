@@ -121,6 +121,7 @@ async def run_react(
             search_provider=search_provider_from_env(),
             learning_facts=persistence.learning_facts,
             classifications=persistence.classifications,
+            lexicons=persistence.recognition_lexicons,
         )
 
         banner = f"「{title}」" if title else ""

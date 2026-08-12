@@ -25,16 +25,47 @@
 
 import unicodedata
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from grandquiz.domain.learning.difficulty import DifficultyMode
 from grandquiz.domain.learning.persistence import DatabaseSource, database_from
 
 _LEARNING_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 # 第一个被消费的偏好键：出题语言（偏好 > 硬兜底中文；ADR-0005 后无 task 层语言）。
 QUESTION_LANGUAGE_KEY = "question_language"
+DIFFICULTY_MODE_KEY = "difficulty_mode"
+ASR_MATERIAL_HINTS_KEY = "asr_material_hints_enabled"
+
+QuestionLanguage = Literal["中文", "英文"]
+
+
+def resolve_question_language(memory: "PreferenceMemory") -> QuestionLanguage:
+    preference = memory.get_preference(QUESTION_LANGUAGE_KEY)
+    if preference is not None and preference.value in {"中文", "英文"}:
+        return cast("QuestionLanguage", preference.value)
+    return "中文"
+
+
+def resolve_difficulty_mode(memory: "PreferenceMemory") -> DifficultyMode:
+    preference = memory.get_preference(DIFFICULTY_MODE_KEY)
+    if preference is not None and preference.value in {
+        "foundation",
+        "adaptive",
+        "challenge",
+    }:
+        return cast("DifficultyMode", preference.value)
+    return "adaptive"
+
+
+def resolve_asr_material_hints(memory: "PreferenceMemory", *, default: bool) -> bool:
+    preference = memory.get_preference(ASR_MATERIAL_HINTS_KEY)
+    if preference is None:
+        return default
+    return preference.value == "true"
+
 
 # 显式设置的偏好置信度恒此值——同时是"推断永不覆盖显式"判断的分界线（>= 此值即视为显式）。
 _EXPLICIT_CONFIDENCE = 1.0

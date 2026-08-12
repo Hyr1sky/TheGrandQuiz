@@ -31,6 +31,7 @@ from grandquiz.providers.base import (
     ToolSpec,
     Usage,
 )
+from grandquiz.providers.speech import TranscriptionRequest, TranscriptionResult
 
 CONTENT = """\
 # Runtime
@@ -340,6 +341,19 @@ class _FixtureProvider:
         yield CompletionFinished(completion=completion)
 
 
+class _FixtureSpeechProvider:
+    provider_identity = "fixture-speech"
+
+    async def transcribe(self, request: TranscriptionRequest) -> TranscriptionResult:
+        assert request.mime_type == "audio/webm;codecs=opus"
+        return TranscriptionResult(
+            transcript="继续执行会让后续副作用依赖不完整状态，所以必须阻断当前 turn。",
+            provider_request_id="fixture-speech-request",
+            provider_audio_duration_ms=1_000,
+            latency_ms=25,
+        )
+
+
 def _seed(db_path: Path) -> str:
     resource = LearningResource.create(url="file://fixture/agent-runtime.md").model_copy(
         update={
@@ -383,6 +397,7 @@ def main() -> None:
         provider=_FixtureProvider(resource_id),
         search_provider=_FixtureSearchProvider(),
         acquisition_http_source=_FixtureHttpSource(),
+        speech_provider=_FixtureSpeechProvider(),
     )
     port = int(os.environ.get("GRANDQUIZ_FIXTURE_PORT", "8000"))
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")

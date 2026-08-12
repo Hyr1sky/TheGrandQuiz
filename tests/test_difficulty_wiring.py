@@ -31,6 +31,7 @@ from grandquiz.domain.learning.difficulty import (
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
+from grandquiz.domain.learning.preference import DIFFICULTY_MODE_KEY, DictPreferenceMemory
 from grandquiz.domain.learning.responder import ScriptedResponder
 from grandquiz.evals.harness import (
     MC_WRONG,
@@ -782,6 +783,34 @@ async def test_default_tier_injects_no_difficulty_hint_open() -> None:
     assert result.question_type == "开放"
     assert _HARD_HINT_MARK not in provider.last_enrich_text  # 默认档不注入难度提示
     assert _EASY_HINT_MARK not in provider.last_enrich_text
+
+
+async def test_challenge_preference_biases_question_without_rewriting_item_tier() -> None:
+    store, item_ids = build_stocked_store()
+    difficulty = DictDifficultyLedger()
+    memory = LearningMemory()
+    target = item_ids[0]
+    memory.record_verdict(target, "错")
+    memory.record_verdict(target, "对")
+    preferences = DictPreferenceMemory()
+    preferences.set_preference(DIFFICULTY_MODE_KEY, "challenge")
+    provider = _HintCapturingProvider(verdict="错")
+    emitter, _ = _harness()
+
+    await assess_once(
+        store=store,
+        provider=provider,
+        responder=ScriptedResponder(answer="任意"),
+        memory=memory,
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        focus="weak",
+        difficulty=difficulty,
+        preferences=preferences,
+    )
+
+    assert _HARD_HINT_MARK in provider.last_enrich_text
+    assert difficulty.tier_of(target) == DEFAULT_TIER
 
 
 async def test_none_difficulty_injects_no_hint_open() -> None:

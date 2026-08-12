@@ -17,7 +17,7 @@
 5. 人工 DemandValidation 已落地；自动 Judge 仍须先通过 calibration gate。
 6. AnswerDiagnosis/Misconception 晋升和新指标驱动选题仍由 Eval gate 阻挡。
 
-ApplicabilityAssertion 仅保留契约；CompetencyBlueprint、复习排期、主动发现、知识关系与 ASR 继续后置。
+ApplicabilityAssertion 仅保留契约；CompetencyBlueprint、复习排期、主动发现、知识关系与实时双工数字人继续后置。
 详细字段见 [domain-model.md](domain-model.md)，长期事实边界见
 [ADR-0010](adr/0010-durable-learning-facts-separate-from-operational-trace.md)。
 判卷候选的受限 Required Claims 契约见
@@ -146,12 +146,32 @@ Grader calibration 已完成首次真实运行但未通过，完整证据和下�
 未通过前不启用
 自动入库、自动数据晋升、定时发现或学习策略。
 
-## 当前：v0.4.0 软件发布收口
+## 已完成：v0.4.0 软件发布收口
 
 v0.4.0 的发布对象是上述人工授权工作流和可纠正的 local-first 产品，不是“判卷模型已经达到无人监督可靠”。
 发布前只处理版本一致性、v0.2 数据升级兼容、浏览器申诉链、安装产物、文档与回归门；不再新增功能。
 模型策略 gate 的失败作为已知限制公开，默认仍保留 exact Evidence、逐点评判、用户一次申诉和 Trace 审计。
 当前发布动作见 [v0.4.0 发布清单](open-source-release-checklist-v0.4.0.md)。
+
+## 当前：v0.5 Voice Interview
+
+Prototype 01 已证明桌面 Chromium 的 WebM/Opus 完整录音可以不转码交给
+`qwen-audio-3.0-asr-flash`，37.275 秒真实样本的 Provider 往返约 2.026 秒；术语增强对词表内术语有效，
+因此 v0.5 进入正式实现。完整设计见 [Voice Interview 设计契约](design/v050-voice-interview.md)，不可逆的答案
+权威边界见 [ADR-0012](adr/0012-voice-transcript-is-reviewable-input.md)。
+
+按依赖顺序交付五个窄竖切；截至 2026-08-11，前四项与第五项的离线部分已经完成：
+
+1. revision-scoped RecognitionLexicon 与 exact-item TranscriptionHints；
+2. Provider 中立转写 seam、DashScope Adapter 与离线 Replay；
+3. 持久 VoiceRun、幂等/取消/显式重试/重启收敛和 FastAPI；
+4. 桌面 Web 录音、回放、上传、草稿审查与唯一 Assessment 提交；
+5. Trace 安全投影、Scenario Bot、Standards/Spec 双轴审查、四条固定音频的 hints off/on 真实 dogfood 与
+   8/8 离线 replay 已完成；词表正样本改善 `ReAct / AgentEvent / PageIndex`，负样本和自然回答零术语插入。
+
+本轮不实现实时 WebSocket、TTS、双工 Interview Agent、数字人形象、转码、移动端兼容、LLM 口语清理或生产
+录音数据飞轮。术语增强已经通过本轮固定音频门，但仍保留显式开关（环境变量首次默认 + Web 持久热更新）；四条样本不能替代通用
+CER/WER 或噪声鲁棒性评测。
 
 This document records the initial architecture discussion for building an assessment-driven,
 observable, recoverable, and evaluable learning agent.
