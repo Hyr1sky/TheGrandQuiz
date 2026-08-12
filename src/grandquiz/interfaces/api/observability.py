@@ -39,7 +39,13 @@ class TraceSummary(BaseModel):
     tool_calls: int
     error_count: int
     recovery_count: int
+    prompt_tokens: int
+    completion_tokens: int
     total_tokens: int
+    estimated_context_tokens: int | None
+    context_budget_tokens: int | None
+    remaining_context_tokens: int | None
+    context_estimation: Literal["heuristic"] | None
     started_at: float | None
     updated_at: float | None
     latency_ms: float | None
@@ -101,6 +107,8 @@ class TraceObservatory:
         events = self._trace_store.events(trace_id)
         projected_events = _project_events(events)
         spans = _project_spans(build_span_tree(events))
+        prompt_tokens, completion_tokens = _usage_totals(events)
+        context = _latest_context_status(events)
         if events:
             started_at = events[0].ts
             updated_at = events[-1].ts
@@ -118,7 +126,13 @@ class TraceObservatory:
                 tool_calls=sum(event.type == EventType.TOOL_CALL_STARTED for event in events),
                 error_count=sum(event.type == EventType.ERROR for event in events),
                 recovery_count=sum(event.type == EventType.RECOVERY_DECIDED for event in events),
-                total_tokens=sum(event.tokens or 0 for event in projected_events),
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+                estimated_context_tokens=None if context is None else context[0],
+                context_budget_tokens=None if context is None else context[1],
+                remaining_context_tokens=None if context is None else context[2],
+                context_estimation=None if context is None else "heuristic",
                 started_at=started_at,
                 updated_at=updated_at,
                 latency_ms=latency_ms,
@@ -160,6 +174,37 @@ def _usage_tokens(payload: Mapping[str, Any]) -> int | None:
     usage = cast("Mapping[str, Any]", usage_obj)
     total = usage.get("total_tokens")
     return total if isinstance(total, int) else None
+
+
+def _usage_totals(events: Iterable[AgentEvent]) -> tuple[int, int]:
+    prompt_tokens = 0
+    completion_tokens = 0
+    for event in events:
+        if event.type != EventType.MODEL_ENDED:
+            continue
+        usage_obj = event.payload.get("usage")
+        if not isinstance(usage_obj, Mapping):
+            continue
+        usage = cast("Mapping[str, Any]", usage_obj)
+        prompt = usage.get("prompt_tokens")
+        completion = usage.get("completion_tokens")
+        if isinstance(prompt, int):
+            prompt_tokens += prompt
+        if isinstance(completion, int):
+            completion_tokens += completion
+    return prompt_tokens, completion_tokens
+
+
+def _latest_context_status(events: Iterable[AgentEvent]) -> tuple[int, int, int] | None:
+    for event in reversed(list(events)):
+        if event.type != EventType.CONTEXT_PREPARED:
+            continue
+        estimated = event.payload.get("estimated_tokens")
+        budget = event.payload.get("budget_tokens")
+        remaining = event.payload.get("remaining_tokens")
+        if all(isinstance(value, int) for value in (estimated, budget, remaining)):
+            return cast("tuple[int, int, int]", (estimated, budget, remaining))
+    return None
 
 
 def _event_failed(event: AgentEvent) -> bool:
@@ -234,7 +279,13 @@ def _project_spans(roots: Iterable[Span]) -> list[TraceSpanView]:
 
     def visit(span: Span) -> None:
         tool_name_obj = span.input.get("tool_name") if span.type == "tool_call" else None
-        if span.error is not None or (span.output is not None and span.output.get("ok") is False):
+        if span.error is not None or (
+            span.output is not None
+            and (
+                span.output.get("ok") is False
+                or span.output.get("status") in {"failed", "cancelled"}
+            )
+        ):
             status: Literal["running", "completed", "failed"] = "failed"
         elif span.end_ts is None:
             status = "running"
@@ -269,6 +320,7 @@ def _trace_status(events: list[AgentEvent]) -> TraceStatus:
         "learning.question_asked",
         "learning.answer_judged",
         "approval.requested",
+        "voice.reviewable",
     }:
         return "waiting_input"
     for event in reversed(events):

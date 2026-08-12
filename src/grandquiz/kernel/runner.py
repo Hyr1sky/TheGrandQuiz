@@ -11,7 +11,7 @@
 
 import asyncio
 
-from grandquiz.kernel.context import ContextBuilder
+from grandquiz.kernel.context import ContextBudgetStatus, ContextBuilder
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.kernel.hooks import HookManager, HookVeto
 from grandquiz.kernel.recovery import Decision, RecoveryPolicy
@@ -97,6 +97,12 @@ class Runner:
             return self._context_builder.build(self._history, user_message)
         return [*self._messages(), Message(role="user", content=user_message)]
 
+    def context_budget_status(self, user_message: str = "") -> ContextBudgetStatus | None:
+        """Project the next ReAct request budget without exposing message content."""
+        if self._context_builder is None:
+            return None
+        return self._context_builder.budget_status(self._history, user_message)
+
     async def run_turn(self, user_message: str) -> str:
         turn_span = self._emitter.new_span_id()
         self._emitter.emit(
@@ -176,6 +182,14 @@ class Runner:
 
         # 历史只在成功后提交（同 run_turn）：失败不留孤儿 user 消息。工具往返只进本地 call_messages
         call_messages = self._agent_turn_messages(user_message)
+        if self._context_builder is not None:
+            context_status = self._context_builder.budget_status_for_messages(call_messages)
+            if context_status is not None:
+                self._emitter.emit(
+                    EventType.CONTEXT_PREPARED,
+                    parent_span_id=turn_span,
+                    payload=context_status.model_dump(),
+                )
         try:
             for _ in range(self._max_iterations):
                 completion = await self._generate(call_messages, parent_span_id=turn_span)

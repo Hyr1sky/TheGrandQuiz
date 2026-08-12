@@ -33,6 +33,7 @@ class EventType:
     MODEL_STARTED = "model.started"
     MODEL_OUTPUT_DELTA = "model.output_delta"
     MODEL_ENDED = "model.ended"
+    CONTEXT_PREPARED = "context.prepared"
     RECOVERY_DECIDED = "recovery.decided"
     HOOK_INVOKED = "hook.invoked"
     ERROR = "error"

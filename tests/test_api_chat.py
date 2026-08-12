@@ -255,6 +255,33 @@ def _wait_for_events(
     return []
 
 
+def test_chat_status_separates_real_usage_from_estimated_context_budget(tmp_path: Path) -> None:
+    with TestClient(_app(tmp_path)) as client:
+        session = client.post("/api/v1/chat/sessions").json()
+        before = client.get(f"/api/v1/chat/sessions/{session['session_id']}/status")
+        client.post(
+            f"/api/v1/chat/sessions/{session['session_id']}/messages",
+            json={"text": "hello"},
+        )
+        _wait_for_events(client, session["session_id"])
+        after = client.get(f"/api/v1/chat/sessions/{session['session_id']}/status")
+
+    assert before.status_code == 200
+    assert before.json()["usage"] == {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    assert before.json()["context"]["budget_tokens"] == 20_000
+    assert before.json()["context"]["estimation"] == "heuristic"
+    assert before.json()["context"]["remaining_tokens"] > 0
+    assert after.json()["usage"] == {
+        "prompt_tokens": 50,
+        "completion_tokens": 10,
+        "total_tokens": 60,
+    }
+
+
 def test_create_session_returns_session_id(tmp_path: Path) -> None:
     with TestClient(_app(tmp_path)) as client:
         response = client.post("/api/v1/chat/sessions")

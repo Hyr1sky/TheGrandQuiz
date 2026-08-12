@@ -54,7 +54,13 @@ def test_chat_session_exposes_an_idle_observability_snapshot(tmp_path: Path) -> 
         "tool_calls": 0,
         "error_count": 0,
         "recovery_count": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
         "total_tokens": 0,
+        "estimated_context_tokens": None,
+        "context_budget_tokens": None,
+        "remaining_context_tokens": None,
+        "context_estimation": None,
         "started_at": None,
         "updated_at": None,
         "latency_ms": None,
@@ -86,14 +92,19 @@ def test_completed_turn_snapshot_contains_only_safe_runtime_metrics(tmp_path: Pa
     assert response.status_code == 200
     snapshot = response.json()
     assert snapshot["summary"]["status"] == "completed"
-    assert snapshot["summary"]["event_count"] == 5
+    assert snapshot["summary"]["event_count"] == 6
     assert snapshot["summary"]["model_calls"] == 1
     assert snapshot["summary"]["tool_calls"] == 0
     assert snapshot["summary"]["error_count"] == 0
     assert snapshot["summary"]["total_tokens"] == 15
+    assert snapshot["summary"]["prompt_tokens"] == 12
+    assert snapshot["summary"]["completion_tokens"] == 3
+    assert snapshot["summary"]["context_budget_tokens"] == 20_000
+    assert snapshot["summary"]["estimated_context_tokens"] > 0
     assert [span["type"] for span in snapshot["spans"]] == ["run", "model"]
     assert [event["type"] for event in snapshot["events"]] == [
         "run",
+        "runtime",
         "model",
         "model",
         "model",
@@ -133,8 +144,9 @@ def test_observability_sse_resumes_after_known_sequence(tmp_path: Path) -> None:
         for line in response.text.splitlines()
         if line.startswith("data: ")
     ]
-    assert [event["sequence"] for event in projected] == [3, 4, 5]
+    assert [event["sequence"] for event in projected] == [3, 4, 5, 6]
     assert [event["type"] for event in projected] == [
+        "model",
         "model",
         "model",
         "run",

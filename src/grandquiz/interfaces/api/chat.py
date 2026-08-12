@@ -31,6 +31,7 @@ from grandquiz.interfaces.cli.composition import (
 from grandquiz.kernel.clock import SystemClock
 from grandquiz.kernel.context import (
     BudgetCompressionPolicy,
+    ContextBudgetStatus,
     ContextBuilder,
     HeuristicTokenCounter,
     Partition,
@@ -86,6 +87,20 @@ class MessageAccepted(BaseModel):
 class TurnCancelled(BaseModel):
     turn_id: str
     status: Literal["cancelled"] = "cancelled"
+
+
+class ChatUsageView(BaseModel):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+class ChatStatusView(BaseModel):
+    session_id: str
+    trace_id: str
+    status: ChatSessionStatus
+    context: ContextBudgetStatus | None
+    usage: ChatUsageView
 
 
 class ChatUiEvent(BaseModel):
@@ -184,6 +199,7 @@ class ChatManager:
             asked_questions=self._persistence.asked_questions,
             difficulty=self._persistence.difficulty,
             classifications=self._persistence.classifications,
+            lexicons=self._persistence.recognition_lexicons,
         )
         register_navigation_tools(registry)
 
@@ -241,6 +257,37 @@ class ChatManager:
         if session is None or session.session_id != session_id:
             return None
         return session
+
+    def status(self, session_id: str) -> ChatStatusView:
+        session = self.get_session(session_id)
+        if session is None:
+            raise KeyError(session_id)
+        prompt_tokens = 0
+        completion_tokens = 0
+        for event in self._trace_store.events(session.trace_id):
+            if event.type != EventType.MODEL_ENDED:
+                continue
+            raw_usage = event.payload.get("usage")
+            if not isinstance(raw_usage, Mapping):
+                continue
+            usage = cast(Mapping[str, object], raw_usage)
+            prompt = usage.get("prompt_tokens")
+            completion = usage.get("completion_tokens")
+            if isinstance(prompt, int):
+                prompt_tokens += prompt
+            if isinstance(completion, int):
+                completion_tokens += completion
+        return ChatStatusView(
+            session_id=session.session_id,
+            trace_id=session.trace_id,
+            status=session.status,
+            context=session.runner.context_budget_status(),
+            usage=ChatUsageView(
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+            ),
+        )
 
     def send_message(
         self,

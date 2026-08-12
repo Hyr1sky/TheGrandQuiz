@@ -25,7 +25,9 @@ import math
 import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
+
+from pydantic import BaseModel, ConfigDict
 
 from grandquiz.providers.base import Message
 
@@ -103,6 +105,17 @@ class ContextBudgetExceeded(RuntimeError):
         super().__init__(f"上下文装配后 {used} tokens 超过硬上限 {ceiling} tokens")
         self.used = used
         self.ceiling = ceiling
+
+
+class ContextBudgetStatus(BaseModel):
+    """Safe, content-free estimate for one assembled provider context."""
+
+    model_config = ConfigDict(frozen=True)
+
+    estimated_tokens: int
+    budget_tokens: int
+    remaining_tokens: int
+    estimation: Literal["heuristic"] = "heuristic"
 
 
 @dataclass(frozen=True)
@@ -285,6 +298,22 @@ class ContextBuilder:
         messages.append(Message(role="user", content=user_message))
         self._enforce_total_budget(messages)
         return messages
+
+    def budget_status(
+        self, history: Sequence[Message], user_message: str = ""
+    ) -> ContextBudgetStatus | None:
+        """Estimate the next assembled context without exposing its content."""
+        return self.budget_status_for_messages(self.build(history, user_message))
+
+    def budget_status_for_messages(self, messages: Sequence[Message]) -> ContextBudgetStatus | None:
+        if self._total_budget is None or self._counter is None:
+            return None
+        used = sum(self._counter.count(message.content) for message in messages)
+        return ContextBudgetStatus(
+            estimated_tokens=used,
+            budget_tokens=self._total_budget,
+            remaining_tokens=max(0, self._total_budget - used),
+        )
 
     async def prune(self, history: Sequence[Message]) -> None:
         """把已被挤出滑窗的老轮折进滚动摘要（若 ``history_compressor`` 支持——见

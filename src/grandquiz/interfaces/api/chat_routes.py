@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from grandquiz.interfaces.api.chat import (
     ActiveResourceNotFoundError,
     ChatManager,
+    ChatStatusView,
     ChatTurnInProgressError,
     ChatTurnNotFoundError,
     ChatUiEvent,
@@ -30,6 +31,18 @@ def chat_manager_from(request: Request) -> ChatManager:
 @router.post("/sessions", response_model=SessionView, status_code=201)
 async def create_session(request: Request) -> SessionView:
     return chat_manager_from(request).create_session()
+
+
+@router.get("/sessions/{session_id}/status", response_model=ChatStatusView)
+async def get_session_status(session_id: str, request: Request) -> ChatStatusView:
+    manager = chat_manager_from(request)
+    if manager.get_session(session_id) is None:
+        raise ApiError(
+            status_code=404,
+            code="session_not_found",
+            message=f"会话不存在：{session_id}",
+        )
+    return manager.status(session_id)
 
 
 @router.post(

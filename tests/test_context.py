@@ -77,6 +77,24 @@ def test_build_assembles_system_then_memory_then_history_then_user() -> None:
     ]
 
 
+def test_context_budget_status_reports_estimated_used_and_remaining() -> None:
+    builder = ContextBuilder(
+        [Partition(name="system", provider="abcd")],
+        counter=HeuristicTokenCounter(other_chars_per_token=1),
+        total_budget=10,
+    )
+
+    status = builder.budget_status([], "xy")
+
+    assert status is not None
+    assert status.model_dump() == {
+        "estimated_tokens": 6,
+        "budget_tokens": 10,
+        "remaining_tokens": 4,
+        "estimation": "heuristic",
+    }
+
+
 def test_callable_provider_reevaluated_each_build() -> None:
     # callable provider 每次 build 现取 → 学情随考核推进刷新（本 issue 兑现"记忆互通复用"的关键）。
     state = {"n": 0}
