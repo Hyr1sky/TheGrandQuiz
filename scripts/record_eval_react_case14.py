@@ -10,37 +10,30 @@ messages 组装漂移导致回放对不上）：真实 provider 包一层 ``Reco
 
 import asyncio
 
-from grandquiz.evals.harness import Case, solve
-from grandquiz.evals.resources import eval_fixture_path
+from grandquiz.evals.case import ReactCase
+from grandquiz.evals.harness import load_cases, solve
+from grandquiz.evals.resources import eval_fixture_target
 from grandquiz.providers.llm import OpenAICompatProvider
 from grandquiz.providers.replay import Cassette, RecordingProvider
 
-_FIXTURE = eval_fixture_path("eval_case14_bulk_quiz.cassette.json")
-
-# 必须与 evals/cases/case14_*.yaml 的 setup 逐字一致，否则 messages 对不上、回放落空。
-_CASE = Case(
-    id="case14",
-    kind="react",
-    expected_events=[],  # 录制阶段不需要；写 YAML 时用下方打印的真实序列
-    answer="随便选一个",
-    user_messages=["帮我出3道选择题"],
-    cassette="eval_case14_bulk_quiz.cassette.json",
-)
-
 
 async def main() -> None:
+    case = next(case for case in load_cases() if case.id == "case14")
+    if not isinstance(case, ReactCase):
+        raise RuntimeError("case14 必须是 ReactCase")
+    fixture = eval_fixture_target(case.cassette)
     provider = OpenAICompatProvider.from_env()
     cassette = Cassette()
     recording = RecordingProvider(provider, cassette, provider.model_for_role)
     try:
-        result = await solve(_CASE, provider_override=recording)
+        result = await solve(case, provider_override=recording)
     finally:
         await provider.aclose()
 
-    _FIXTURE.parent.mkdir(parents=True, exist_ok=True)
-    cassette.save(_FIXTURE)
+    fixture.parent.mkdir(parents=True, exist_ok=True)
+    cassette.save(fixture)
 
-    print(f"cassette 已存：{_FIXTURE}\n")
+    print(f"cassette 已存：{fixture}\n")
     print("● 事件类型序列（写 YAML 的 expected_events 时照抄这份）：")
     for event in result.events:
         print(f"  - {event.type}")

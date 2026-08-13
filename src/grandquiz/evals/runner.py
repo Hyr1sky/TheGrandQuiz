@@ -9,7 +9,7 @@ from grandquiz.evals.case import Case
 from grandquiz.evals.graders import GRADERS
 from grandquiz.evals.quality import QualityEvaluation, QualityRequest
 from grandquiz.evals.quality_calibration import CalibratedQualitySuite
-from grandquiz.evals.resources import eval_fixture_path
+from grandquiz.evals.resources import QUALITY_EVAL_CASSETTE, eval_fixture_path
 from grandquiz.evals.result import CaseReport, ReactObservation
 from grandquiz.evals.solvers import build_event_harness, load_cases, solve
 from grandquiz.kernel.events import AgentEvent, EventType
@@ -17,7 +17,7 @@ from grandquiz.kernel.trace import Span, summarize_token_usage
 from grandquiz.providers.base import Provider, Role
 from grandquiz.providers.replay import Cassette, ReplayProvider
 
-_QUALITY_CASSETTE = eval_fixture_path("eval_quality_grounded_answer.cassette.json")
+_QUALITY_CASSETTE = eval_fixture_path(QUALITY_EVAL_CASSETTE)
 
 
 def _prompt_versions(events: list[AgentEvent]) -> list[str]:

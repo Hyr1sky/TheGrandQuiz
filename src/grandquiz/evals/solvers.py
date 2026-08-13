@@ -77,12 +77,6 @@ from grandquiz.kernel.trace import Span, TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
 from grandquiz.providers.replay import Cassette, ReplayProvider
 
-_CASE17_ACQUISITION_CASSETTE = eval_fixture_path("eval_case17_web_acquisition.cassette.json")
-CASE17_ACQUISITION_ADAPTER = "searxng"
-CASE17_SEARCH_FINGERPRINT = "wa-s4:searxng-2026.7.19-json-v1"
-CASE17_FETCH_FINGERPRINT = "eval:synthetic-mysql-web-v1"
-CASE17_FETCH_NORMALIZATION = "trafilatura:2.1.0/web-v1"
-
 # --- 规范确定性装配（test_assessment / test_ingest 的 _harness / _summ 权威版本）-------------
 
 
@@ -700,19 +694,19 @@ async def _solve_web_acquisition(
     case: IngestCase, provider_override: Provider | None
 ) -> SolveResult:
     """case16：全程只读规范化 acquisition cassette，不触公网或真实搜索服务。"""
-    cassette = AcquisitionCassette.load(
-        eval_fixture_path("eval_case16_web_acquisition.cassette.json")
-    )
-    fingerprint = "eval:synthetic-web-v1"
+    profile = case.acquisition_replay
+    if profile is None:
+        raise ValueError("web_replay case 缺 acquisition_replay profile")
+    cassette = AcquisitionCassette.load(eval_fixture_path(profile.cassette))
     search = ReplaySearchProvider(
         cassette,
-        adapter_name="synthetic_search",
-        adapter_fingerprint=fingerprint,
+        adapter_name=profile.search_adapter,
+        adapter_fingerprint=profile.search_fingerprint,
     )
     fetch = ReplayFetchSource(
         cassette,
-        adapter_fingerprint=fingerprint,
-        normalization_version="trafilatura:2.1.0/web-v1",
+        adapter_fingerprint=profile.fetch_fingerprint,
+        normalization_version=profile.normalization_version,
     )
     store = LearningStore()
     keep_concepts = set(case.approval_keep)
@@ -816,16 +810,19 @@ async def _solve_react(
             search_provider = search_provider_override
             source = fetch_source_override
         else:
-            acquisition = AcquisitionCassette.load(_CASE17_ACQUISITION_CASSETTE)
+            profile = case.acquisition_replay
+            if profile is None:
+                raise ValueError("web_acquisition case 缺 acquisition_replay profile")
+            acquisition = AcquisitionCassette.load(eval_fixture_path(profile.cassette))
             search_provider = ReplaySearchProvider(
                 acquisition,
-                adapter_name=CASE17_ACQUISITION_ADAPTER,
-                adapter_fingerprint=CASE17_SEARCH_FINGERPRINT,
+                adapter_name=profile.search_adapter,
+                adapter_fingerprint=profile.search_fingerprint,
             )
             source = ReplayFetchSource(
                 acquisition,
-                adapter_fingerprint=CASE17_FETCH_FINGERPRINT,
-                normalization_version=CASE17_FETCH_NORMALIZATION,
+                adapter_fingerprint=profile.fetch_fingerprint,
+                normalization_version=profile.normalization_version,
             )
     else:
         store, _ = build_stocked_store()

@@ -23,9 +23,6 @@ from grandquiz.evals.result import (
 )
 from grandquiz.evals.runner import run_all, run_case
 from grandquiz.evals.solvers import (
-    CASE17_FETCH_FINGERPRINT,
-    CASE17_FETCH_NORMALIZATION,
-    CASE17_SEARCH_FINGERPRINT,
     QUOTES,
     AssessFakeProvider,
     build_event_harness,
@@ -36,9 +33,6 @@ from grandquiz.evals.solvers import (
 )
 
 __all__ = [
-    "CASE17_FETCH_FINGERPRINT",
-    "CASE17_FETCH_NORMALIZATION",
-    "CASE17_SEARCH_FINGERPRINT",
     "MC_CORRECT",
     "MC_WRONG",
     "QUOTES",

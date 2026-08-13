@@ -15,11 +15,11 @@ from grandquiz.evals.quality_calibration import (
     load_calibration_samples,
     run_calibration,
 )
-from grandquiz.evals.resources import eval_fixture_path
+from grandquiz.evals.resources import QUALITY_EVAL_CASSETTE, eval_fixture_target
 from grandquiz.providers.llm import OpenAICompatProvider
 from grandquiz.providers.replay import Cassette, RecordingProvider
 
-_FIXTURE = eval_fixture_path("eval_quality_grounded_answer.cassette.json")
+_FIXTURE = eval_fixture_target(QUALITY_EVAL_CASSETTE)
 
 
 async def main() -> None:

@@ -1,19 +1,21 @@
 """已安装 wheel 运行 ``grandquiz report`` 所需的包内资产契约。"""
 
+from dataclasses import replace
+
 import pytest
 
-from grandquiz.evals.resources import EVAL_FIXTURES_DIR, eval_fixture_path
+from grandquiz.evals.case import ReactCase
+from grandquiz.evals.harness import load_cases
+from grandquiz.evals.resources import (
+    EVAL_FIXTURES_DIR,
+    declared_eval_fixture_names,
+    eval_fixture_path,
+    eval_fixture_target,
+)
 
 
 def test_public_eval_cassettes_are_package_local() -> None:
-    names = {
-        "eval_case14_bulk_quiz.cassette.json",
-        "eval_case15_natural_grounded_answer.cassette.json",
-        "eval_case16_web_acquisition.cassette.json",
-        "eval_case17_web_acquisition.cassette.json",
-        "eval_case17_web_acquisition_react.cassette.json",
-        "eval_quality_grounded_answer.cassette.json",
-    }
+    names = declared_eval_fixture_names(load_cases())
 
     assert {path.name for path in EVAL_FIXTURES_DIR.glob("*.json")} == names
     for name in names:
@@ -25,3 +27,28 @@ def test_public_eval_cassettes_are_package_local() -> None:
 def test_eval_fixture_path_rejects_escape() -> None:
     with pytest.raises(ValueError, match="无效"):
         eval_fixture_path("../tests/fixtures/secret.json")
+
+
+def test_eval_fixture_target_allows_first_recording_but_rejects_escape() -> None:
+    target = eval_fixture_target("future_case.cassette.json")
+
+    assert target == EVAL_FIXTURES_DIR / "future_case.cassette.json"
+    assert not target.exists()
+    with pytest.raises(ValueError, match="无效"):
+        eval_fixture_target("../future_case.cassette.json")
+
+
+def test_eval_fixture_declarations_reject_multiple_owners() -> None:
+    cases = load_cases()
+    case14 = next(case for case in cases if case.id == "case14")
+    case15 = next(case for case in cases if case.id == "case15")
+    assert isinstance(case14, ReactCase)
+    assert isinstance(case15, ReactCase)
+
+    with pytest.raises(ValueError, match="multiple owners"):
+        declared_eval_fixture_names(
+            [
+                case14,
+                replace(case15, cassette=case14.cassette),
+            ]
+        )

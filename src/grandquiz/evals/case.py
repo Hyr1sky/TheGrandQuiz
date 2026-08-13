@@ -5,9 +5,9 @@
 """
 
 from dataclasses import dataclass, field
-from typing import Annotated, Any, ClassVar, Literal
+from typing import Annotated, Any, ClassVar, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from grandquiz.domain.learning.assessment.grading import VerdictLabel
 from grandquiz.domain.learning.assessment.selection import Focus
@@ -38,6 +38,17 @@ class QualityProfile:
 
 
 @dataclass(frozen=True)
+class AcquisitionReplayProfile:
+    """Case-owned Search/Fetch replay identity and packaged cassette."""
+
+    cassette: str
+    search_adapter: str
+    search_fingerprint: str
+    fetch_fingerprint: str
+    normalization_version: str
+
+
+@dataclass(frozen=True)
 class IngestCase:
     """Ingest eval：只拥有抓取来源与审批选择。"""
 
@@ -46,6 +57,7 @@ class IngestCase:
     expected_events: list[str]
     source: Literal["ok", "boom", "web_replay"] = "ok"
     approval_keep: list[str] = field(default_factory=_empty_strs)
+    acquisition_replay: AcquisitionReplayProfile | None = None
 
     @property
     def quality_profile(self) -> None:
@@ -96,6 +108,7 @@ class ReactCase:
     answer: str = "我的作答"
     react_fixture: Literal["quiz", "grounded", "web_acquisition"] = "quiz"
     quality: QualityProfile | None = None
+    acquisition_replay: AcquisitionReplayProfile | None = None
 
     @property
     def quality_profile(self) -> QualityProfile | None:
@@ -127,9 +140,33 @@ class _QualityConfig(_StrictConfig):
     reference: str
 
 
+class _AcquisitionReplayConfig(_StrictConfig):
+    cassette: str
+    search_adapter: str
+    search_fingerprint: str
+    fetch_fingerprint: str
+    normalization_version: str
+
+    def to_domain(self) -> AcquisitionReplayProfile:
+        return AcquisitionReplayProfile(
+            cassette=self.cassette,
+            search_adapter=self.search_adapter,
+            search_fingerprint=self.search_fingerprint,
+            fetch_fingerprint=self.fetch_fingerprint,
+            normalization_version=self.normalization_version,
+        )
+
+
 class _IngestSetup(_StrictConfig):
     source: Literal["ok", "boom", "web_replay"] = "ok"
     approval_keep: list[str] = Field(default_factory=_empty_strs)
+    acquisition_replay: _AcquisitionReplayConfig | None = None
+
+    @model_validator(mode="after")
+    def _check_acquisition_replay(self) -> Self:
+        if (self.source == "web_replay") != (self.acquisition_replay is not None):
+            raise ValueError("web_replay source must exclusively own acquisition_replay")
+        return self
 
 
 class _AssessSetup(_StrictConfig):
@@ -152,6 +189,13 @@ class _ReactSetup(_StrictConfig):
     answer: str = "我的作答"
     fixture: Literal["quiz", "grounded", "web_acquisition"] = "quiz"
     quality: _QualityConfig | None = None
+    acquisition_replay: _AcquisitionReplayConfig | None = None
+
+    @model_validator(mode="after")
+    def _check_acquisition_replay(self) -> Self:
+        if (self.fixture == "web_acquisition") != (self.acquisition_replay is not None):
+            raise ValueError("web_acquisition fixture must exclusively own acquisition_replay")
+        return self
 
 
 class _IngestEnvelope(_StrictConfig):
@@ -223,6 +267,11 @@ def parse_case(raw: Any) -> Case:
             answer=setup.answer,
             react_fixture=setup.fixture,
             quality=quality,
+            acquisition_replay=(
+                setup.acquisition_replay.to_domain()
+                if setup.acquisition_replay is not None
+                else None
+            ),
         )
     setup = envelope.setup
     return IngestCase(
@@ -230,4 +279,7 @@ def parse_case(raw: Any) -> Case:
         expected_events=envelope.expected_events,
         source=setup.source,
         approval_keep=setup.approval_keep,
+        acquisition_replay=(
+            setup.acquisition_replay.to_domain() if setup.acquisition_replay is not None else None
+        ),
     )

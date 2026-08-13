@@ -28,18 +28,17 @@ TheGrandQuiz 已形成可运行的 local-first 学习闭环：
 
 版本能力和已知限制见 [v0.5.0 Release Notes](releases/v0.5.0.md)。实现证据不在 roadmap 重复。
 
-## 已完成的当前工程收口：Eval Harness E0–E2
+## 已完成的当前工程收口：Eval Harness E0–E4
 
-Eval 是项目的承重卖点。E0–E2 已在不改变 case、cassette、评分或报告语义的前提下完成第一阶段深化：
+Eval 是项目的承重卖点。E0–E4 已在不改变 case、cassette、评分或报告语义的前提下完成结构深化：
 
 1. `harness.py` 只保留稳定 facade 与 CLI 入口；
 2. `solvers.py / runner.py / reporting.py` 按真实变化原因拆分；
 3. conformance tests 固定 17-case manifest、唯一 Tier-2 归属、报告产物和 ReplayMiss 硬失败；
 4. Tier-1 / Tier-2 的 trace、verdict 与 execution/judge cost 继续分列；
 5. Replay 仍是普通测试和默认报告的唯一模型路径。
-
-后续 Eval 结构候选是用 typed per-kind observation 替换 `SolveResult.context` 的无类型字典；它必须另开
-独立竖切，不作为 E0–E2 的附带重构。
+6. typed per-kind observation 已替换 `SolveResult.context`，错误 case/observation 组合在构造点失败；
+7. Search/Fetch Replay profile 归 case 所有，录制、回放与包内资产审计共用同一声明，孤立资产在 CI 失败。
 
 ## 下一阶段产品候选
 

@@ -12,12 +12,13 @@ import pytest
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.ingest.acquisition_replay import (
     AcquisitionCassette,
+    AcquisitionReplayMiss,
     ReplayFetchSource,
     ReplaySearchProvider,
 )
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.store import LearningStore
-from grandquiz.evals.case import ReactCase, parse_case
+from grandquiz.evals.case import IngestCase, ReactCase, parse_case
 from grandquiz.evals.graders.rules import grade_case14, grade_case15, grade_case17
 from grandquiz.evals.graders.scorers import language_consistency, no_duplicate
 from grandquiz.evals.harness import (
@@ -70,6 +71,34 @@ def test_case_rejects_fields_owned_by_another_kind() -> None:
                 "id": "wrong-shape",
                 "kind": "ingest",
                 "setup": {"focus": "weak"},
+                "expected_events": [],
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("kind", "setup"),
+    [
+        ("ingest", {"source": "web_replay"}),
+        (
+            "react",
+            {
+                "fixture": "web_acquisition",
+                "cassette": "react.json",
+                "user_messages": [],
+            },
+        ),
+    ],
+)
+def test_acquisition_cases_require_an_explicit_replay_profile(
+    kind: str, setup: dict[str, object]
+) -> None:
+    with pytest.raises(ValueError, match="acquisition_replay"):
+        parse_case(
+            {
+                "id": "missing-replay-owner",
+                "kind": kind,
+                "setup": setup,
                 "expected_events": [],
             }
         )
@@ -243,6 +272,23 @@ async def test_case16_replays_web_acquisition_without_quality_pollution() -> Non
     assert rejected.items == []
 
 
+async def test_case16_solver_uses_its_declared_acquisition_replay_identity() -> None:
+    case16 = next(case for case in load_cases() if case.id == "case16")
+    assert isinstance(case16, IngestCase)
+    assert case16.acquisition_replay is not None
+
+    with pytest.raises(AcquisitionReplayMiss):
+        await solve(
+            replace(
+                case16,
+                acquisition_replay=replace(
+                    case16.acquisition_replay,
+                    search_fingerprint="incompatible-search-fingerprint",
+                ),
+            )
+        )
+
+
 async def test_case17_replays_real_search_selection_and_ingest_decisions() -> None:
     case17 = next(case for case in load_cases() if case.id == "case17")
 
@@ -258,6 +304,19 @@ async def test_case17_replays_real_search_selection_and_ingest_decisions() -> No
     assert len(result.observation.final_outputs) == 3
     assert len(result.store.all_items()) == 5
     assert grade_case17(result) == []
+
+
+async def test_case17_solver_uses_its_declared_acquisition_replay_identity() -> None:
+    case17 = next(case for case in load_cases() if case.id == "case17")
+    assert isinstance(case17, ReactCase)
+    assert case17.acquisition_replay is not None
+    wrong_profile = replace(
+        case17.acquisition_replay,
+        search_fingerprint="incompatible-search-fingerprint",
+    )
+
+    with pytest.raises(AcquisitionReplayMiss):
+        await solve(replace(case17, acquisition_replay=wrong_profile))
 
 
 async def test_language_consistency_case_is_all_one_bucket() -> None:

@@ -4,6 +4,12 @@ id: case16
 kind: ingest
 setup:
   source: web_replay
+  acquisition_replay:
+    cassette: eval_case16_web_acquisition.cassette.json
+    search_adapter: synthetic_search
+    search_fingerprint: eval:synthetic-web-v1
+    fetch_fingerprint: eval:synthetic-web-v1
+    normalization_version: trafilatura:2.1.0/web-v1
   approval_keep:
     - 闭包
     - 事件循环

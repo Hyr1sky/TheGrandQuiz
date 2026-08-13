@@ -20,20 +20,13 @@ from grandquiz.domain.learning.ingest.acquisition_replay import (
 )
 from grandquiz.domain.learning.ingest.fetch import DocumentQuality, FetchedDocument, FetchError
 from grandquiz.domain.learning.ingest.web_search import SearXNGSearchProvider
+from grandquiz.evals.case import ReactCase
 from grandquiz.evals.graders.rules import grade_case17
-from grandquiz.evals.harness import (
-    CASE17_FETCH_FINGERPRINT,
-    CASE17_FETCH_NORMALIZATION,
-    CASE17_SEARCH_FINGERPRINT,
-    Case,
-    solve,
-)
-from grandquiz.evals.resources import eval_fixture_path
+from grandquiz.evals.harness import load_cases, solve
+from grandquiz.evals.resources import eval_fixture_target
 from grandquiz.providers.llm import OpenAICompatProvider
 from grandquiz.providers.replay import Cassette, RecordingProvider
 
-_LLM_FIXTURE = eval_fixture_path("eval_case17_web_acquisition_react.cassette.json")
-_ACQUISITION_FIXTURE = eval_fixture_path("eval_case17_web_acquisition.cassette.json")
 _GOOD_URL = "https://javaguide.cn/database/mysql/mysql-questions-01.html"
 _BAD_URL = "https://example.com/login"
 _CONTENT = """# MySQL 面试高频考点
@@ -58,20 +51,6 @@ InnoDB 通过 MVCC 与锁协作处理并发；当前读仍会读取最新版本�
 面试中讨论慢查询时，应先用 EXPLAIN 查看访问类型、可能索引、实际选用索引与扫描行数，再结合数据分布、
 回表成本和排序临时表判断瓶颈。不能只凭 SQL 文本断言某个索引一定生效。
 """
-
-_CASE = Case(
-    id="case17",
-    kind="react",
-    expected_events=[],
-    user_messages=[
-        "我想更深入地学习 MySQL，尤其是面试高频考点。"
-        "请只在 javaguide.cn 搜索 5 条高质量资料供我选择。",
-        f"我选择 {_GOOD_URL} 。请深读、审批并入库。",
-        f"再测试这个低质量页面是否会被安全拒绝：{_BAD_URL}",
-    ],
-    cassette=_LLM_FIXTURE.name,
-    react_fixture="web_acquisition",
-)
 
 
 class _SyntheticFetchSource:
@@ -103,6 +82,13 @@ async def main() -> None:
     if not endpoint:
         raise RuntimeError("需要设置 SEARXNG_URL")
 
+    case = next(case for case in load_cases() if case.id == "case17")
+    if not isinstance(case, ReactCase) or case.acquisition_replay is None:
+        raise RuntimeError("case17 缺完整 acquisition replay profile")
+    profile = case.acquisition_replay
+    llm_fixture = eval_fixture_target(case.cassette)
+    acquisition_fixture = eval_fixture_target(profile.cassette)
+
     provider = OpenAICompatProvider.from_env()
     llm_cassette = Cassette()
     acquisition_cassette = AcquisitionCassette()
@@ -110,17 +96,17 @@ async def main() -> None:
     recording_search = RecordingSearchProvider(
         SearXNGSearchProvider(endpoint=endpoint),
         acquisition_cassette,
-        adapter_fingerprint=CASE17_SEARCH_FINGERPRINT,
+        adapter_fingerprint=profile.search_fingerprint,
     )
     recording_fetch = RecordingFetchSource(
         _SyntheticFetchSource(),
         acquisition_cassette,
-        adapter_fingerprint=CASE17_FETCH_FINGERPRINT,
-        normalization_version=CASE17_FETCH_NORMALIZATION,
+        adapter_fingerprint=profile.fetch_fingerprint,
+        normalization_version=profile.normalization_version,
     )
     try:
         result = await solve(
-            _CASE,
+            case,
             provider_override=recording_provider,
             search_provider_override=recording_search,
             fetch_source_override=recording_fetch,
@@ -141,11 +127,11 @@ async def main() -> None:
                 print(f"  - {event.type}: {event.payload}")
         raise RuntimeError(f"case17 规则门未通过，拒绝保存 cassette：{failures}")
 
-    _LLM_FIXTURE.parent.mkdir(parents=True, exist_ok=True)
-    llm_cassette.save(_LLM_FIXTURE)
-    acquisition_cassette.save(_ACQUISITION_FIXTURE)
-    print(f"LLM cassette 已存：{_LLM_FIXTURE}")
-    print(f"Acquisition cassette 已存：{_ACQUISITION_FIXTURE}")
+    llm_fixture.parent.mkdir(parents=True, exist_ok=True)
+    llm_cassette.save(llm_fixture)
+    acquisition_cassette.save(acquisition_fixture)
+    print(f"LLM cassette 已存：{llm_fixture}")
+    print(f"Acquisition cassette 已存：{acquisition_fixture}")
     print("事件类型序列：")
     for event in result.events:
         print(f"  - {event.type}")

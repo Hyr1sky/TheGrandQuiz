@@ -5,6 +5,12 @@ kind: react
 setup:
   fixture: web_acquisition
   cassette: eval_case17_web_acquisition_react.cassette.json
+  acquisition_replay:
+    cassette: eval_case17_web_acquisition.cassette.json
+    search_adapter: searxng
+    search_fingerprint: wa-s4:searxng-2026.7.19-json-v1
+    fetch_fingerprint: eval:synthetic-mysql-web-v1
+    normalization_version: trafilatura:2.1.0/web-v1
   user_messages:
     - 我想更深入地学习 MySQL，尤其是面试高频考点。请只在 javaguide.cn 搜索 5 条高质量资料供我选择。
     - 我选择 https://javaguide.cn/database/mysql/mysql-questions-01.html 。请深读、审批并入库。
