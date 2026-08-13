@@ -58,9 +58,9 @@ Interface，`assessment_history.py` 隐藏 Attempt/Demand/Learner 的重建规�
 
 判据硬性：**subagent = 需要隔离大上下文 + 输出可结构化验证**；**tool = 单次有界调用**。
 
-- MVP 唯一 subagent：**Reader**（深读长文档，隔离那一大坨上下文，产出 KnowledgeItem[]）。
+- 当前唯一 subagent：**Reader**（深读长文档，隔离大上下文，产出 KnowledgeItem[]）。
 - 出题、判卷是 **tool**（带 pydantic schema 的单次调用）——做成 subagent 等于把简单调用包成重量级隔离上下文。
-- roadmap 的 6-subagent 表是二期候选，按此判据逐个再立项，不为"多智能体"而多智能体。
+- 只有出现第二个同时满足判据的真实消费者时，才抽通用 subagent 执行器；不为“多智能体”而多智能体。
 
 ## 分层结构
 
@@ -164,14 +164,14 @@ schema v11；受 prompt/tool schema 影响的真实 cassette 已重录，生产�
 1. **先定 trace schema 再写功能**：`turn_id / span_id / parent_span / type / input / output / tokens / latency / error`，span 成树（turn → model_call → tool_call → subagent）。Schema 就是 eval 的数据契约。
    - **事件是信封，领域事件上同一条脊柱**：`AgentEvent` = `type`（字符串）+ 元数据 + 不透明 payload。kernel 泛型地分发 / 持久化，不认识具体类型；domain 在自己那层定义领域事件（ResourceApproved / ItemCreated / AnswerJudged / ConceptStateChanged）与 payload schema，经 kernel 的 `emit()` 发射。kernel 保持领域无关（分层守卫不破），eval 又能在 trace 上断言领域行为（case 4/5/6 断言的都是领域事件）。
 2. **回放是事件流回放，不只是 LLM 回放**：所有外部 I/O（LLM / fetch / 时钟 / 随机）都是非确定性边界，统一走工具、结果作为事件落在脊柱上——回放 = 重放事件流，LLM Record/Replay Provider 只是其中一个特例。录制按 messages 哈希落盘，回放直接命中，eval 不烧 token、完全确定。
-3. Grader 两层：**规则断言**（工具调用顺序、审批门、引用存在性）跑在 trace 上；**LLM-as-judge**（grounding、回答质量）跑在最终输出上。行为 eval（规则断言）是 MVP；质量 eval（LLM-judge + golden set，判卷准不准）是更深一层，二期。
+3. Grader 两层：**Tier-1 规则断言**（工具调用顺序、审批门、引用存在性）跑在 trace 上；**Tier-2 Quality Judge**（grounding、语言与回答质量）跑在最终输出上。两层均已实现；默认测试和报告只走离线 Replay，真实录制与质量校准必须显式执行。
 4. **部分 eval 断言同时是运行时不变量**：如"出题必须锚定存在的 KnowledgeItem 且 evidence 非空"（case 3），应在出题工具产出后有一道确定性校验门挡住幽灵题再展示，而非只在 eval 里查。
 
 ## 工程性模块（一等公民，非可选项）
 
 | 模块 | 要点 |
 | --- | --- |
-| **注入防护** | 学习 agent 读网页 / GitHub，抓回内容是不可信输入。工具结果打"不可信"标记 + system prompt 硬约束 + fetch 层做大小 / 超时 / 域名限制。学习场景相对学者场景**新增的攻击面**，进 MVP |
+| **注入防护** | 学习 agent 读网页 / GitHub，抓回内容是不可信输入。工具结果打"不可信"标记 + system prompt 硬约束 + fetch 层做大小 / 超时 / 域名限制。这是当前基线安全边界 |
 | **结构化输出契约** | subagent 与 LLM 工具（出题 / 判卷）的返回结果用 pydantic schema 强制校验，失败自动重试——"output can be verified" 的落地机制 |
 | **跨接口一致性** | CLI、Web Chat 与 FastAPI 只做输入/事件投影；多题编排必须进入同一个 `AssessmentPlan`，判卷反馈必须来自同一个 `QuestionSpec` / `ANSWER_JUDGED` 信封。OpenAPI 只验证 HTTP 形状，跨 adapter 的语义一致性由 conformance tests 保证 |
 | **判卷申诉写路径** | Web 的一次补充仍使用同一 `QuestionSpec` / Grader；初判不可变，重判结果经共享 `VerdictCorrectionService` 追加事实并重放 Memory / Difficulty，接口层不得各自复制纠正事务 |
@@ -181,33 +181,14 @@ schema v11；受 prompt/tool schema 影响的真实 cassette 已重录，生产�
 | **SQLite 迁移** | 版本号 + 顺序 SQL 文件，不上 alembic |
 | **Prompt 版本管理** | prompt 模板独立于代码存放，trace 记 prompt 版本号，eval 回归可归因 |
 
-## 搭建顺序（trace 先行 + 竖切拉动，2026-06-12 修订）
+## 变更顺序
 
-> 修订背景：MVP 定位为"考核竖切"（见根目录 CONTEXT.md 与 roadmap MVP Scope）。
-> 排期改为走骨架（walking skeleton）：trace/replay 作为脊柱与确定性地基先行，随后立即拉一条
-> 最小可跑的考核竖切穿透全栈，hook / context / recovery / memory 由真实 domain 拉动着逐层加硬，
-> 而非自底向上把六层 kernel 抽象建完再上 domain（避免为 domain 不需要的能力做过度抽象）。
+历史搭建过程已进入 [devrecords](devrecords/)。当前变更继续遵守四条顺序：
 
-```text
-0.  建仓 + 脚手架 + 工程规范        → 验证：CI 全绿的空项目              ✅ 2026-06-12
-1.  移植核心 + 事件化改造 runner     → 验证：CLI REPL 能和无工具 agent 对话 ✅ 2026-06-18
-2.  TraceStore + Replay Provider    → 验证：一次对话可完整回放             ✅ 2026-07-04
-3.  考核竖切（走骨架）              → 验证：手喂 URL → 深读 → "考我" → 判卷，一条链路跑通并落 trace ✅ 2026-07-05
-        ├ 手动喂 URL 的 mock 资源源
-        ├ Reader subagent 深读产出 KnowledgeItem
-        ├ 审批门（深读产出 → 入库）
-        ├ 出题（题型路由）+ 判卷（判决三值 + 证据锚定）
-        └ Learning Memory（薄弱概念入库 / 销账）
-4-7. 由竖切拉动逐层加硬 kernel：                                      ✅ 2026-07-08
-        HookManager（审批门 / trace 写入挂上去）
-        ContextBuilder + 跨轮裁剪（多轮考核 token 不膨胀）
-        RecoveryPolicy + 错误分类（深读 fetch 失败走标记/换源）
-        Memory 接口规整 + SQLite（Learning + Preference 跨会话生效）
-8.  Eval harness                    → 验证：CONTEXT.md / roadmap 的考核竖切用例跑通 ✅ 2026-07-06
-```
-
-步骤 3 是产品的脉搏，越早可跑越好；步骤 4-7 不是新需求，而是把竖切里临时凑合的 kernel 部件
-替换成正式实现，每一层都有真实 domain 调用方在压测它。
+1. 先定义一条用户可见行为或承重不变量；
+2. 用真实 domain 竖切证明需要新的 seam；
+3. 新基础设施复用 AgentEvent、Trace、Replay、Recovery 与审批门；
+4. 确定性核心走 TDD，模型边界走 Record/Replay 与 Eval gate。
 
 ## 已确认决策
 

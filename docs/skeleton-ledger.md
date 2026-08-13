@@ -1,193 +1,36 @@
-# 走骨架替换台账（Walking-Skeleton Ledger）
+# 走骨架替换台账
 
-> 竖切原则（见 [architecture.md](architecture.md) 搭建顺序、[CLAUDE.md](../CLAUDE.md) 开发节奏）：
-> M3 考核竖切**先穿透**——用最小假实现让整条链路亮起来，kernel 各层再由真实 domain
-> 拉动着逐层加硬。本台账钉死每一处"临时假实现"的正式版本、替换里程碑与验收信号，
-> **防止竖切跑通后遗忘补齐**（"跑通 ≠ 做完"）。
+本表只记录为了尽早穿透竖切而保留的临时实现。范围外功能、未获准实验和普通 backlog 不进入本表。
 
-## 两条纪律
+## 纪律
 
-1. **代码里打标记**：每处临时假实现旁写一行
-   `# SKELETON(Mx): <一句话> — 见 docs/skeleton-ledger.md`，
-   于是 `grep -rn "SKELETON" src/` 能一键枚举全部欠账（机读视图）。
-2. **本表是人读视图**：新增假实现时同步加一行；替换完成后把状态改 ✅ 并删掉对应代码标记。
-   代码里 `grep` 到的 `SKELETON` 数应与本表未完成行数一致——两边对不上就说明有人偷偷加了假实现没记账。
+1. 临时实现旁必须带 `# SKELETON` 标记并引用本表行号。
+2. 正式替换后删除代码标记，并把对应行改为完成。
+3. `rg -n "SKELETON" src/` 的当前标记数必须与未完成行数一致。
+4. 历史阶段计数与落地过程由 Git 和 [devrecords](devrecords/) 保存，不在当前台账重复。
 
-**区分骨架欠账与范围边界**：本表只收**骨架欠账**（为让竖切早点亮而临时假的、我们一定会补的实现）。
-PRD 里的 **Out of Scope**（资源自动发现 / 向量库 / Web 前端 / 跨资源归并等 MVP 刻意不做、未必会做的）
-是**范围边界**，不进本表。
+## 当前台账
 
-## 台账
+| # | 组件 / seam | 正式目标 | 进入条件 / 里程碑 | 状态 |
+|---|---|---|---|---|
+| 1 | Learning Memory | SQLite Memory 抽象与跨会话薄弱状态 | M7 | ✅ |
+| 2 | KnowledgeItem / Resource 存储 | SQLite Store 与原子快照 | M7 | ✅ |
+| 3 | 审批门 | 持久 `needs_input`、单次 token、跨 HTTP/SSE 恢复 | LW-S5 | ✅ |
+| 4 | Reader subagent 执行器 | 通用 `kernel/subagent.py` 执行器 | 出现第二个真实 subagent 后再抽；零重复 | ⬜ |
+| 5 | Prompt 版本 | 独立 prompt 文件、内容 hash、Trace 归因 | 稳定性加固 | ✅ |
+| 6 | Responder | 可挂起/可恢复的作答 turn，凭 token 跨进程续答 | AssessmentSession 持久化需求明确时共同设计 | ⬜ |
+| 7 | 考核轮次恢复 | `RecoveryPolicy + ErrorClass` 统一裁决 | M6 | ✅ |
+| 8 | 已问题目去重 | SQLite 跨会话台账 | 2026-07-13 | ✅ |
 
-| # | 组件 / 缝 | M3 临时实现（fake） | 正式实现 | 替换里程碑 | 验收信号 | 状态 |
-|---|---|---|---|---|---|---|
-| 1 | Learning Memory | 进程内 dict（薄弱概念 + 三态 + 连对计数 + 判决历史） | SQLite 支持的 Memory 抽象（复用纯函数状态机 `apply_verdict`） | **M7** | 跨会话薄弱点持久，重启后仍薄弱优先出题 | ✅ `memory.py` 的 `SqliteLearningMemory`（`Memory` 协议 + `LearningMemory` dict 内存实现并存） |
-| 2 | KnowledgeItem / Resource 存储 | 进程内 dict | SQLite（复用 kernel 参数化 `migrate` + `domain/learning/migrations/0001_learning.sql`） | **M7** | 入库 item 重启后仍在、仍可锚定出题 | ✅ `store.py` 的 `SqliteLearningStore`（`Store` 协议 + `LearningStore` dict 内存实现并存） |
-| 3 | 审批门 | `ScriptedApprovalGate` + `CliApprovalGate` 同步 adapter | `PreparedIngest` + `AcquisitionLedger` 持久 `needs_input`，凭单次过期 token 跨 SSE / HTTP 恢复 | **LW-S5（2026-07-29）** | 关掉 Web 服务重开，仍可恢复候选并原子提交；失败/取消零 KB 污染 | ✅ |
-| 4 | Reader subagent 执行器 | M3.1 内联调用（隔离上下文 + DocumentNode 自然节点覆盖批次 + 精确 evidence 校验 + pydantic / ModelRetry 已是真的） | `kernel/subagent.py` 通用执行器 | 出现**第二个** subagent 时再抽（无独立 M，YAGNI） | 第二个 subagent 复用同一执行器、零重复 | ⬜ |
-| 5 | prompt 版本号 | ~~`MODEL_STARTED` 里手填 `prompt_version`~~ | prompt 模板独立存放（`prompts/*.md`）+ 内容 hash 版本号，trace 记版本号 | **✅ 已完成** | trace 能按 prompt 版本归因 eval 回归 | ✅ `domain/learning/prompts.py` + `prompts/reader_extract.md`（版本=内容 hash，Reader 加载） |
-| 6 | Responder（作答输入原语） | M3.2 落 `Responder` 协议 + `ScriptedResponder`；交互 CLI 落地后已加 `InteractiveResponder`（questionary 逐题问，见下节）——**交互形态已到**，仍缺"可挂起 / 可恢复"（凭 token 续答）一段 | 可挂起 / 可恢复的作答 turn（凭 token 恢复，跨 SSE / HTTP，与审批门同形） | **TBD**（随 `interfaces/api` 加固；**接口形状第一天按 `Responder` 协议定**，替换不改 `assess_once` 调用方） | ~~CLI 里逐题作答~~（✅ 已达）；关掉重开可凭 token 续答（仍缺） | ⬜ |
-| 7 | 考核轮次优雅降级 | ~~CLI 边界 `try/except` 捕 `QuestionError` / `GradingError` → 跳过本轮~~ | kernel `RecoveryPolicy` + `ErrorClass`：读异常自带的 `error_class` 标统一裁决（`DEGRADED`→跳过 / 其余→冒泡），发 `RECOVERY_DECIDED` 上脊柱；`assess_once` 仍原样冒泡（签名逻辑一行不改）；CLI 不再硬编码 `except (QuestionError, GradingError)` | **M6** | 出题 / 判卷失败由策略统一裁决、CLI 不再手写异常清单兜底 | ✅ `kernel/recovery.py`（`ErrorClass` / `Decision` / `classify` / `RecoveryPolicy.decide`）；domain / providers 异常自标 `error_class`（`kernel↛domain` 门下不 `isinstance`）；`run_quiz` 改 `policy.decide` |
-| 8 | 已问过去重台账 | ~~会话内进程内 `dict[item_id -> list[question]]`（`app.py` 的 `run_quiz` 持有、跨轮累积，经 `assess_once` 下传出题函数做归一化去重）~~ | 与 Learning Memory 并列的**跨会话 SQLite 去重表**（复用 kernel 参数化 `migrate`；关掉重开仍不重问旧题） | **2026-07-13** | 关掉 CLI 重开、复考同一概念不再重问上次已问过的题 | ✅ `asked_questions.py` 的 `AskedQuestionsLedger` 协议 + `SqliteAskedQuestionsLedger`（持久，跨会话）/ `DictAskedQuestionsLedger`（内存，测试用）——`assess_once` 新增 `asked_questions` 可选形参，与既有 `recently_asked`（会话内覆盖优先）并存、互补而非替代 |
+## 当前对账
 
-其余 kernel 层（HookManager 异常隔离→M4、ContextBuilder→M5、Eval harness→M8）不是"假实现"而是
-"尚未上线的层"，其排期见 [roadmap.md](roadmap.md) 增量路线，不在本表重复。RecoveryPolicy（M6）
-的 CLI 临时兜底曾作为 **#7** 记账，现已由 `kernel/recovery.py` 正式化并结清（见本表 #7 与末节）。
+源码应只有两处标记：
 
-## M3.1 ingest 竖切落地的骨架标记
+- `domain/learning/ingest/reader.py`：#4 Reader 通用执行器；
+- `domain/learning/responder.py`：#6 可恢复作答 turn。
 
-M3.1（喂 URL → 深读 → 审批 → 入库）落地了下列骨架欠账的**假件**（状态仍 ⬜，正式实现见各行里程碑）：
-
-| 台账行 | 代码标记 | 位置 |
-|---|---|---|
-| #2 存储 | `# SKELETON(M7)` | `src/grandquiz/domain/learning/store.py`（`LearningStore` 纯 dict） |
-| #4 Reader 执行器 | `# SKELETON` | `src/grandquiz/domain/learning/ingest/reader.py`（`Reader` 内联执行器） |
-
-（#5 prompt 版本号已在 item 2 落地为版本化 prompt 文件，代码标记随之移除。）
-
-**grep 对账**：`grep -rn "SKELETON" src/` 现有 **2** 处标记，对应 #4 Reader 通用执行器与 #6
-Responder 跨进程恢复。#3 审批门已由 LW-S5 结清。
-
-## M3.2 单题考核竖切落地的骨架标记
-
-M3.2（考我 → 选题 → 出题 → 答 → 判卷）新增一处骨架欠账的**假件**（状态 ⬜，正式实现见里程碑）：
-
-| 台账行 | 代码标记 | 位置 |
-|---|---|---|
-| #6 Responder | `# SKELETON` | `src/grandquiz/domain/learning/responder.py`（`Responder` 协议 + `ScriptedResponder`） |
-
-M3.2 **不引入** #1 Learning Memory 的 dict 假件——单题竖切只发 `ANSWER_JUDGED`（含 `verdict` +
-代码算出的 `weak_item_id`），**不写任何记忆库**；薄弱状态机 / 三态 / 连对销账 / 薄弱优先选题是
-**M3.3** 的活（届时 `selection.select_target` 换内部实现、`assess_once` 消费判决落库，签名不变）。
-
-**grep 对账（M3.2 后）**：`grep -rn "SKELETON" src/` 应为 **4** 处（#2 store / #3 approval / #4 reader /
-#6 responder）。台账未完成行为 **5**（#1~#4、#6），差的一处仍是 **#1 Learning Memory**——M3.2 未触及，
-其 dict 假件将在 M3.3 引入选题 / 销账时补上代码标记。届时 grep 数应回到与未完成行数一致。
-
-## M3.3 薄弱记忆 + 三态状态机落地的骨架标记
-
-M3.3（判卷后代码记账：三态状态机 + 连对销账 + 薄弱优先复考）引入 **#1 Learning Memory** 的
-dict 假件（状态仍 ⬜，正式 SQLite 实现见里程碑 **M7**）：
-
-| 台账行 | 代码标记 | 位置 |
-|---|---|---|
-| #1 Learning Memory | `# SKELETON(M7)` | `src/grandquiz/domain/learning/memory.py`（`LearningMemory` 纯 dict：锚定 `item_id` 存 三态 + 连对计数 + 判决历史；`apply_verdict` 是纯函数状态机） |
-
-至此考核循环的后半段（选题 / 判卷 / 销账）在事件脊柱上打通：`selection.select_target` 接
-`memory` 走薄弱优先候选集（签名向后兼容，`memory=None` 退化全集），`assess_once` 判卷后由代码
-调 `memory.record_verdict` 记三态账并发 `learning.concept_state_changed`。dict 仍是假件——
-跨会话持久（重启后仍薄弱优先出题）留给 **M7** 用 SQLite 支持的 Memory 抽象替换，届时调用方签名不变。
-
-**grep 对账（M3.3 后）**：`grep -rn "SKELETON" src/` 应为 **5** 处（#1 memory / #2 store /
-#3 approval / #4 reader / #6 responder），与台账未完成行数 **5**（#1~#4、#6）一致——欠账已全部记账，
-两边对齐。
-
-## M7 存储 / Learning Memory 正式化为 SQLite 落地
-
-M7 把 **#1 Learning Memory** 与 **#2 KnowledgeItem / Resource 存储** 从进程内 dict 假件正式化为
-SQLite 持久化，兑现两条验收信号（跨会话薄弱点持久 / 入库 item 重启后仍在）。落地要点：
-
-- **抽协议、dict 降格为内存实现**：`store.py` 定义 `Store` 协议、`memory.py` 定义 `Memory` 协议；
-  原 dict 类（`LearningStore` / `LearningMemory`）保留原名、语义改为"测试 / 快速用的**内存实现**"
-  （不再是骨架欠账）。`ingest.py` / `assessment.py` / `selection.py` 的 store/memory 形参类型改为协议，
-  故 dict 版与 SQLite 版都满足、**调用方一行逻辑不改**即可替换（兑现"替换不改调用方"）。
-- **kernel `migrate` 参数化为通用 runner**：`kernel/db.py` 的 `migrate(conn, migrations_dir=…)`
-  默认仍走 `kernel/migrations`（`TraceStore` 调 `migrate(conn)` 不变、向后兼容），domain 传入
-  `domain/learning/migrations` 复用同一 runner——kernel 仍不认识任何领域表。learning 数据用**独立
-  db 文件**（与 trace.db 分开），各自 `PRAGMA user_version` 与迁移序列。
-- **schema 无时间戳列**（决策 2）；list 字段（evidence / verdict_history）存 JSON 文本；`trusted` 存
-  0/1；销账 = `DELETE` 行；`SqliteLearningMemory` 复用纯函数 `apply_verdict`（状态机不重写），脏行经
-  `ConceptRecord.model_validate` 被 M3.3 的不变量 validator 兜底。
-
-**grep 对账（M7 后）**：删除 `store.py` / `memory.py` 的 `# SKELETON(M7)` 标记后，
-`grep -rn "SKELETON" src/` 应为 **3** 处（#3 approval / #4 reader / #6 responder），与台账未完成行数
-**3** 一致——#1 / #2 已 ✅ 结清，两边对齐。
-
-## 交互 CLI 落地（#6 Responder 交互形态到位，suspend/resume 仍留后续）
-
-交互 CLI 把 **#6 Responder** 从"只有确定性 `ScriptedResponder`"推进到"交互形态已到"：
-
-- `Responder` 协议改 **async + 加 `options`**：`async def answer(self, prompt, *, options=None) -> str`。
-  `assess_once` 改 `await responder.answer(question_text, options=…)`——选择题透传 `mc.options`、
-  开放 / 追问传 `None`。`ScriptedResponder` 同步改 async（忽略 `options`），既有调用方（全经
-  `assess_once`）透明，无一处直接 `.answer()` 调用需改。
-- 新增 `interfaces/cli/InteractiveResponder`（questionary：`options` 非空 → `select` 单选，否则
-  `text` 自由输入；均用 `.ask_async()`，取消 → `KeyboardInterrupt` 由 quiz 命令捕获优雅退出）。
-- 新增 argparse 子命令路由（`interfaces/cli/app.py`，`grandquiz` 脚本入口指向它）：`ingest`
-  （读本地材料 → 真 Reader 深读 → 逐项人工审批 → 入 SQLite）与 `quiz`（逐题交互考核，持久 SQLite，
-  薄弱点跨会话留存）。`QuizEventPrinter` 订阅事件流做 Rich 呈现——**CLI 是事件脊柱的消费者**。
-
-**仍留后续（故 #6 状态保持 ⬜、SKELETON 标记保留）**：可挂起 / 可恢复的作答 turn（凭 token 续答、
-跨 SSE / HTTP），随 `interfaces/api` 加固；接口形状已按 `Responder` 协议焊死，替换不改 `assess_once`。
-真机交互 tty 试跑（`grandquiz quiz` 逐题手答）属 human 步骤，不在 CI 内跑。
-
-**grep 对账（交互 CLI 后）**：`grep -rn "SKELETON" src/` 仍为 **3** 处（#3 approval / #4 reader /
-#6 responder），与台账未完成行数 **3** 一致——#6 交互形态到位但 suspend/resume 未了，标记不撤。
-
-## 引文锚定门放宽 + 考核轮次优雅降级（dogfood 修复）落地的骨架标记
-
-真机 dogfood 暴露两处问题，修复引入 **#7 考核轮次优雅降级** 的假件（状态 ⬜，正式实现见里程碑 **M6**）：
-
-- **引文锚定门放宽为子串**（不是骨架欠账、是**规则修正**，故不进台账）：出题 / 判卷 / MC 三处校验门
-  原本要求 `cited_evidence` 与某条 `evidence.quote` **逐字全等**，把"Reader 抽长段落、模型引其中一句
-  短句"这类**合法子串**误判成幽灵引文 → 重试用尽 → 崩溃。改为 `models.ungrounded_citations`：引文是
-  某条证据的**子串**即算锚定（空 / 纯空白仍拒）。三处校验门共用这一条领域规则。
-- **考核轮次优雅降级**（#7 假件）：上条修复后，出题 / 判卷仍可能因别的原因重试用尽抛
-  `QuestionError` / `GradingError`；`assess_once` 按契约**原样冒泡**（保 eval / replay：`ReplayMiss`
-  等 harness 错误绝不能被静默吞）。故降级只能落在**生产界面边界**——`run_quiz` 用 `try/except` 捕这两类
-  "本轮可恢复"失败、跳过本轮继续，不崩整场会话。这是 M6 `RecoveryPolicy` 的临时替身。
-
-| 台账行 | 代码标记 | 位置 |
-|---|---|---|
-| #7 优雅降级 | `# SKELETON(M6)` | `src/grandquiz/interfaces/cli/app.py`（`run_quiz` 的 per-round `try/except`） |
-
-**grep 对账（本次修复后）**：`grep -rn "SKELETON" src/` 应为 **4** 处（#3 approval / #4 reader /
-#6 responder / #7 优雅降级），与台账未完成行数 **4**（#3 / #4 / #6 / #7）一致——两边对齐。
-
-## M8-fix② 无重复出题落地的骨架标记
-
-M8 修真机 dogfood 的"连续两轮题目完全相同"（复考锁定薄弱概念是设计意图 / ADR-0003，要修的是
-"重问同一道题"）。修在**出题侧**（不动 selection，否则破坏薄弱优先复考）——引入 **#8 已问过去重台账**
-的**假件**（状态 ⬜，正式 SQLite 实现见里程碑 **TBD**）：
-
-- `run_quiz` 持有一份会话内进程内 `dict[item_id -> list[question]]`，跨轮累积；经 `assess_once` 的
-  `recently_asked` 形参（默认 `None` = 不去重、向后兼容）下传，出题函数收到被考 item 的已问列表
-  `asked_before`（默认空 = message / replay_key / prompt 版本号一字不变）。
-- 出题时把已问过的题注入 user message（"请换角度、勿重复"）；结构化输出门（`_parse` / `_parse_mc`）
-  加**归一化去重校验**（NFKC + 去空白 / 标点 + 转小写后命中即 `ModelRetry`，复用有界重试），即使 LLM
-  无视约束也保证重复题不到达学习者。dict 仍是假件——跨会话去重（关掉重开不重问旧题）留 SQLite 表。
-
-| 台账行 | 代码标记 | 位置 |
-|---|---|---|
-| #8 去重台账 | `# SKELETON` | `src/grandquiz/interfaces/cli/app.py`（`run_quiz` 持有的 `recently_asked` dict） |
-
-**grep 对账（M8-fix② 后）**：`grep -rn "SKELETON" src/` 应为 **5** 处（#3 approval / #4 reader /
-#6 responder / #7 优雅降级 / #8 去重台账），与台账未完成行数 **5**（#3 / #4 / #6 / #7 / #8）一致——
-两边对齐。
-
-## M6 RecoveryPolicy + ErrorClass 正式化落地（#7 结清）
-
-M6 把 **#7 考核轮次优雅降级** 从"CLI 边界硬编码 `except (QuestionError, GradingError)`"正式化为
-kernel 级统一裁决，兑现验收信号（出题 / 判卷失败由策略裁决、CLI 不再手写异常清单）。落地要点：
-
-- **不 `isinstance`、改异常自标**：`kernel↛domain` 已是 import-linter CI 门（issue 03），`recovery.py`
-  不能 import 领域异常。故分类只读异常自带的 `error_class` 标——`QuestionError` / `GradingError` →
-  `DEGRADED`，`FetchError` / `ReaderError` → `RESOURCE_UNREADABLE`，`ReplayMiss` → `FATAL`（各自
-  import kernel `ErrorClass`，domain / providers→kernel 是合法方向）。**未带标 → 默认 FATAL**（大声
-  失败，宁可冒泡不静默降级）。
-- **裁决极简、确定**：`classify` 纯函数；`RecoveryPolicy.decide` 无墙上时钟 / random——`DEGRADED`
-  → `SKIP`，其余（`FATAL` / `RESOURCE_UNREADABLE` / 未知）→ `PROPAGATE`。故 `ReplayMiss` 必冒泡、
-  **绝不 `SKIP`**（决策 6：eval / replay 契约不可破）。
-- **裁决上脊柱**：`decide` 发 `EventType.RECOVERY_DECIDED`（payload 含 error / error_class /
-  decision）——比旧的"静默冒泡"更可观测 / 可回放。
-- **`assess_once` 签名逻辑一行不改**（仍原样 raise；eval harness 里 `ReplayMiss` 照样硬失败）；
-  `run_quiz` 删硬编码 `except (QuestionError, GradingError)` + `SKELETON(M6)`，改 `policy.decide`。
-
-**grep 对账（M6 后）**：删除 `app.py` 的 `# SKELETON(M6)` 标记后，`grep -rn "SKELETON" src/` 应为
-**4** 处（#3 approval / #4 reader / #6 responder / #8 去重台账），与台账未完成行数 **4**（#3 / #4 /
-#6 / #8）一致——#7 已 ✅ 结清，两边对齐。
+内存 Store/Memory、Scripted Provider/Responder 等作为正式测试 Adapter 存在时，不属于骨架欠账。
 
 ## 变更约定
 
-- 每个引入 / 消除骨架欠账的 PR，**必须同步改本表**（加行 / 改状态 / 删代码标记），与 issue 一一对应。
-- 替换某行时，其"验收信号"列即该 PR 的验收标准之一。
+引入或结清骨架欠账的提交必须同时更新代码标记和本表。若标记数与未完成行数不同，文档门应失败。

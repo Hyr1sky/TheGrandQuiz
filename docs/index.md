@@ -17,7 +17,7 @@
 | 复盘某次实现、验收和 dogfood | [开发记录](devrecords/) |
 | 准备小范围试用 | [小范围 RC 指南](guides/rc-small-cohort.md) |
 | 查看当前发布说明 | [v0.5.0 Release Notes](releases/v0.5.0.md) |
-| 执行当前发布门 | [v0.5.0 发布检查清单](open-source-release-checklist-v0.5.0.md) |
+| 回看 v0.5.0 发布门 | [v0.5.0 发布检查清单](open-source-release-checklist-v0.5.0.md) |
 
 ## 文档职责
 
@@ -43,25 +43,7 @@
 
 发现冲突时应修正文档漂移；不能仅凭较新的日期默认覆盖已接受 ADR。
 
-## 当前文档整理状态
+## 当前基线
 
-Learning Model v2 基础闭环、受控词表、分类审核、可重建 Attempt/LearnerProjection 与稳定审查导出已经
-实现；v0.2 又完成 Evidence locator、Acquisition 错误信封、AssessmentPlan 与 QuestionSpec 收口。
-稳定模型见 [领域模型](domain-model.md)，长期事实边界见
-[ADR-0010](adr/0010-durable-learning-facts-separate-from-operational-trace.md)；历史受限 all-of 实验见
-[ADR-0011](adr/0011-bounded-required-claims-for-grading.md)，但其首次真实 Development Gold 原型未通过准确率/
-Token 预注册门；后续紧凑输出虽降低成本，聚焦复核又新增 false positive，因此默认路线已否决且代码已
-回到 flat point，Required Claims 当前只作为可审计兼容 seam，不是发布获批策略。一次性判卷澄清也仅有
-纯领域 planner/state machine；首个 12 条真实信号原型虽结构与成本达标，但只找回 2/5 且 precision
-66.67%，并证明 grading Gold 不能替代三态 Interaction Gold。owner 接受标签后的三态原型又得到
-direct support 4/4 但 ambiguity 0/2、合法 11/12，仍未过门；Web 已改用不依赖该分类器的用户主动一次补充，
-按同一 rubric 重判并追加式纠正。自动 Demand Judge、AnswerDiagnosis/
-Misconception 晋升、新学习指标和知识关系仍受 Eval/消费者 gate 限制，不能因字段已写入
-蓝图就描述成已交付能力。
-
-v0.5 Voice Interview 代码竖切已实现：转写只生成可编辑草稿，用户确认后才进入既有 Assessment；材料词表是
-revision 级可重建投影，单次运行只冻结 exact-item TranscriptionHints。离线 Provider Replay、VoiceRun
-重启/TTL/取消测试和桌面 Scenario Bot 已通过；四条固定音频的 paired-audio 质量门、真实 dogfood 与 8/8
-离线 replay 也已完成。术语增强由 `ASR_ENABLE_HINTS` 提供首次默认，并可在 Web 设置页显式热更新，避免把小样本结论外推为通用 ASR 精度。见
-[ADR-0012](adr/0012-voice-transcript-is-reviewable-input.md) 与
-[v0.5 设计契约](design/v050-voice-interview.md)。
+当前稳定版本是 `v0.5.0`。能力与限制见 [Release Notes](releases/v0.5.0.md)，下一阶段只看
+[roadmap](roadmap.md)，实现过程与实验指标只看 [devrecords](devrecords/)。本索引不复制版本历史或实验结论。

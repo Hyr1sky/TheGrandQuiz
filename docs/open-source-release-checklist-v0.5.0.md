@@ -52,7 +52,7 @@ dogfood 会产生费用并发送音频，后续重录仍必须由仓库所有者
 
 ## 6. 已接受的非阻断项
 
-- [ ] Chat `/status` 与 Observatory 的 token usage 投影存在两份接口层解析；当前契约有回归测试，发布后应抽成共享 projector。
+- [x] Chat `/status` 与 Observatory 已共用同一个 Trace token usage projector。
 - [ ] production Web 主 JavaScript chunk 约 546 kB，Vite 仅给出体积警告；local-first 桌面体验未阻断，后续按真实首屏指标再拆包。
 - [ ] v0.5 真实 ASR 样本规模不足以给出通用准确率结论；继续使用显式材料词表开关和用户草稿审查兜底。
 
@@ -60,12 +60,14 @@ dogfood 会产生费用并发送音频，后续重录仍必须由仓库所有者
 
 创建正式发布前必须满足：
 
-- [ ] release commit 已推送，GitHub Actions 全绿，工作区干净且 `origin/main == HEAD`；
+- [x] release commit 已推送，且发布时 `origin/main == HEAD`；
+- [ ] GitHub Actions 发布运行状态由发布会话单独核验；本地仓库不代替外部 CI 证据；
 - [x] 本地质量门、安装产物 smoke、双轴审查和窄版 dogfood 通过，没有未解决 P0/P1；
 - [x] Release Notes 已定稿，未通过门的自动判卷/自动澄清与未来实时语音没有被包装成已交付能力；
-- [ ] 仓库所有者明确批准创建 `v0.5.0` tag 和 GitHub Release。
+- [x] 仓库所有者已批准并创建 `v0.5.0` tag。
+- [ ] GitHub Release 状态由发布会话单独核验；功能仓库不据本地 tag 推断外部发布状态。
 
-批准后执行：
+历史发布命令：
 
 ```bash
 git tag -a v0.5.0 -m "TheGrandQuiz v0.5.0"
