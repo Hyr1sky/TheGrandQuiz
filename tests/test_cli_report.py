@@ -5,7 +5,7 @@ token + prompt 版本，行链到详情）+ 每用例一份 ``render_trace_html`
 ``grandquiz trace <id>`` 从独立 trace 库按 trace_id 读出会话 → 导出同款自包含 HTML，读不到 id
 则大声报错。两命令共用 issue 03 的 ``render_trace_html``（不另写渲染逻辑），产出一律自包含
 （无 ``<link`` / 外链 ``<script src=`` / ``@import`` / ``url(http`` 等加载外部资源构造；索引页
-v1 静态增强允许**内联** ``<script>`` 承载排序/筛选交互，见 ``harness._REPORT_INDEX_JS``）。
+v1 静态增强允许**内联** ``<script>`` 承载排序/筛选交互，见 ``reporting._REPORT_INDEX_JS``）。
 """
 
 import html
@@ -25,8 +25,8 @@ def _assert_self_contained(document: str) -> None:
     """自包含 = 零"加载外部资源"构造（内联 CSS 在场、无外链样式表 / 无外部脚本 / 无外部 url()）。
 
     详情页折叠交互用原生 ``<details>``、零 JS；索引页允许内联 ``<script>``（v1 排序/筛选增强，见
-    ``harness._REPORT_INDEX_JS``）——但**任何** ``<script>`` 都不得带 ``src=``（外链脚本）。两页共用
-    本断言，故这里放行内联 script、只堵外部加载。
+    ``reporting._REPORT_INDEX_JS``）——但**任何** ``<script>`` 都不得带 ``src=``（外链脚本）。
+    两页共用本断言，故这里放行内联 script、只堵外部加载。
     """
     assert "<link" not in document  # 无外部样式表
     assert "@import" not in document  # CSS 无外部 import

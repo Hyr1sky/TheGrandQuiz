@@ -91,7 +91,10 @@ src/grandquiz/
 └── evals/
     ├── cases/               # 用例 DSL（YAML）
     ├── graders/             # 规则断言 + LLM judge
-    └── harness.py           # 运行器 + 报告
+    ├── solvers.py           # per-kind 确定性执行 Adapter
+    ├── runner.py            # Tier-1 / Tier-2 suite policy
+    ├── reporting.py         # 文本与自包含 HTML 投影
+    └── harness.py           # 稳定兼容 facade
 ```
 
 ## 五大基建模块设计要点
