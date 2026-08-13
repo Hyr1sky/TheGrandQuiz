@@ -9,7 +9,7 @@ from typing import Any, Literal, cast
 from pydantic import BaseModel
 
 from grandquiz.kernel.events import AgentEvent, EventType
-from grandquiz.kernel.trace import Span, TraceStore, build_span_tree
+from grandquiz.kernel.trace import Span, TraceStore, build_span_tree, summarize_token_usage
 
 TraceStatus = Literal[
     "idle",
@@ -107,7 +107,7 @@ class TraceObservatory:
         events = self._trace_store.events(trace_id)
         projected_events = _project_events(events)
         spans = _project_spans(build_span_tree(events))
-        prompt_tokens, completion_tokens = _usage_totals(events)
+        usage = summarize_token_usage(events)
         context = _latest_context_status(events)
         if events:
             started_at = events[0].ts
@@ -126,9 +126,9 @@ class TraceObservatory:
                 tool_calls=sum(event.type == EventType.TOOL_CALL_STARTED for event in events),
                 error_count=sum(event.type == EventType.ERROR for event in events),
                 recovery_count=sum(event.type == EventType.RECOVERY_DECIDED for event in events),
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=prompt_tokens + completion_tokens,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
                 estimated_context_tokens=None if context is None else context[0],
                 context_budget_tokens=None if context is None else context[1],
                 remaining_context_tokens=None if context is None else context[2],
@@ -174,25 +174,6 @@ def _usage_tokens(payload: Mapping[str, Any]) -> int | None:
     usage = cast("Mapping[str, Any]", usage_obj)
     total = usage.get("total_tokens")
     return total if isinstance(total, int) else None
-
-
-def _usage_totals(events: Iterable[AgentEvent]) -> tuple[int, int]:
-    prompt_tokens = 0
-    completion_tokens = 0
-    for event in events:
-        if event.type != EventType.MODEL_ENDED:
-            continue
-        usage_obj = event.payload.get("usage")
-        if not isinstance(usage_obj, Mapping):
-            continue
-        usage = cast("Mapping[str, Any]", usage_obj)
-        prompt = usage.get("prompt_tokens")
-        completion = usage.get("completion_tokens")
-        if isinstance(prompt, int):
-            prompt_tokens += prompt
-        if isinstance(completion, int):
-            completion_tokens += completion
-    return prompt_tokens, completion_tokens
 
 
 def _latest_context_status(events: Iterable[AgentEvent]) -> tuple[int, int, int] | None:

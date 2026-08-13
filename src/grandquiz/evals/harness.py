@@ -22,7 +22,7 @@ import hashlib
 import html
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -76,7 +76,7 @@ from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventTy
 from grandquiz.kernel.report import render_trace_html
 from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import ToolContext, ToolRegistry
-from grandquiz.kernel.trace import Span, TraceStore
+from grandquiz.kernel.trace import Span, TraceStore, summarize_token_usage
 from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
 from grandquiz.providers.replay import Cassette, ReplayProvider
 
@@ -953,20 +953,6 @@ class CaseReport:
         return _prompt_versions(self.quality_events)
 
 
-def _sum_tokens(events: list[AgentEvent]) -> int:
-    # token 成本列：汇总每个 MODEL_ENDED payload 的 usage.total_tokens（Usage 的 computed_field）。
-    total = 0
-    for event in events:
-        if event.type != EventType.MODEL_ENDED:
-            continue
-        usage = event.payload.get("usage")
-        if isinstance(usage, Mapping):
-            value = cast("Mapping[str, Any]", usage).get("total_tokens")
-            if isinstance(value, int):
-                total += value
-    return total
-
-
 def _prompt_versions(events: list[AgentEvent]) -> list[str]:
     # prompt 版本列：MODEL_STARTED payload 的 prompt_version（= name@digest），按首现序去重。
     versions: list[str] = []
@@ -1062,7 +1048,7 @@ async def run_case(
         kind=case.kind,
         passed=rule_passed and quality_passed is not False,
         failures=failures,
-        total_tokens=_sum_tokens(result.events),
+        total_tokens=summarize_token_usage(result.events).total_tokens,
         prompt_versions=_prompt_versions(result.events),
         rule_passed=rule_passed,
         quality_passed=quality_passed,

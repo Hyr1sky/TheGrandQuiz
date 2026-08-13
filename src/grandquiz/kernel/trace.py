@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -20,6 +21,47 @@ from grandquiz.kernel.events import AgentEvent, EventType
 
 _STARTED_SUFFIX = ".started"
 _ENDED_SUFFIX = ".ended"
+
+
+@dataclass(frozen=True)
+class TraceTokenUsage:
+    """Provider-neutral token totals derived from completed model spans."""
+
+    prompt_tokens: int
+    completion_tokens: int
+
+    @property
+    def total_tokens(self) -> int:
+        return self.prompt_tokens + self.completion_tokens
+
+
+def summarize_token_usage(events: Iterable[AgentEvent]) -> TraceTokenUsage:
+    """Project one token-usage definition from the durable event spine.
+
+    Only ``model.ended`` is authoritative: started events have no completed usage and
+    malformed provider payloads are ignored rather than leaking adapter details to
+    trace consumers.
+    """
+
+    prompt_tokens = 0
+    completion_tokens = 0
+    for event in events:
+        if event.type != EventType.MODEL_ENDED:
+            continue
+        usage_obj = event.payload.get("usage")
+        if not isinstance(usage_obj, Mapping):
+            continue
+        usage = cast("Mapping[str, Any]", usage_obj)
+        prompt = usage.get("prompt_tokens")
+        completion = usage.get("completion_tokens")
+        if isinstance(prompt, int):
+            prompt_tokens += prompt
+        if isinstance(completion, int):
+            completion_tokens += completion
+    return TraceTokenUsage(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
 
 
 def _empty_children() -> list[Span]:

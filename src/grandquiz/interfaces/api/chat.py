@@ -40,7 +40,7 @@ from grandquiz.kernel.context import (
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import ToolRegistry
-from grandquiz.kernel.trace import TraceStore
+from grandquiz.kernel.trace import TraceStore, summarize_token_usage
 from grandquiz.providers.base import Provider
 
 ChatSessionStatus = Literal["idle", "running", "closed"]
@@ -262,30 +262,16 @@ class ChatManager:
         session = self.get_session(session_id)
         if session is None:
             raise KeyError(session_id)
-        prompt_tokens = 0
-        completion_tokens = 0
-        for event in self._trace_store.events(session.trace_id):
-            if event.type != EventType.MODEL_ENDED:
-                continue
-            raw_usage = event.payload.get("usage")
-            if not isinstance(raw_usage, Mapping):
-                continue
-            usage = cast(Mapping[str, object], raw_usage)
-            prompt = usage.get("prompt_tokens")
-            completion = usage.get("completion_tokens")
-            if isinstance(prompt, int):
-                prompt_tokens += prompt
-            if isinstance(completion, int):
-                completion_tokens += completion
+        usage = summarize_token_usage(self._trace_store.events(session.trace_id))
         return ChatStatusView(
             session_id=session.session_id,
             trace_id=session.trace_id,
             status=session.status,
             context=session.runner.context_budget_status(),
             usage=ChatUsageView(
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=prompt_tokens + completion_tokens,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
             ),
         )
 
