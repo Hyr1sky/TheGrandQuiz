@@ -1,13 +1,13 @@
 """Eval execution and suite result contracts."""
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from grandquiz.domain.learning.assessment.engine import AssessmentResult
 from grandquiz.domain.learning.ingest import IngestResult
-from grandquiz.domain.learning.memory import LearningMemory
+from grandquiz.domain.learning.memory import ConceptState, LearningMemory
+from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.domain.learning.store import LearningStore
-from grandquiz.evals.case import Case
+from grandquiz.evals.case import AssessCase, Case, ReactCase
 from grandquiz.evals.quality import QualityEvaluation
 from grandquiz.kernel.events import AgentEvent, EventType
 from grandquiz.kernel.trace import Span
@@ -22,6 +22,66 @@ def _empty_spans() -> list[Span]:
     return []
 
 
+@dataclass(frozen=True)
+class AskedHistory:
+    """One item's immutable within-session question ledger."""
+
+    item_id: str
+    questions: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class AssessObservation:
+    """Deterministic setup evidence owned by an assess solver."""
+
+    items: tuple[KnowledgeItem, ...]
+    natural_item_id: str | None
+    selected_resource_ids: tuple[str, ...] | None
+    weak_target_item_id: str | None
+    pre_weak_state: ConceptState | None
+    pre_in_weak: bool | None
+    recently_asked: tuple[AskedHistory, ...]
+
+    @property
+    def item_ids(self) -> tuple[str, ...]:
+        return tuple(item.item_id for item in self.items)
+
+    def questions_for(self, item_id: str) -> tuple[str, ...]:
+        return next(
+            (entry.questions for entry in self.recently_asked if entry.item_id == item_id),
+            (),
+        )
+
+
+@dataclass(frozen=True)
+class BasicIngestObservation:
+    """An ingest case whose evidence is fully represented by result/store/events."""
+
+
+@dataclass(frozen=True)
+class WebAcquisitionObservation:
+    """Additional evidence for the two-path acquisition replay case."""
+
+    selected_url: str
+    rejected_url: str
+    rejected_result: IngestResult
+    provider_calls_after_success: int
+
+
+@dataclass(frozen=True)
+class ReactObservation:
+    """User-visible ReAct outputs and optional grounded-document baseline."""
+
+    final_outputs: tuple[str, ...]
+    grounded_resource_id: str | None
+    full_document_chars: int
+
+
+SolveObservation = (
+    AssessObservation | BasicIngestObservation | WebAcquisitionObservation | ReactObservation
+)
+
+
 @dataclass
 class SolveResult:
     """一次 solve 的事件、trace、领域末态与 provider 观测。"""
@@ -34,7 +94,29 @@ class SolveResult:
     memory: LearningMemory
     calls: int
     roles: list[Role]
-    context: dict[str, Any]
+    observation: SolveObservation
+
+    def __post_init__(self) -> None:
+        """Reject case/observation combinations that no solver may produce."""
+        expected: type[
+            AssessObservation
+            | BasicIngestObservation
+            | WebAcquisitionObservation
+            | ReactObservation
+        ]
+        if isinstance(self.case, AssessCase):
+            expected = AssessObservation
+        elif isinstance(self.case, ReactCase):
+            expected = ReactObservation
+        elif self.case.source == "web_replay":
+            expected = WebAcquisitionObservation
+        else:
+            expected = BasicIngestObservation
+        if not isinstance(self.observation, expected):
+            raise TypeError(
+                f"{type(self.case).__name__} requires {expected.__name__}, "
+                f"got {type(self.observation).__name__}"
+            )
 
 
 @dataclass

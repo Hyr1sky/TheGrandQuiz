@@ -13,7 +13,14 @@ from grandquiz.evals.case import Case
 from grandquiz.evals.fixture import MC_CORRECT, MC_WRONG, READER_JSON
 from grandquiz.evals.reporting import export_reports_html as _export_reports_html
 from grandquiz.evals.reporting import render_report
-from grandquiz.evals.result import CaseReport, SolveResult
+from grandquiz.evals.result import (
+    AssessObservation,
+    BasicIngestObservation,
+    CaseReport,
+    ReactObservation,
+    SolveResult,
+    WebAcquisitionObservation,
+)
 from grandquiz.evals.runner import run_all, run_case
 from grandquiz.evals.solvers import (
     CASE17_FETCH_FINGERPRINT,
@@ -37,9 +44,13 @@ __all__ = [
     "QUOTES",
     "READER_JSON",
     "AssessFakeProvider",
+    "AssessObservation",
+    "BasicIngestObservation",
     "Case",
     "CaseReport",
+    "ReactObservation",
     "SolveResult",
+    "WebAcquisitionObservation",
     "build_event_harness",
     "build_stocked_store",
     "export_html_report",

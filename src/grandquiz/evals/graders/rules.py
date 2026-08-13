@@ -35,7 +35,12 @@ from grandquiz.evals.graders.scorers import (
     language_consistency,
     no_duplicate,
 )
-from grandquiz.evals.result import SolveResult
+from grandquiz.evals.result import (
+    AssessObservation,
+    ReactObservation,
+    SolveResult,
+    WebAcquisitionObservation,
+)
 from grandquiz.kernel.events import AgentEvent, EventType
 
 Grader = Callable[[SolveResult], list[str]]
@@ -66,7 +71,26 @@ def _ingest(sr: SolveResult) -> IngestResult | None:
 
 
 def _items(sr: SolveResult) -> list[KnowledgeItem]:
-    return list(sr.context.get("items", []))
+    observation = _assess_observation(sr)
+    return list(observation.items)
+
+
+def _assess_observation(sr: SolveResult) -> AssessObservation:
+    if not isinstance(sr.observation, AssessObservation):
+        raise TypeError(f"assess grader received {type(sr.observation).__name__}")
+    return sr.observation
+
+
+def _react_observation(sr: SolveResult) -> ReactObservation:
+    if not isinstance(sr.observation, ReactObservation):
+        raise TypeError(f"react grader received {type(sr.observation).__name__}")
+    return sr.observation
+
+
+def _web_acquisition_observation(sr: SolveResult) -> WebAcquisitionObservation:
+    if not isinstance(sr.observation, WebAcquisitionObservation):
+        raise TypeError(f"web acquisition grader received {type(sr.observation).__name__}")
+    return sr.observation
 
 
 # --- case 1：深读产出未经审批 → 未审批的 KnowledgeItem 不得入库 -------------------------------
@@ -225,7 +249,7 @@ def grade_case3(sr: SolveResult) -> list[str]:
     result = _assess(sr)
     if result is None:
         return [f"result 不是 AssessmentResult：{sr.result!r}"]
-    item_ids = sr.context.get("item_ids", [])
+    item_ids = _assess_observation(sr).item_ids
     _check(failures, result.status == "judged", f"status 应为 judged，实为 {result.status}")
     _check(failures, result.question_type == "选择题", f"应路由选择题，实为 {result.question_type}")
     _check(failures, result.verdict == "对", f"选对应判对，实为 {result.verdict}")
@@ -265,7 +289,7 @@ def grade_case4(sr: SolveResult) -> list[str]:
     target = result.item_id
     if target is None:
         return [*failures, "judged 结果应带 item_id"]
-    item_ids = sr.context.get("item_ids", [])
+    item_ids = _assess_observation(sr).item_ids
     _check(failures, target in item_ids, "被考 item 应存在")
     _check(failures, result.question_type == "选择题", f"应为选择题，实为 {result.question_type}")
     _check(failures, result.verdict == "错", f"选错应判错，实为 {result.verdict}")
@@ -331,8 +355,9 @@ def grade_case4(sr: SolveResult) -> list[str]:
 
 def grade_case5(sr: SolveResult) -> list[str]:
     failures: list[str] = []
-    weak_target = sr.context.get("weak_target")
-    natural = sr.context.get("natural")
+    observation = _assess_observation(sr)
+    weak_target = observation.weak_target_item_id
+    natural = observation.natural_item_id
     result = _assess(sr)
     if result is None:
         return [f"result 不是 AssessmentResult：{sr.result!r}"]
@@ -375,13 +400,14 @@ def grade_case6(sr: SolveResult) -> list[str]:
     result = _assess(sr)
     if result is None:
         return [f"result 不是 AssessmentResult：{sr.result!r}"]
-    target = sr.context.get("weak_target")
+    observation = _assess_observation(sr)
+    target = observation.weak_target_item_id
     if not isinstance(target, str):
         return [*failures, f"case 6 应预置薄弱 target，实为 {target!r}"]
-    natural = sr.context.get("natural")
+    natural = observation.natural_item_id
     # 前置半（第一次答对 → 观察中、仍在表内）：由预置 [错, 对] 经真实状态机建立，跑 assess 前捕获。
-    _check(failures, sr.context.get("pre_state") == "观察中", "前置：第一次答对应转观察中")
-    _check(failures, sr.context.get("pre_in_weak") is True, "前置：观察中仍应在薄弱表内")
+    _check(failures, observation.pre_weak_state == "观察中", "前置：第一次答对应转观察中")
+    _check(failures, observation.pre_in_weak is True, "前置：观察中仍应在薄弱表内")
     # 本轮（连续第二次答对 → 销账移出）：focus=weak 仍锁定 target（观察中在薄弱集），观察中 → 开放。
     _check(failures, result.item_id == target, "focus=weak 复考应锁定该薄弱 item")
     _check(failures, result.item_id != natural, "focus=weak 应压过覆盖优先 / 全集随机")
@@ -413,7 +439,7 @@ def grade_case8(sr: SolveResult) -> list[str]:
     result = _assess(sr)
     if result is None:
         return [f"result 不是 AssessmentResult：{sr.result!r}"]
-    weak_target = sr.context.get("weak_target")
+    weak_target = _assess_observation(sr).weak_target_item_id
     asked = _find(sr.events, LearningEvent.QUESTION_ASKED)
     if asked is None:
         return ["缺 QUESTION_ASKED"]
@@ -444,7 +470,7 @@ def grade_case9(sr: SolveResult) -> list[str]:
     result = _assess(sr)
     if result is None:
         return [f"result 不是 AssessmentResult：{sr.result!r}"]
-    item_ids = sr.context.get("item_ids", [])
+    item_ids = _assess_observation(sr).item_ids
     asked = _find_all(sr.events, LearningEvent.QUESTION_ASKED)
     _check(failures, len(asked) == 2, f"应为多轮（2 轮）出题，实得 {len(asked)} 题")
     for event in asked:
@@ -468,8 +494,9 @@ def grade_case10(sr: SolveResult) -> list[str]:
     result = _assess(sr)
     if result is None:
         return [f"result 不是 AssessmentResult：{sr.result!r}"]
-    weak_target = sr.context.get("weak_target")
-    natural = sr.context.get("natural")
+    observation = _assess_observation(sr)
+    weak_target = observation.weak_target_item_id
+    natural = observation.natural_item_id
     asked = _find_all(sr.events, LearningEvent.QUESTION_ASKED)
     _check(failures, len(asked) == 2, f"应为多轮（2 轮）复考，实得 {len(asked)} 题")
     # 薄弱优先未破：两轮都锁定同一预置薄弱 item，且它不是全集随机的自然选择（薄弱优先压过随机）。
@@ -487,9 +514,8 @@ def grade_case10(sr: SolveResult) -> list[str]:
     # 代码记账命门：会话内"已问过"台账记的内容 == 实际发出的题目文本（顺序一致）——仅断长度会放过
     # "记错内容"的 mutation（如记常量 / 截断），届时下一轮去重门拿垃圾比对、真重复漏网。
     asked_texts = [str(e.payload.get("question", "")) for e in asked]
-    recently_asked = cast("dict[str, list[str]]", sr.context.get("recently_asked", {}))
     if isinstance(weak_target, str):
-        ledger = [str(q) for q in recently_asked.get(weak_target, [])]
+        ledger = list(observation.questions_for(weak_target))
         _check(
             failures,
             ledger == asked_texts,
@@ -509,7 +535,7 @@ def grade_case11(sr: SolveResult) -> list[str]:
     if result is None:
         return [f"result 不是 AssessmentResult：{sr.result!r}"]
     _check(failures, result.status == "judged", f"status 应为 judged，实为 {result.status}")
-    resource_ids = list(sr.context.get("resource_ids") or [])
+    resource_ids = list(_assess_observation(sr).selected_resource_ids or ())
     allowed = set(resource_ids)
     _check(failures, bool(allowed), "scope-honor 用例应请求非空 scope")
     # 夹具确有 ≥2 资源、且 scope 是其真子集（资源 B 在库但被排除）——否则"绝不串库"断言无意义。
@@ -566,7 +592,11 @@ def grade_case12(sr: SolveResult) -> list[str]:
     _check(failures, reason == "empty_scope", f"拒答理由应为 empty_scope，实为 {reason}")
     # 与 case2 的 empty_kb 分野：库非空、仅 scope 命中为空 → empty_scope（不静默考别的库）。
     _check(failures, len(_items(sr)) >= 1, "empty_scope 前提是库非空（否则应为 empty_kb）")
-    _check(failures, bool(sr.context.get("resource_ids")), "empty_scope 应请求非空 scope")
+    _check(
+        failures,
+        bool(_assess_observation(sr).selected_resource_ids),
+        "empty_scope 应请求非空 scope",
+    )
     types = {e.type for e in sr.events}
     _check(failures, EventType.MODEL_STARTED not in types, "空 scope 拒答不应出题（无 model span）")
     _check(failures, LearningEvent.QUESTION_ASKED not in types, "空 scope 拒答不应出题")
@@ -682,8 +712,9 @@ def grade_case14(sr: SolveResult) -> list[str]:
 
 def grade_case15(sr: SolveResult) -> list[str]:
     failures: list[str] = []
-    expected_resource_id = sr.context.get("resource_id")
-    full_document_chars = sr.context.get("full_document_chars")
+    observation = _react_observation(sr)
+    expected_resource_id = observation.grounded_resource_id
+    full_document_chars = observation.full_document_chars
     starts = _find_all(sr.events, EventType.TOOL_CALL_STARTED)
     grounded_starts = [
         event for event in starts if event.payload.get("tool_name") == "answer_from_documents"
@@ -720,7 +751,7 @@ def grade_case15(sr: SolveResult) -> list[str]:
     read_chars = sum(
         value for event in reads if isinstance((value := event.payload.get("chars")), int)
     )
-    if isinstance(full_document_chars, int) and full_document_chars > 0:
+    if full_document_chars > 0:
         _check(
             failures,
             read_chars * 4 <= full_document_chars,
@@ -805,9 +836,10 @@ def grade_case16(sr: SolveResult) -> list[str]:
     result = _ingest(sr)
     if result is None:
         return [f"result 不是 IngestResult：{sr.result!r}"]
-    selected_url = sr.context.get("selected_url")
-    rejected_url = sr.context.get("rejected_url")
-    rejected = sr.context.get("rejected_result")
+    observation = _web_acquisition_observation(sr)
+    selected_url = observation.selected_url
+    rejected_url = observation.rejected_url
+    rejected = observation.rejected_result
     _check(failures, result.status == "read", f"选中候选应成功入库，实为 {result.status}")
     resource = sr.store.get_resource(result.resource_id)
     _check(failures, resource is not None, "选中候选缺资源快照")
@@ -837,18 +869,16 @@ def grade_case16(sr: SolveResult) -> list[str]:
             "RESOURCE_READ 应记录 adapter / extractor / 质量结论",
         )
         _check(failures, "content" not in resource_read.payload, "trace 不得保存完整网页正文")
-    _check(failures, isinstance(rejected, IngestResult), "质量失败分支缺 IngestResult")
-    if isinstance(rejected, IngestResult):
-        _check(failures, rejected.status == "failed", "challenge 页面必须 fail closed")
-        _check(failures, rejected.items == [], "challenge 页面不得产生 KnowledgeItem")
-        _check(
-            failures,
-            sr.store.items_for_resource(rejected.resource_id) == [],
-            "质量失败资源不得污染 KB",
-        )
+    _check(failures, rejected.status == "failed", "challenge 页面必须 fail closed")
+    _check(failures, rejected.items == [], "challenge 页面不得产生 KnowledgeItem")
     _check(
         failures,
-        sr.calls == sr.context.get("calls_after_success") == 1,
+        sr.store.items_for_resource(rejected.resource_id) == [],
+        "质量失败资源不得污染 KB",
+    )
+    _check(
+        failures,
+        sr.calls == observation.provider_calls_after_success == 1,
         "质量失败之后 Reader 调用数不得增加",
     )
     failed_events = _find_all(sr.events, LearningEvent.RESOURCE_FETCH_FAILED)

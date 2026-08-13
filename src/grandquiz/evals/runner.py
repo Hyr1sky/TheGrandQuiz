@@ -10,7 +10,7 @@ from grandquiz.evals.graders import GRADERS
 from grandquiz.evals.quality import QualityEvaluation, QualityRequest
 from grandquiz.evals.quality_calibration import CalibratedQualitySuite
 from grandquiz.evals.resources import eval_fixture_path
-from grandquiz.evals.result import CaseReport
+from grandquiz.evals.result import CaseReport, ReactObservation
 from grandquiz.evals.solvers import build_event_harness, load_cases, solve
 from grandquiz.kernel.events import AgentEvent, EventType
 from grandquiz.kernel.trace import Span, summarize_token_usage
@@ -77,7 +77,11 @@ async def run_case(
         failures.append(f"Tier-2 缺少已校准 QualitySuite，不能退化为仅运行规则门{suffix}")
         quality_passed = False
     elif quality is not None and quality_suite is not None:
-        final_outputs = cast("list[str]", result.context.get("final_outputs", []))
+        if not isinstance(result.observation, ReactObservation):
+            failures.append("Tier-2 case 缺少 ReactObservation，无法取得最终用户可见回答")
+            final_outputs: tuple[str, ...] = ()
+        else:
+            final_outputs = result.observation.final_outputs
         if quality_question is None or not final_outputs:
             failures.append("Tier-2 缺少用户问题或最终用户可见回答")
             quality_passed = False

@@ -18,6 +18,7 @@ from grandquiz.evals.graders.scorers import (
     no_duplicate,
 )
 from grandquiz.evals.harness import SolveResult
+from grandquiz.evals.result import AssessObservation
 from grandquiz.kernel.events import AgentEvent
 
 
@@ -46,7 +47,15 @@ def _sr(events: list[AgentEvent]) -> SolveResult:
         memory=LearningMemory(),
         calls=0,
         roles=[],
-        context={},
+        observation=AssessObservation(
+            items=(),
+            natural_item_id=None,
+            selected_resource_ids=None,
+            weak_target_item_id=None,
+            pre_weak_state=None,
+            pre_in_weak=None,
+            recently_asked=(),
+        ),
     )
 
 

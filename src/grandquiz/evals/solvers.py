@@ -60,7 +60,14 @@ from grandquiz.evals.fixture import (
     READER_JSON,
 )
 from grandquiz.evals.resources import eval_fixture_path
-from grandquiz.evals.result import SolveResult
+from grandquiz.evals.result import (
+    AskedHistory,
+    AssessObservation,
+    BasicIngestObservation,
+    ReactObservation,
+    SolveResult,
+    WebAcquisitionObservation,
+)
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.context import ContextBuilder, Partition
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
@@ -547,7 +554,11 @@ def _resolve_target(selector: str, item_ids: list[str], natural: str) -> str:
 
 async def _solve_assess(case: AssessCase, provider_override: Provider | None) -> SolveResult:
     memory = LearningMemory()
-    context: dict[str, Any] = {}
+    items: list[KnowledgeItem] = []
+    natural: str | None = None
+    weak_target: str | None = None
+    pre_state = None
+    pre_in_weak: bool | None = None
     # 语言归 Preference Memory（ADR-0005）：case.language 设进 question_language 偏好、下传
     # assess_once（偏好 > 中文）。默认"中文"保持既有用例 message / replay 不变。
     preferences: PreferenceMemory = DictPreferenceMemory()
@@ -573,25 +584,16 @@ async def _solve_assess(case: AssessCase, provider_override: Provider | None) ->
         all_items = store.all_items()
         scoped = apply_scope(all_items, resource_ids)
         natural = select_target(scoped, rng=new_rng(SEED)).item_id if scoped else None
-        context.update(
-            item_ids=item_ids,
-            natural=natural,
-            items=list(all_items),
-            resource_ids=resource_ids,
-            scope=scope,
-        )
-        weak_target: str | None = None
+        items = list(all_items)
         for pv in case.preset:  # 经真实 record_verdict 建前置状态（状态机不重写）
             weak_target = _resolve_target(pv.target, item_ids, cast("str", natural))
             memory.record_verdict(weak_target, pv.verdict)
-        context["weak_target"] = weak_target
         if weak_target is not None:
             # 捕获跑 assess 前的记忆状态：case 6 靠它断言"第一次答对→观察中（仍在表内）"这一前置半。
-            context["pre_state"] = memory.state_of(weak_target)
-            context["pre_in_weak"] = weak_target in memory.weak_item_ids()
+            pre_state = memory.state_of(weak_target)
+            pre_in_weak = weak_target in memory.weak_item_ids()
     else:
         store = LearningStore()
-        context.update(item_ids=[], items=[], resource_ids=None)
 
     if provider_override is not None:
         provider: Provider = provider_override
@@ -626,7 +628,6 @@ async def _solve_assess(case: AssessCase, provider_override: Provider | None) ->
         all_spans.extend(trace.span_tree("run"))
         trace.close()
         all_events.extend(events)
-    context["recently_asked"] = recently_asked
     return SolveResult(
         case=case,
         events=all_events,
@@ -636,7 +637,18 @@ async def _solve_assess(case: AssessCase, provider_override: Provider | None) ->
         memory=memory,
         calls=fake.calls if fake is not None else 0,
         roles=fake.roles if fake is not None else [],
-        context=context,
+        observation=AssessObservation(
+            items=tuple(items),
+            natural_item_id=natural,
+            selected_resource_ids=None if resource_ids is None else tuple(resource_ids),
+            weak_target_item_id=weak_target,
+            pre_weak_state=pre_state,
+            pre_in_weak=pre_in_weak,
+            recently_asked=tuple(
+                AskedHistory(item_id=item_id, questions=tuple(questions))
+                for item_id, questions in sorted(recently_asked.items())
+            ),
+        ),
     )
 
 
@@ -680,7 +692,7 @@ async def _solve_ingest(case: IngestCase, provider_override: Provider | None) ->
         memory=LearningMemory(),
         calls=fake.calls if fake is not None else 0,
         roles=fake.roles if fake is not None else [],
-        context={"approved_concepts": sorted(keep_concepts)},
+        observation=BasicIngestObservation(),
     )
 
 
@@ -751,12 +763,12 @@ async def _solve_web_acquisition(
         memory=LearningMemory(),
         calls=fake.calls if fake is not None else 0,
         roles=fake.roles if fake is not None else [],
-        context={
-            "selected_url": selected_url,
-            "rejected_url": rejected_url,
-            "rejected_result": rejected,
-            "calls_after_success": calls_after_success,
-        },
+        observation=WebAcquisitionObservation(
+            selected_url=selected_url,
+            rejected_url=rejected_url,
+            rejected_result=rejected,
+            provider_calls_after_success=calls_after_success,
+        ),
     )
 
 
@@ -874,13 +886,13 @@ async def _solve_react(
         memory=memory,
         calls=0,
         roles=[],
-        context={
-            "resource_id": grounded_resource_id,
-            "final_outputs": final_outputs,
-            "full_document_chars": (
+        observation=ReactObservation(
+            grounded_resource_id=grounded_resource_id,
+            final_outputs=tuple(final_outputs),
+            full_document_chars=(
                 len(GROUNDED_REACT_CONTENT) if grounded_resource_id is not None else 0
             ),
-        },
+        ),
     )
 
 

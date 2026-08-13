@@ -22,7 +22,10 @@ from grandquiz.evals.graders.rules import grade_case14, grade_case15, grade_case
 from grandquiz.evals.graders.scorers import language_consistency, no_duplicate
 from grandquiz.evals.harness import (
     READER_JSON,
+    AssessObservation,
+    ReactObservation,
     SolveResult,
+    WebAcquisitionObservation,
     load_cases,
     run_all,
     run_case,
@@ -198,7 +201,8 @@ async def test_web_acquisition_react_waits_for_selection_and_fails_closed() -> N
         if event.type == EventType.TOOL_CALL_STARTED
     ]
     assert calls == ["web_search", "ingest", "ingest"]
-    assert len(result.context["final_outputs"]) == 3
+    assert isinstance(result.observation, ReactObservation)
+    assert len(result.observation.final_outputs) == 3
     assert len(result.store.all_items()) == 3
     failed = [event for event in result.events if event.type == "learning.resource_fetch_failed"]
     assert len(failed) == 1
@@ -232,8 +236,9 @@ async def test_case16_replays_web_acquisition_without_quality_pollution() -> Non
     result = await solve(case16)
 
     assert isinstance(result.result, object)
-    assert result.context["calls_after_success"] == result.calls == 1
-    rejected = result.context["rejected_result"]
+    assert isinstance(result.observation, WebAcquisitionObservation)
+    assert result.observation.provider_calls_after_success == result.calls == 1
+    rejected = result.observation.rejected_result
     assert rejected.status == "failed"
     assert rejected.items == []
 
@@ -249,7 +254,8 @@ async def test_case17_replays_real_search_selection_and_ingest_decisions() -> No
         if event.type == EventType.TOOL_CALL_STARTED
     ]
     assert calls == ["web_search", "ingest", "ingest"]
-    assert len(result.context["final_outputs"]) == 3
+    assert isinstance(result.observation, ReactObservation)
+    assert len(result.observation.final_outputs) == 3
     assert len(result.store.all_items()) == 5
     assert grade_case17(result) == []
 
@@ -273,7 +279,8 @@ async def test_no_duplicate_case_has_no_verbatim_repeat() -> None:
     sr = await solve(next(c for c in load_cases() if c.id == "case10"))
     asked = [e for e in sr.events if e.type == LearningEvent.QUESTION_ASKED]
     assert len(asked) == 2
-    weak_target = sr.context["weak_target"]
+    assert isinstance(sr.observation, AssessObservation)
+    weak_target = sr.observation.weak_target_item_id
     assert all(e.payload["item_id"] == weak_target for e in asked)  # 薄弱优先未破
     assert no_duplicate(sr) == []  # 会话内零逐字重复
 
@@ -284,11 +291,12 @@ async def test_scope_honor_asks_only_within_scope() -> None:
     reports = {r.case_id: r for r in await run_all()}
     assert reports["case11"].passed, reports["case11"].failures
     sr = await solve(next(c for c in load_cases() if c.id == "case11"))
-    resource_ids = set(sr.context["resource_ids"])
-    pool_resources = {it.resource_id for it in sr.context["items"]}
+    assert isinstance(sr.observation, AssessObservation)
+    resource_ids = set(sr.observation.selected_resource_ids or ())
+    pool_resources = {it.resource_id for it in sr.observation.items}
     assert len(pool_resources) >= 2  # 多资源夹具（≥2 资源）
     assert resource_ids < pool_resources  # 资源 B 在库但被 scope 排除
-    id_to_resource = {it.item_id: it.resource_id for it in sr.context["items"]}
+    id_to_resource = {it.item_id: it.resource_id for it in sr.observation.items}
     asked = [e for e in sr.events if e.type == LearningEvent.QUESTION_ASKED]
     assert asked
     assert all(id_to_resource[e.payload["item_id"]] in resource_ids for e in asked)
@@ -304,7 +312,8 @@ async def test_empty_scope_refuses_without_calling_provider() -> None:
     assert refused.payload["reason"] == "empty_scope"
     assert sr.calls == 0  # 不调任何 provider（零出题 / 零判卷）
     assert not [e for e in sr.events if e.type == LearningEvent.QUESTION_ASKED]
-    assert len(sr.context["items"]) >= 1  # 库非空（否则应为 empty_kb）
+    assert isinstance(sr.observation, AssessObservation)
+    assert len(sr.observation.items) >= 1  # 库非空（否则应为 empty_kb）
 
 
 async def test_question_type_intent_overrides_adaptive_routing() -> None:
@@ -338,7 +347,8 @@ async def test_case15_solver_exposes_the_final_user_visible_answer() -> None:
 
     result = await solve(case15)
 
-    final_outputs = result.context["final_outputs"]
+    assert isinstance(result.observation, ReactObservation)
+    final_outputs = result.observation.final_outputs
     assert len(final_outputs) == 1
     assert isinstance(final_outputs[0], str)
     assert final_outputs[0].strip()
@@ -384,7 +394,11 @@ def _fake_solve_result(events: list[AgentEvent]) -> SolveResult:
         memory=LearningMemory(),
         calls=0,
         roles=[],
-        context={},
+        observation=ReactObservation(
+            final_outputs=(),
+            grounded_resource_id=None,
+            full_document_chars=0,
+        ),
     )
 
 
@@ -443,7 +457,11 @@ def test_grade_case15_rejects_natural_answer_without_grounded_tool() -> None:
         cassette="x",
         react_fixture="grounded",
     )
-    result.context = {"resource_id": "r1", "full_document_chars": 1000}
+    result.observation = ReactObservation(
+        final_outputs=(),
+        grounded_resource_id="r1",
+        full_document_chars=1000,
+    )
 
     failures = grade_case15(result)
 
