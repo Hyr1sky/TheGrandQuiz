@@ -54,6 +54,14 @@ class EvalSubjectSnapshot:
     replay_evidence: tuple[ReplayEvidence, ...]
 
 
+@dataclass(frozen=True)
+class SubjectEvaluation[ReportT]:
+    """One report bound to the complete immutable subject that produced it."""
+
+    subject: EvalSubjectSnapshot
+    report: ReportT
+
+
 def _sorted_items(values: Mapping[str, str]) -> tuple[tuple[str, str], ...]:
     return tuple(sorted(values.items()))
 
