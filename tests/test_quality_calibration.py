@@ -5,11 +5,13 @@ from collections.abc import Sequence
 
 from grandquiz.evals.quality import QualityJudge
 from grandquiz.evals.quality_calibration import (
-    CalibrationSample,
-    ScoreRange,
+    CalibratedQualitySuite,
+    QualityCalibrationError,
     load_calibration_samples,
     run_calibration,
 )
+from grandquiz.evals.quality_contracts import CalibrationSample, ScoreRange
+from grandquiz.evals.quality_dataset import compile_quality_calibration_pack
 from grandquiz.providers.base import Completion, Message, Role, Usage
 
 
@@ -28,6 +30,88 @@ class _FixedProvider:
             text=self._text,
             usage=Usage(prompt_tokens=40, completion_tokens=20),
         )
+
+
+async def test_registered_but_unadjudicated_question_rubric_fails_before_judge_call() -> None:
+    provider = _FixedProvider({})
+
+    try:
+        await CalibratedQualitySuite.create(
+            provider=provider,
+            rubric_id="question_quality",
+        )
+    except QualityCalibrationError as exc:
+        assert "owner-adjudicated calibration pack" in str(exc)
+    else:
+        raise AssertionError("an uncalibrated rubric must fail closed")
+
+
+async def test_owner_compiled_question_pack_can_calibrate_its_rubric() -> None:
+    criteria = (
+        "evidence_support",
+        "demand_alignment",
+        "answer_leakage",
+        "response_design",
+        "learning_usefulness",
+    )
+    provider = _FixedProvider(
+        {
+            "rubric_id": "question_quality",
+            "criteria": [
+                {
+                    "criterion_id": criterion_id,
+                    "score": 4,
+                    "rationale": "与 owner 边界一致。",
+                    "candidate_evidence": "QuestionSpec",
+                    "reference_evidence": "AgentEvent",
+                }
+                for criterion_id in criteria
+            ],
+            "overall_rationale": "全部边界满足。",
+        }
+    )
+    boundaries = (
+        ("good", "multiple_choice"),
+        ("partial", "open_response"),
+        ("leaked", "multiple_choice"),
+        ("unsupported", "open_response"),
+        ("misleading", "multiple_choice"),
+    )
+    calibration = compile_quality_calibration_pack(
+        {
+            "schema_version": "quality-calibration-pack.v1",
+            "pack_id": "question-quality-development-gold-01",
+            "rubric_id": "question_quality",
+            "evidence_class": "development_gold",
+            "label_status": "human_adjudicated",
+            "annotator": "owner",
+            "adjudicated_at": "2026-08-17",
+            "blind_to_judge_output": True,
+            "samples": [
+                {
+                    "sample_id": boundary,
+                    "boundary": boundary,
+                    "question_format": question_format,
+                    "question": "Review this question.",
+                    "candidate": "QuestionSpec",
+                    "reference": "AgentEvent",
+                    "expected_scores": {
+                        criterion_id: {"min": 4, "max": 4} for criterion_id in criteria
+                    },
+                }
+                for boundary, question_format in boundaries
+            ],
+        }
+    )
+
+    suite = await CalibratedQualitySuite.create(
+        provider=provider,
+        rubric_id="question_quality",
+        calibration=calibration,
+    )
+
+    assert suite.calibration.passed is True
+    assert suite.calibration.judge_tokens == 300
 
 
 async def test_calibration_passes_when_every_human_score_range_agrees() -> None:

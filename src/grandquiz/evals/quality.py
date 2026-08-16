@@ -9,6 +9,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from grandquiz.evals.rubrics import Rubric, get_rubric
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.providers.base import Message, Provider, Usage
 
@@ -18,40 +19,6 @@ QUALITY_JUDGE_ENDED = "eval.quality_judge.ended"
 
 class QualityJudgeError(ValueError):
     """有界重试耗尽后仍无法取得可审计质量判定。"""
-
-
-@dataclass(frozen=True)
-class _Criterion:
-    criterion_id: str
-    description: str
-    pass_score: int = 3
-
-
-@dataclass(frozen=True)
-class _Rubric:
-    rubric_id: str
-    criteria: tuple[_Criterion, ...]
-
-
-_RUBRICS = {
-    "grounded_answer": _Rubric(
-        rubric_id="grounded_answer",
-        criteria=(
-            _Criterion(
-                "semantic_support",
-                "candidate 的实质结论是否被 reference 充分支持",
-            ),
-            _Criterion(
-                "question_coverage",
-                "candidate 是否直接覆盖 question 的主要要求",
-            ),
-            _Criterion(
-                "learning_usefulness",
-                "candidate 是否清晰、准确且适合作为学习解释",
-            ),
-        ),
-    )
-}
 
 
 class QualityRequest(BaseModel):
@@ -114,7 +81,7 @@ class QualityJudge:
         emitter: EventEmitter,
         parent_span_id: str | None = None,
     ) -> QualityEvaluation:
-        rubric = _RUBRICS.get(request.rubric_id)
+        rubric = get_rubric(request.rubric_id)
         if rubric is None:
             raise QualityJudgeError(f"未注册 rubric：{request.rubric_id}")
         workflow_span = emitter.new_span_id()
@@ -236,7 +203,7 @@ class QualityJudge:
     @staticmethod
     def _validate_verdict(
         candidate: _ModelVerdict,
-        rubric: _Rubric,
+        rubric: Rubric,
         request: QualityRequest,
     ) -> _ModelVerdict:
         if candidate.rubric_id != rubric.rubric_id:
@@ -255,7 +222,7 @@ class QualityJudge:
         by_id = {result.criterion_id: result for result in candidate.criteria}
         return candidate.model_copy(update={"criteria": [by_id[item] for item in expected]})
 
-    def _messages(self, request: QualityRequest, rubric: _Rubric) -> list[Message]:
+    def _messages(self, request: QualityRequest, rubric: Rubric) -> list[Message]:
         payload = {
             "rubric_id": rubric.rubric_id,
             "criteria": [

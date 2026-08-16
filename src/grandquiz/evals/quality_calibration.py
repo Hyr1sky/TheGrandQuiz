@@ -6,32 +6,16 @@ from pathlib import Path
 from typing import Any, cast
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from grandquiz.evals.quality import QualityEvaluation, QualityJudge, QualityRequest
+from grandquiz.evals.quality_contracts import CalibrationSample, ScoreRange
+from grandquiz.evals.quality_dataset import CompiledQualityCalibration
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
 from grandquiz.providers.base import Provider
 
-
-class ScoreRange(BaseModel):
-    min: int = Field(ge=1, le=4)
-    max: int = Field(ge=1, le=4)
-
-    @model_validator(mode="after")
-    def _ordered(self) -> ScoreRange:
-        if self.min > self.max:
-            raise ValueError("score range 的 min 不能大于 max")
-        return self
-
-
-class CalibrationSample(BaseModel):
-    sample_id: str = Field(min_length=1)
-    rubric_id: str = Field(min_length=1)
-    question: str = Field(min_length=1)
-    candidate: str = Field(min_length=1)
-    reference: str = Field(min_length=1)
-    expected_scores: dict[str, ScoreRange] = Field(min_length=1)
+__all__ = ["CalibrationSample", "ScoreRange"]
 
 
 class CalibrationSampleResult(BaseModel):
@@ -61,9 +45,27 @@ class CalibratedQualitySuite:
         self.calibration = calibration
 
     @classmethod
-    async def create(cls, *, provider: Provider) -> CalibratedQualitySuite:
+    async def create(
+        cls,
+        *,
+        provider: Provider,
+        rubric_id: str = "grounded_answer",
+        calibration: CompiledQualityCalibration | None = None,
+    ) -> CalibratedQualitySuite:
+        if calibration is None:
+            if rubric_id != "grounded_answer":
+                raise QualityCalibrationError(
+                    f"{rubric_id} requires an owner-adjudicated calibration pack"
+                )
+            samples = load_calibration_samples()
+        else:
+            if calibration.rubric_id != rubric_id:
+                raise QualityCalibrationError(f"compiled calibration does not target {rubric_id}")
+            samples = list(calibration.samples)
+        if not samples:
+            raise QualityCalibrationError(f"calibration samples must target {rubric_id}")
         judge = QualityJudge(provider=provider)
-        report = await run_calibration(load_calibration_samples(), judge=judge)
+        report = await run_calibration(samples, judge=judge)
         if not report.passed:
             failed_ids = [result.sample_id for result in report.results if not result.passed]
             raise QualityCalibrationError(
