@@ -20,6 +20,29 @@ _Avoid_: 框架（不承诺对外 API 稳定性 / semver / 插件文档）
 Eval 层对最终产物的离线质量门，与生产考核的“判决”不是同一概念。Tier-1 用确定性代码核验工具顺序、scope、状态与精确引用；Tier-2 `QualityJudge` 只评预注册 rubric，在通过人工 calibration 后才参与用例 pass/fail，并通过真实 cassette 日常 Replay。两层 verdict、trace 与 token 成本必须分开；首版只给 case15 启用 `grounded_answer`。
 _Avoid_: 用 LLM judge 替代规则门、拿 judge 自己的输出当 calibration 真值、在 report 中隐式调用外部模型、让 Eval 自动修改 prompt 或生产数据
 
+**Eval Surface**:
+一类需要独立质量证据的产品能力切面，例如 acquisition、reader/grounding、grounded answer、question
+generation 或 answer grading。Surface 定义“评什么”，不等同于 case 的执行 kind，也不规定必须使用
+Tier-1、Tier-2 或某个 Provider；同一个 surface 可以由多种数据集和评测层覆盖。
+_Avoid_: 用 Python 模块名或单条 case 充当产品能力分类、为每个 surface 强制增加 LLM judge
+
+**Eval Subject Snapshot**:
+一次评测中被测系统配置的不可变身份，冻结足以解释结果差异的 prompt、Provider/model/thinking、tool schema、
+预算/重试策略与相关 workflow/harness 版本。它描述“测的是哪个系统组合”，不包含数据集、运行结果、密钥或
+完整 prompt 正文；Replay cassette 是执行证据，不替代 Subject Snapshot。
+_Avoid_: 只记模型名、从当前环境事后猜测配置、把 Provider Profile 与完整被测系统身份混为一谈
+
+**Eval Experiment**:
+在同一 Dataset Snapshot、suite policy 和指标下，对 baseline 与 candidate 两个 Eval Subject Snapshot 做配对
+比较的可审计运行。Development Gold 用于错误分析与候选筛选；Release Holdout 只用于最终晋升门，揭盲后
+立即降级。Experiment 可以证明候选在预注册切片上更好，但不会自行修改生产配置。
+_Avoid_: 比较两个使用不同数据或阈值的独立报告、看到单一总分上涨就忽略失败切片与成本
+
+**Promotion Decision**:
+人类依据 Eval Experiment、回归、成本和新 Release Holdout 作出的采用、拒绝或保留实验决定。决定引用
+baseline/candidate、数据与报告身份，并保留回滚目标；LLM 可以提出候选和解释证据，但不能自行晋升。
+_Avoid_: 无监督改 prompt、把 Development Gold 通过称为发布、覆盖旧配置后失去回滚身份
+
 **Development Gold Set**:
 已经有人类可信标签、并且结果已被用于错误分析、Prompt 调整或规则设计的题目与答卷。它适合持续回归和
 复现已知误差，但因为开发者已经看过，不能再次证明对未知数据的泛化能力；合成 challenge 只能作为其中的

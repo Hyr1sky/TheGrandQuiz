@@ -40,11 +40,36 @@ Eval 是项目的承重卖点。E0–E4 已在不改变 case、cassette、评分
 6. typed per-kind observation 已替换 `SolveResult.context`，错误 case/observation 组合在构造点失败；
 7. Search/Fetch Replay profile 归 case 所有，录制、回放与包内资产审计共用同一声明，孤立资产在 CI 失败。
 
+## 当前开发周期：Eval-guided Evolution E5–E8
+
+下一周期先把现有 Harness、Grading Benchmark、Eval Inbox 与真实纠正数据连成受控改进回路，再扩展新的
+产品基础设施：
+
+1. **E5 — Coverage 与 Subject Identity**：建立 Eval Surface 覆盖矩阵，并以不可变
+   Eval Subject Snapshot 冻结 prompt、model/provider/thinking、tool schema 与关键策略身份；
+2. **E6 — Calibrated Semantic Quality**：优先修复 Holdout 03 暴露的判卷语义召回缺口，再逐个为
+   question quality、reader fidelity 与 grounded answer 增加经过人工 calibration 的质量门；
+3. **E7 — Paired Experiment**：在同一 Dataset Snapshot 上比较 baseline/candidate，分列规则、语义、成本、
+   延迟、稳定性和失败切片，不用两个独立总分冒充因果比较；
+4. **E8 — Human-gated Promotion**：允许系统从真实纠正与失败证据提出候选并自动运行 Development Eval，
+   但只有人工决策和新的未见 Release Holdout 可以晋升，所有版本保留回滚身份。
+
+本周期不交付无监督自动改 prompt、自动晋升、通用 plugin runtime 或 Provider 自动路由。完成 E5–E8 后，
+下一条产品主线默认进入 Material Channels。
+
 ## 下一阶段产品候选
 
 候选按当前产品增益排序。每项在实现前单独形成 PRD 与可验收竖切，不一次铺满。
 
-### P1：学习主页、轨迹与知识管理
+### P1：Material Channels
+
+解决微信、知乎、登录页等“服务端无法可靠抓取，但用户有权阅读”的输入问题。新增用户授权的输入 Channel，
+统一产出规范化 ImportedArtifact，再进入现有 Acquisition/Reader/审批流程。
+
+优先考虑：粘贴文本、HTML/PDF/导出文件、浏览器扩展或系统分享入口、GitHub 文档。Channel 不绕过
+不可信输入标记、大小限制、人工审批或精确 Evidence；不以对抗平台反爬为目标。
+
+### P2：学习主页、轨迹与知识管理
 
 把已有学习事实变成日常入口，而不是增加新的模型判断：
 
@@ -55,14 +80,6 @@ Eval 是项目的承重卖点。E0–E4 已在不改变 case、cassette、评分
 
 第一阶段不引入连续掌握度分数、提醒日历或复杂 spaced repetition。进入条件：当前 LearningFact、
 LearnerProjection 和资源查询可以有界投影，无需新建第二套学习状态。
-
-### P2：Material Channels
-
-解决微信、知乎、登录页等“服务端无法可靠抓取，但用户有权阅读”的输入问题。新增用户授权的输入 Channel，
-统一产出规范化 ImportedArtifact，再进入现有 Acquisition/Reader/审批流程。
-
-优先考虑：粘贴文本、HTML/PDF/导出文件、浏览器扩展或系统分享入口、GitHub 文档。Channel 不绕过
-不可信输入标记、大小限制、人工审批或精确 Evidence；不以对抗平台反爬为目标。
 
 ### P3：Provider Profiles 与能力注册
 
