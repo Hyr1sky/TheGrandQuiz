@@ -4,6 +4,7 @@
 # focus="weak"（R1-S7）显式复习薄弱，锁定预置的薄弱 item（mixed 默认会先考未考过的新概念，见 case5）。
 id: case8
 kind: assess
+surfaces: [question_generation, answer_grading]
 setup:
   stocked: true
   focus: weak

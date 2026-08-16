@@ -46,6 +46,32 @@ def test_unknown_eval_case_kind_fails_closed() -> None:
             {
                 "id": "typo",
                 "kind": "asses",
+                "surfaces": ["question_generation"],
+                "setup": {},
+                "expected_events": [],
+            }
+        )
+
+
+def test_unclassified_eval_case_fails_closed() -> None:
+    with pytest.raises(ValueError, match="surfaces"):
+        parse_case(
+            {
+                "id": "unclassified",
+                "kind": "assess",
+                "setup": {},
+                "expected_events": [],
+            }
+        )
+
+
+def test_unknown_eval_surface_fails_closed() -> None:
+    with pytest.raises(ValueError, match="surfaces"):
+        parse_case(
+            {
+                "id": "unknown-surface",
+                "kind": "assess",
+                "surfaces": ["prompt_quality"],
                 "setup": {},
                 "expected_events": [],
             }
@@ -58,6 +84,7 @@ def test_unknown_assess_provider_fails_closed() -> None:
             {
                 "id": "typo",
                 "kind": "assess",
+                "surfaces": ["answer_grading"],
                 "setup": {"provider": "defualt"},
                 "expected_events": [],
             }
@@ -70,6 +97,7 @@ def test_case_rejects_fields_owned_by_another_kind() -> None:
             {
                 "id": "wrong-shape",
                 "kind": "ingest",
+                "surfaces": ["reader_grounding"],
                 "setup": {"focus": "weak"},
                 "expected_events": [],
             }
@@ -98,6 +126,7 @@ def test_acquisition_cases_require_an_explicit_replay_profile(
             {
                 "id": "missing-replay-owner",
                 "kind": kind,
+                "surfaces": ["acquisition"],
                 "setup": setup,
                 "expected_events": [],
             }
@@ -125,6 +154,7 @@ def test_unknown_per_kind_enum_fails_closed(
             {
                 "id": "typo",
                 "kind": kind,
+                "surfaces": ["question_generation"],
                 "setup": setup,
                 "expected_events": [],
             }
@@ -196,6 +226,7 @@ class _WebAcquisitionDecisionProvider:
 async def test_web_acquisition_react_waits_for_selection_and_fails_closed() -> None:
     case = ReactCase(
         id="case17",
+        surfaces=("acquisition", "reader_grounding"),
         expected_events=[],
         user_messages=[
             "我想深入学习 React，先搜索高质量材料。",
@@ -437,6 +468,7 @@ def test_only_case15_declares_a_tier_two_quality_profile() -> None:
 def _fake_case14() -> ReactCase:
     return ReactCase(
         id="case14",
+        surfaces=("question_generation",),
         expected_events=[],
         user_messages=["帮我出3道选择题"],
         cassette="x",
@@ -511,6 +543,7 @@ def test_grade_case15_rejects_natural_answer_without_grounded_tool() -> None:
     )
     result.case = ReactCase(
         id="case15",
+        surfaces=("reader_grounding", "grounded_answer"),
         expected_events=[],
         user_messages=["根据材料解释事件信封并给出出处"],
         cassette="x",

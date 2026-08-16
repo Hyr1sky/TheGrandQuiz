@@ -11,6 +11,7 @@ from grandquiz.evals.harness import (
     CaseReport,
     ReactObservation,
     WebAcquisitionObservation,
+    describe_coverage,
     export_html_report,
     load_cases,
     render_report,
@@ -18,6 +19,71 @@ from grandquiz.evals.harness import (
     run_case,
     solve,
 )
+
+
+def test_eval_program_describes_case_and_benchmark_surface_coverage() -> None:
+    report = describe_coverage()
+
+    assert report.schema_version == "eval-coverage.v1"
+    assert list(report.surfaces) == [
+        "acquisition",
+        "reader_grounding",
+        "grounded_answer",
+        "question_generation",
+        "answer_grading",
+        "learning_state_transition",
+    ]
+    assert [
+        (target.target_id, target.kind, target.tiers, target.surfaces) for target in report.targets
+    ] == [
+        ("case1", "case", ("tier1",), ("reader_grounding",)),
+        ("case10", "case", ("tier1",), ("question_generation",)),
+        ("case11", "case", ("tier1",), ("question_generation",)),
+        ("case12", "case", ("tier1",), ("question_generation",)),
+        ("case13", "case", ("tier1",), ("question_generation", "answer_grading")),
+        ("case14", "case", ("tier1",), ("question_generation",)),
+        (
+            "case15",
+            "case",
+            ("tier1", "tier2"),
+            ("reader_grounding", "grounded_answer"),
+        ),
+        ("case16", "case", ("tier1",), ("acquisition", "reader_grounding")),
+        ("case17", "case", ("tier1",), ("acquisition", "reader_grounding")),
+        ("case2", "case", ("tier1",), ("question_generation",)),
+        ("case3", "case", ("tier1",), ("question_generation",)),
+        (
+            "case4",
+            "case",
+            ("tier1",),
+            ("answer_grading", "learning_state_transition"),
+        ),
+        (
+            "case5",
+            "case",
+            ("tier1",),
+            ("question_generation", "learning_state_transition"),
+        ),
+        (
+            "case6",
+            "case",
+            ("tier1",),
+            ("answer_grading", "learning_state_transition"),
+        ),
+        ("case7", "case", ("tier1",), ("acquisition",)),
+        ("case8", "case", ("tier1",), ("question_generation", "answer_grading")),
+        ("case9", "case", ("tier1",), ("question_generation",)),
+        ("grading-benchmark", "benchmark", ("benchmark",), ("answer_grading",)),
+    ]
+    assert report.uncovered_surfaces == ()
+
+
+def test_eval_program_rejects_duplicate_case_ownership_before_execution() -> None:
+    cases = load_cases()
+    duplicate = replace(cases[0], id=cases[1].id)
+
+    with pytest.raises(ValueError, match="case ids must be unique"):
+        describe_coverage(cases=(*cases, duplicate))
 
 
 def test_eval_harness_facade_and_case_manifest_remain_stable() -> None:

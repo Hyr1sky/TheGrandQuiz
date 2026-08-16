@@ -6,6 +6,7 @@
 # graders/rules.py 的 case14。
 id: case14
 kind: react
+surfaces: [question_generation]
 setup:
   answer: 随便选一个
   user_messages:

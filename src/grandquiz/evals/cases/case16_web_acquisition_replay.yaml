@@ -2,6 +2,7 @@
 # 质量失败候选在 Reader / 审批之前 fail closed，不能污染 KB。
 id: case16
 kind: ingest
+surfaces: [acquisition, reader_grounding]
 setup:
   source: web_replay
   acquisition_replay:

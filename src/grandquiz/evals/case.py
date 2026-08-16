@@ -12,6 +12,23 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 from grandquiz.domain.learning.assessment.grading import VerdictLabel
 from grandquiz.domain.learning.assessment.selection import Focus
 
+type EvalSurface = Literal[
+    "acquisition",
+    "reader_grounding",
+    "grounded_answer",
+    "question_generation",
+    "answer_grading",
+    "learning_state_transition",
+]
+EVAL_SURFACES: tuple[EvalSurface, ...] = (
+    "acquisition",
+    "reader_grounding",
+    "grounded_answer",
+    "question_generation",
+    "answer_grading",
+    "learning_state_transition",
+)
+
 
 def _empty_strs() -> list[str]:
     return []
@@ -54,6 +71,7 @@ class IngestCase:
 
     kind: ClassVar[Literal["ingest"]] = "ingest"
     id: str
+    surfaces: tuple[EvalSurface, ...]
     expected_events: list[str]
     source: Literal["ok", "boom", "web_replay"] = "ok"
     approval_keep: list[str] = field(default_factory=_empty_strs)
@@ -74,6 +92,7 @@ class AssessCase:
 
     kind: ClassVar[Literal["assess"]] = "assess"
     id: str
+    surfaces: tuple[EvalSurface, ...]
     expected_events: list[str]
     stocked: bool = True
     preset: list[PresetVerdict] = field(default_factory=_empty_presets)
@@ -102,6 +121,7 @@ class ReactCase:
 
     kind: ClassVar[Literal["react"]] = "react"
     id: str
+    surfaces: tuple[EvalSurface, ...]
     expected_events: list[str]
     user_messages: list[str]
     cassette: str
@@ -201,6 +221,7 @@ class _ReactSetup(_StrictConfig):
 class _IngestEnvelope(_StrictConfig):
     id: str
     kind: Literal["ingest"]
+    surfaces: list[EvalSurface] = Field(min_length=1)
     setup: _IngestSetup = Field(default_factory=_IngestSetup)
     expected_events: list[str]
 
@@ -208,6 +229,7 @@ class _IngestEnvelope(_StrictConfig):
 class _AssessEnvelope(_StrictConfig):
     id: str
     kind: Literal["assess"]
+    surfaces: list[EvalSurface] = Field(min_length=1)
     setup: _AssessSetup = Field(default_factory=_AssessSetup)
     expected_events: list[str]
 
@@ -215,6 +237,7 @@ class _AssessEnvelope(_StrictConfig):
 class _ReactEnvelope(_StrictConfig):
     id: str
     kind: Literal["react"]
+    surfaces: list[EvalSurface] = Field(min_length=1)
     setup: _ReactSetup
     expected_events: list[str]
 
@@ -233,6 +256,7 @@ def parse_case(raw: Any) -> Case:
         setup = envelope.setup
         return AssessCase(
             id=envelope.id,
+            surfaces=tuple(envelope.surfaces),
             expected_events=envelope.expected_events,
             stocked=setup.stocked,
             preset=[
@@ -261,6 +285,7 @@ def parse_case(raw: Any) -> Case:
         )
         return ReactCase(
             id=envelope.id,
+            surfaces=tuple(envelope.surfaces),
             expected_events=envelope.expected_events,
             user_messages=setup.user_messages,
             cassette=setup.cassette,
@@ -276,6 +301,7 @@ def parse_case(raw: Any) -> Case:
     setup = envelope.setup
     return IngestCase(
         id=envelope.id,
+        surfaces=tuple(envelope.surfaces),
         expected_events=envelope.expected_events,
         source=setup.source,
         approval_keep=setup.approval_keep,

@@ -1,6 +1,7 @@
 # eval case 7：深读 fetch 失败 → 资源标记 failed，不产生幽灵 KnowledgeItem（深读根本不发生）。
 id: case7
 kind: ingest
+surfaces: [acquisition]
 setup:
   source: boom
   approval_keep: ["闭包", "事件循环"]

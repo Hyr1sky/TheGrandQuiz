@@ -2,6 +2,7 @@
 # 进入确定性 ingest / Reader / approval，另一个低质量页面必须 fail closed 且零 KB 污染。
 id: case17
 kind: react
+surfaces: [acquisition, reader_grounding]
 setup:
   fixture: web_acquisition
   cassette: eval_case17_web_acquisition_react.cassette.json

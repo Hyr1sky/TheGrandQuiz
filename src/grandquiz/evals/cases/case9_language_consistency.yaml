@@ -4,6 +4,7 @@
 # 退回中文出题 → language_consistency(expected="en") 变红。答对正确项 → 概念保持未追踪 → 每轮仍 MC。
 id: case9
 kind: assess
+surfaces: [question_generation]
 setup:
   stocked: true
   provider: language_echo

@@ -37,7 +37,11 @@ def _asked(question: str, options: list[str] | None = None, *, seq: int) -> Agen
 
 def _sr(events: list[AgentEvent]) -> SolveResult:
     # 造一个最小 SolveResult：scorer 只读 sr.events，其余字段填占位（不被 scorer 触碰）。
-    case = AssessCase(id="synthetic", expected_events=[])
+    case = AssessCase(
+        id="synthetic",
+        surfaces=("question_generation",),
+        expected_events=[],
+    )
     return SolveResult(
         case=case,
         events=events,

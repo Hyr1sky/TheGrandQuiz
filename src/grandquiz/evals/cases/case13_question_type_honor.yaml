@@ -3,6 +3,7 @@
 # 短答意图代码层禁止映射到选择题。开放走 LLM 判卷（basic 槽），事件序含判卷 model span、答对无追问。
 id: case13
 kind: assess
+surfaces: [question_generation, answer_grading]
 setup:
   stocked: true
   question_type: 简答

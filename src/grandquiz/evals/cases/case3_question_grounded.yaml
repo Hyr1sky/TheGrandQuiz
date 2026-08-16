@@ -2,6 +2,7 @@
 # 首次接触概念（记忆空）→ 选择题；选对 → 判对（确定性判卷、无判卷 model span）。
 id: case3
 kind: assess
+surfaces: [question_generation]
 setup:
   stocked: true
   answer: mc_correct

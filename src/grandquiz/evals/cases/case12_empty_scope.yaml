@@ -3,6 +3,7 @@
 # 与 case2 的 empty_kb 分野：库非空（stocked），仅 scope 命中为空 → empty_scope（不静默考别的库）。
 id: case12
 kind: assess
+surfaces: [question_generation]
 setup:
   stocked: true
   scope:

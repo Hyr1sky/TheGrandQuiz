@@ -4,6 +4,7 @@
 # 选择题、确定性判卷、无判卷 model span），而非回锁到已薄弱的 non_natural（旧排他策略会锁它 → 追问）。
 id: case5
 kind: assess
+surfaces: [question_generation, learning_state_transition]
 setup:
   stocked: true
   focus: mixed

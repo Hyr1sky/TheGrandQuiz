@@ -7,9 +7,11 @@ behind separate deep Modules.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from pathlib import Path
 
 from grandquiz.evals.case import Case
+from grandquiz.evals.coverage import EvalCoverageReport, build_coverage_report
 from grandquiz.evals.fixture import MC_CORRECT, MC_WRONG, READER_JSON
 from grandquiz.evals.reporting import export_reports_html as _export_reports_html
 from grandquiz.evals.reporting import render_report
@@ -42,11 +44,13 @@ __all__ = [
     "BasicIngestObservation",
     "Case",
     "CaseReport",
+    "EvalCoverageReport",
     "ReactObservation",
     "SolveResult",
     "WebAcquisitionObservation",
     "build_event_harness",
     "build_stocked_store",
+    "describe_coverage",
     "export_html_report",
     "load_cases",
     "main",
@@ -56,6 +60,12 @@ __all__ = [
     "solve",
     "summarize_spans",
 ]
+
+
+def describe_coverage(*, cases: Sequence[Case] | None = None) -> EvalCoverageReport:
+    """Describe the versioned Evaluation Program without executing it."""
+
+    return build_coverage_report(load_cases() if cases is None else cases)
 
 
 def main() -> int:

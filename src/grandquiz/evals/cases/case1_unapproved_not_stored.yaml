@@ -2,6 +2,7 @@
 # Reader 出 3 候选，审批只放行 2（闭包 / 事件循环），store 里就只有这 2 个。
 id: case1
 kind: ingest
+surfaces: [reader_grounding]
 setup:
   source: ok
   approval_keep: ["闭包", "事件循环"]

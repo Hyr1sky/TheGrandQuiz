@@ -2,6 +2,7 @@
 # 首次接触 → 选择题；选错 → 判错、入薄弱、发 CONCEPT_STATE_CHANGED + FOLLOWUP_GIVEN。
 id: case4
 kind: assess
+surfaces: [answer_grading, learning_state_transition]
 setup:
   stocked: true
   answer: mc_wrong

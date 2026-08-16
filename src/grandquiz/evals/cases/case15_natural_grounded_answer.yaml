@@ -2,6 +2,7 @@
 # workflow，在 exact selected scope 中完成 search → bounded read → exact citation，并守住调用/token/读取门。
 id: case15
 kind: react
+surfaces: [reader_grounding, grounded_answer]
 setup:
   fixture: grounded
   user_messages:

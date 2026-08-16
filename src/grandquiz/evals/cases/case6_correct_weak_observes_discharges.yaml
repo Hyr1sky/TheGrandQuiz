@@ -5,6 +5,7 @@
 # 覆盖优先 / 全集随机（mixed 默认会先考未考过的 natural，见 case5）。
 id: case6
 kind: assess
+surfaces: [answer_grading, learning_state_transition]
 setup:
   stocked: true
   focus: weak

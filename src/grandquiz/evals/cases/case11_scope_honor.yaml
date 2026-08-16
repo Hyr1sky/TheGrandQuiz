@@ -3,6 +3,7 @@
 # fresh item（记忆空）→ 选择题、答对（确定性 MC 判卷、无判卷 model span），事件序同 case3。
 id: case11
 kind: assess
+surfaces: [question_generation]
 setup:
   stocked: true
   fixture: multi
