@@ -64,6 +64,25 @@ Question、Reader、Grounded Answer 三组人工标签均为 **Development Gold 
 - 三套真实 calibration 与 case15 普通回归均由 packaged cassette 离线 Replay；
 - cassette 敏感字段扫描未发现 API key、Authorization、base URL 或外部 URL。
 
-下一步进入 E7：在同一 immutable snapshot 和 suite policy 上构造 baseline/candidate 配对实验，分别报告
-validity、quality、cost、latency、retry 与 stability，并用 worse / mixed / better 候选证明系统能拒绝、
-保持 undecided 和识别可进入新 Holdout 的候选。
+## E7：不可变配对实验与人类复核证据
+
+`EvalSuiteInputs` 冻结 Dataset Snapshot、内容哈希、suite policy、slice manifest 与逐项 metric version；
+`pair_subject_evaluations()` 只接受完全相同的 suite inputs 和精确匹配的 sample 集。运行顺序不影响
+experiment identity，每个 sample 保留完整 baseline/candidate 证据与两个 Subject Snapshot 的 Replay 链接。
+
+执行失败不能写成 `semantic_quality=0`、规则失败或输出无效来混淆质量退化：Provider/runtime failure 使用
+独立 `execution_status`，对应 sample 仍留在配对结果中。rule、semantic、validity、execution tokens、judge
+tokens、latency、retry 与 stability 均为独立字段。
+
+`EvalExperimentReport` 按 surface、slice 和 sample 输出 delta 与 failure taxonomy。预注册 blocking slice 的
+任一退化会直接 rejected，即使 aggregate quality 上升；持续未通过 Tier-1 规则门同样不能被 Tier-2 增益
+掩盖。成本或非阻塞质量 trade-off 只能标为 ambiguous，证据缺失标为 insufficient evidence，只有无退化、
+达到预注册增益且成本/稳定性守门通过的候选才是 `eligible_for_review`。所有状态都固定
+`promotion_eligible=false`，不能激活生产配置。
+
+自包含 HTML 只投影安全的 sample/surface/slice、数值 delta 和 taxonomy，转义不可信文本，不包含 prompt、
+cassette、原始 trace 或外部资源。worse / mixed / better / missing-evidence fixtures 分别证明 reject、
+ambiguous、eligible-for-review 与 insufficient-evidence 路径。
+
+E7 完成后的门禁为 Python 1,124 passed，Ruff、format、Pyright 和 import-linter 全绿。下一步进入 E8：
+本地反馈 review、受限版本化 Change Proposal，以及必须消费新 Release Holdout 的人类 Promotion Decision。
