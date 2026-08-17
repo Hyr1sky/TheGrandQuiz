@@ -1,0 +1,62 @@
+{
+  "2962411d34da41d77c26999f442bda68ae36e82eeff116004140188afa20cdd2": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 4,\n      \"rationale\": \"candidate 的所有实质主张（observer 异常隔离、durable processor 持久化失败阻断、两者职责不同）均被 reference 逐字支持。\",\n      \"candidate_evidence\": \"observer 异常应隔离，但 durable processor 的持久化失败必须阻断当前 turn\",\n      \"reference_evidence\": \"observer 异常被隔离，不能炸掉 turn。durable processor 持久化失败必须阻断当前 turn\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 4,\n      \"rationale\": \"candidate 直接回答了问题，区分了两种处理器情况，完整覆盖了问题的主要要求。\",\n      \"candidate_evidence\": \"不能一概而论。observer 异常应隔离，但 durable processor 的持久化失败必须阻断当前 turn\",\n      \"reference_evidence\": \"observer 异常被隔离，不能炸掉 turn。durable processor 持久化失败必须阻断当前 turn\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 4,\n      \"rationale\": \"candidate 清晰解释了不同处理器职责的差异，并基于材料边界给出有依据的区分，具有诊断价值。\",\n      \"candidate_evidence\": \"两段材料描述的是不同处理器职责，并不真正冲突\",\n      \"reference_evidence\": \"observer 异常被隔离，不能炸掉 turn。durable processor 持久化失败必须阻断当前 turn\"\n    }\n  ],\n  \"overall_rationale\": \"candidate 准确、完整地回答了问题，所有主张均被 reference 支持，并清晰说明了材料边界，整体表现优秀。\"\n}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 395,
+      "prompt_tokens": 564,
+      "total_tokens": 959
+    }
+  },
+  "42a71ea9ddc4ec528ea158d3047aea86949b88b66d2f9792a4e7f115068aff0a": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 4,\n      \"rationale\": \"候选回答中关于 AgentEvent 构成（type、元数据、不透明 payload）的陈述与参考完全一致，且未提出任何参考不支持的主张。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 2,\n      \"rationale\": \"问题要求解释为何称为事件信封并说明服务的消费者，候选只回答了构成部分，未提及消费者，因此只覆盖了部分要求。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封。\",\n      \"reference_evidence\": \"Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 2,\n      \"rationale\": \"候选准确描述了事件信封的构成，但遗漏了消费者这一关键关系，使学习者只获得部分概念，诊断价值有限。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封。\",\n      \"reference_evidence\": \"Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。\"\n    }\n  ],\n  \"overall_rationale\": \"候选回答在语义支持上完全准确，但未覆盖问题中关于消费者的部分，因此整体未完整回答。\"\n}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 386,
+      "prompt_tokens": 551,
+      "total_tokens": 937
+    }
+  },
+  "4c76bb7936949da814750f276abd42d45cf5f2406e47250d8812663e4ec44159": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 4,\n      \"rationale\": \"candidate 准确指出材料仅说明 payload 不透明，未提及加密，并据此拒绝下结论，符合有依据的材料边界判断。\",\n      \"candidate_evidence\": \"材料只说明 payload 是不透明的，没有说明会自动加密\",\n      \"reference_evidence\": \"不透明 payload\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 4,\n      \"rationale\": \"candidate 直接回答了问题，明确说明材料沉默并拒绝猜测，完整覆盖了问题要求。\",\n      \"candidate_evidence\": \"因此无法从材料得出加密结论\",\n      \"reference_evidence\": \"不透明 payload\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 4,\n      \"rationale\": \"candidate 清晰解释了证据边界，有依据地拒绝材料外推断，具有诊断价值。\",\n      \"candidate_evidence\": \"材料只说明 payload 是不透明的，没有说明会自动加密\",\n      \"reference_evidence\": \"不透明 payload\"\n    }\n  ],\n  \"overall_rationale\": \"candidate 准确识别材料边界，合理拒绝推断，所有陈述均有依据，完整回答问题，具有学习价值。\"\n}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 306,
+      "prompt_tokens": 533,
+      "total_tokens": 839
+    }
+  },
+  "5827a89e47c5259171651ace6aa13b7623a636e3e5803d4057d5cab6148729f4": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 4,\n      \"rationale\": \"candidate 的所有实质主张（封装类型、元数据、不透明 payload，供 trace、hooks、streaming projections 与 eval replay 共同消费）均被 reference 逐字支持。\",\n      \"candidate_evidence\": \"因为它把事件类型、元数据和不透明 payload 封装在同一个结构中，供 trace、hooks、streaming projections 与 eval replay 共同消费。\",\n      \"reference_evidence\": \"An AgentEvent is an event envelope containing a type, metadata, and an opaque payload. Trace, hooks, streaming projections, and eval replay consume the same event stream.\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 4,\n      \"rationale\": \"candidate 直接回答了问题，解释了“事件信封”的构成和用途，覆盖了问题的主要要求。\",\n      \"candidate_evidence\": \"因为它把事件类型、元数据和不透明 payload 封装在同一个结构中，供 trace、hooks、streaming projections 与 eval replay 共同消费。\",\n      \"reference_evidence\": \"An AgentEvent is an event envelope containing a type, metadata, and an opaque payload. Trace, hooks, streaming projections, and eval replay consume the same event stream.\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 4,\n      \"rationale\": \"candidate 清晰准确地解释了“事件信封”的定义性关系（封装和共同消费），具有诊断价值，没有遗漏关键概念。\",\n      \"candidate_evidence\": \"因为它把事件类型、元数据和不透明 payload 封装在同一个结构中，供 trace、hooks、streaming projections 与 eval replay 共同消费。\",\n      \"reference_evidence\": \"An AgentEvent is an event envelope containing a type, metadata, and an opaque payload. Trace, hooks, streaming projections, and eval replay consume the same event stream.\"\n    }\n  ],\n  \"overall_rationale\": \"candidate 准确且完整地回答了问题，所有主张均被 reference 支持，覆盖了问题的主要要求，并提供了清晰的定义性解释。\"\n}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 489,
+      "prompt_tokens": 561,
+      "total_tokens": 1050
+    }
+  },
+  "9ef7adaf303310443587769a764deaf3176514e3972791712ccc21189156687e": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 4,\n      \"rationale\": \"candidate 的所有实质主张（observer 异常被隔离、durable processor 持久化失败阻断 turn、两者职责不同）均被 reference 逐字支持，且准确指出 reference 未提供合并依据，属于有依据的材料边界判断。\",\n      \"candidate_evidence\": \"材料 A 说明 observer 异常会被隔离；材料 B 说明 durable processor 持久化失败必须阻断当前 turn。两者适用于不同职责，不能合并成“所有失败都继续执行”。\",\n      \"reference_evidence\": \"材料 A：observer 异常被隔离，不能炸掉 turn。材料 B：durable processor 持久化失败必须阻断当前 turn，避免形成不可审计状态。\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 4,\n      \"rationale\": \"candidate 直接覆盖了 question 的两个主要部分（observer 和 durable processor 的失败处理），并明确说明材料未提供合并依据，因此完整回答了问题。\",\n      \"candidate_evidence\": \"材料 A 说明 observer 异常会被隔离；材料 B 说明 durable processor 持久化失败必须阻断当前 turn。\",\n      \"reference_evidence\": \"材料 A：observer 异常被隔离，不能炸掉 turn。材料 B：durable processor 持久化失败必须阻断当前 turn，避免形成不可审计状态。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 4,\n      \"rationale\": \"candidate 清晰区分两种失败处理方式，并基于材料边界拒绝材料外推断，具有诊断价值；简短不影响其完整性和准确性。\",\n      \"candidate_evidence\": \"两者适用于不同职责，不能合并成“所有失败都继续执行”。\",\n      \"reference_evidence\": \"材料 A：observer 异常被隔离，不能炸掉 turn。材料 B：durable processor 持久化失败必须阻断当前 turn，避免形成不可审计状态。\"\n    }\n  ],\n  \"overall_rationale\": \"candidate 准确、完整地回答了问题，所有主张均有 reference 支持，并合理拒绝材料外推断，三个维度均达到优秀。\"\n}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 504,
+      "prompt_tokens": 580,
+      "total_tokens": 1084
+    }
+  }
+}

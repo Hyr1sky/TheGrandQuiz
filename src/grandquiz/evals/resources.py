@@ -16,7 +16,14 @@ READER_FIDELITY_CALIBRATION_CASSETTE = "eval_quality_reader_fidelity_development
 GROUNDED_ANSWER_SLICES_CALIBRATION_CASSETTE = (
     "eval_quality_grounded_answer_slices_development_gold.cassette.json"
 )
-SUITE_EVAL_FIXTURES = frozenset({QUALITY_EVAL_CASSETTE, QUESTION_QUALITY_CALIBRATION_CASSETTE})
+SUITE_EVAL_FIXTURES = frozenset(
+    {
+        QUALITY_EVAL_CASSETTE,
+        QUESTION_QUALITY_CALIBRATION_CASSETTE,
+        READER_FIDELITY_CALIBRATION_CASSETTE,
+        GROUNDED_ANSWER_SLICES_CALIBRATION_CASSETTE,
+    }
+)
 
 
 def declared_eval_fixture_names(cases: Iterable[Case]) -> set[str]:

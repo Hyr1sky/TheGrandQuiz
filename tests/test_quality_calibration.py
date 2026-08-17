@@ -3,6 +3,7 @@
 import json
 from collections import deque
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, cast
 
 from grandquiz.evals.quality import QualityJudge
@@ -20,7 +21,9 @@ from grandquiz.evals.quality_dataset import (
     load_reader_fidelity_development_gold,
 )
 from grandquiz.evals.resources import (
+    GROUNDED_ANSWER_SLICES_CALIBRATION_CASSETTE,
     QUESTION_QUALITY_CALIBRATION_CASSETTE,
+    READER_FIDELITY_CALIBRATION_CASSETTE,
     eval_fixture_path,
 )
 from grandquiz.providers.base import Completion, Message, Role, Usage
@@ -59,6 +62,17 @@ class _SequenceProvider:
             text=json.dumps(self._payloads.popleft(), ensure_ascii=False),
             usage=Usage(prompt_tokens=40, completion_tokens=20),
         )
+
+
+def _recorded_models(path: Path) -> dict[Role, str]:
+    raw: Any = json.loads(path.read_text(encoding="utf-8"))
+    model_for_role: dict[Role, str] = {}
+    for value in cast("dict[str, Any]", raw).values():
+        entries: list[Any] = cast("list[Any]", value) if isinstance(value, list) else [value]
+        for raw_entry in entries:
+            entry = cast("dict[str, Any]", raw_entry)
+            model_for_role[cast("Role", entry["role"])] = str(entry["model"])
+    return model_for_role
 
 
 async def test_registered_but_unadjudicated_question_rubric_fails_before_judge_call() -> None:
@@ -195,6 +209,10 @@ async def test_repository_reader_and_answer_gold_use_the_shared_calibration_gate
         load_reader_fidelity_development_gold(),
         load_grounded_answer_development_gold(),
     )
+    expected_versions = {
+        "reader_fidelity": "reader_fidelity@v3",
+        "grounded_answer": "grounded_answer@v2",
+    }
 
     for calibration in calibrations:
         payloads: list[dict[str, object]] = []
@@ -225,7 +243,7 @@ async def test_repository_reader_and_answer_gold_use_the_shared_calibration_gate
         assert suite.calibration.passed is True
         assert suite.calibration.evidence_class == "development_gold"
         assert suite.calibration.pack_content_sha256 == calibration.content_sha256
-        assert suite.calibration.rubric_version == f"{calibration.rubric_id}@v1"
+        assert suite.calibration.rubric_version == expected_versions[calibration.rubric_id]
         assert [result.sample_id for result in suite.calibration.results] == [
             sample.sample_id for sample in calibration.samples
         ]
@@ -233,16 +251,9 @@ async def test_repository_reader_and_answer_gold_use_the_shared_calibration_gate
 
 async def test_packaged_question_quality_gold_replays_without_external_calls() -> None:
     path = eval_fixture_path(QUESTION_QUALITY_CALIBRATION_CASSETTE)
-    raw: Any = json.loads(path.read_text(encoding="utf-8"))
-    model_for_role: dict[Role, str] = {}
-    for value in cast("dict[str, Any]", raw).values():
-        entries: list[Any] = cast("list[Any]", value) if isinstance(value, list) else [value]
-        for raw_entry in entries:
-            entry = cast("dict[str, Any]", raw_entry)
-            model_for_role[cast("Role", entry["role"])] = str(entry["model"])
 
     suite = await CalibratedQualitySuite.create(
-        provider=ReplayProvider(Cassette.load(path), model_for_role),
+        provider=ReplayProvider(Cassette.load(path), _recorded_models(path)),
         rubric_id="question_quality",
         calibration=load_question_quality_development_gold(),
     )
@@ -251,6 +262,38 @@ async def test_packaged_question_quality_gold_replays_without_external_calls() -
     assert suite.calibration.agreement == 1.0
     assert suite.calibration.exact_agreement == 1.0
     assert suite.calibration.judge_tokens == 6573
+
+
+async def test_packaged_reader_fidelity_gold_replays_without_external_calls() -> None:
+    path = eval_fixture_path(READER_FIDELITY_CALIBRATION_CASSETTE)
+
+    suite = await CalibratedQualitySuite.create(
+        provider=ReplayProvider(Cassette.load(path), _recorded_models(path)),
+        rubric_id="reader_fidelity",
+        calibration=load_reader_fidelity_development_gold(),
+    )
+
+    assert suite.calibration.passed is True
+    assert suite.calibration.rubric_version == "reader_fidelity@v3"
+    assert suite.calibration.agreement == 1.0
+    assert suite.calibration.exact_agreement == 1.0
+    assert suite.calibration.judge_tokens == 6775
+
+
+async def test_packaged_grounded_answer_slices_gold_replays_without_external_calls() -> None:
+    path = eval_fixture_path(GROUNDED_ANSWER_SLICES_CALIBRATION_CASSETTE)
+
+    suite = await CalibratedQualitySuite.create(
+        provider=ReplayProvider(Cassette.load(path), _recorded_models(path)),
+        rubric_id="grounded_answer",
+        calibration=load_grounded_answer_development_gold(),
+    )
+
+    assert suite.calibration.passed is True
+    assert suite.calibration.rubric_version == "grounded_answer@v2"
+    assert suite.calibration.agreement == 1.0
+    assert suite.calibration.exact_agreement == 1.0
+    assert suite.calibration.judge_tokens == 4869
 
 
 async def test_calibration_passes_when_every_human_score_range_agrees() -> None:

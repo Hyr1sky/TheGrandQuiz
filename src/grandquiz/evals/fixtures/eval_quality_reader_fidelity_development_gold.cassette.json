@@ -1,0 +1,62 @@
+{
+  "13f1d4e64a6f143a0ba82abb2e5f59476435b9aa8ebf7a4a66aa4c908e59951b": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "```json\n{\n  \"rubric_id\": \"reader_fidelity\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"source_fidelity\",\n      \"score\": 4,\n      \"rationale\": \"候选的每项实质陈述（事件信封、type/元数据/payload、多消费者复用）均由 source 逐项支持，且保持原句模态。\",\n      \"candidate_evidence\": \"AgentEvent 由 type、元数据和不透明 payload 构成，供多个运行时消费者复用\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封，Trace、Hook、流式投影与 Eval Replay 消费同一条事件流\"\n    },\n    {\n      \"criterion_id\": \"key_concept_coverage\",\n      \"score\": 4,\n      \"rationale\": \"候选覆盖了 source 的关键概念与定义性不变量：事件信封、type/元数据/payload 结构、多消费者复用，无遗漏。\",\n      \"candidate_evidence\": \"AgentEvent 由 type、元数据和不透明 payload 构成，供多个运行时消费者复用\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封，Trace、Hook、流式投影与 Eval Replay 消费同一条事件流\"\n    },\n    {\n      \"criterion_id\": \"concept_separation\",\n      \"score\": 4,\n      \"rationale\": \"候选概念原子且唯一，聚焦单一 AgentEvent 事件信封概念，无重复。\",\n      \"candidate_evidence\": \"concept: AgentEvent 事件信封\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封\"\n    },\n    {\n      \"criterion_id\": \"evidence_locality\",\n      \"score\": 4,\n      \"rationale\": \"Evidence 精确引用候选所依据的单一 event-envelope 节点，无跨节点遗漏。\",\n      \"candidate_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封，Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封，Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 4,\n      \"rationale\": \"候选完整、唯一且有效，形成有诊断价值的可考核单元，覆盖定义性不变量。\",\n      \"candidate_evidence\": \"AgentEvent 由 type、元数据和不透明 payload 构成，供多个运行时消费者复用\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封，Trace、Hook、流式投影与 Eval Replay 消费同一条事件流\"\n    }\n  ],\n  \"overall_rationale\": \"候选忠实、完整、原子且可考核，所有维度均达到优秀标准。\"\n}\n```",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 663,
+      "prompt_tokens": 820,
+      "total_tokens": 1483
+    }
+  },
+  "2f0194f21c0d2bba0f8fa69adca0bb10a48a909371b842f648129ec43db38369": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "{\n  \"rubric_id\": \"reader_fidelity\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"source_fidelity\",\n      \"score\": 4,\n      \"rationale\": \"两个候选的实质陈述均由 source 逐项支持，未改变模态或臆造事实。\",\n      \"candidate_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"key_concept_coverage\",\n      \"score\": 4,\n      \"rationale\": \"候选完整覆盖了 source 中的关键概念与定义性不变量。\",\n      \"candidate_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"concept_separation\",\n      \"score\": 1,\n      \"rationale\": \"两个候选将同一概念重复抽取为两个 KnowledgeItem，违反原子性和唯一性。\",\n      \"candidate_evidence\": \"AgentEvent 事件信封\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"evidence_locality\",\n      \"score\": 4,\n      \"rationale\": \"两个候选的 Evidence 均精确引用同一 DocumentNode，无跨节点遗漏。\",\n      \"candidate_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 2,\n      \"rationale\": \"概念本身有效，但同批重复抽取使诊断价值降低。\",\n      \"candidate_evidence\": \"AgentEvent 事件信封\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    }\n  ],\n  \"overall_rationale\": \"候选内容忠实且覆盖完整，但同一概念被重复抽取为两个 KnowledgeItem，导致概念分离和学习有用性扣分。\"\n}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 514,
+      "prompt_tokens": 823,
+      "total_tokens": 1337
+    }
+  },
+  "38dc5ab8b2578b868194e8688569f767a5e573dc41a1e662dc4f867c70e492c7": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "{\n  \"rubric_id\": \"reader_fidelity\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"source_fidelity\",\n      \"score\": 1,\n      \"rationale\": \"候选将练习要求'请为 payload 设计一种可选的加密方案'改写为事实断言'Runtime 使用 payload 自动加密方案'，属于臆造，未保持原句祈使模态。\",\n      \"candidate_evidence\": \"Runtime 使用 payload 自动加密方案\",\n      \"reference_evidence\": \"请为 payload 设计一种可选的加密方案\"\n    },\n    {\n      \"criterion_id\": \"key_concept_coverage\",\n      \"score\": 1,\n      \"rationale\": \"候选将练习要求抽成事实，未保留任何事实不变量，完全偏离源文本的祈使性质。\",\n      \"candidate_evidence\": \"Runtime 使用 payload 自动加密方案\",\n      \"reference_evidence\": \"请为 payload 设计一种可选的加密方案\"\n    },\n    {\n      \"criterion_id\": \"concept_separation\",\n      \"score\": 2,\n      \"rationale\": \"概念形状原子但为练习指令，并非有效知识概念，按规则评为2。\",\n      \"candidate_evidence\": \"设计 payload 加密方案\",\n      \"reference_evidence\": \"请为 payload 设计一种可选的加密方案\"\n    },\n    {\n      \"criterion_id\": \"evidence_locality\",\n      \"score\": 4,\n      \"rationale\": \"Evidence 精确引用自唯一的练习节点，虽被错误解释为事实，但引用位置正确。\",\n      \"candidate_evidence\": \"思考题：请为 payload 设计一种可选的加密方案。\",\n      \"reference_evidence\": \"思考题：请为 payload 设计一种可选的加密方案。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 1,\n      \"rationale\": \"练习指令被抽成事实知识点，无诊断价值，属于伪知识点。\",\n      \"candidate_evidence\": \"Runtime 使用 payload 自动加密方案\",\n      \"reference_evidence\": \"请为 payload 设计一种可选的加密方案\"\n    }\n  ],\n  \"overall_rationale\": \"候选将练习要求错误地改写为事实断言，严重违背源文本模态，且未保留任何事实不变量，整体质量低。\"\n}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 513,
+      "prompt_tokens": 763,
+      "total_tokens": 1276
+    }
+  },
+  "837619f09e3835a3ebc52a86272df45b41164d0867108fb55e5960e9802c4829": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "```json\n{\n  \"rubric_id\": \"reader_fidelity\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"source_fidelity\",\n      \"score\": 4,\n      \"rationale\": \"候选的所有实质陈述（AgentEvent 由 type、元数据和不透明 payload 构成）均被 source 逐项支持，未添加任何臆造内容。\",\n      \"candidate_evidence\": \"AgentEvent 由 type、元数据和不透明 payload 构成\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封\"\n    },\n    {\n      \"criterion_id\": \"key_concept_coverage\",\n      \"score\": 2,\n      \"rationale\": \"候选保留了 AgentEvent 的主体定义，但遗漏了 source 中定义性的共享消费者关系（Trace、Hook、流式投影与 Eval Replay 消费同一条事件流）。\",\n      \"candidate_evidence\": \"AgentEvent 由 type、元数据和不透明 payload 构成\",\n      \"reference_evidence\": \"Trace、Hook、流式投影与 Eval Replay 消费同一条事件流\"\n    },\n    {\n      \"criterion_id\": \"concept_separation\",\n      \"score\": 4,\n      \"rationale\": \"候选概念原子且唯一，未与同批其他候选重复。\",\n      \"candidate_evidence\": \"AgentEvent 事件信封\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封\"\n    },\n    {\n      \"criterion_id\": \"evidence_locality\",\n      \"score\": 4,\n      \"rationale\": \"Evidence 精确引用自候选所依据的 event-envelope 节点，引用正确。\",\n      \"candidate_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 2,\n      \"rationale\": \"候选遗漏了定义性的共享消费者关系，导致诊断价值降低，无法完整考核该知识单元。\",\n      \"candidate_evidence\": \"AgentEvent 由 type、元数据和不透明 payload 构成\",\n      \"reference_evidence\": \"Trace、Hook、流式投影与 Eval Replay 消费同一条事件流\"\n    }\n  ],\n  \"overall_rationale\": \"候选正确且忠实地抽取了 AgentEvent 的主体定义，但遗漏了 source 中定义性的共享消费者关系，导致关键概念覆盖不完整，诊断价值有所降低。\"\n}\n```",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 573,
+      "prompt_tokens": 793,
+      "total_tokens": 1366
+    }
+  },
+  "b6bce1c5db9dda2c4b711897d86a1d30f3eacd2f94982c0f816874ac90d055db": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "{\n  \"rubric_id\": \"reader_fidelity\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"source_fidelity\",\n      \"score\": 4,\n      \"rationale\": \"候选的两项实质陈述均逐字对应 source 中的原句，模态保持一致，无臆造。\",\n      \"candidate_evidence\": \"错误本身也是一种 AgentEvent。\",\n      \"reference_evidence\": \"错误本身也是一种 AgentEvent。\"\n    },\n    {\n      \"criterion_id\": \"key_concept_coverage\",\n      \"score\": 4,\n      \"rationale\": \"候选覆盖了 source slice 中的两个关键概念及其定义性不变量，无遗漏。\",\n      \"candidate_evidence\": \"Durable processor 持久化失败必须阻断当前 turn，不能继续产生不可审计状态。\",\n      \"reference_evidence\": \"Durable processor 持久化失败必须阻断当前 turn，不能继续产生不可审计状态。\"\n    },\n    {\n      \"criterion_id\": \"concept_separation\",\n      \"score\": 4,\n      \"rationale\": \"两个概念原子且彼此独立，未与同批其他候选重复。\",\n      \"candidate_evidence\": \"错误本身也是一种 AgentEvent。\",\n      \"reference_evidence\": \"错误本身也是一种 AgentEvent。\"\n    },\n    {\n      \"criterion_id\": \"evidence_locality\",\n      \"score\": 4,\n      \"rationale\": \"每条 Evidence 均精确引用其对应节点，且跨节点陈述所需节点均已包含。\",\n      \"candidate_evidence\": \"Durable processor 持久化失败必须阻断当前 turn，不能继续产生不可审计状态。\",\n      \"reference_evidence\": \"Durable processor 持久化失败必须阻断当前 turn，不能继续产生不可审计状态。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 4,\n      \"rationale\": \"候选形成两个完整、唯一且有效的可考核单元，具有诊断价值。\",\n      \"candidate_evidence\": \"错误本身也是一种 AgentEvent。\",\n      \"reference_evidence\": \"错误本身也是一种 AgentEvent。\"\n    }\n  ],\n  \"overall_rationale\": \"候选准确、完整地保留了 source 中的关键概念，证据定位精确，概念原子且唯一，学习价值高。\"\n}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 493,
+      "prompt_tokens": 820,
+      "total_tokens": 1313
+    }
+  }
+}

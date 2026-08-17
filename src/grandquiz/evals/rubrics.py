@@ -20,19 +20,25 @@ class Rubric:
 _RUBRICS = {
     "grounded_answer": Rubric(
         rubric_id="grounded_answer",
-        version="grounded_answer@v1",
+        version="grounded_answer@v2",
         criteria=(
             Criterion(
                 "semantic_support",
-                "candidate 的实质结论是否被 reference 充分支持",
+                "只判断 candidate 实际陈述的实质主张是否被 reference 支持，不因遗漏问题的"
+                "其他部分扣分：所有已陈述主张受支持即为 4。若 candidate 准确说明 reference"
+                "没有提供某项事实，并据此拒绝下结论，这种有依据的材料边界判断也为 4",
             ),
             Criterion(
                 "question_coverage",
-                "candidate 是否直接覆盖 question 的主要要求",
+                "只判断 candidate 是否直接覆盖 question 的主要要求：完整回答所有子问题为 4，"
+                "只回答其中一部分为 2。对于 reference 未提供所问事实的问题，明确说明材料"
+                "沉默并拒绝猜测就是完整回答，应为 4",
             ),
             Criterion(
                 "learning_usefulness",
-                "candidate 是否清晰、准确且适合作为学习解释",
+                "判断 candidate 是否清晰、准确且有诊断价值：完整解释或有依据地拒绝材料外"
+                "推断为 4；虽准确但遗漏定义性关系、使学习者只得到部分概念时为 2；不要因"
+                "回答简短而降低一个已经完整说明证据边界的合理拒答",
             ),
         ),
     ),
@@ -77,29 +83,39 @@ _RUBRICS = {
     ),
     "reader_fidelity": Rubric(
         rubric_id="reader_fidelity",
-        version="reader_fidelity@v1",
+        version="reader_fidelity@v3",
         criteria=(
             Criterion(
                 "source_fidelity",
-                "KnowledgeItem 的每项实质陈述是否由 source 逐项支持；臆造或把练习要求"
-                "改写成事实为低分",
+                "只判断 KnowledgeItem 的每项实质陈述是否由 source 逐项支持：全部陈述受"
+                "支持即为 4，即使候选遗漏关键概念、与同批候选重复或学习价值较低也不得"
+                "在本维度重复扣分；必须保持原句模态，祈使句、思考题、要求或建议不能支持"
+                "“系统已经采用/使用该方案”的事实断言，例如把“请设计 X”改写成“系统使用 X”"
+                "属于臆造并记为 1",
             ),
             Criterion(
                 "key_concept_coverage",
-                "候选是否覆盖该 source slice 的关键概念与定义性不变量，而非只保留次要细节",
+                "只判断候选是否覆盖 source slice 的关键概念与定义性不变量：完整覆盖为 4，"
+                "遗漏定义性关系但保留主体定义为 2，把练习要求抽成事实且未保留任何事实"
+                "不变量为 1；重复和 Evidence 定位问题不得在本维度重复扣分",
             ),
             Criterion(
                 "concept_separation",
-                "概念是否原子且不与同批候选重复；重复、错误合并或无意义拆分为低分",
+                "只判断概念是否原子且不与同批候选重复：原子且唯一为 4，即使内容遗漏或"
+                "Evidence 有问题也不得连带扣分；同一概念重复抽取为 1；练习指令等并非有效"
+                "知识概念但形状仍原子时为 2",
             ),
             Criterion(
                 "evidence_locality",
-                "Evidence 是否来自支持该陈述所需的全部 DocumentNode；跨节点陈述必须保留"
-                "每个必要节点",
+                "只判断 Evidence 是否精确来自候选所依据的全部 DocumentNode，不判断该"
+                "Evidence 是否在语义上蕴含候选陈述：单节点引用正确为 4，练习节点被错误"
+                "解释成事实但仍精确引用该练习节点也为 4；跨节点陈述缺任一必要节点才扣分",
             ),
             Criterion(
                 "learning_usefulness",
-                "候选是否适合作为可考核知识点；练习指令、目录、版权和样板文字等伪知识点为低分",
+                "综合判断候选能否形成有诊断价值的可考核单元：完整、唯一且有效为 4；遗漏"
+                "定义性不变量或同批重复使诊断价值降为 2；练习指令、目录、版权和样板文字"
+                "等伪知识点为 1",
             ),
         ),
     ),

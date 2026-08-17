@@ -181,7 +181,7 @@ async def test_fully_supported_answer_passes_with_auditable_judge_events() -> No
     assert events[-1].payload == {
         "ok": True,
         "rubric_id": "grounded_answer",
-        "rubric_version": "grounded_answer@v1",
+        "rubric_version": "grounded_answer@v2",
         "criterion_count": 3,
         "passed": True,
         "usage": {"prompt_tokens": 120, "completion_tokens": 30, "total_tokens": 150},
@@ -423,7 +423,7 @@ async def test_provider_failure_closes_model_and_quality_spans_then_propagates()
     assert events[-1].payload == {
         "ok": False,
         "rubric_id": "grounded_answer",
-        "rubric_version": "grounded_answer@v1",
+        "rubric_version": "grounded_answer@v2",
         "criterion_count": 3,
         "classification": "provider_error",
     }

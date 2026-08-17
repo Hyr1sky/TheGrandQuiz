@@ -1,62 +1,62 @@
 {
-  "3b3bb9f978826387795d1f81dc3a18f47649218eb287c42078cd68a1d6f9bdfb": {
+  "1e487b43cb9be03b8e96cdfcc2dcf0763599ed1dd41a601b25771afce4ce37a2": {
     "fingerprint_version": 2,
     "model": "deepseek-v4-flash",
     "role": "basic",
-    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 1,\n      \"rationale\": \"参考仅描述事件信封的构成（type、元数据、不透明 payload）并指出错误本身也是一种 AgentEvent，未提及任何关于运行时零故障或自动加密的保证，因此候选结论不被支持且存在矛盾。\",\n      \"candidate_evidence\": \"保证运行时不会发生故障，而且会自动加密所有 payload。\",\n      \"reference_evidence\": \"错误本身也是一种 AgentEvent。\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 2,\n      \"rationale\": \"候选直接回答了问题（肯定了两个特性），但回答内容与参考无关且不准确，未能基于参考信息提供正确覆盖，存在主要不足。\",\n      \"candidate_evidence\": \"事件信封保证运行时不会发生故障，而且会自动加密所有 payload。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。错误本身也是一种 AgentEvent。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 1,\n      \"rationale\": \"候选回答虽然清晰简洁，但内容严重不准确（与参考相悖），会误导学习者，明显不适合作为学习解释。\",\n      \"candidate_evidence\": \"事件信封保证运行时不会发生故障，而且会自动加密所有 payload。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。错误本身也是一种 AgentEvent。\"\n    }\n  ],\n  \"overall_rationale\": \"候选回答声称事件信封保证零故障和自动加密，但参考中没有任何相关内容，反而指出错误本身是一种 AgentEvent，暗示运行时可能出现错误。因此候选回答整体上不准确且不可靠，没有基于参考提供正确信息。\"\n}",
+    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 4,\n      \"rationale\": \"候选回答的所有实质主张（事件信封、type/元数据/payload、复用事件流）均被参考证据逐字支持。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封；trace、hook、流式输出与 eval replay 复用同一条事件流。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。trace、hook、流式输出与 eval replay 复用同一条事件流。\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 4,\n      \"rationale\": \"候选回答直接覆盖了问题的主要要求：解释了为何称为事件信封，并列举了消费者。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封；trace、hook、流式输出与 eval replay 复用同一条事件流。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。trace、hook、流式输出与 eval replay 复用同一条事件流。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 4,\n      \"rationale\": \"候选回答清晰准确地解释了定义性关系（信封的构成）并完整列出了消费者，具有诊断价值。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封；trace、hook、流式输出与 eval replay 复用同一条事件流。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。trace、hook、流式输出与 eval replay 复用同一条事件流。\"\n    }\n  ],\n  \"overall_rationale\": \"候选回答准确、完整地覆盖了问题，所有主张均有参考证据支持，且解释清晰，达到优秀水平。\"\n}",
     "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "usage": {
-      "completion_tokens": 1516,
-      "prompt_tokens": 398,
-      "total_tokens": 1914
+      "completion_tokens": 464,
+      "prompt_tokens": 566,
+      "total_tokens": 1030
     }
   },
-  "5f49f20b2d02aa248e6253be11d4a89713e6b8b912f220b6bf8d033fcf8b1d32": {
+  "42e383ed80db1696bc7e6c56ccd02b22ea54b0c13d0fdac8cde2712008331d3f": {
     "fingerprint_version": 2,
     "model": "deepseek-v4-flash",
     "role": "basic",
-    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 4,\n      \"rationale\": \"候选的实质结论与参考证据完全一致，所有关键信息均被充分支持。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封；trace、hook、流式输出与 eval replay 复用同一条事件流。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。trace、hook、流式输出与 eval replay 复用同一条事件流。\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 4,\n      \"rationale\": \"候选直接回答了‘为什么称为事件信封’（通过组成元素）和‘服务哪些消费者’（列出具体消费者），完整覆盖问题要求。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封；trace、hook、流式输出与 eval replay 复用同一条事件流。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。trace、hook、流式输出与 eval replay 复用同一条事件流。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 4,\n      \"rationale\": \"候选语句清晰、准确，直接点明结构与消费者，适合作为简明学习解释。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封；trace、hook、流式输出与 eval replay 复用同一条事件流。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。trace、hook、流式输出与 eval replay 复用同一条事件流。\"\n    }\n  ],\n  \"overall_rationale\": \"候选回答完全匹配参考证据，准确回答了问题中的两问，表述清晰且无冗余，所有准则均达到优秀水平。\"\n}",
+    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 4,\n      \"rationale\": \"candidate 准确指出材料仅说明 payload 不透明，未说明加密，并据此拒绝下结论，这是有依据的材料边界判断。\",\n      \"candidate_evidence\": \"材料只说明 payload 是不透明的，没有说明会加密\",\n      \"reference_evidence\": \"不透明 payload\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 4,\n      \"rationale\": \"candidate 直接回应问题，明确说明材料沉默并拒绝猜测，完整回答了问题。\",\n      \"candidate_evidence\": \"无法从材料得出加密结论\",\n      \"reference_evidence\": \"不透明 payload\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 4,\n      \"rationale\": \"candidate 清晰解释了证据边界，有诊断价值，没有过度推断。\",\n      \"candidate_evidence\": \"材料只说明 payload 是不透明的，没有说明会加密\",\n      \"reference_evidence\": \"不透明 payload\"\n    }\n  ],\n  \"overall_rationale\": \"candidate 准确识别材料边界，拒绝无依据推断，符合所有评分标准。\"\n}",
     "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "usage": {
-      "completion_tokens": 899,
-      "prompt_tokens": 429,
-      "total_tokens": 1328
+      "completion_tokens": 293,
+      "prompt_tokens": 531,
+      "total_tokens": 824
     }
   },
-  "76dda3fdab6b96e4244750e3126bec7b8e18e0028cbcb49f0a342cc22d4edfe9": {
+  "65b67201501c90a9d5537bf8b83a79c555be7915d6ae2f85d2894fd41f3de797": {
     "fingerprint_version": 2,
     "model": "deepseek-v4-flash",
     "role": "basic",
-    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 4,\n      \"rationale\": \"候选回答直接引用了参考中的核心定义，并解释外层包装内装内容的结构即为信封，证据充分。\",\n      \"candidate_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 4,\n      \"rationale\": \"候选回答明确解释了为什么称为信封（外层包装内装内容）并给出了原文出处，完全覆盖问题要求。\",\n      \"candidate_evidence\": \"这种\\\"外层包装、内装内容\\\"的结构就是它被称为\\\"信封\\\"的原因。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 4,\n      \"rationale\": \"候选回答解释清晰准确，引用原文并附带出处，适合作为学习解释。\",\n      \"candidate_evidence\": \"简而言之，事件总线中的消息被设计为 **AgentEvent** 结构——它包裹了事件类型（type）、元数据以及一个不透明的 payload（数据正文），这种\\\"外层包装、内装内容\\\"的结构就是它被称为\\\"信封\\\"的原因。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    }\n  ],\n  \"overall_rationale\": \"候选回答完整、准确地回答了问题，引用了参考原文并给出了合理解释，三个维度均表现出色。\"\n}",
+    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 4,\n      \"rationale\": \"candidate 陈述的实质主张（AgentEvent 用 type、元数据和不透明 payload 形成事件信封）完全被 reference 支持。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 2,\n      \"rationale\": \"candidate 只回答了问题中关于事件信封的部分，未覆盖消费者部分（trace、hook、流式输出与 eval replay）。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封。\",\n      \"reference_evidence\": \"trace、hook、流式输出与 eval replay 复用同一条事件流。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 2,\n      \"rationale\": \"candidate 准确解释了事件信封的定义性关系，但遗漏了消费者复用事件流这一关键信息，使学习者只得到部分概念。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封。\",\n      \"reference_evidence\": \"trace、hook、流式输出与 eval replay 复用同一条事件流。\"\n    }\n  ],\n  \"overall_rationale\": \"candidate 对事件信封的解释准确且受支持，但未回答消费者部分，导致覆盖度和学习价值不足。\"\n}",
     "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "usage": {
-      "completion_tokens": 566,
-      "prompt_tokens": 557,
-      "total_tokens": 1123
+      "completion_tokens": 381,
+      "prompt_tokens": 549,
+      "total_tokens": 930
     }
   },
-  "942a95857eb2e5e8f4b813c7b2231f79e394e9173e385fceabbea223df636e4d": {
+  "6879478e19d779161c17fec46791a2b75030c21d39f0897dd5d62e6bb6d9272d": {
     "fingerprint_version": 2,
     "model": "deepseek-v4-flash",
     "role": "basic",
-    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 4,\n      \"rationale\": \"候选回答的结论'无法从材料得出加密结论'完全基于参考中的'不透明 payload'，且没有超出参考范围，得到充分支持。\",\n      \"candidate_evidence\": \"材料只说明 payload 是不透明的\",\n      \"reference_evidence\": \"不透明 payload\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 4,\n      \"rationale\": \"候选回答直接针对问题'是否会自动加密'给出了明确否定结论（无法得出加密结论），完整覆盖了问题要求。\",\n      \"candidate_evidence\": \"无法从材料得出加密结论\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 4,\n      \"rationale\": \"候选回答逻辑清晰、表述准确，明确指出材料限制并解释推理过程，适合作为学习解释。\",\n      \"candidate_evidence\": \"材料只说明 payload 是不透明的，没有说明会加密，因此无法从材料得出加密结论\",\n      \"reference_evidence\": \"不透明 payload\"\n    }\n  ],\n  \"overall_rationale\": \"候选回答准确基于参考文本，直接回答了问题，推理清晰且适合学习使用。\"\n}",
+    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 4,\n      \"rationale\": \"候选回答的所有实质主张（AgentEvent 包含 type、元数据和不透明 payload，是事件信封）均被参考证据直接支持。\",\n      \"candidate_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 4,\n      \"rationale\": \"候选回答直接回答了问题的主要要求：解释了为什么称为信封（外层包装、内装内容），并给出了原文出处（材料、章节、字符区间）。\",\n      \"candidate_evidence\": \"这种\\\"外层包装、内装内容\\\"的结构就是它被称为\\\"信封\\\"的原因。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 4,\n      \"rationale\": \"候选回答清晰、准确地解释了信封概念，并提供了明确的出处，具有诊断价值。\",\n      \"candidate_evidence\": \"它包裹了事件类型（type）、元数据以及一个不透明的 payload（数据正文）\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    }\n  ],\n  \"overall_rationale\": \"候选回答准确、完整地回应了问题，所有主张均有参考证据支持，并提供了清晰的出处，整体表现优秀。\"\n}",
     "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "usage": {
-      "completion_tokens": 706,
-      "prompt_tokens": 394,
-      "total_tokens": 1100
+      "completion_tokens": 377,
+      "prompt_tokens": 694,
+      "total_tokens": 1071
     }
   },
-  "a84ef82e04d0ac65ecd6d9e0b705406e3281b90ca11c891cc4188e84f19ae3a0": {
+  "8c424c4464301e8020a633c8971732a76e089c3802e330e5b6839a11f40c9806": {
     "fingerprint_version": 2,
     "model": "deepseek-v4-flash",
     "role": "basic",
-    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 3,\n      \"rationale\": \"候选回答的实质结论（AgentEvent 由 type、元数据和不透明 payload 构成事件信封）在参考中得到了明确支持。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 2,\n      \"rationale\": \"候选回答只覆盖了问题中“为什么称为事件信封”的部分，完全没有提及“服务哪些消费者”，存在主要不足。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封。\",\n      \"reference_evidence\": \"trace、hook、流式输出与 eval replay 复用同一条事件流。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 2,\n      \"rationale\": \"候选回答清晰且准确地解释了事件信封的构成，但因遗漏消费者信息而不完整，作为学习解释存在主要不足。\",\n      \"candidate_evidence\": \"AgentEvent 用 type、元数据和不透明 payload 形成事件信封。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    }\n  ],\n  \"overall_rationale\": \"候选回答正确地重复了参考中关于事件信封定义的表述，但完全忽略了问题中关于消费服务的部分，导致覆盖面不足，学习价值有限。\"\n}",
+    "text": "{\n  \"rubric_id\": \"grounded_answer\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"semantic_support\",\n      \"score\": 1,\n      \"rationale\": \"候选回答声称事件信封保证运行时零故障并自动加密 payload，但参考证据仅描述事件信封的结构，未提及任何故障保证或加密功能，因此这些主张完全不受支持。\",\n      \"candidate_evidence\": \"事件信封保证运行时不会发生故障，而且会自动加密所有 payload\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封\"\n    },\n    {\n      \"criterion_id\": \"question_coverage\",\n      \"score\": 1,\n      \"rationale\": \"问题询问事件信封是否保证零故障和自动加密，候选回答直接给出肯定断言，但参考材料并未提供这些事实，因此候选未正确覆盖问题，也未说明材料沉默。\",\n      \"candidate_evidence\": \"事件信封保证运行时不会发生故障，而且会自动加密所有 payload\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 1,\n      \"rationale\": \"候选回答提供了与参考材料不符的错误信息，可能误导学习者，缺乏诊断价值，且未基于材料边界进行合理拒答。\",\n      \"candidate_evidence\": \"事件信封保证运行时不会发生故障，而且会自动加密所有 payload\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封\"\n    }\n  ],\n  \"overall_rationale\": \"候选回答在多个方面严重偏离参考材料，做出了无依据的断言，未能正确覆盖问题或提供有用的学习信息。\"\n}",
     "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "usage": {
-      "completion_tokens": 1486,
-      "prompt_tokens": 412,
-      "total_tokens": 1898
+      "completion_tokens": 387,
+      "prompt_tokens": 535,
+      "total_tokens": 922
     }
   }
 }
