@@ -4,22 +4,61 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, Self, cast
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from grandquiz.evals.quality_contracts import CalibrationSample, ScoreRange
 from grandquiz.evals.rubrics import get_rubric
 
-QuestionBoundary = Literal["good", "partial", "leaked", "unsupported", "misleading"]
-QuestionFormat = Literal["multiple_choice", "open_response"]
-_QUESTION_BOUNDARIES = {"good", "partial", "leaked", "unsupported", "misleading"}
-_QUESTION_FORMATS = {"multiple_choice", "open_response"}
 _QUESTION_QUALITY_DEVELOPMENT_GOLD_PATH = (
     Path(__file__).parent / "quality_cases" / "question_quality.yaml"
 )
+
+
+@dataclass(frozen=True)
+class _PackPolicy:
+    rubric_id: str
+    boundaries: frozenset[str]
+    sample_kinds: frozenset[str]
+
+
+_PACK_POLICIES = {
+    "question-quality-development-gold-01": _PackPolicy(
+        rubric_id="question_quality",
+        boundaries=frozenset({"good", "partial", "leaked", "unsupported", "misleading"}),
+        sample_kinds=frozenset({"multiple_choice", "open_response"}),
+    ),
+    "reader-fidelity-development-gold-01": _PackPolicy(
+        rubric_id="reader_fidelity",
+        boundaries=frozenset(
+            {
+                "supported_item",
+                "missing_key_concept",
+                "duplicate_concept",
+                "pseudo_item",
+                "cross_node_evidence",
+            }
+        ),
+        sample_kinds=frozenset({"knowledge_item"}),
+    ),
+    "grounded-answer-development-gold-02": _PackPolicy(
+        rubric_id="grounded_answer",
+        boundaries=frozenset(
+            {
+                "multi_material_scope",
+                "justified_refusal",
+                "conflicting_evidence",
+                "bilingual_wording",
+                "incomplete_supported",
+            }
+        ),
+        sample_kinds=frozenset({"grounded_answer"}),
+    ),
+}
 
 
 class QualityCalibrationPackError(ValueError):
@@ -30,12 +69,23 @@ class _PackSample(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     sample_id: str = Field(min_length=1)
-    boundary: QuestionBoundary
-    question_format: QuestionFormat
+    boundary: str = Field(min_length=1)
+    question_format: str | None = Field(default=None, min_length=1)
+    sample_kind: str | None = Field(default=None, min_length=1)
     question: str = Field(min_length=1)
     candidate: str = Field(min_length=1)
     reference: str = Field(min_length=1)
     expected_scores: dict[str, ScoreRange] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _check_sample_kind(self) -> Self:
+        if (self.question_format is None) == (self.sample_kind is None):
+            raise ValueError("sample must declare exactly one of question_format or sample_kind")
+        return self
+
+    @property
+    def normalized_kind(self) -> str:
+        return self.question_format or self.sample_kind or ""
 
 
 class _AdjudicatedPack(BaseModel):
@@ -43,7 +93,7 @@ class _AdjudicatedPack(BaseModel):
 
     schema_version: Literal["quality-calibration-pack.v1"]
     pack_id: str = Field(min_length=1)
-    rubric_id: Literal["question_quality"]
+    rubric_id: str = Field(min_length=1)
     evidence_class: Literal["development_gold"]
     label_status: Literal["human_adjudicated"]
     annotator: str = Field(min_length=1)
@@ -64,7 +114,8 @@ class CompiledQualityCalibration(BaseModel):
     annotator: str
     adjudicated_at: str
     content_sha256: str
-    boundaries: tuple[QuestionBoundary, ...]
+    boundaries: tuple[str, ...]
+    sample_kinds: tuple[str, ...]
     samples: tuple[CalibrationSample, ...]
 
 
@@ -80,10 +131,18 @@ def compile_quality_calibration_pack(raw: object) -> CompiledQualityCalibration:
         raise QualityCalibrationPackError(
             "quality calibration labels must be human-adjudicated before use"
         )
+    pack_id = raw_mapping.get("pack_id")
+    policy = _PACK_POLICIES.get(pack_id) if isinstance(pack_id, str) else None
+    if policy is None:
+        raise QualityCalibrationPackError(f"unregistered quality calibration pack: {pack_id!r}")
     try:
         pack = _AdjudicatedPack.model_validate(raw_mapping)
     except ValidationError as exc:
         raise QualityCalibrationPackError(f"invalid quality calibration pack: {exc}") from exc
+    if pack.rubric_id != policy.rubric_id:
+        raise QualityCalibrationPackError(
+            f"{pack.pack_id} must target the registered rubric {policy.rubric_id}"
+        )
     rubric = get_rubric(pack.rubric_id)
     if rubric is None:
         raise QualityCalibrationPackError(f"unknown quality rubric: {pack.rubric_id}")
@@ -91,14 +150,12 @@ def compile_quality_calibration_pack(raw: object) -> CompiledQualityCalibration:
     sample_ids = [sample.sample_id for sample in pack.samples]
     if len(sample_ids) != len(set(sample_ids)):
         raise QualityCalibrationPackError("quality calibration sample ids must be unique")
-    if {sample.boundary for sample in pack.samples} != _QUESTION_BOUNDARIES:
+    if frozenset(sample.boundary for sample in pack.samples) != policy.boundaries:
         raise QualityCalibrationPackError(
-            "question quality pack must cover all five boundary categories"
+            f"{pack.pack_id} must cover all registered boundary categories"
         )
-    if {sample.question_format for sample in pack.samples} != _QUESTION_FORMATS:
-        raise QualityCalibrationPackError(
-            "question quality pack must cover multiple-choice and open-response formats"
-        )
+    if frozenset(sample.normalized_kind for sample in pack.samples) != policy.sample_kinds:
+        raise QualityCalibrationPackError(f"{pack.pack_id} must cover all registered sample kinds")
     for sample in pack.samples:
         if set(sample.expected_scores) != expected_criteria:
             raise QualityCalibrationPackError(
@@ -118,6 +175,7 @@ def compile_quality_calibration_pack(raw: object) -> CompiledQualityCalibration:
         adjudicated_at=pack.adjudicated_at,
         content_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
         boundaries=tuple(sample.boundary for sample in pack.samples),
+        sample_kinds=tuple(sample.normalized_kind for sample in pack.samples),
         samples=tuple(
             CalibrationSample(
                 sample_id=sample.sample_id,

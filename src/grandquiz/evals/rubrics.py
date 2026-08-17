@@ -75,6 +75,34 @@ _RUBRICS = {
             ),
         ),
     ),
+    "reader_fidelity": Rubric(
+        rubric_id="reader_fidelity",
+        version="reader_fidelity@v1",
+        criteria=(
+            Criterion(
+                "source_fidelity",
+                "KnowledgeItem 的每项实质陈述是否由 source 逐项支持；臆造或把练习要求"
+                "改写成事实为低分",
+            ),
+            Criterion(
+                "key_concept_coverage",
+                "候选是否覆盖该 source slice 的关键概念与定义性不变量，而非只保留次要细节",
+            ),
+            Criterion(
+                "concept_separation",
+                "概念是否原子且不与同批候选重复；重复、错误合并或无意义拆分为低分",
+            ),
+            Criterion(
+                "evidence_locality",
+                "Evidence 是否来自支持该陈述所需的全部 DocumentNode；跨节点陈述必须保留"
+                "每个必要节点",
+            ),
+            Criterion(
+                "learning_usefulness",
+                "候选是否适合作为可考核知识点；练习指令、目录、版权和样板文字等伪知识点为低分",
+            ),
+        ),
+    ),
 }
 
 

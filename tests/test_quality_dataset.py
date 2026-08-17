@@ -88,7 +88,7 @@ def test_question_quality_pack_requires_all_preregistered_boundaries_and_formats
     assert isinstance(samples, list)
     samples.pop()
 
-    with pytest.raises(QualityCalibrationPackError, match="all five boundary categories"):
+    with pytest.raises(QualityCalibrationPackError, match="registered boundary categories"):
         compile_quality_calibration_pack(incomplete)
 
 
@@ -116,3 +116,50 @@ def test_repository_question_quality_development_gold_is_frozen() -> None:
     assert compiled.content_sha256 == (
         "75255afba51b1a841b36315fdd1cadbb09c66c14727530384649f5a434c4a2cc"
     )
+
+
+def test_reader_fidelity_pack_uses_the_same_fail_closed_compiler() -> None:
+    criteria = (
+        "source_fidelity",
+        "key_concept_coverage",
+        "concept_separation",
+        "evidence_locality",
+        "learning_usefulness",
+    )
+    boundaries = (
+        "supported_item",
+        "missing_key_concept",
+        "duplicate_concept",
+        "pseudo_item",
+        "cross_node_evidence",
+    )
+    raw = {
+        "schema_version": "quality-calibration-pack.v1",
+        "pack_id": "reader-fidelity-development-gold-01",
+        "rubric_id": "reader_fidelity",
+        "evidence_class": "development_gold",
+        "label_status": "human_adjudicated",
+        "annotator": "owner",
+        "adjudicated_at": "2026-08-17",
+        "blind_to_judge_output": True,
+        "samples": [
+            {
+                "sample_id": boundary,
+                "boundary": boundary,
+                "sample_kind": "knowledge_item",
+                "question": "Review this extracted KnowledgeItem.",
+                "candidate": f"KnowledgeItem: {boundary}",
+                "reference": "AgentEvent is an event envelope.",
+                "expected_scores": {
+                    criterion_id: {"min": 3, "max": 4} for criterion_id in criteria
+                },
+            }
+            for boundary in boundaries
+        ],
+    }
+
+    compiled = compile_quality_calibration_pack(raw)
+
+    assert compiled.rubric_id == "reader_fidelity"
+    assert compiled.boundaries == boundaries
+    assert compiled.sample_kinds == ("knowledge_item",) * 5
