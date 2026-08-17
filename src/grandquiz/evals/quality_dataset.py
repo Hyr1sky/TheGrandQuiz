@@ -14,14 +14,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from grandquiz.evals.quality_contracts import CalibrationSample, ScoreRange
 from grandquiz.evals.rubrics import get_rubric
 
-_QUESTION_QUALITY_DEVELOPMENT_GOLD_PATH = (
-    Path(__file__).parent / "quality_cases" / "question_quality.yaml"
-)
+_QUALITY_CASES_DIR = Path(__file__).parent / "quality_cases"
 
 
 @dataclass(frozen=True)
 class _PackPolicy:
     rubric_id: str
+    filename: str
     boundaries: frozenset[str]
     sample_kinds: frozenset[str]
 
@@ -29,11 +28,13 @@ class _PackPolicy:
 _PACK_POLICIES = {
     "question-quality-development-gold-01": _PackPolicy(
         rubric_id="question_quality",
+        filename="question_quality.yaml",
         boundaries=frozenset({"good", "partial", "leaked", "unsupported", "misleading"}),
         sample_kinds=frozenset({"multiple_choice", "open_response"}),
     ),
     "reader-fidelity-development-gold-01": _PackPolicy(
         rubric_id="reader_fidelity",
+        filename="reader_fidelity.yaml",
         boundaries=frozenset(
             {
                 "supported_item",
@@ -47,6 +48,7 @@ _PACK_POLICIES = {
     ),
     "grounded-answer-development-gold-02": _PackPolicy(
         rubric_id="grounded_answer",
+        filename="grounded_answer_slices.yaml",
         boundaries=frozenset(
             {
                 "multi_material_scope",
@@ -190,8 +192,35 @@ def compile_quality_calibration_pack(raw: object) -> CompiledQualityCalibration:
     )
 
 
+def load_development_gold(pack_id: str) -> CompiledQualityCalibration:
+    """Load one explicitly registered owner-adjudicated development-only pack."""
+
+    policy = _PACK_POLICIES.get(pack_id)
+    if policy is None:
+        raise QualityCalibrationPackError(f"unregistered development-gold pack: {pack_id!r}")
+    path = _QUALITY_CASES_DIR / policy.filename
+    raw: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
+    compiled = compile_quality_calibration_pack(raw)
+    if compiled.pack_id != pack_id:
+        raise QualityCalibrationPackError(
+            f"development-gold path for {pack_id} contains {compiled.pack_id}"
+        )
+    return compiled
+
+
 def load_question_quality_development_gold() -> CompiledQualityCalibration:
     """Load the owner-adjudicated development-only question-quality boundary pack."""
 
-    raw: Any = yaml.safe_load(_QUESTION_QUALITY_DEVELOPMENT_GOLD_PATH.read_text(encoding="utf-8"))
-    return compile_quality_calibration_pack(raw)
+    return load_development_gold("question-quality-development-gold-01")
+
+
+def load_reader_fidelity_development_gold() -> CompiledQualityCalibration:
+    """Load the owner-adjudicated development-only Reader fidelity boundary pack."""
+
+    return load_development_gold("reader-fidelity-development-gold-01")
+
+
+def load_grounded_answer_development_gold() -> CompiledQualityCalibration:
+    """Load the owner-adjudicated development-only grounded-answer boundary pack."""
+
+    return load_development_gold("grounded-answer-development-gold-02")

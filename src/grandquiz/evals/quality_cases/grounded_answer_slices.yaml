@@ -1,0 +1,63 @@
+schema_version: quality-calibration-pack.v1
+pack_id: grounded-answer-development-gold-02
+rubric_id: grounded_answer
+evidence_class: development_gold
+label_status: human_adjudicated
+annotator: owner
+adjudicated_at: "2026-08-17"
+blind_to_judge_output: true
+samples:
+  - sample_id: multi-material-scope
+    boundary: multi_material_scope
+    sample_kind: grounded_answer
+    question: 材料 A 与材料 B 分别如何处理 observer 和 durable processor 的失败？
+    candidate: 材料 A 说明 observer 异常会被隔离；材料 B 说明 durable processor 持久化失败必须阻断当前 turn。两者适用于不同职责，不能合并成“所有失败都继续执行”。
+    reference: 材料 A：observer 异常被隔离，不能炸掉 turn。材料 B：durable processor 持久化失败必须阻断当前 turn，避免形成不可审计状态。
+    expected_scores:
+      semantic_support: {min: 4, max: 4}
+      question_coverage: {min: 4, max: 4}
+      learning_usefulness: {min: 4, max: 4}
+
+  - sample_id: justified-refusal-slice
+    boundary: justified_refusal
+    sample_kind: grounded_answer
+    question: AgentEvent 会自动加密 payload 吗？
+    candidate: 材料只说明 payload 是不透明的，没有说明会自动加密，因此无法从材料得出加密结论。
+    reference: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。
+    expected_scores:
+      semantic_support: {min: 4, max: 4}
+      question_coverage: {min: 4, max: 4}
+      learning_usefulness: {min: 4, max: 4}
+
+  - sample_id: conflicting-evidence
+    boundary: conflicting_evidence
+    sample_kind: grounded_answer
+    question: 处理器失败后是否都应该隔离错误并继续当前 turn？
+    candidate: 不能一概而论。observer 异常应隔离，但 durable processor 的持久化失败必须阻断当前 turn；两段材料描述的是不同处理器职责，并不真正冲突。
+    reference: observer 异常被隔离，不能炸掉 turn。durable processor 持久化失败必须阻断当前 turn，避免形成不可审计状态。
+    expected_scores:
+      semantic_support: {min: 4, max: 4}
+      question_coverage: {min: 4, max: 4}
+      learning_usefulness: {min: 4, max: 4}
+
+  - sample_id: bilingual-wording
+    boundary: bilingual_wording
+    sample_kind: grounded_answer
+    question: 为什么 AgentEvent 被称为“事件信封”？
+    candidate: 因为它把事件类型、元数据和不透明 payload 封装在同一个结构中，供 trace、hooks、streaming projections 与 eval replay 共同消费。
+    reference: An AgentEvent is an event envelope containing a type, metadata, and an opaque payload. Trace, hooks, streaming projections, and eval replay consume the same event stream.
+    expected_scores:
+      semantic_support: {min: 4, max: 4}
+      question_coverage: {min: 4, max: 4}
+      learning_usefulness: {min: 4, max: 4}
+
+  - sample_id: incomplete-supported
+    boundary: incomplete_supported
+    sample_kind: grounded_answer
+    question: 为什么 AgentEvent 被称为事件信封，它服务哪些消费者？
+    candidate: AgentEvent 用 type、元数据和不透明 payload 形成事件信封。
+    reference: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。
+    expected_scores:
+      semantic_support: {min: 4, max: 4}
+      question_coverage: {min: 2, max: 2}
+      learning_usefulness: {min: 2, max: 2}

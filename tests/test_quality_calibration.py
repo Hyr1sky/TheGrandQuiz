@@ -15,7 +15,9 @@ from grandquiz.evals.quality_calibration import (
 from grandquiz.evals.quality_contracts import CalibrationSample, ScoreRange
 from grandquiz.evals.quality_dataset import (
     compile_quality_calibration_pack,
+    load_grounded_answer_development_gold,
     load_question_quality_development_gold,
+    load_reader_fidelity_development_gold,
 )
 from grandquiz.evals.resources import (
     QUESTION_QUALITY_CALIBRATION_CASSETTE,
@@ -186,6 +188,47 @@ async def test_repository_question_quality_gold_runs_as_development_calibration(
         "unsupported-open",
         "misleading-mc",
     ]
+
+
+async def test_repository_reader_and_answer_gold_use_the_shared_calibration_gate() -> None:
+    calibrations = (
+        load_reader_fidelity_development_gold(),
+        load_grounded_answer_development_gold(),
+    )
+
+    for calibration in calibrations:
+        payloads: list[dict[str, object]] = []
+        for sample in calibration.samples:
+            payloads.append(
+                {
+                    "rubric_id": calibration.rubric_id,
+                    "criteria": [
+                        {
+                            "criterion_id": criterion_id,
+                            "score": score.min,
+                            "rationale": "与 owner Development Gold 边界一致。",
+                            "candidate_evidence": sample.candidate[:12],
+                            "reference_evidence": sample.reference[:12],
+                        }
+                        for criterion_id, score in sample.expected_scores.items()
+                    ],
+                    "overall_rationale": "开发期校准边界满足。",
+                }
+            )
+
+        suite = await CalibratedQualitySuite.create(
+            provider=_SequenceProvider(payloads),
+            rubric_id=calibration.rubric_id,
+            calibration=calibration,
+        )
+
+        assert suite.calibration.passed is True
+        assert suite.calibration.evidence_class == "development_gold"
+        assert suite.calibration.pack_content_sha256 == calibration.content_sha256
+        assert suite.calibration.rubric_version == f"{calibration.rubric_id}@v1"
+        assert [result.sample_id for result in suite.calibration.results] == [
+            sample.sample_id for sample in calibration.samples
+        ]
 
 
 async def test_packaged_question_quality_gold_replays_without_external_calls() -> None:

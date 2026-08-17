@@ -1,0 +1,114 @@
+schema_version: quality-calibration-pack.v1
+pack_id: reader-fidelity-development-gold-01
+rubric_id: reader_fidelity
+evidence_class: development_gold
+label_status: human_adjudicated
+annotator: owner
+adjudicated_at: "2026-08-17"
+blind_to_judge_output: true
+samples:
+  - sample_id: supported-item
+    boundary: supported_item
+    sample_kind: knowledge_item
+    question: 判断候选 KnowledgeItem 是否忠实、完整、原子且可考核。
+    candidate: |
+      concept: AgentEvent 事件信封
+      summary: AgentEvent 由 type、元数据和不透明 payload 构成，供多个运行时消费者复用。
+      evidence:
+        - node: event-envelope
+          quote: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封，Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。
+    reference: |
+      [event-envelope]
+      AgentEvent 是包含 type、元数据和不透明 payload 的事件信封，Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。
+    expected_scores:
+      source_fidelity: {min: 4, max: 4}
+      key_concept_coverage: {min: 4, max: 4}
+      concept_separation: {min: 4, max: 4}
+      evidence_locality: {min: 4, max: 4}
+      learning_usefulness: {min: 4, max: 4}
+
+  - sample_id: missing-key-concept
+    boundary: missing_key_concept
+    sample_kind: knowledge_item
+    question: 判断候选是否遗漏 source 中定义性的共享消费者关系。
+    candidate: |
+      concept: AgentEvent 事件信封
+      summary: AgentEvent 由 type、元数据和不透明 payload 构成。
+      evidence:
+        - node: event-envelope
+          quote: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。
+    reference: |
+      [event-envelope]
+      AgentEvent 是包含 type、元数据和不透明 payload 的事件信封，Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。
+    expected_scores:
+      source_fidelity: {min: 4, max: 4}
+      key_concept_coverage: {min: 2, max: 2}
+      concept_separation: {min: 4, max: 4}
+      evidence_locality: {min: 4, max: 4}
+      learning_usefulness: {min: 2, max: 2}
+
+  - sample_id: duplicate-concept
+    boundary: duplicate_concept
+    sample_kind: knowledge_item
+    question: 判断同一批候选是否把同一概念重复抽取成两个 KnowledgeItem。
+    candidate: |
+      items:
+        - concept: AgentEvent 事件信封
+          summary: AgentEvent 包含 type、元数据和不透明 payload。
+          evidence_quote: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。
+        - concept: 事件信封 AgentEvent
+          summary: AgentEvent 用 type、metadata 和 opaque payload 封装事件。
+          evidence_quote: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。
+    reference: |
+      [event-envelope]
+      AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。
+    expected_scores:
+      source_fidelity: {min: 4, max: 4}
+      key_concept_coverage: {min: 4, max: 4}
+      concept_separation: {min: 1, max: 1}
+      evidence_locality: {min: 4, max: 4}
+      learning_usefulness: {min: 2, max: 2}
+
+  - sample_id: exercise-pseudo-item
+    boundary: pseudo_item
+    sample_kind: knowledge_item
+    question: 判断练习要求是否被错误抽取为可考核的事实知识点。
+    candidate: |
+      concept: 设计 payload 加密方案
+      summary: Runtime 使用 payload 自动加密方案。
+      evidence:
+        - node: exercise
+          quote: 思考题：请为 payload 设计一种可选的加密方案。
+    reference: |
+      [exercise]
+      思考题：请为 payload 设计一种可选的加密方案。
+    expected_scores:
+      source_fidelity: {min: 1, max: 1}
+      key_concept_coverage: {min: 1, max: 1}
+      concept_separation: {min: 2, max: 2}
+      evidence_locality: {min: 4, max: 4}
+      learning_usefulness: {min: 1, max: 1}
+
+  - sample_id: cross-node-evidence
+    boundary: cross_node_evidence
+    sample_kind: knowledge_item
+    question: 判断跨节点陈述是否保留了支持结论所需的全部 Evidence。
+    candidate: |
+      concept: Durable processor 失败语义
+      summary: 错误本身进入 AgentEvent；durable processor 持久化失败时必须阻断当前 turn。
+      evidence:
+        - node: error-events
+          quote: 错误本身也是一种 AgentEvent。
+        - node: durable-processor
+          quote: Durable processor 持久化失败必须阻断当前 turn，不能继续产生不可审计状态。
+    reference: |
+      [error-events]
+      错误本身也是一种 AgentEvent。
+      [durable-processor]
+      Durable processor 持久化失败必须阻断当前 turn，不能继续产生不可审计状态。
+    expected_scores:
+      source_fidelity: {min: 4, max: 4}
+      key_concept_coverage: {min: 4, max: 4}
+      concept_separation: {min: 4, max: 4}
+      evidence_locality: {min: 4, max: 4}
+      learning_usefulness: {min: 4, max: 4}

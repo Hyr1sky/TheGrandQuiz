@@ -5,7 +5,9 @@ import pytest
 from grandquiz.evals.quality_dataset import (
     QualityCalibrationPackError,
     compile_quality_calibration_pack,
+    load_grounded_answer_development_gold,
     load_question_quality_development_gold,
+    load_reader_fidelity_development_gold,
 )
 
 _CRITERIA = (
@@ -163,3 +165,36 @@ def test_reader_fidelity_pack_uses_the_same_fail_closed_compiler() -> None:
     assert compiled.rubric_id == "reader_fidelity"
     assert compiled.boundaries == boundaries
     assert compiled.sample_kinds == ("knowledge_item",) * 5
+
+
+def test_repository_reader_and_answer_development_gold_are_frozen() -> None:
+    reader = load_reader_fidelity_development_gold()
+    answer = load_grounded_answer_development_gold()
+
+    assert reader.pack_id == "reader-fidelity-development-gold-01"
+    assert reader.rubric_id == "reader_fidelity"
+    assert reader.evidence_class == "development_gold"
+    assert reader.boundaries == (
+        "supported_item",
+        "missing_key_concept",
+        "duplicate_concept",
+        "pseudo_item",
+        "cross_node_evidence",
+    )
+    assert reader.content_sha256 == (
+        "a63f6d96f4edf3d1bb4278072a6060d5266a7992d56c3c06182a69392a102aad"
+    )
+
+    assert answer.pack_id == "grounded-answer-development-gold-02"
+    assert answer.rubric_id == "grounded_answer"
+    assert answer.evidence_class == "development_gold"
+    assert answer.boundaries == (
+        "multi_material_scope",
+        "justified_refusal",
+        "conflicting_evidence",
+        "bilingual_wording",
+        "incomplete_supported",
+    )
+    assert answer.content_sha256 == (
+        "387ec84a10e89d3f1399ea96132733c26b0315284690fc20ef5951718998e415"
+    )
