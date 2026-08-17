@@ -47,6 +47,20 @@ class _SequenceProvider:
         return Completion(text=text, usage=Usage(prompt_tokens=10, completion_tokens=5))
 
 
+class _RawProvider:
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: object = None,
+    ) -> Completion:
+        return Completion(text=self._text, usage=Usage(prompt_tokens=10, completion_tokens=5))
+
+
 class _RaisingProvider:
     async def complete(
         self,
@@ -63,6 +77,41 @@ def _emitter() -> tuple[EventEmitter, list[AgentEvent]]:
     sink = EventSink()
     sink.subscribe(events.append)
     return EventEmitter(sink, ManualClock(), trace_id="quality"), events
+
+
+async def test_single_json_fence_is_normalized_before_strict_verdict_validation() -> None:
+    payload = {
+        "rubric_id": "grounded_answer",
+        "criteria": [
+            {
+                "criterion_id": criterion_id,
+                "score": 4,
+                "rationale": "逐字证据支持。",
+                "candidate_evidence": "事件信封",
+                "reference_evidence": "事件信封",
+            }
+            for criterion_id in (
+                "semantic_support",
+                "question_coverage",
+                "learning_usefulness",
+            )
+        ],
+        "overall_rationale": "回答可采用。",
+    }
+    provider = _RawProvider(f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```")
+    emitter, _ = _emitter()
+
+    result = await QualityJudge(provider=provider, max_attempts=1).evaluate(
+        QualityRequest(
+            rubric_id="grounded_answer",
+            question="什么是事件信封？",
+            candidate="事件信封",
+            reference="事件信封",
+        ),
+        emitter=emitter,
+    )
+
+    assert result.passed is True
 
 
 async def test_fully_supported_answer_passes_with_auditable_judge_events() -> None:
@@ -132,6 +181,7 @@ async def test_fully_supported_answer_passes_with_auditable_judge_events() -> No
     assert events[-1].payload == {
         "ok": True,
         "rubric_id": "grounded_answer",
+        "rubric_version": "grounded_answer@v1",
         "criterion_count": 3,
         "passed": True,
         "usage": {"prompt_tokens": 120, "completion_tokens": 30, "total_tokens": 150},
@@ -339,6 +389,7 @@ async def test_invalid_judge_output_exhaustion_fails_closed_and_closes_span() ->
     assert events[-1].payload.keys() == {
         "ok",
         "rubric_id",
+        "rubric_version",
         "criterion_count",
         "classification",
         "error_fingerprint",
@@ -372,6 +423,7 @@ async def test_provider_failure_closes_model_and_quality_spans_then_propagates()
     assert events[-1].payload == {
         "ok": False,
         "rubric_id": "grounded_answer",
+        "rubric_version": "grounded_answer@v1",
         "criterion_count": 3,
         "classification": "provider_error",
     }

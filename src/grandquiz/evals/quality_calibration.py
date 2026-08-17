@@ -27,6 +27,7 @@ class CalibrationSampleResult(BaseModel):
 class CalibrationReport(BaseModel):
     schema_version: Literal["quality-calibration-report.v2"] = "quality-calibration-report.v2"
     rubric_id: str
+    rubric_version: str
     pack_id: str | None = None
     evidence_class: Literal["development_gold"] | None = None
     pack_content_sha256: str | None = None
@@ -124,6 +125,7 @@ async def run_calibration(
     exact_total = 0
     judge_tokens = 0
     prompt_versions: set[str] = set()
+    rubric_versions: set[str] = set()
     for sample in samples:
         evaluation = await judge.evaluate(
             QualityRequest(
@@ -135,6 +137,7 @@ async def run_calibration(
             emitter=emitter,
         )
         prompt_versions.add(evaluation.prompt_version)
+        rubric_versions.add(evaluation.rubric_version)
         judge_tokens += evaluation.usage.total_tokens
         failures: list[str] = []
         for criterion in evaluation.criteria:
@@ -165,6 +168,7 @@ async def run_calibration(
     exact_agreement = exact_agreed / exact_total if exact_total else 0.0
     return CalibrationReport(
         rubric_id=rubric_id,
+        rubric_version=next(iter(rubric_versions)),
         pack_id=calibration.pack_id if calibration is not None else None,
         evidence_class=calibration.evidence_class if calibration is not None else None,
         pack_content_sha256=(calibration.content_sha256 if calibration is not None else None),

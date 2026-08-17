@@ -3,6 +3,7 @@
 import json
 from collections import deque
 from collections.abc import Sequence
+from typing import Any, cast
 
 from grandquiz.evals.quality import QualityJudge
 from grandquiz.evals.quality_calibration import (
@@ -16,7 +17,12 @@ from grandquiz.evals.quality_dataset import (
     compile_quality_calibration_pack,
     load_question_quality_development_gold,
 )
+from grandquiz.evals.resources import (
+    QUESTION_QUALITY_CALIBRATION_CASSETTE,
+    eval_fixture_path,
+)
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.replay import Cassette, ReplayProvider
 
 
 class _FixedProvider:
@@ -135,6 +141,7 @@ async def test_owner_compiled_question_pack_can_calibrate_its_rubric() -> None:
     assert suite.calibration.judge_tokens == 300
     assert suite.calibration.schema_version == "quality-calibration-report.v2"
     assert suite.calibration.rubric_id == "question_quality"
+    assert suite.calibration.rubric_version == "question_quality@v1"
     assert suite.calibration.pack_id == calibration.pack_id
     assert suite.calibration.evidence_class == "development_gold"
     assert suite.calibration.pack_content_sha256 == calibration.content_sha256
@@ -179,6 +186,28 @@ async def test_repository_question_quality_gold_runs_as_development_calibration(
         "unsupported-open",
         "misleading-mc",
     ]
+
+
+async def test_packaged_question_quality_gold_replays_without_external_calls() -> None:
+    path = eval_fixture_path(QUESTION_QUALITY_CALIBRATION_CASSETTE)
+    raw: Any = json.loads(path.read_text(encoding="utf-8"))
+    model_for_role: dict[Role, str] = {}
+    for value in cast("dict[str, Any]", raw).values():
+        entries: list[Any] = cast("list[Any]", value) if isinstance(value, list) else [value]
+        for raw_entry in entries:
+            entry = cast("dict[str, Any]", raw_entry)
+            model_for_role[cast("Role", entry["role"])] = str(entry["model"])
+
+    suite = await CalibratedQualitySuite.create(
+        provider=ReplayProvider(Cassette.load(path), model_for_role),
+        rubric_id="question_quality",
+        calibration=load_question_quality_development_gold(),
+    )
+
+    assert suite.calibration.passed is True
+    assert suite.calibration.agreement == 1.0
+    assert suite.calibration.exact_agreement == 1.0
+    assert suite.calibration.judge_tokens == 6573
 
 
 async def test_calibration_passes_when_every_human_score_range_agrees() -> None:

@@ -12,7 +12,7 @@ from grandquiz.evals.case import Case, IngestCase, ReactCase
 EVAL_FIXTURES_DIR = Path(__file__).parent / "fixtures"
 QUALITY_EVAL_CASSETTE = "eval_quality_grounded_answer.cassette.json"
 QUESTION_QUALITY_CALIBRATION_CASSETTE = "eval_quality_question_development_gold.cassette.json"
-SUITE_EVAL_FIXTURES = frozenset({QUALITY_EVAL_CASSETTE})
+SUITE_EVAL_FIXTURES = frozenset({QUALITY_EVAL_CASSETTE, QUESTION_QUALITY_CALIBRATION_CASSETTE})
 
 
 def declared_eval_fixture_names(cases: Iterable[Case]) -> set[str]:

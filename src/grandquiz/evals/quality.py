@@ -21,6 +21,21 @@ class QualityJudgeError(ValueError):
     """有界重试耗尽后仍无法取得可审计质量判定。"""
 
 
+def _normalize_single_json_fence(text: str) -> str:
+    """Accept one whole-response JSON fence without accepting explanatory prose."""
+
+    stripped = text.strip()
+    lines = stripped.splitlines()
+    if (
+        len(lines) >= 3
+        and lines[0].strip().lower() in {"```", "```json"}
+        and lines[-1].strip() == "```"
+        and all("```" not in line for line in lines[1:-1])
+    ):
+        return "\n".join(lines[1:-1]).strip()
+    return stripped
+
+
 class QualityRequest(BaseModel):
     rubric_id: str = Field(min_length=1)
     question: str = Field(min_length=1)
@@ -44,6 +59,7 @@ class _ModelVerdict(BaseModel):
 
 class QualityEvaluation(BaseModel):
     rubric_id: str
+    rubric_version: str
     passed: bool
     criteria: list[CriterionResult]
     overall_rationale: str
@@ -91,6 +107,7 @@ class QualityJudge:
             parent_span_id=parent_span_id,
             payload={
                 "rubric_id": rubric.rubric_id,
+                "rubric_version": rubric.version,
                 "criterion_count": len(rubric.criteria),
             },
         )
@@ -131,6 +148,7 @@ class QualityJudge:
                     payload={
                         "ok": False,
                         "rubric_id": rubric.rubric_id,
+                        "rubric_version": rubric.version,
                         "criterion_count": len(rubric.criteria),
                         "classification": "provider_error",
                     },
@@ -149,7 +167,9 @@ class QualityJudge:
                 },
             )
             try:
-                candidate = _ModelVerdict.model_validate_json(completion.text)
+                candidate = _ModelVerdict.model_validate_json(
+                    _normalize_single_json_fence(completion.text)
+                )
                 verdict = self._validate_verdict(candidate, rubric, request)
                 break
             except (ValueError, KeyError) as exc:
@@ -167,6 +187,7 @@ class QualityJudge:
                 payload={
                     "ok": False,
                     "rubric_id": rubric.rubric_id,
+                    "rubric_version": rubric.version,
                     "criterion_count": len(rubric.criteria),
                     "classification": "structured_verdict_invalid",
                     "error_fingerprint": hashlib.sha256(last_error.encode()).hexdigest(),
@@ -180,6 +201,7 @@ class QualityJudge:
         )
         evaluation = QualityEvaluation(
             rubric_id=verdict.rubric_id,
+            rubric_version=rubric.version,
             passed=passed,
             criteria=verdict.criteria,
             overall_rationale=verdict.overall_rationale,
@@ -193,6 +215,7 @@ class QualityJudge:
             payload={
                 "ok": True,
                 "rubric_id": rubric.rubric_id,
+                "rubric_version": rubric.version,
                 "criterion_count": len(rubric.criteria),
                 "passed": evaluation.passed,
                 "usage": usage.model_dump(),

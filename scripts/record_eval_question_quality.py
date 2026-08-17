@@ -9,6 +9,7 @@ authorize production feedback, prompt promotion, or automatic evolution.
 """
 
 import asyncio
+from pathlib import Path
 
 from grandquiz.evals.quality_calibration import CalibratedQualitySuite
 from grandquiz.evals.quality_dataset import load_question_quality_development_gold
@@ -20,13 +21,19 @@ from grandquiz.providers.llm import OpenAICompatProvider
 from grandquiz.providers.replay import Cassette, RecordingProvider
 
 _FIXTURE = eval_fixture_target(QUESTION_QUALITY_CALIBRATION_CASSETTE)
+_CHECKPOINT = Path(".scratch/eval-guided-evolution/question-quality.recording.json")
 
 
 async def main() -> None:
     calibration = load_question_quality_development_gold()
     provider = OpenAICompatProvider.from_env()
     cassette = Cassette()
-    recording = RecordingProvider(provider, cassette, provider.model_for_role)
+    recording = RecordingProvider(
+        provider,
+        cassette,
+        provider.model_for_role,
+        checkpoint_path=_CHECKPOINT,
+    )
     try:
         suite = await CalibratedQualitySuite.create(
             provider=recording,

@@ -1,0 +1,62 @@
+{
+  "43c0baed708be74c9bc23ca84a6d3e95fe7e3c8338482214d02b347d0992b99e": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "```json\n{\n  \"rubric_id\": \"question_quality\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"evidence_support\",\n      \"score\": 4,\n      \"rationale\": \"source reference 明确给出 AgentEvent 的完整定义，足以回答题干所问。\",\n      \"candidate_evidence\": \"已知正确答案是“包含 type、元数据和不透明 payload”，请选择 AgentEvent 的定义。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"demand_alignment\",\n      \"score\": 3,\n      \"rationale\": \"题目要求选择 AgentEvent 的定义，与 source 主题相关，但题干直接给出正确答案，弱化了匹配度。\",\n      \"candidate_evidence\": \"已知正确答案是“包含 type、元数据和不透明 payload”，请选择 AgentEvent 的定义。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"answer_leakage\",\n      \"score\": 1,\n      \"rationale\": \"题干直接说出正确答案，完全泄露答案。\",\n      \"candidate_evidence\": \"已知正确答案是“包含 type、元数据和不透明 payload”\",\n      \"reference_evidence\": \"包含 type、元数据和不透明 payload\"\n    },\n    {\n      \"criterion_id\": \"response_design\",\n      \"score\": 1,\n      \"rationale\": \"答案已泄露，作答机制失去意义。\",\n      \"candidate_evidence\": \"已知正确答案是“包含 type、元数据和不透明 payload”\",\n      \"reference_evidence\": \"包含 type、元数据和不透明 payload\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 1,\n      \"rationale\": \"答案泄露使结果无诊断价值。\",\n      \"candidate_evidence\": \"已知正确答案是“包含 type、元数据和不透明 payload”\",\n      \"reference_evidence\": \"包含 type、元数据和不透明 payload\"\n    }\n  ],\n  \"overall_rationale\": \"题干直接泄露正确答案，导致作答机制和诊断价值失效，但 source 本身包含完整事实。\"\n}\n```",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 493,
+      "prompt_tokens": 823,
+      "total_tokens": 1316
+    }
+  },
+  "4d82fdeee935614049d59d9516ca53c2ccd8fbeda6da2c4e89ac930ceceb0e9f": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "{\n  \"rubric_id\": \"question_quality\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"evidence_support\",\n      \"score\": 4,\n      \"rationale\": \"source reference 明确给出 AgentEvent 的定义性事实，足以回答题干。\",\n      \"candidate_evidence\": \"AgentEvent 是什么？\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"demand_alignment\",\n      \"score\": 2,\n      \"rationale\": \"题干只问宽泛类别，未要求 source 中的定义性不变量（如信封结构、事件流消费关系），目标脱离材料学习目标。\",\n      \"candidate_evidence\": \"AgentEvent 是什么？\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"answer_leakage\",\n      \"score\": 4,\n      \"rationale\": \"题干未泄露任何答案信息。\",\n      \"candidate_evidence\": \"AgentEvent 是什么？\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"response_design\",\n      \"score\": 2,\n      \"rationale\": \"开放题 rubric 只接受上位类别，遗漏 source 中的定义性区别（信封结构、事件流消费）。\",\n      \"candidate_evidence\": \"acceptable_answer: 它是一个事件。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 2,\n      \"rationale\": \"回答只能证明知道上位类别，未检验 source 中的关键不变量，学习证据价值有限。\",\n      \"candidate_evidence\": \"acceptable_answer: 它是一个事件。\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    }\n  ],\n  \"overall_rationale\": \"该开放题题干过于宽泛，rubric 只接受上位类别，未能有效检验材料中的事件信封机制，整体质量不足。\"\n}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 502,
+      "prompt_tokens": 767,
+      "total_tokens": 1269
+    }
+  },
+  "5a2a44e2cd3d2f1a332cc2de5afd8ee75121182925c596b33c8e5a0f6509f545": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "{\n  \"rubric_id\": \"question_quality\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"evidence_support\",\n      \"score\": 1,\n      \"rationale\": \"题干询问向量数据库实现，但参考材料只描述事件信封和事件流，未提及任何向量数据库产品名或实现细节。\",\n      \"candidate_evidence\": \"这个 Runtime 使用的是哪一种向量数据库实现？\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"demand_alignment\",\n      \"score\": 2,\n      \"rationale\": \"题目要求具体产品名，但材料主题是事件流与投影，与向量数据库无关，目标概念脱离材料学习目标。\",\n      \"candidate_evidence\": \"指出向量数据库的具体产品名\",\n      \"reference_evidence\": \"Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。\"\n    },\n    {\n      \"criterion_id\": \"answer_leakage\",\n      \"score\": 4,\n      \"rationale\": \"题干未泄露任何答案信息，没有提及具体产品名。\",\n      \"candidate_evidence\": \"这个 Runtime 使用的是哪一种向量数据库实现？\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"response_design\",\n      \"score\": 1,\n      \"rationale\": \"开放题要求具体产品名，但材料不支持任何答案，作答机制不可用。\",\n      \"candidate_evidence\": \"指出向量数据库的具体产品名\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 1,\n      \"rationale\": \"由于材料不包含所问事实，回答无法产生有意义的学习证据，无诊断价值。\",\n      \"candidate_evidence\": \"这个 Runtime 使用的是哪一种向量数据库实现？\",\n      \"reference_evidence\": \"Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。\"\n    }\n  ],\n  \"overall_rationale\": \"题目询问向量数据库实现，但参考材料仅描述事件流与投影，未提供任何相关事实，导致证据支持、作答机制和学习价值均失败。\"\n}",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 527,
+      "prompt_tokens": 773,
+      "total_tokens": 1300
+    }
+  },
+  "9df3dd4f3db9568e3f2b6132c1683a588412486cd316381d904cbedbd343d827": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "```json\n{\n  \"rubric_id\": \"question_quality\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"evidence_support\",\n      \"score\": 4,\n      \"rationale\": \"source 明确说明 AgentEvent 是包含 type、元数据和不透明 payload 的事件信封，完整支持题干所问事实。\",\n      \"candidate_evidence\": \"为什么 AgentEvent 被称为事件信封？\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"demand_alignment\",\n      \"score\": 4,\n      \"rationale\": \"题目精确询问 source 中给出的定义性不变量，与材料学习目标匹配。\",\n      \"candidate_evidence\": \"为什么 AgentEvent 被称为事件信封？\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"answer_leakage\",\n      \"score\": 4,\n      \"rationale\": \"题干未提及任何选项内容，没有泄露正确答案。\",\n      \"candidate_evidence\": \"为什么 AgentEvent 被称为事件信封？\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"response_design\",\n      \"score\": 4,\n      \"rationale\": \"四个选项逐项对照 source，仅第一个选项被 source 支持，其余选项均无 source 依据，作答机制唯一可辨。\",\n      \"candidate_evidence\": \"它包含 type、元数据和不透明 payload\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 4,\n      \"rationale\": \"回答能精确区分学习者是否掌握事件信封的定义性特征，产生有诊断价值的学习证据。\",\n      \"candidate_evidence\": \"它包含 type、元数据和不透明 payload\",\n      \"reference_evidence\": \"AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。\"\n    }\n  ],\n  \"overall_rationale\": \"题目得到 source 完整支持，无泄露，选项设计唯一可辨，能有效区分学习者理解。\"\n}\n```",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 517,
+      "prompt_tokens": 823,
+      "total_tokens": 1340
+    }
+  },
+  "b746147ea4230cd990bdbf637fd437706ca5e75eadd04eaf939997c3afd68abf": {
+    "fingerprint_version": 2,
+    "model": "deepseek-v4-flash",
+    "role": "basic",
+    "text": "```json\n{\n  \"rubric_id\": \"question_quality\",\n  \"criteria\": [\n    {\n      \"criterion_id\": \"evidence_support\",\n      \"score\": 4,\n      \"rationale\": \"source 明确说明 Trace、Hook、流式投影与 Eval Replay 消费同一条事件流，足以回答题干所问的消费者问题。\",\n      \"candidate_evidence\": \"哪一个消费者使用 AgentEvent 事件流？\",\n      \"reference_evidence\": \"Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。\"\n    },\n    {\n      \"criterion_id\": \"demand_alignment\",\n      \"score\": 3,\n      \"rationale\": \"题目与 source 主题相关，但 source 支持多个消费者，题干要求单一答案，存在歧义，弱化了匹配度。\",\n      \"candidate_evidence\": \"哪一个消费者使用 AgentEvent 事件流？\",\n      \"reference_evidence\": \"Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。\"\n    },\n    {\n      \"criterion_id\": \"answer_leakage\",\n      \"score\": 4,\n      \"rationale\": \"题干未提及任何具体消费者名称，没有泄露答案。\",\n      \"candidate_evidence\": \"哪一个消费者使用 AgentEvent 事件流？\",\n      \"reference_evidence\": \"Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。\"\n    },\n    {\n      \"criterion_id\": \"response_design\",\n      \"score\": 1,\n      \"rationale\": \"source 支持 Trace、Hook、流式投影与 Eval Replay 等多个消费者，但题目只提供一个正确选项，存在多个 source 支持的选项，作答机制不可用。\",\n      \"candidate_evidence\": \"Trace\",\n      \"reference_evidence\": \"Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。\"\n    },\n    {\n      \"criterion_id\": \"learning_usefulness\",\n      \"score\": 1,\n      \"rationale\": \"source 支持多个消费者，题目却要求单一答案，导致结果无法区分理解，缺乏诊断价值。\",\n      \"candidate_evidence\": \"Trace\",\n      \"reference_evidence\": \"Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。\"\n    }\n  ],\n  \"overall_rationale\": \"source 提供了完整事实，但该事实支持多个消费者，与题目要求的单一正确选项冲突，导致作答机制不可用且学习证据无诊断价值。\"\n}\n```",
+    "tool_contract_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "usage": {
+      "completion_tokens": 557,
+      "prompt_tokens": 791,
+      "total_tokens": 1348
+    }
+  }
+}
