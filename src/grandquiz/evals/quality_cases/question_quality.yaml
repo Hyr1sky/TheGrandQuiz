@@ -1,0 +1,109 @@
+schema_version: quality-calibration-pack.v1
+pack_id: question-quality-development-gold-01
+rubric_id: question_quality
+evidence_class: development_gold
+label_status: human_adjudicated
+annotator: owner
+adjudicated_at: "2026-08-17"
+blind_to_judge_output: true
+samples:
+  - sample_id: good-mc
+    boundary: good
+    question_format: multiple_choice
+    question: 判断这道选择题是否得到材料支持、没有泄露答案且能够区分学习者理解。
+    candidate: |
+      learner_visible:
+        stem: 为什么 AgentEvent 被称为事件信封？
+        options:
+          - 它包含 type、元数据和不透明 payload
+          - 它只保存最终回答
+          - 它直接执行所有 Hook
+          - 它是一种数据库表
+      grader_only:
+        correct_option: 它包含 type、元数据和不透明 payload
+    reference: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。
+    expected_scores:
+      evidence_support: {min: 4, max: 4}
+      demand_alignment: {min: 4, max: 4}
+      answer_leakage: {min: 4, max: 4}
+      response_design: {min: 4, max: 4}
+      learning_usefulness: {min: 4, max: 4}
+
+  - sample_id: partial-open
+    boundary: partial
+    question_format: open_response
+    question: 判断这道开放题是否能有效检查材料中的事件信封机制。
+    candidate: |
+      learner_visible:
+        stem: AgentEvent 是什么？
+      grader_only:
+        acceptable_answer: 它是一个事件。
+    reference: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。
+    expected_scores:
+      evidence_support: {min: 4, max: 4}
+      demand_alignment: {min: 2, max: 2}
+      answer_leakage: {min: 4, max: 4}
+      response_design: {min: 2, max: 2}
+      learning_usefulness: {min: 2, max: 2}
+
+  - sample_id: leaked-mc
+    boundary: leaked
+    question_format: multiple_choice
+    question: 判断题干是否在作答前泄露了正确机制。
+    candidate: |
+      learner_visible:
+        stem: 已知正确答案是“包含 type、元数据和不透明 payload”，请选择 AgentEvent 的定义。
+        options:
+          - 包含 type、元数据和不透明 payload
+          - 只包含文本
+          - 只包含 Hook
+          - 只包含 Trace
+      grader_only:
+        correct_option: 包含 type、元数据和不透明 payload
+    reference: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。
+    expected_scores:
+      evidence_support: {min: 4, max: 4}
+      demand_alignment: {min: 3, max: 3}
+      answer_leakage: {min: 1, max: 1}
+      response_design: {min: 1, max: 1}
+      learning_usefulness: {min: 1, max: 1}
+
+  - sample_id: unsupported-open
+    boundary: unsupported
+    question_format: open_response
+    question: 判断材料是否足以支持这道开放题。
+    candidate: |
+      learner_visible:
+        stem: 这个 Runtime 使用的是哪一种向量数据库实现？
+      grader_only:
+        expected_points:
+          - 指出向量数据库的具体产品名
+    reference: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。
+    expected_scores:
+      evidence_support: {min: 1, max: 1}
+      demand_alignment: {min: 2, max: 2}
+      answer_leakage: {min: 4, max: 4}
+      response_design: {min: 1, max: 1}
+      learning_usefulness: {min: 1, max: 1}
+
+  - sample_id: misleading-mc
+    boundary: misleading
+    question_format: multiple_choice
+    question: 判断这道单选题是否只有一个可成立选项。
+    candidate: |
+      learner_visible:
+        stem: 哪一个消费者使用 AgentEvent 事件流？
+        options:
+          - Trace
+          - Hook
+          - 两者都不使用
+          - 只有数据库使用
+      grader_only:
+        correct_option: Trace
+    reference: AgentEvent 是包含 type、元数据和不透明 payload 的事件信封。Trace、Hook、流式投影与 Eval Replay 消费同一条事件流。
+    expected_scores:
+      evidence_support: {min: 4, max: 4}
+      demand_alignment: {min: 3, max: 3}
+      answer_leakage: {min: 4, max: 4}
+      response_design: {min: 1, max: 1}
+      learning_usefulness: {min: 1, max: 1}

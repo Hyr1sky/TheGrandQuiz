@@ -465,6 +465,47 @@ def test_only_case15_declares_a_tier_two_quality_profile() -> None:
     )
 
 
+def test_question_quality_can_only_opt_into_question_generation_surfaces() -> None:
+    with pytest.raises(ValueError, match="question_generation"):
+        parse_case(
+            {
+                "id": "wrong-question-quality-surface",
+                "kind": "react",
+                "surfaces": ["grounded_answer"],
+                "setup": {
+                    "user_messages": ["生成一道题"],
+                    "cassette": "question.cassette.json",
+                    "quality": {
+                        "rubric_id": "question_quality",
+                        "reference": "AgentEvent 是事件信封。",
+                    },
+                },
+                "expected_events": [],
+            }
+        )
+
+    case = parse_case(
+        {
+            "id": "question-quality-surface",
+            "kind": "react",
+            "surfaces": ["question_generation"],
+            "setup": {
+                "user_messages": ["生成一道题"],
+                "cassette": "question.cassette.json",
+                "quality": {
+                    "rubric_id": "question_quality",
+                    "reference": "AgentEvent 是事件信封。",
+                },
+            },
+            "expected_events": [],
+        }
+    )
+
+    assert isinstance(case, ReactCase)
+    assert case.quality is not None
+    assert case.quality.rubric_id == "question_quality"
+
+
 def _fake_case14() -> ReactCase:
     return ReactCase(
         id="case14",

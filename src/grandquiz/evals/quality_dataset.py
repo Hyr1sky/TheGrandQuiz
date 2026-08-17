@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Literal, cast
+import json
+from pathlib import Path
+from typing import Any, Literal, cast
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from grandquiz.evals.quality_contracts import CalibrationSample, ScoreRange
@@ -14,6 +17,9 @@ QuestionBoundary = Literal["good", "partial", "leaked", "unsupported", "misleadi
 QuestionFormat = Literal["multiple_choice", "open_response"]
 _QUESTION_BOUNDARIES = {"good", "partial", "leaked", "unsupported", "misleading"}
 _QUESTION_FORMATS = {"multiple_choice", "open_response"}
+_QUESTION_QUALITY_DEVELOPMENT_GOLD_PATH = (
+    Path(__file__).parent / "quality_cases" / "question_quality.yaml"
+)
 
 
 class QualityCalibrationPackError(ValueError):
@@ -98,7 +104,12 @@ def compile_quality_calibration_pack(raw: object) -> CompiledQualityCalibration:
             raise QualityCalibrationPackError(
                 f"{sample.sample_id} scores must exactly cover the rubric criteria"
             )
-    content = pack.model_dump_json(exclude_none=True)
+    content = json.dumps(
+        pack.model_dump(mode="json", exclude_none=True),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
     return CompiledQualityCalibration(
         pack_id=pack.pack_id,
         rubric_id=pack.rubric_id,
@@ -119,3 +130,10 @@ def compile_quality_calibration_pack(raw: object) -> CompiledQualityCalibration:
             for sample in pack.samples
         ),
     )
+
+
+def load_question_quality_development_gold() -> CompiledQualityCalibration:
+    """Load the owner-adjudicated development-only question-quality boundary pack."""
+
+    raw: Any = yaml.safe_load(_QUESTION_QUALITY_DEVELOPMENT_GOLD_PATH.read_text(encoding="utf-8"))
+    return compile_quality_calibration_pack(raw)

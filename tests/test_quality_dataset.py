@@ -5,6 +5,7 @@ import pytest
 from grandquiz.evals.quality_dataset import (
     QualityCalibrationPackError,
     compile_quality_calibration_pack,
+    load_question_quality_development_gold,
 )
 
 _CRITERIA = (
@@ -89,3 +90,29 @@ def test_question_quality_pack_requires_all_preregistered_boundaries_and_formats
 
     with pytest.raises(QualityCalibrationPackError, match="all five boundary categories"):
         compile_quality_calibration_pack(incomplete)
+
+
+def test_repository_question_quality_development_gold_is_frozen() -> None:
+    compiled = load_question_quality_development_gold()
+
+    assert compiled.pack_id == "question-quality-development-gold-01"
+    assert compiled.evidence_class == "development_gold"
+    assert compiled.annotator == "owner"
+    assert compiled.adjudicated_at == "2026-08-17"
+    assert compiled.boundaries == (
+        "good",
+        "partial",
+        "leaked",
+        "unsupported",
+        "misleading",
+    )
+    assert tuple(sample.sample_id for sample in compiled.samples) == (
+        "good-mc",
+        "partial-open",
+        "leaked-mc",
+        "unsupported-open",
+        "misleading-mc",
+    )
+    assert compiled.content_sha256 == (
+        "75255afba51b1a841b36315fdd1cadbb09c66c14727530384649f5a434c4a2cc"
+    )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel, Field
@@ -25,6 +25,13 @@ class CalibrationSampleResult(BaseModel):
 
 
 class CalibrationReport(BaseModel):
+    schema_version: Literal["quality-calibration-report.v2"] = "quality-calibration-report.v2"
+    rubric_id: str
+    pack_id: str | None = None
+    evidence_class: Literal["development_gold"] | None = None
+    pack_content_sha256: str | None = None
+    prompt_versions: tuple[str, ...]
+    trace_id: str
     passed: bool
     agreement: float = Field(ge=0.0, le=1.0)
     exact_agreement: float = Field(ge=0.0, le=1.0)
@@ -65,7 +72,7 @@ class CalibratedQualitySuite:
         if not samples:
             raise QualityCalibrationError(f"calibration samples must target {rubric_id}")
         judge = QualityJudge(provider=provider)
-        report = await run_calibration(samples, judge=judge)
+        report = await run_calibration(samples, judge=judge, calibration=calibration)
         if not report.passed:
             failed_ids = [result.sample_id for result in report.results if not result.passed]
             raise QualityCalibrationError(
@@ -97,8 +104,15 @@ async def run_calibration(
     samples: list[CalibrationSample],
     *,
     judge: QualityJudge,
+    calibration: CompiledQualityCalibration | None = None,
 ) -> CalibrationReport:
     """运行全部人工 sample；任何维度越出人类区间即整体不可信。"""
+    rubric_ids = {sample.rubric_id for sample in samples}
+    if len(rubric_ids) != 1:
+        raise QualityCalibrationError("calibration samples must target exactly one rubric")
+    rubric_id = next(iter(rubric_ids))
+    if calibration is not None and calibration.rubric_id != rubric_id:
+        raise QualityCalibrationError("calibration provenance does not match its samples")
     events: list[AgentEvent] = []
     sink = EventSink()
     sink.subscribe(events.append)
@@ -109,6 +123,7 @@ async def run_calibration(
     exact_agreed = 0
     exact_total = 0
     judge_tokens = 0
+    prompt_versions: set[str] = set()
     for sample in samples:
         evaluation = await judge.evaluate(
             QualityRequest(
@@ -119,6 +134,7 @@ async def run_calibration(
             ),
             emitter=emitter,
         )
+        prompt_versions.add(evaluation.prompt_version)
         judge_tokens += evaluation.usage.total_tokens
         failures: list[str] = []
         for criterion in evaluation.criteria:
@@ -148,6 +164,12 @@ async def run_calibration(
     agreement = agreed / total if total else 0.0
     exact_agreement = exact_agreed / exact_total if exact_total else 0.0
     return CalibrationReport(
+        rubric_id=rubric_id,
+        pack_id=calibration.pack_id if calibration is not None else None,
+        evidence_class=calibration.evidence_class if calibration is not None else None,
+        pack_content_sha256=(calibration.content_sha256 if calibration is not None else None),
+        prompt_versions=tuple(sorted(prompt_versions)),
+        trace_id=emitter.trace_id,
         passed=bool(results) and all(result.passed for result in results),
         agreement=agreement,
         exact_agreement=exact_agreement,

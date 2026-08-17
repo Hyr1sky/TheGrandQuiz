@@ -241,6 +241,17 @@ class _ReactEnvelope(_StrictConfig):
     setup: _ReactSetup
     expected_events: list[str]
 
+    @model_validator(mode="after")
+    def _check_quality_surface(self) -> Self:
+        quality = self.setup.quality
+        if (
+            quality is not None
+            and quality.rubric_id == "question_quality"
+            and "question_generation" not in self.surfaces
+        ):
+            raise ValueError("question_quality requires the question_generation surface")
+        return self
+
 
 _CaseEnvelope = Annotated[
     _IngestEnvelope | _AssessEnvelope | _ReactEnvelope,
