@@ -40,10 +40,9 @@ Eval 是项目的承重卖点。E0–E4 已在不改变 case、cassette、评分
 6. typed per-kind observation 已替换 `SolveResult.context`，错误 case/observation 组合在构造点失败；
 7. Search/Fetch Replay profile 归 case 所有，录制、回放与包内资产审计共用同一声明，孤立资产在 CI 失败。
 
-## 当前开发周期：Eval-guided Evolution E5–E8
+## 最近完成：Eval-guided Evolution E5–E8
 
-下一周期先把现有 Harness、Grading Benchmark、Eval Inbox 与真实纠正数据连成受控改进回路，再扩展新的
-产品基础设施：
+该周期已把 Harness、Grading Benchmark、Eval Inbox 与真实纠正数据连成受控改进回路：
 
 1. **E5 — Coverage 与 Subject Identity**：建立 Eval Surface 覆盖矩阵，并以不可变
    Eval Subject Snapshot 冻结 prompt、model/provider/thinking、tool schema 与关键策略身份；
@@ -55,7 +54,14 @@ Eval 是项目的承重卖点。E0–E4 已在不改变 case、cassette、评分
    但只有人工决策和新的未见 Release Holdout 可以晋升，所有版本保留回滚身份。
 
 本周期不交付无监督自动改 prompt、自动晋升、通用 plugin runtime 或 Provider 自动路由。完成 E5–E8 后，
-下一条产品主线默认进入 Material Channels。
+下一条产品主线默认进入 Material Channels。E8 完成表示控制契约与 bypass tests 已落地，不表示已有真实
+候选通过新 Release Holdout 并激活；第一次真实晋升仍是显式 HITL。
+
+## 当前工作焦点：Material Channels 立项
+
+下一轮先把用户有权访问、但服务端难以直接抓取的材料接入现有 Acquisition → Reader → 审批 → KB
+流水线。实现前需形成独立 PRD/ADR 与竖切 issues；Provider Profiles、Voice/TTS 和学习主页保持候选，
+不与 Channel 基座并行铺开。
 
 ## 下一阶段产品候选
 
