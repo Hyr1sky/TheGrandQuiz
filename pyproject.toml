@@ -1,7 +1,7 @@
 [project]
 name = "grandquiz"
 version = "0.5.0"
-description = "Learning-oriented digital human: an observable, recoverable, and evaluable learning Agent Runtime"
+description = "Assessment-driven local-first learning agent built on an observable Agent Runtime and eval harness"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [

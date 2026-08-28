@@ -51,8 +51,9 @@ Trace/Replay/Eval，以及桌面语音回答的“完整录音 → ASR 草稿 �
 
 ## 下一步
 
-当前开发周期先完成 Eval-guided Evolution：统一关键能力覆盖与被测系统身份，扩展经过人工校准的语义质量门，
-再建立 baseline/candidate 配对实验与人工晋升。它不会无监督修改 prompt 或生产配置。
+Eval-guided Evolution 已完成 E5–E8 的控制契约：统一关键能力覆盖与被测系统身份，建立人工校准的语义质量门、
+baseline/candidate 配对实验与人工晋升；它仍不会无监督修改 prompt 或生产配置。
 
-完成该周期后，产品候选按增益排序为：Material Channels、学习主页与学习轨迹、Provider Profiles、TTS
-面试节奏。进入条件和明确关闭项见 [roadmap](roadmap.md)。
+当前开发焦点是 Material Channels：把粘贴文本、HTML/PDF/导出文件等用户有权访问的输入规范化后，继续进入
+既有 Acquisition → Reader → 审批 → KB 流水线。之后的候选依次为学习主页与学习轨迹、Provider Profiles、
+TTS 面试节奏。进入条件和明确关闭项见 [roadmap](roadmap.md)。

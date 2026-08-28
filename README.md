@@ -10,9 +10,11 @@
 
 <p><strong>俺们老中最会的就是考</strong></p>
 
+<p><strong>Product-first learning agent. Harness-grade internals.</strong></p>
+
 <p>
-  一个考核驱动、可追溯、local-first 的个人学习 Agent。<br>
-  让材料成为知识，让薄弱点成为下一轮学习的起点。
+  一个考核驱动、可追溯、local-first 的个人学习 Agent，<br>
+  由可观测 Agent Runtime、Trace/Replay 与 Eval Harness 提供工程支撑。
 </p>
 
 <p>
@@ -24,9 +26,35 @@
 
 </div>
 
+<p align="center">
+  <img src="docs/design/assets/product-workspace-v0.5.png" alt="TheGrandQuiz Local Web：连续材料阅读、精确材料范围与对话工作台" width="960">
+</p>
+
 > **正考级不只是帮你读完材料。** 它通过有证据的对话和逐题考核，找出掌握得似是而非的
 > 地方，把薄弱概念记下来，并在下一轮优先复考。
 > 非常遗憾的灵感来源，在经历了这么多年的教育之后，最高效的记忆方法可能还是考。
+
+## 不只是另一个聊天套壳
+
+TheGrandQuiz 是一个真实学习产品，也是 Agent 工程能力的完整竖切：学习者看到的是材料入库、对话、考核、
+薄弱点记忆与语音回答；底层则用同一条事件脊柱连接执行、观测、恢复、回放和评测。
+
+| 面向学习者 | 面向 Agent 工程 |
+| --- | --- |
+| **Grounded Learning**：对话、题目、判决都能回到材料 Evidence | **Agent Runtime**：事件驱动执行、工具循环、上下文预算、审批与恢复 |
+| **Assessment Loop**：逐题暴露薄弱点，下一轮优先复考 | **Trace / Replay**：运行树、token、错误与确定性离线回放 |
+| **Reviewable Voice**：ASR 先生成可编辑草稿，不替用户直接作答 | **Eval Harness**：规则断言、语义 Judge、人工校准、配对实验与发布门 |
+| **Local-first**：学习状态、Trace 与草稿保存在本机 SQLite | **HITL by design**：材料审批、判决纠正与候选晋升都保留人工控制 |
+
+```mermaid
+flowchart LR
+    UI["CLI / Local Web"] --> DOMAIN["Learning domain<br/>第一个完整产品竖切"]
+    DOMAIN --> RUNTIME["Agent Runtime<br/>Runner · Tools · Context · Recovery"]
+    DOMAIN --> PROVIDERS["Provider adapters<br/>LLM · Replay · Speech"]
+    RUNTIME --> EVENTS["AgentEvent spine"]
+    EVENTS --> SURFACES["Trace · SSE · Hooks · Replay"]
+    SURFACES --> EVALS["Eval Harness<br/>Rules · Judge · Release Gate"]
+```
 
 ## 一条真正闭合的学习回路
 
@@ -41,8 +69,9 @@ flowchart LR
     G --> C
 ```
 
-TheGrandQuiz 同时包含一套可观测、可恢复、可评测的 Agent Runtime。Runtime 是产品的工程内核，
-不是对外承诺稳定 API 的通用框架。
+Runtime 原语可以在源码内复用于新的领域竖切，但当前还不是可运行时安装的插件系统，也不承诺稳定的第三方
+Plugin API。`domain.learning` 是第一个经过真实产品、Trace 与 Eval 共同验证的领域实现；只有出现第二个真实
+领域消费者后，项目才会从共同变化中提炼公开扩展契约。
 
 ## v0.5.0 能做什么
 
@@ -227,6 +256,9 @@ CI 在每次 push / PR 上运行 Python、Eval、Web、OpenAPI 和 Playwright �
 PR 要求见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 架构与项目资料
+
+代码按 `kernel / providers / domain / interfaces / evals` 分层。`kernel` 不依赖学习领域；产品入口和 Eval
+仍显式组合 `domain.learning`，避免在没有第二个消费者前提前设计一套名义上的通用插件框架。
 
 | 文档 | 内容 |
 | --- | --- |

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1280, initial-scale=1">
+    <title>正考级 · TheGrandQuiz Social Preview</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { width: 1280px; height: 640px; margin: 0; overflow: hidden; }
+      body {
+        color: #172536;
+        background:
+          radial-gradient(circle at 7% 14%, rgba(34, 154, 193, 0.18) 0 2px, transparent 3px),
+          radial-gradient(circle at 45% 85%, rgba(173, 120, 41, 0.18) 0 2px, transparent 3px),
+          linear-gradient(135deg, #fbf6ea 0%, #f3ead8 54%, #e9dbc3 100%);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+      .frame {
+        position: relative;
+        display: grid;
+        grid-template-columns: 500px 1fr;
+        gap: 32px;
+        width: 100%;
+        height: 100%;
+        padding: 58px 0 52px 68px;
+      }
+      .frame::before {
+        content: "";
+        position: absolute;
+        inset: 24px;
+        border: 1px solid rgba(129, 91, 35, 0.25);
+        border-radius: 28px;
+        pointer-events: none;
+      }
+      .copy { position: relative; z-index: 2; display: flex; flex-direction: column; }
+      .eyebrow {
+        margin-bottom: 25px;
+        color: #946024;
+        font-size: 16px;
+        font-weight: 750;
+        letter-spacing: 0.19em;
+      }
+      .logo { width: 268px; height: auto; margin: -14px 0 12px -8px; }
+      h1 {
+        max-width: 475px;
+        margin: 0;
+        font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+        font-size: 45px;
+        font-weight: 600;
+        line-height: 1.12;
+        letter-spacing: -0.035em;
+      }
+      .lede {
+        max-width: 440px;
+        margin: 20px 0 24px;
+        color: #53606c;
+        font-size: 20px;
+        line-height: 1.48;
+      }
+      .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+      .chip {
+        padding: 8px 13px;
+        border: 1px solid rgba(80, 101, 111, 0.27);
+        border-radius: 999px;
+        background: rgba(255, 252, 244, 0.7);
+        color: #285d6f;
+        font-size: 14px;
+        font-weight: 700;
+      }
+      .repo { margin-top: auto; color: #7b6c57; font-size: 14px; letter-spacing: 0.03em; }
+      .visual {
+        position: relative;
+        z-index: 2;
+        align-self: center;
+        width: 680px;
+        height: 470px;
+        overflow: hidden;
+        border: 1px solid rgba(114, 84, 44, 0.34);
+        border-radius: 22px 0 0 22px;
+        background: #f7f0e3;
+        box-shadow: 0 30px 70px rgba(55, 43, 27, 0.22);
+      }
+      .visual img { width: 836px; height: 470px; object-fit: cover; object-position: left center; }
+      .badge {
+        position: absolute;
+        right: 20px;
+        bottom: 34px;
+        z-index: 3;
+        padding: 11px 16px;
+        border: 1px solid rgba(255, 255, 255, 0.58);
+        border-radius: 12px;
+        color: #fff8ea;
+        background: rgba(20, 38, 50, 0.86);
+        box-shadow: 0 10px 28px rgba(12, 26, 36, 0.22);
+        font-size: 14px;
+        font-weight: 700;
+        backdrop-filter: blur(12px);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="frame">
+      <section class="copy">
+        <div class="eyebrow">THEGRANDQUIZ · LOCAL-FIRST</div>
+        <img class="logo" src="zhengkaoji-logo-primary-light.png" alt="正考级">
+        <h1>Product-first learning agent.<br>Harness-grade internals.</h1>
+        <p class="lede">让材料成为知识，让薄弱点成为下一轮学习的起点。</p>
+        <div class="chips">
+          <span class="chip">Agent Runtime</span>
+          <span class="chip">Eval Harness</span>
+          <span class="chip">Trace / Replay</span>
+          <span class="chip">HITL</span>
+        </div>
+        <div class="repo">github.com/Hyr1sky/TheGrandQuiz</div>
+      </section>
+      <section class="visual">
+        <img src="../../design/assets/product-workspace-v0.5.png" alt="TheGrandQuiz product workspace">
+        <div class="badge">Grounded · Observable · Recoverable</div>
+      </section>
+    </main>
+  </body>
+</html>
