@@ -199,14 +199,21 @@ test("reviews blind labels before creating a dataset snapshot", async ({ page })
   ).toContainText("1 条 · 发布门 1");
 });
 
-test("blocks Markdown network images and contains truly wide content", async ({
+test("loads Markdown images only after consent and contains truly wide content", async ({
   page,
 }, testInfo) => {
   const remoteRequests: string[] = [];
-  page.on("request", (request) => {
-    if (request.url().includes("attacker.invalid")) {
-      remoteRequests.push(request.url());
-    }
+  const remoteReferrers: Array<string | undefined> = [];
+  await page.route(/https:\/\/attacker\.invalid\/should-not-load\.png.*/, async (route) => {
+    const request = route.request();
+    remoteRequests.push(request.url());
+    remoteReferrers.push(request.headers().referer);
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml",
+      headers: { "cache-control": "no-store" },
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="400"><rect width="1600" height="400" fill="#d8c7a5"/></svg>',
+    });
   });
 
   await page.goto("/");
@@ -221,8 +228,22 @@ test("blocks Markdown network images and contains truly wide content", async ({
   }
 
   await expect(page.getByRole("note")).toContainText("不可信远程图片");
+  const remoteImageUrl = await page.getByRole("note").locator("code").innerText();
   await expect(page.getByRole("img")).toHaveCount(0);
   expect(remoteRequests).toEqual([]);
+
+  await page
+    .getByRole("button", { name: "加载图片：不可信远程图片" })
+    .click();
+  const materialImage = page.getByRole("img", { name: "不可信远程图片" });
+  await expect(materialImage).toBeVisible();
+  await expect.poll(() => remoteRequests).toEqual([remoteImageUrl]);
+  expect(remoteReferrers).toEqual([undefined]);
+  expect(
+    await materialImage.evaluate(
+      (element) => element.getBoundingClientRect().width <= element.parentElement!.getBoundingClientRect().width,
+    ),
+  ).toBe(true);
 
   const table = page.getByRole("table");
   const code = page.locator(".reading-markdown pre");
@@ -238,6 +259,9 @@ test("blocks Markdown network images and contains truly wide content", async ({
     const viewportWidth = document.documentElement.clientWidth;
     return Array.from(document.querySelectorAll<HTMLElement>("body *"))
       .filter((element) => {
+        if (element.closest(".star-map-backdrop") !== null) {
+          return false;
+        }
         const scrollOwner = element.closest(
           ".reading-markdown table, .reading-markdown pre",
         );

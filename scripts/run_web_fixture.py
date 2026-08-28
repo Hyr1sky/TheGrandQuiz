@@ -33,7 +33,9 @@ from grandquiz.providers.base import (
 )
 from grandquiz.providers.speech import TranscriptionRequest, TranscriptionResult
 
-CONTENT = """\
+REMOTE_IMAGE_URL = f"https://attacker.invalid/should-not-load.png?fixture_process={os.getpid()}"
+
+CONTENT = f"""\
 # Runtime
 
 Runtime 负责管理智能体的执行循环与状态机转移。它通过事件总线接收输入、派发处理器，
@@ -49,7 +51,7 @@ Runtime 负责管理智能体的执行循环与状态机转移。它通过事件
 durable processor 订阅事件并执行有状态逻辑。失败后继续当前 turn 会让后续副作用依赖不完整状态，
 破坏事件历史的因果一致性与可重放性，因此必须阻断当前 turn 并触发恢复流程。
 
-![不可信远程图片](https://attacker.invalid/should-not-load.png)
+![不可信远程图片]({REMOTE_IMAGE_URL})
 
 ```text
 receive_event -> persist_trace -> notify_observers -> checkpoint_state -> resume_from_sequence

@@ -48,5 +48,6 @@ TheGrandQuiz 是 local-first、单用户软件。当前版本没有账号、鉴�
 
 ### Rendered content
 
-动态 Markdown 统一经过安全 renderer；远程图片默认不会自动加载。发现浏览器在未确认时请求材料中的
-远程 URL、执行脚本或突破内容 containment，请按安全漏洞报告。
+动态 Markdown 统一经过安全 renderer；远程图片默认不会自动加载。材料阅读区只有在用户逐图点击确认后，
+才允许 `http(s)` 图片以 `no-referrer` 方式加载；Chat 等其他 Markdown 投影继续保持硬拦截。发现浏览器在
+未确认时请求材料中的远程 URL、执行脚本或突破内容 containment，请按安全漏洞报告。

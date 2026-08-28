@@ -29,6 +29,11 @@ const safeComponents = {
 `App`、旧 `ArticleWorkspace` 和 Chat 都复用这个模块。安全策略与 GFM 配置因此只有一份，
 以后不会出现“文章页修了，Chat 仍然会加载”的漂移。
 
+2026-08-26 的体验补丁没有回退这条边界，而是把此前遗漏的“显式加载”补齐：材料阅读区的占位会提供
+逐图加载按钮，只有用户点击后才创建限制为 `http(s)`、`no-referrer`、lazy loading 的 `<img>`；加载失败
+回到可重试状态。Chat 继续使用默认硬拦截。Playwright 同时锁定“点击前零请求、点击后恰好一次请求、宽图
+不撑破正文”，因此正常材料图片可读，但不可信 Markdown 仍不能在渲染时自动产生浏览器副作用。
+
 ## 2. Assessment trace 如何真正结束
 
 原来 HTTP 会话的内存状态会变成 `completed`，但事件脊柱不知道这一点。Observatory 只能看到

@@ -51,7 +51,13 @@ export function ContinuousDocument({
   }, [onActiveNodeChange, sections]);
 
   if (sections.length === 0) {
-    return <SafeMarkdown className="reading-markdown" content={content} />;
+    return (
+      <SafeMarkdown
+        className="reading-markdown"
+        content={content}
+        imagePolicy="explicit"
+      />
+    );
   }
 
   const preamble = content.slice(0, sections[0]?.node.start_offset ?? 0);
@@ -61,6 +67,7 @@ export function ContinuousDocument({
         <SafeMarkdown
           className="reading-markdown"
           content={preamble}
+          imagePolicy="explicit"
           stripDocumentPreamble
         />
       ) : null}
@@ -75,6 +82,7 @@ export function ContinuousDocument({
           <SafeMarkdown
             className="reading-markdown"
             content={section.content}
+            imagePolicy="explicit"
             stripLeadingHeading={index === 0}
           />
         </section>
