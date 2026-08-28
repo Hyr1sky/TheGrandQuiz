@@ -33,6 +33,7 @@ import {
   type VoiceRunView,
 } from "./api";
 import { VoiceAnswerControl } from "./VoiceAnswerControl";
+import { ActivityIndicator } from "../../shared/components/ActivityIndicator";
 import "./assessment-panel.css";
 
 interface AssessmentPanelProps {
@@ -423,9 +424,12 @@ export const AssessmentPanel = forwardRef<
           </button>
         </header>
         {busy ? (
-          <p className="assessment-panel__status" role="status">
-            正在从材料与薄弱状态生成第一题...
-          </p>
+          <ActivityIndicator
+            className="assessment-panel__status"
+            label="正在生成第 1 题"
+            detail="结合当前材料、薄弱状态与题型计划选择考点。"
+            variant="block"
+          />
         ) : null}
         {error !== null ? (
           <p className="assessment-panel__error" role="alert">
@@ -631,16 +635,25 @@ export const AssessmentPanel = forwardRef<
               type="submit"
               disabled={answer.trim() === "" || busy}
             >
-              提交答案
-              <ArrowRightIcon aria-hidden size={19} />
+              {busy ? (
+                <ActivityIndicator label="正在提交答案..." />
+              ) : (
+                <>
+                  提交答案
+                  <ArrowRightIcon aria-hidden size={19} />
+                </>
+              )}
             </button>
           ) : null}
         </form>
 
         {assessment.status === "grading" ? (
-          <p className="assessment-panel__status" role="status">
-            正在依据原文判卷并更新薄弱状态...
-          </p>
+          <ActivityIndicator
+            className="assessment-panel__status"
+            label="正在判卷"
+            detail="核对回答与原文证据；判决完成后才会更新薄弱状态。"
+            variant="block"
+          />
         ) : null}
 
         {judged && assessment.judgement ? (
@@ -690,55 +703,51 @@ export const AssessmentPanel = forwardRef<
                 <p>{assessment.judgement.correct_answer}</p>
               </details>
             ) : null}
-            {assessment.appeal?.status === "available" ? (
-              appealOpen ? (
-                <form
-                  className="assessment-panel__appeal"
-                  onSubmit={submitSupplement}
-                >
-                  <label>
-                    <span>补充说明</span>
-                    <textarea
-                      aria-label="补充说明"
-                      value={supplementalAnswer}
-                      disabled={busy}
-                      onChange={(event) =>
-                        setSupplementalAnswer(event.target.value)
-                      }
-                      placeholder="只补充你认为原判遗漏的表达；原回答会完整保留。"
-                    />
-                  </label>
-                  <div>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setAppealOpen(false)}
-                    >
-                      取消
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={busy || supplementalAnswer.trim() === ""}
-                    >
-                      提交补充并重判
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setAppealOpen(true)}
-                >
-                  <ChatCircleDotsIcon aria-hidden size={19} />
-                  补充说明 / 判卷有异议
-                </button>
-              )
+            {assessment.appeal?.status === "available" && appealOpen ? (
+              <form
+                className="assessment-panel__appeal"
+                onSubmit={submitSupplement}
+              >
+                <label>
+                  <span>补充说明</span>
+                  <textarea
+                    aria-label="补充说明"
+                    value={supplementalAnswer}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setSupplementalAnswer(event.target.value)
+                    }
+                    placeholder="只补充你认为原判遗漏的表达；原回答会完整保留。"
+                  />
+                </label>
+                <div>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setAppealOpen(false)}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={busy || supplementalAnswer.trim() === ""}
+                  >
+                    {busy ? (
+                      <ActivityIndicator label="正在提交补充..." />
+                    ) : (
+                      "提交补充并重判"
+                    )}
+                  </button>
+                </div>
+              </form>
             ) : null}
             {assessment.appeal?.status === "grading" ? (
-              <p className="assessment-panel__appeal-status" role="status">
-                正在结合原回答与补充说明重新判卷...
-              </p>
+              <ActivityIndicator
+                className="assessment-panel__appeal-status"
+                label="正在重新判卷"
+                detail="原回答保持不变，正在结合补充说明复核。"
+                tone="brass"
+              />
             ) : null}
             {assessment.appeal?.status === "resolved" ? (
               <p className="assessment-panel__appeal-result">
@@ -765,16 +774,44 @@ export const AssessmentPanel = forwardRef<
                 补充说明重判已取消
               </p>
             ) : null}
-            {assessment.status === "judged" ? (
-              <button
-                type="button"
-                disabled={busy || assessment.appeal?.status === "grading"}
-                onClick={() => void advance()}
-              >
-                下一题
-                <ArrowRightIcon aria-hidden size={19} />
-              </button>
-            ) : assessment.appeal?.status !== "grading" ? (
+            {(assessment.appeal?.status === "available" && !appealOpen) ||
+            assessment.status === "judged" ? (
+              <div className="assessment-panel__actions">
+                {assessment.appeal?.status === "available" && !appealOpen ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setAppealOpen(true)}
+                  >
+                    <ChatCircleDotsIcon aria-hidden size={19} />
+                    补充说明 / 判卷有异议
+                  </button>
+                ) : null}
+                {assessment.status === "judged" ? (
+                  <button
+                    type="button"
+                    disabled={busy || assessment.appeal?.status === "grading"}
+                    onClick={() => void advance()}
+                  >
+                    {busy ? (
+                      <ActivityIndicator
+                        label={`正在生成第 ${Math.min(
+                          assessment.round_index + 1,
+                          assessment.rounds,
+                        )} 题...`}
+                      />
+                    ) : (
+                      <>
+                        下一题
+                        <ArrowRightIcon aria-hidden size={19} />
+                      </>
+                    )}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {assessment.status !== "judged" &&
+            assessment.appeal?.status !== "grading" ? (
               <div className="assessment-panel__complete">
                 <p className="assessment-panel__done">
                   <CheckCircleIcon aria-hidden size={20} />
@@ -816,9 +853,12 @@ export const AssessmentPanel = forwardRef<
           结束考核
         </button>
       </header>
-      <p className="assessment-panel__status" role="status">
-        正在从材料与薄弱状态生成第一题...
-      </p>
+      <ActivityIndicator
+        className="assessment-panel__status"
+        label={`正在生成第 ${assessment.round_index} 题`}
+        detail="结合当前材料、薄弱状态与题型计划选择考点。"
+        variant="block"
+      />
     </section>
   );
 });

@@ -1,6 +1,7 @@
 import { XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { useDismissibleLayer } from "../../shared/hooks/useDismissibleLayer";
+import { ActivityIndicator } from "../../shared/components/ActivityIndicator";
 import {
   getTraceSnapshot,
   type TraceSnapshot,
@@ -151,15 +152,22 @@ export function ObservatoryDrawer({
       </header>
 
       {traceId === null ? (
-        <p className="observatory-drawer__empty">
-          正在等待运行会话建立。
-        </p>
+        <ActivityIndicator
+          className="observatory-drawer__empty"
+          label="正在等待运行会话建立。"
+          tone="brass"
+        />
       ) : currentError !== null ? (
         <p className="observatory-drawer__error" role="alert">
           {currentError}
         </p>
       ) : currentSnapshot === null ? (
-        <p className="observatory-drawer__empty">正在读取事件脊柱...</p>
+        <ActivityIndicator
+          className="observatory-drawer__empty"
+          label="正在读取事件脊柱..."
+          detail="运行过程会从同一条事件流持续更新。"
+          tone="brass"
+        />
       ) : (
         <>
           <section

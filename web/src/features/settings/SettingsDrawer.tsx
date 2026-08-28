@@ -9,6 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "../../app/ThemeProvider";
+import { ActivityIndicator } from "../../shared/components/ActivityIndicator";
 import { getSettings, updateSettings, type SettingsPatch, type SettingsView } from "./api";
 import "./settings-drawer.css";
 
@@ -114,9 +115,17 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
 
         <div className="settings-drawer__body">
           {settings !== null ? (
-            <span className="settings-save-state" role="status">
-              {busy ? "正在保存设置…" : "设置已保存"}
-            </span>
+            busy ? (
+              <ActivityIndicator
+                className="settings-save-state"
+                label="正在保存设置…"
+                tone="brass"
+              />
+            ) : (
+              <span className="settings-save-state" role="status">
+                设置已保存
+              </span>
+            )
           ) : null}
           {error !== null ? (
             <p className="settings-error" role="alert">
@@ -124,7 +133,13 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
               {error}
             </p>
           ) : settings === null ? (
-            <p className="settings-empty">正在读取本地设置...</p>
+            <ActivityIndicator
+              className="settings-empty"
+              label="正在读取本地设置..."
+              detail="密钥原文不会进入浏览器。"
+              variant="block"
+              tone="brass"
+            />
           ) : (
             <>
               <section className="settings-section" aria-labelledby="settings-preferences">

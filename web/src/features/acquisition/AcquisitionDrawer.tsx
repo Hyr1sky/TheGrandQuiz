@@ -1,7 +1,6 @@
 import {
   ArrowClockwiseIcon,
   CheckCircleIcon,
-  CircleNotchIcon,
   FileTextIcon,
   LinkIcon,
   MagnifyingGlassIcon,
@@ -32,6 +31,7 @@ import {
   type AcquisitionView,
   type MaterialDiscoveryBatch,
 } from "./api";
+import { ActivityIndicator } from "../../shared/components/ActivityIndicator";
 import { streamAcquisitionEvents } from "./acquisitionEvents";
 import "./acquisition-drawer.css";
 
@@ -450,8 +450,14 @@ export function AcquisitionDrawer({
                     disabled={busy || discoveryTopic.trim() === ""}
                     onClick={() => void search()}
                   >
-                    <MagnifyingGlassIcon aria-hidden size={18} />
-                    搜索候选
+                    {busy ? (
+                      <ActivityIndicator label="正在搜索候选..." />
+                    ) : (
+                      <>
+                        <MagnifyingGlassIcon aria-hidden size={18} />
+                        搜索候选
+                      </>
+                    )}
                   </button>
                   {discovery !== null ? (
                     <div className="discovery-candidates">
@@ -542,11 +548,13 @@ export function AcquisitionDrawer({
                 onClick={() => void start()}
               >
                 {busy ? (
-                  <CircleNotchIcon className="is-spinning" aria-hidden size={18} />
+                  <ActivityIndicator label="正在创建导入..." />
                 ) : (
-                  <UploadSimpleIcon aria-hidden size={18} />
+                  <>
+                    <UploadSimpleIcon aria-hidden size={18} />
+                    开始解析
+                  </>
                 )}
-                开始解析
               </button> : null}
 
               {recent.length > 0 ? (
@@ -631,15 +639,12 @@ export function AcquisitionDrawer({
               </ol>
 
               {ACTIVE_STATUSES.has(run.status) ? (
-                <div className="acquisition-processing">
-                  <CircleNotchIcon className="is-spinning" aria-hidden size={28} />
-                  <div>
-                    <strong>Reader 正在整理材料结构</strong>
-                    <p>
-                      抽取候选知识点与精确证据。此时不会污染正式知识库。
-                    </p>
-                  </div>
-                </div>
+                <ActivityIndicator
+                  className="acquisition-processing"
+                  label="Reader 正在整理材料结构"
+                  detail="抽取候选知识点与精确证据；此时不会污染正式知识库。"
+                  variant="block"
+                />
               ) : null}
 
               {run.status === "needs_input" ? (
@@ -762,15 +767,13 @@ export function AcquisitionDrawer({
                       onClick={() => void approve()}
                     >
                       {busy ? (
-                        <CircleNotchIcon
-                          className="is-spinning"
-                          aria-hidden
-                          size={18}
-                        />
+                        <ActivityIndicator label="正在写入星图..." />
                       ) : (
-                        <CheckCircleIcon aria-hidden size={18} />
+                        <>
+                          <CheckCircleIcon aria-hidden size={18} />
+                          批准 {selectedCount} 个知识点
+                        </>
                       )}
-                      批准 {selectedCount} 个知识点
                     </button>
                   </>
                 ) : ACTIVE_STATUSES.has(run.status) ? (

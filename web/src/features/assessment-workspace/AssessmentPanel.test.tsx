@@ -330,6 +330,73 @@ describe("AssessmentPanel", () => {
     expect(screen.getByText("方向正确，但遗漏了连接建立成本。")).toBeInTheDocument();
   });
 
+  it("groups judgement actions and shows the dynamic next-round number", async () => {
+    const judgedAssessment = {
+      ...readyAssessment,
+      status: "judged",
+      judgement: {
+        verdict: "对",
+        reason: "回答正确。",
+        diagnosis: "complete",
+        matched_points: [],
+        missing_points: [],
+        concept_state: null,
+        correct_answer: null,
+      },
+      appeal: {
+        status: "available",
+        supplemental_answer: null,
+        original_verdict: "对",
+        final_verdict: null,
+        reason: null,
+      },
+    };
+    const preparingSecondRound = {
+      ...judgedAssessment,
+      status: "preparing",
+      round_index: 2,
+      question: null,
+      judgement: null,
+      appeal: null,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request = input instanceof Request ? input : new Request(String(input));
+        if (
+          request.method === "POST" &&
+          request.url.endsWith("/api/v1/assessments")
+        ) {
+          return Response.json(judgedAssessment, { status: 201 });
+        }
+        if (request.method === "POST" && request.url.endsWith("/next")) {
+          return Response.json(preparingSecondRound, { status: 202 });
+        }
+        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+      }),
+    );
+
+    render(
+      <AssessmentPanel
+        resourceId="resource-1"
+        questionTypePlan={["选择题", "选择题"]}
+        onClose={() => undefined}
+      />,
+    );
+
+    const appealButton = await screen.findByRole("button", {
+      name: "补充说明 / 判卷有异议",
+    });
+    const nextButton = screen.getByRole("button", { name: "下一题" });
+    expect(appealButton.parentElement).toBe(nextButton.parentElement);
+    expect(appealButton.parentElement).toHaveClass("assessment-panel__actions");
+
+    fireEvent.click(nextButton);
+
+    expect(await screen.findByText("正在生成第 2 题")).toBeInTheDocument();
+    expect(screen.queryByText("正在生成第 1 题")).not.toBeInTheDocument();
+  });
+
   it("submits one supplemental explanation and renders the revised judgement", async () => {
     const judgedAssessment = {
       ...readyAssessment,

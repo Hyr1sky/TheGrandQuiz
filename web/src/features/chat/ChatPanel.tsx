@@ -8,6 +8,8 @@ import {
   StopIcon,
 } from "@phosphor-icons/react";
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -24,7 +26,7 @@ import {
   type ChatStatusView,
   type ChatUiEvent,
 } from "../../shared/api/chat";
-import { SafeMarkdown } from "../../shared/components/SafeMarkdown";
+import { ActivityIndicator } from "../../shared/components/ActivityIndicator";
 import { useDismissibleLayer } from "../../shared/hooks/useDismissibleLayer";
 import { streamChatEvents } from "./chatEvents";
 import "./chat-panel.css";
@@ -79,6 +81,11 @@ const EXAMPLE_PROMPTS = [
   "考我 3 道简答题",
   "怎样查看本次运行过程？",
 ];
+
+const SafeMarkdown = lazy(async () => {
+  const module = await import("../../shared/components/SafeMarkdown");
+  return { default: module.SafeMarkdown };
+});
 
 function toolCallLabel(name: string): string {
   return TOOL_LABELS[name] ?? `正在调用 ${name}...`;
@@ -474,7 +481,9 @@ export function ChatPanel({
               {message.kind === "runtime-status" && message.status ? (
                 <RuntimeStatusCard status={message.status} />
               ) : message.role === "agent" ? (
-                <SafeMarkdown content={content} />
+                <Suspense fallback={<div>{content}</div>}>
+                  <SafeMarkdown content={content} />
+                </Suspense>
               ) : (
                 <div>{content}</div>
               )}
@@ -482,14 +491,17 @@ export function ChatPanel({
           );
         })}
         {toolCall !== null ? (
-          <div className="chat-tool-call" role="status">
-            {toolCall.label}
-          </div>
+          <ActivityIndicator
+            className="chat-tool-call"
+            label={toolCall.label}
+            tone="brass"
+          />
         ) : null}
         {loading && toolCall === null ? (
-          <div className="chat-loading" role="status">
-            Agent 正在思考...
-          </div>
+          <ActivityIndicator
+            className="chat-loading"
+            label="Agent 正在思考..."
+          />
         ) : null}
         {error !== null ? (
           <div className="chat-error" role="alert">
@@ -497,9 +509,12 @@ export function ChatPanel({
           </div>
         ) : null}
         {connection === "disconnected" && loading ? (
-          <div className="chat-error" role="status">
-            实时连接已中断，正在重新连接...
-          </div>
+          <ActivityIndicator
+            className="chat-reconnecting"
+            label="实时连接已中断，正在重新连接..."
+            detail="已收到的内容会保留，并从上一个事件继续。"
+            tone="brass"
+          />
         ) : null}
         <div ref={messagesEndRef} />
       </div>

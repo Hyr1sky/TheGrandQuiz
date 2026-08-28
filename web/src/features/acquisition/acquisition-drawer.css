@@ -552,7 +552,6 @@
   color: var(--evidence);
 }
 
-.acquisition-processing,
 .acquisition-result {
   display: flex;
   align-items: flex-start;
@@ -563,18 +562,11 @@
   background: var(--surface-quiet);
 }
 
-.acquisition-processing > svg {
-  flex: 0 0 auto;
-  color: var(--evidence);
-}
-
-.acquisition-processing strong,
 .acquisition-result strong {
   color: var(--text-strong);
   font-size: 14px;
 }
 
-.acquisition-processing p,
 .acquisition-result p {
   margin: 6px 0 0;
   color: var(--muted);
@@ -688,16 +680,6 @@
   border-top: 1px solid var(--line);
 }
 
-.is-spinning {
-  animation: acquisition-spin 900ms linear infinite;
-}
-
-@keyframes acquisition-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @media (max-width: 680px) {
   .acquisition-drawer {
     width: 100vw;
@@ -719,7 +701,4 @@
     animation: none;
   }
 
-  .is-spinning {
-    animation-duration: 1.8s;
-  }
 }

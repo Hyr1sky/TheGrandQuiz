@@ -305,10 +305,10 @@
 /* ---- Status / Error ---- */
 
 .assessment-panel__status {
-  margin: 24px 0;
+  margin: 28px auto;
+  padding: 18px 20px;
   color: var(--evidence);
   text-align: center;
-  font: 400 14px/1.6 var(--font-interface);
 }
 
 .assessment-panel__error {
@@ -386,6 +386,18 @@
   background: var(--surface);
   box-shadow: var(--shadow-raised);
   color: var(--text-strong);
+}
+
+.assessment-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.assessment-panel__actions > button {
+  min-height: 44px;
 }
 
 .assessment-panel__appeal {

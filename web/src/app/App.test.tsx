@@ -346,6 +346,13 @@ describe("Sidebar context switching", () => {
     expect(screen.getByRole("note")).toHaveTextContent(
       "https://example.com/wide-diagram.png",
     );
+    await user.click(
+      screen.getByRole("button", { name: "加载图片：超宽流程图" }),
+    );
+    expect(screen.getByRole("img", { name: "超宽流程图" })).toHaveAttribute(
+      "src",
+      "https://example.com/wide-diagram.png",
+    );
     const table = screen.getByRole("table");
     const codeBlock = screen.getByText(longFlow).closest("pre");
     expect(getComputedStyle(table).display).toBe("block");
@@ -483,6 +490,18 @@ describe("Sidebar context switching", () => {
       expect(
         screen.getByRole("navigation", { name: "考核进度" }),
       ).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([input]) => {
+          const request =
+            input instanceof Request ? input : new Request(String(input));
+          return (
+            request.method === "POST" &&
+            request.url.endsWith("/api/v1/assessments")
+          );
+        }),
+      ).toBe(true);
     });
 
     // A later Chat navigation must close the active backend run before

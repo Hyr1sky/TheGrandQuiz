@@ -10,16 +10,23 @@ import {
   QuestionIcon,
   SidebarSimpleIcon,
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { ChatPanel, type NavigationEvent } from "../features/chat/ChatPanel";
 import { AcquisitionDrawer } from "../features/acquisition/AcquisitionDrawer";
 import { ObservatoryDrawer } from "../features/observability/ObservatoryDrawer";
 import { EvalDrawer } from "../features/eval-management/EvalDrawer";
 import { OnboardingTour } from "../features/onboarding/OnboardingTour";
-import {
-  AssessmentPanel,
-  type AssessmentPanelHandle,
-} from "../features/assessment-workspace/AssessmentPanel";
+import type { AssessmentPanelHandle } from "../features/assessment-workspace/AssessmentPanel";
 import {
   AssessmentProgress,
   type RoundRecord,
@@ -33,15 +40,30 @@ import {
   type DocumentNodeSummary,
   type ResourceSummary,
 } from "../features/article-workspace/api";
-import { ContinuousDocument } from "../features/article-workspace/ContinuousDocument";
 import { ThemeProvider } from "./ThemeProvider";
 import { SettingsDrawer } from "../features/settings/SettingsDrawer";
 import { useDismissibleLayer } from "../shared/hooks/useDismissibleLayer";
+import { ActivityIndicator } from "../shared/components/ActivityIndicator";
+import { StarMapBackdrop } from "../shared/components/StarMapBackdrop";
 
 type WorkspaceMode = "reading" | "assessment";
 type SidebarView = "outline" | "progress";
 const ONBOARDING_STORAGE_KEY = "grandquiz.onboarding.v1";
 const WORKSPACE_LAYOUT_STORAGE_KEY = "grandquiz.workspace-layout.v1";
+
+const AssessmentPanel = lazy(async () => {
+  const module = await import(
+    "../features/assessment-workspace/AssessmentPanel"
+  );
+  return { default: module.AssessmentPanel };
+});
+
+const ContinuousDocument = lazy(async () => {
+  const module = await import(
+    "../features/article-workspace/ContinuousDocument"
+  );
+  return { default: module.ContinuousDocument };
+});
 
 function initialWorkspaceLayout() {
   const fallback = { outlineWidth: 224, chatWidth: 380, outlineCollapsed: false, chatCollapsed: false };
@@ -70,6 +92,7 @@ export function App() {
   const [initialLayout] = useState(initialWorkspaceLayout);
   const [resources, setResources] = useState<ResourceSummary[]>([]);
   const [resource, setResource] = useState<ResourceSummary | null>(null);
+  const [libraryLoading, setLibraryLoading] = useState(true);
   const [outline, setOutline] = useState<DocumentNodeSummary[]>([]);
   const [documentView, setDocumentView] = useState<DocumentRead | null>(null);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
@@ -194,6 +217,11 @@ export function App() {
           setError(
             reason instanceof Error ? reason.message : "无法打开本地材料",
           );
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLibraryLoading(false);
         }
       });
     return () => {
@@ -421,14 +449,25 @@ export function App() {
     if (workspace === "assessment" && assessmentParams !== null) {
       return (
         <main className="app-content" aria-label="考核面板">
-          <AssessmentPanel
-            key={assessmentEpoch}
-            ref={assessmentPanelRef}
-            resourceId={assessmentParams.resource_id}
-            questionTypePlan={assessmentParams.question_type_plan}
-            onClose={handleAssessmentClose}
-            onUpdate={handleAssessmentUpdate}
-          />
+          <Suspense
+            fallback={
+              <ActivityIndicator
+                label="正在打开考核面板..."
+                detail="加载答题与语音组件。"
+                variant="block"
+                tone="brass"
+              />
+            }
+          >
+            <AssessmentPanel
+              key={assessmentEpoch}
+              ref={assessmentPanelRef}
+              resourceId={assessmentParams.resource_id}
+              questionTypePlan={assessmentParams.question_type_plan}
+              onClose={handleAssessmentClose}
+              onUpdate={handleAssessmentUpdate}
+            />
+          </Suspense>
         </main>
       );
     }
@@ -437,6 +476,13 @@ export function App() {
       <main className="app-content" aria-label="文章内容">
         {error !== null && resource === null ? (
           <p>{error}</p>
+        ) : libraryLoading ? (
+          <ActivityIndicator
+            label="正在打开本地知识库"
+            detail="读取材料目录与当前修订，不会调用外部模型。"
+            variant="block"
+            tone="brass"
+          />
         ) : resource === null ? (
           <div className="empty-library">
             <FolderPlusIcon aria-hidden size={34} weight="duotone" />
@@ -456,14 +502,30 @@ export function App() {
             ) : null}
             <article className="reading-article" tabIndex={-1}>
               {documentView === null ? (
-                <p>正在展开完整材料...</p>
-              ) : (
-                <ContinuousDocument
-                  activeNodeId={activeNodeId}
-                  content={documentView.content}
-                  outline={outline}
-                  onActiveNodeChange={setActiveNodeId}
+                <ActivityIndicator
+                  label="正在展开完整材料..."
+                  detail="正在读取当前修订与文档结构。"
+                  variant="block"
+                  tone="brass"
                 />
+              ) : (
+                <Suspense
+                  fallback={
+                    <ActivityIndicator
+                      label="正在排版材料..."
+                      detail="加载 Markdown 阅读组件。"
+                      variant="block"
+                      tone="brass"
+                    />
+                  }
+                >
+                  <ContinuousDocument
+                    activeNodeId={activeNodeId}
+                    content={documentView.content}
+                    outline={outline}
+                    onActiveNodeChange={setActiveNodeId}
+                  />
+                </Suspense>
               )}
             </article>
           </>
@@ -490,11 +552,7 @@ export function App() {
           "--chat-width": `${chatWidth}px`,
         } as CSSProperties}
       >
-        <div
-          className="star-map-backdrop"
-          data-visual="observatory"
-          aria-hidden="true"
-        />
+        <StarMapBackdrop />
         <header className="app-header" aria-label="顶栏">
           <p className="app-header__eyebrow">TheGrandQuiz · 本地模式</p>
           <div className="app-header__context" data-onboarding="resource">

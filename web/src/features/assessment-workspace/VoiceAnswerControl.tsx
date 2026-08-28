@@ -5,6 +5,7 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator } from "../../shared/components/ActivityIndicator";
 import {
   cancelVoiceRun,
   cancelVoiceRequest,
@@ -408,7 +409,7 @@ export function VoiceAnswerControl({
           </button>
         ) : null}
         {phase === "requesting_permission" ? (
-          <p role="status">正在请求麦克风权限...</p>
+          <ActivityIndicator label="正在请求麦克风权限..." tone="brass" />
         ) : null}
         {phase === "recording" ? (
           <>
@@ -424,9 +425,10 @@ export function VoiceAnswerControl({
         ) : null}
         {phase === "uploading" || phase === "transcribing" ? (
           <>
-            <p role="status">
-              {phase === "uploading" ? "正在上传录音..." : "正在识别语音..."}
-            </p>
+            <ActivityIndicator
+              label={phase === "uploading" ? "正在上传录音..." : "正在识别语音..."}
+              detail={phase === "transcribing" ? "完成后会先生成可编辑草稿，不会直接提交答案。" : undefined}
+            />
             <button type="button" onClick={() => void cancelCurrent()} aria-label="取消语音识别">
               <XCircleIcon aria-hidden size={18} />
               取消

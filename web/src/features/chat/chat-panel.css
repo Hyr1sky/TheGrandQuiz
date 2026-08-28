@@ -257,17 +257,21 @@
 .chat-tool-call {
   margin-bottom: 10px;
   padding: 6px 12px;
-  border-left: 2px solid var(--brass);
-  color: var(--brass);
-  font: 400 13px/1.5 var(--font-interface);
+  background: color-mix(in srgb, var(--brass) 8%, transparent);
+  border-radius: 8px;
 }
 
 /* ---- Loading indicator ---- */
 
 .chat-loading {
   margin-bottom: 12px;
-  color: var(--muted);
-  font: 400 13px/1.5 var(--font-interface);
+}
+
+.chat-reconnecting {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--brass) 8%, transparent);
 }
 
 /* ---- Error ---- */

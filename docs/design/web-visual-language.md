@@ -79,6 +79,16 @@ The approved direction is Anthropic-like in tone—humanist, editorial, calm—n
 ## Motion and accessibility
 
 - Theme changes use color transitions under 180ms; `prefers-reduced-motion` disables them.
+- Waiting feedback uses one shared orbital activity indicator. The visible label names the current
+  stage（例如“正在生成第 1 题”“正在判卷”），and optional supporting copy explains the durable
+  consequence or recovery boundary. Animation never substitutes for status copy.
+- Loading is local to the work being performed: keep the current article, answer, progress, and
+  received stream content visible; only an initially empty region may use a quiet block status.
+  Do not use full-page masks or delay the display of progressively available content.
+- The SVG star map has one restrained ambient motion layer: a 150-second sub-degree drift around an
+  off-center orbital origin plus pointer parallax capped at four pixels on fine pointers. It uses
+  compositor transforms only, becomes static below 760px and under `prefers-reduced-motion`, and
+  pauses while the page is hidden.
 - Citation focus scrolls the exact node into view and moves keyboard focus to its evidence.
 - Evidence reveal is a real button, supports `Enter`/`Space`, and exposes `aria-expanded`.
 - Every control has a visible `:focus-visible` ring.

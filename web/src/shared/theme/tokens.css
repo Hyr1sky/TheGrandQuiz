@@ -5,6 +5,11 @@
     "Source Han Serif SC", serif;
   --font-interface: "Avenir Next", Avenir, "Helvetica Neue", "PingFang SC",
     "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif;
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --motion-feedback: 140ms;
+  --motion-state: 220ms;
+  --motion-loading-orbit: 1.8s;
+  --motion-ambient-orbit: 150s;
   --canvas: #071521;
   --surface: rgb(9 24 37 / 88%);
   --surface-quiet: rgb(8 21 33 / 68%);

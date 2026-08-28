@@ -1,6 +1,5 @@
 import {
   CheckCircleIcon,
-  CircleNotchIcon,
   FileTextIcon,
   ShieldCheckIcon,
   UploadSimpleIcon,
@@ -19,6 +18,7 @@ import {
   type EvalCandidate,
   type GradingSample,
 } from "./api";
+import { ActivityIndicator } from "../../shared/components/ActivityIndicator";
 import "./eval-drawer.css";
 
 interface EvalDrawerProps {
@@ -65,7 +65,9 @@ export function EvalDrawer({ open, onClose }: EvalDrawerProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [snapshot, setSnapshot] = useState<DatasetSnapshot | null>(null);
   const [snapshots, setSnapshots] = useState<DatasetSnapshot[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState<string | null>(
+    "正在读取 Eval 数据...",
+  );
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -92,7 +94,7 @@ export function EvalDrawer({ open, onClose }: EvalDrawerProps) {
         }
       })
       .finally(() => {
-        if (active) setBusy(false);
+        if (active) setBusyLabel(null);
       });
     return () => {
       active = false;
@@ -103,7 +105,7 @@ export function EvalDrawer({ open, onClose }: EvalDrawerProps) {
     candidate: EvalCandidate,
     decision: "approved" | "rejected",
   ) => {
-    setBusy(true);
+    setBusyLabel("正在提交审核...");
     setError(null);
     try {
       const reviewed = await reviewEvalCandidate(
@@ -122,14 +124,14 @@ export function EvalDrawer({ open, onClose }: EvalDrawerProps) {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "审核提交失败");
     } finally {
-      setBusy(false);
+      setBusyLabel(null);
     }
   };
 
   const importFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file === undefined) return;
-    setBusy(true);
+    setBusyLabel("正在导入盲标...");
     setError(null);
     try {
       await importBlindLabels(
@@ -141,12 +143,12 @@ export function EvalDrawer({ open, onClose }: EvalDrawerProps) {
       setError(reason instanceof Error ? reason.message : "盲标样本导入失败");
     } finally {
       event.target.value = "";
-      setBusy(false);
+      setBusyLabel(null);
     }
   };
 
   const promote = async () => {
-    setBusy(true);
+    setBusyLabel("正在生成快照...");
     setError(null);
     try {
       const created = await createDatasetSnapshot([...selected]);
@@ -158,13 +160,14 @@ export function EvalDrawer({ open, onClose }: EvalDrawerProps) {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "快照生成失败");
     } finally {
-      setBusy(false);
+      setBusyLabel(null);
     }
   };
 
   if (!open) return null;
 
   const approved = candidates.filter((item) => item.review_status === "approved");
+  const busy = busyLabel !== null;
 
   return (
     <div className="eval-layer" role="presentation">
@@ -209,19 +212,27 @@ export function EvalDrawer({ open, onClose }: EvalDrawerProps) {
               type="button"
               disabled={busy}
               onClick={() => {
-                setBusy(true);
+                setBusyLabel("正在同步判决纠正...");
                 void syncEvalCandidates()
                   .then(setCandidates)
                   .catch((reason: unknown) =>
                     setError(reason instanceof Error ? reason.message : "纠正同步失败"),
                   )
-                  .finally(() => setBusy(false));
+                  .finally(() => setBusyLabel(null));
               }}
             >
               同步判决纠正
             </button>
             <span>{candidates.length} 个活跃候选</span>
           </div>
+
+          {busyLabel !== null ? (
+            <ActivityIndicator
+              className="eval-empty"
+              label={busyLabel}
+              tone="brass"
+            />
+          ) : null}
 
           {error !== null ? (
             <p className="eval-error" role="alert">
@@ -230,11 +241,9 @@ export function EvalDrawer({ open, onClose }: EvalDrawerProps) {
             </p>
           ) : null}
 
-          {busy && candidates.length === 0 ? (
-            <p className="eval-empty"><CircleNotchIcon className="is-spinning" aria-hidden /> 正在读取...</p>
-          ) : candidates.length === 0 ? (
+          {candidates.length === 0 && !busy ? (
             <p className="eval-empty">还没有待审核反馈。完成判决纠正或导入盲标样本后会出现在这里。</p>
-          ) : (
+          ) : candidates.length > 0 ? (
             <div className="eval-candidates">
               {candidates.map((candidate) => (
                 <article key={candidate.candidate_id}>
@@ -275,7 +284,7 @@ export function EvalDrawer({ open, onClose }: EvalDrawerProps) {
                 </article>
               ))}
             </div>
-          )}
+          ) : null}
 
           <section className="eval-promotion">
             <div>

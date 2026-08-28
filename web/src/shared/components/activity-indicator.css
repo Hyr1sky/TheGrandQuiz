@@ -1,0 +1,100 @@
+.activity-indicator {
+  --activity-color: var(--evidence);
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  color: var(--activity-color);
+  font: 500 13px/1.5 var(--font-interface);
+}
+
+.activity-indicator--block {
+  width: min(100%, 660px);
+  margin: 24px auto;
+  padding: 14px 16px;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--evidence-soft);
+}
+
+.activity-indicator--block .activity-indicator__copy > span {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.activity-indicator--block .activity-indicator__copy small {
+  font-size: 13px;
+}
+
+.activity-indicator--brass {
+  --activity-color: var(--brass-strong);
+}
+
+.activity-indicator--muted {
+  --activity-color: var(--muted);
+}
+
+.activity-indicator__orbit {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border: 1px solid color-mix(in srgb, var(--activity-color) 44%, transparent);
+  border-radius: 50%;
+}
+
+.activity-indicator__orbit::before,
+.activity-indicator__orbit::after {
+  position: absolute;
+  border-radius: 50%;
+  background: currentcolor;
+  content: "";
+}
+
+.activity-indicator__orbit::before {
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--activity-color) 12%, transparent);
+}
+
+.activity-indicator__orbit::after {
+  top: -2px;
+  left: 7px;
+  width: 5px;
+  height: 5px;
+  transform-origin: 2.5px 12px;
+  animation: activity-orbit var(--motion-loading-orbit) linear infinite;
+  box-shadow: 0 0 7px color-mix(in srgb, var(--activity-color) 62%, transparent);
+}
+
+.activity-indicator__copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.activity-indicator__copy > span {
+  color: var(--activity-color);
+}
+
+.activity-indicator__copy small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+@keyframes activity-orbit {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-indicator__orbit::after {
+    animation: none;
+  }
+}

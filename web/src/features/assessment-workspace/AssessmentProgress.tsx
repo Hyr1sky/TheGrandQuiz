@@ -10,6 +10,7 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import type { AssessmentView } from "./api";
+import { ActivityIndicator } from "../../shared/components/ActivityIndicator";
 import "./assessment-progress.css";
 
 export interface RoundRecord {
@@ -52,7 +53,11 @@ export function AssessmentProgress({
   if (assessment === null) {
     return (
       <div className="assessment-progress" aria-label="考核进度">
-        <p className="assessment-progress__empty">考核准备中...</p>
+        <ActivityIndicator
+          className="assessment-progress__empty"
+          label="考核准备中..."
+          tone="brass"
+        />
       </div>
     );
   }

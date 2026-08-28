@@ -350,7 +350,7 @@ describe("ChatPanel", () => {
       await screen.findByText(/事件溯源是一种将/),
     ).toBeInTheDocument();
     // Markdown should render bold text
-    expect(screen.getByText("状态变化")).toBeInTheDocument();
+    expect(await screen.findByText("状态变化")).toBeInTheDocument();
     expect(stream?.closed).toBe(true);
   });
 
