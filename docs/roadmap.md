@@ -57,17 +57,44 @@ Eval 是项目的承重卖点。E0–E4 已在不改变 case、cassette、评分
 下一条产品主线默认进入 Material Channels。E8 完成表示控制契约与 bypass tests 已落地，不表示已有真实
 候选通过新 Release Holdout 并激活；第一次真实晋升仍是显式 HITL。
 
-## 当前工作焦点：Material Channels 立项
+## 当前工作焦点：v0.5.x 可靠性与“失败即解释”
 
-下一轮先把用户有权访问、但服务端难以直接抓取的材料接入现有 Acquisition → Reader → 审批 → KB
-流水线。实现前需形成独立 PRD/ADR 与竖切 issues；Provider Profiles、Voice/TTS 和学习主页保持候选，
-不与 Channel 基座并行铺开。
+下一轮不扩大考核能力，先让现有失败能够被用户和开发者直接理解。当前选择题质量补丁已建立
+`multiple_choice_generation` 结构化事件、稳定拒绝原因和 Web 可恢复状态；后续竖切以一个安全的
+Trace Semantic Projection 同时服务运行观测、Eval 报告和诊断包：
+
+1. 失败卡直接打开本次 Trace，不再要求复制 ID；
+2. 只投影有限、版本化的 operation / stage / reason_code / attempt / quality_label，不暴露正文、Prompt
+   或任意内部事件名；
+3. Observatory 汇总重试、拒绝原因、耗时与 token，并提供运行历史和状态筛选；
+4. Assessment workflow 提供真实节点描述，事件只为节点着色，前端不手写可能漂移的流程图；
+5. 导出只含选中 Trace、安全配置身份和白名单字段的诊断包；本地设置展示当前实际数据目录。
+
+进入条件已经满足：选择题 dogfood 产生了可复现的五次质量门耗尽，现有 Trace 能记录但不能解释。完成条件
+以独立 PRD 的用户行为和安全字段测试为准，不以“做出一张图”代替可解释性。
 
 ## 下一阶段产品候选
 
 候选按当前产品增益排序。每项在实现前单独形成 PRD 与可验收竖切，不一次铺满。
 
-### P1：Material Channels
+### P1：复合考核与增量知识关系实验
+
+`composite` 是 KnowledgeRelation 的首个明确产品消费者。先用真实材料做 throwaway Prototype，不直接迁移
+生产数据库：从发生变化的 KnowledgeItem 检索少量候选邻居，生成带 Evidence 的关系主张，再配对比较单点题
+和复合题的 groundedness、跨 item 必要性、可回答性、评分点归属、重试率、延迟和 token。
+
+Prototype 通过预注册门后，生产化采用 append-only `KnowledgeRelationAssertion` 日志和可删除重建的当前图
+投影；资源 revision 更新通过 supersede / invalidate 追加事实，不删除历史。第一阶段仍使用 SQLite adjacency
+rows，不接 Zep、GraphRAG、向量库或独立图数据库。
+
+### P2：混沌考核与知识前沿账本
+
+`exploratory` 可结合本地知识关系和既有 LearnerProjection 发散提问，但仍按评分点区分本地 item、关系与外部
+主张。KG 外内容进入 `KnowledgeFrontierEntry`，只记录 encountered / needs_verification 等探索事实；没有
+获批材料 Evidence 时不得修改正式 Learning Memory。外部主张经材料获取、Reader 与人工审批后，才能晋升为
+KnowledgeItem 并参与正式复考。
+
+### P3：Material Channels
 
 解决微信、知乎、登录页等“服务端无法可靠抓取，但用户有权阅读”的输入问题。新增用户授权的输入 Channel，
 统一产出规范化 ImportedArtifact，再进入现有 Acquisition/Reader/审批流程。
@@ -75,7 +102,7 @@ Eval 是项目的承重卖点。E0–E4 已在不改变 case、cassette、评分
 优先考虑：粘贴文本、HTML/PDF/导出文件、浏览器扩展或系统分享入口、GitHub 文档。Channel 不绕过
 不可信输入标记、大小限制、人工审批或精确 Evidence；不以对抗平台反爬为目标。
 
-### P2：学习主页、轨迹与知识管理
+### P4：学习主页、轨迹与知识管理
 
 把已有学习事实变成日常入口，而不是增加新的模型判断：
 
@@ -87,7 +114,7 @@ Eval 是项目的承重卖点。E0–E4 已在不改变 case、cassette、评分
 第一阶段不引入连续掌握度分数、提醒日历或复杂 spaced repetition。进入条件：当前 LearningFact、
 LearnerProjection 和资源查询可以有界投影，无需新建第二套学习状态。
 
-### P3：Provider Profiles 与能力注册
+### P5：Provider Profiles 与能力注册
 
 在现有 basic/enrich 角色、OpenAI-compatible Provider、dialect、thinking 与 Replay identity 之上，增加：
 
@@ -98,7 +125,7 @@ LearnerProjection 和资源查询可以有界投影，无需新建第二套学�
 
 自动模型路由与 fallback 必须后置到 routing eval、成本预算和失败策略明确之后；不能先做黑盒自动选模型。
 
-### P4：Voice Interview 的 TTS 阶段
+### P6：Voice Interview 的 TTS 阶段
 
 先把“题目朗读 → 口头作答 → 草稿审查 → 判卷”做完整，再评估实时双工和数字人：
 
@@ -119,7 +146,8 @@ LearnerProjection 和资源查询可以有界投影，无需新建第二套学�
 
 以下方向没有新的消费者或真实 Eval 增益前不进入默认产品路径：
 
-- KnowledgeRelation、CanonicalConcept 与自动跨资源归并；
+- CanonicalConcept 与自动跨资源归并；
+- 未经复合考核 Prototype / Eval 晋升的生产 KnowledgeRelation；
 - 自动 Demand Judge、自动 ambiguity/clarification classifier；
 - Required Claims 默认判卷和任意 Boolean rubric schema；
 - 无监督自动改 prompt 或自动晋升数据；

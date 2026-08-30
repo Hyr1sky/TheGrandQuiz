@@ -94,8 +94,26 @@ _Avoid_: 把六个学习技能当平权功能列表、复习计划（MVP 无排�
 _Avoid_: 错题（薄弱的是概念，不是题目本身）、跨资源的抽象概念（MVP 无此实体）、掌握度分数（用状态机不用连续分）
 
 **KnowledgeItem**:
-深读一个资源产出的最小知识单元（概念名 + 摘要 + 证据 + 置信度），资源内唯一。它就是概念同一性的边界：同一知识点出现在两个资源里是两个 item，MVP 不归并（二期以 concept_key 做跨资源别名归并）。证据带结构定位符（section_path 等），既强化 grounding 也锚定 ADR-0008 的 DocumentNode 文档结构树。
+深读一个资源产出的最小知识单元（概念名 + 摘要 + 证据 + 置信度），资源内唯一。它就是当前概念同一性的
+边界：同一知识点出现在两个资源里是两个 item；只有出现明确产品消费者和 Eval 证据后，才重新评估
+concept_key 或其他跨资源归并方案。证据带结构定位符（section_path 等），既强化 grounding 也锚定
+ADR-0008 的 DocumentNode 文档结构树。
 _Avoid_: 知识点卡片、笔记
+
+**Assessment Mode**（规划中）:
+考核怎样组织知识范围的策略：`atomic` 只考一个 KnowledgeItem，`composite` 沿已验证关系联合多个 item，
+`exploratory`（产品文案可称“混沌模式”）允许提出本地知识图之外的问题。它与题型、难度和输入方式正交。
+_Avoid_: 用 temperature 定义模式、把复合模式称为批量出卷、把 exploratory 理解成无约束随机提问
+
+**Knowledge Relation Assertion**（实验候选）:
+一条带来源、Evidence、置信度和裁决状态的 KnowledgeItem 间语义关系主张；历史主张可以保留，但只有当前
+有效投影能够参与复合考核。它尚不是当前 KB 的生产事实，必须先由复合考核 Prototype 与 Eval 证明价值。
+_Avoid_: DocumentNode 父子边、无来源的图边、CanonicalConcept、把整张图当唯一真相源
+
+**Knowledge Frontier Entry**（规划中）:
+混沌考核发现、但尚未被已审批材料支持的外部知识主张或考察点。它可以保存交互与待核验状态，但在补充
+材料并晋升为 KnowledgeItem 前，不得直接形成正式薄弱事实。
+_Avoid_: KnowledgeItem、薄弱概念、模型说过一次就成立的知识事实
 
 **ResourceRevision**（ADR-0008，DS-S1–S4 已实现）:
 LearningResource 某次获批内容的不可变版本，由 resource_id + content_hash 确定性标识，保存当时的原文与
