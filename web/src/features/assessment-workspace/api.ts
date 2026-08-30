@@ -188,6 +188,23 @@ export async function nextRound(
   return data;
 }
 
+export async function retryRound(
+  sessionId: string,
+  requestId: string,
+): Promise<AssessmentView> {
+  const { data, error } = await apiClient.POST(
+    "/api/v1/assessments/{session_id}/retry",
+    {
+      params: { path: { session_id: sessionId } },
+      body: { request_id: requestId },
+    },
+  );
+  if (error !== undefined) {
+    throw toApiRequestError(error);
+  }
+  return data;
+}
+
 export async function getVoiceRuntimeConfig(): Promise<VoiceRuntimeConfig> {
   const { data, error } = await apiClient.GET("/api/v1/voice/config");
   if (error !== undefined) {

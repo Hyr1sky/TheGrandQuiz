@@ -141,3 +141,21 @@ def test_trace_store_persists_unknown_domain_event() -> None:
     # payload 原样往返，含中文与嵌套结构——证明 kernel 持久化它不认识的类型
     assert events[0].payload == payload
     store.close()
+
+
+def test_interleaved_traces_keep_independent_contiguous_sequences() -> None:
+    """SQLite 行号可以交错；``seq`` 的契约只在各自 ``trace_id`` 内成立。"""
+    store = TraceStore(":memory:")
+    sink = EventSink()
+    sink.subscribe(store.record)
+    first = EventEmitter(sink, ManualClock(), trace_id="first")
+    second = EventEmitter(sink, ManualClock(), trace_id="second")
+
+    first.emit("first.started")
+    second.emit("second.started")
+    second.emit("second.ended")
+    first.emit("first.ended")
+
+    assert [event.seq for event in store.events("first")] == [0, 1]
+    assert [event.seq for event in store.events("second")] == [0, 1]
+    store.close()

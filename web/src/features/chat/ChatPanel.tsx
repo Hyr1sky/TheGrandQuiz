@@ -48,6 +48,7 @@ interface ChatPanelProps {
     | "awaiting_answer"
     | "grading"
     | "judged"
+    | "degraded"
     | "completed"
     | "refused"
     | "failed"
@@ -458,8 +459,10 @@ export function ChatPanel({
             assessmentStatus !== null
               ? assessmentStatus === "completed"
                 ? "本轮考核已完成。"
-                : assessmentStatus === "refused" ||
-                    assessmentStatus === "failed"
+                : assessmentStatus === "degraded"
+                  ? "本题生成未通过质量检查，可在工作面板重试或跳过。"
+                  : assessmentStatus === "refused" ||
+                      assessmentStatus === "failed"
                   ? "本轮考核未能开始。"
                   : assessmentStatus === "cancelled"
                     ? "本轮考核已取消。"

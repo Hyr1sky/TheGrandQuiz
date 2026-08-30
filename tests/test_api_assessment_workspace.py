@@ -264,6 +264,38 @@ class _FailingAssessmentProvider:
         raise RuntimeError("assessment provider failed")
 
 
+class _InvalidQuestionProvider:
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        del messages, role, tools
+        return Completion(
+            text="not-json",
+            usage=Usage(prompt_tokens=5, completion_tokens=2),
+        )
+
+
+class _InvalidGradingProvider(_OpenAssessmentProvider):
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        if role == "enrich":
+            return await super().complete(messages, role=role, tools=tools)
+        self.grading_calls += 1
+        return Completion(
+            text="not-json",
+            usage=Usage(prompt_tokens=5, completion_tokens=2),
+        )
+
+
 class _BlockingAssessmentProvider:
     def __init__(self) -> None:
         self.started = threading.Event()
@@ -1071,6 +1103,109 @@ def test_assessment_failure_projects_a_failed_terminal_trace(tmp_path: Path) -> 
     assert failed["error"] == "本轮考核失败，请通过 trace_id 查看详情"
     assert trace_snapshot["summary"]["status"] == "failed"
     assert trace_snapshot["summary"]["error_count"] == 1
+
+
+def test_question_generation_exhaustion_is_degraded_and_can_retry_or_skip(
+    tmp_path: Path,
+) -> None:
+    resource, _ = _seed_item(tmp_path)
+
+    with TestClient(_app(tmp_path, _InvalidQuestionProvider())) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 2,
+                "question_type": "选择题",
+            },
+        ).json()
+        degraded = _wait_for_status(client, started["session_id"], "degraded")
+        trace_snapshot = client.get(f"/api/v1/observability/traces/{started['trace_id']}").json()
+        trace = TraceStore(tmp_path / "trace.db")
+        try:
+            events = trace.events(started["trace_id"])
+        finally:
+            trace.close()
+
+        retried = client.post(
+            f"/api/v1/assessments/{started['session_id']}/retry",
+            json={"request_id": "retry-question"},
+        )
+        _wait_for_status(client, started["session_id"], "degraded")
+        skipped = client.post(
+            f"/api/v1/assessments/{started['session_id']}/next",
+            json={"request_id": "skip-question"},
+        )
+        _wait_for_status(client, started["session_id"], "degraded")
+        finished = client.post(
+            f"/api/v1/assessments/{started['session_id']}/next",
+            json={"request_id": "skip-last-question"},
+        )
+
+    assert degraded["error"] == "本题生成失败，可以重试本题或跳过继续"
+    assert degraded["recovery_stage"] == "question_generation"
+    recovery = next(event for event in events if event.type == "recovery.decided")
+    assert recovery.payload["error_class"] == "degraded"
+    assert recovery.payload["decision"] == "skip"
+    degraded_event = next(event for event in events if event.type == "web.assessment_run.degraded")
+    assert degraded_event.payload["status"] == "degraded"
+    assert trace_snapshot["summary"]["status"] == "waiting_input"
+    assert not any(event.type == "web.assessment_run.ended" for event in events)
+    assert retried.status_code == 202
+    assert skipped.status_code == 202
+    assert skipped.json()["round_index"] == 2
+    assert finished.status_code == 202
+    assert finished.json()["status"] == "completed"
+
+
+def test_grading_exhaustion_is_degraded_but_cannot_regenerate_submitted_question(
+    tmp_path: Path,
+) -> None:
+    resource, _ = _seed_item(tmp_path)
+
+    with TestClient(_app(tmp_path, _InvalidGradingProvider())) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 2,
+                "question_type": "简答题",
+            },
+        ).json()
+        awaiting = _wait_for_status(client, started["session_id"], "awaiting_answer")
+        submitted = client.post(
+            f"/api/v1/assessments/{started['session_id']}/questions/"
+            f"{awaiting['question']['question_id']}/answers",
+            json={"request_id": "answer-once", "answer": "回答", "input_modality": "text"},
+        )
+        degraded = _wait_for_status(client, started["session_id"], "degraded")
+        retry = client.post(
+            f"/api/v1/assessments/{started['session_id']}/retry",
+            json={"request_id": "must-not-regenerate"},
+        )
+        skipped = client.post(
+            f"/api/v1/assessments/{started['session_id']}/next",
+            json={"request_id": "skip-ungraded-answer"},
+        )
+        trace = TraceStore(tmp_path / "trace.db")
+        try:
+            degraded_event = next(
+                event
+                for event in trace.events(started["trace_id"])
+                if event.type == "web.assessment_run.degraded"
+            )
+        finally:
+            trace.close()
+
+    assert submitted.status_code == 202
+    assert degraded["recovery_stage"] == "grading"
+    assert degraded["error"] == "本题判卷失败，可以跳过此题继续"
+    assert degraded["question"] == awaiting["question"]
+    assert retry.status_code == 409
+    assert skipped.status_code == 202
+    assert skipped.json()["round_index"] == 2
+    assert degraded_event.payload["stage"] == "grading"
+    assert degraded_event.payload["reason_code"] == "grading_exhausted"
 
 
 def test_shutdown_projects_a_cancelled_terminal_trace(tmp_path: Path) -> None:

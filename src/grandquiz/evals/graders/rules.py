@@ -274,7 +274,18 @@ def grade_case3(sr: SolveResult) -> list[str]:
     _check(failures, sr.roles == ["enrich"], f"应只出题（enrich），无判卷调用，实为 {sr.roles}")
     if sr.spans:
         child_types = [c.type for c in sr.spans[0].children]
-        _check(failures, child_types == ["model"], f"MC 只应有出题 model span，实为 {child_types}")
+        _check(
+            failures,
+            child_types == ["learning.multiple_choice_generation"],
+            f"MC 应只有一个 question-generation 子 span，实为 {child_types}",
+        )
+        if child_types == ["learning.multiple_choice_generation"]:
+            generation_children = [c.type for c in sr.spans[0].children[0].children]
+            _check(
+                failures,
+                generation_children == ["model"],
+                f"question-generation 应只含出题 model span，实为 {generation_children}",
+            )
     return failures
 
 

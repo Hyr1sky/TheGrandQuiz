@@ -19,6 +19,7 @@ from grandquiz.domain.learning.assessment.question import (
     generate_multiple_choice,
     generate_question,
 )
+from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
@@ -381,7 +382,12 @@ async def test_valid_mc_output_becomes_multiple_choice() -> None:
     assert mc.cited_evidence == [_QUOTE]
     assert provider.calls == 1  # 首次即通过，无重试
     assert provider.roles == ["enrich"]  # MC 出题也走 enrich 角色
-    assert [e.type for e in events] == [EventType.MODEL_STARTED, EventType.MODEL_ENDED]
+    assert [e.type for e in events] == [
+        LearningEvent.MULTIPLE_CHOICE_GENERATION_STARTED,
+        EventType.MODEL_STARTED,
+        EventType.MODEL_ENDED,
+        LearningEvent.MULTIPLE_CHOICE_GENERATION_ENDED,
+    ]
 
 
 async def test_mc_too_few_options_retries_then_raises() -> None:
@@ -477,7 +483,13 @@ async def test_mc_provider_exception_closes_model_span_and_propagates() -> None:
         await generate_multiple_choice(
             _item(), provider=provider, emitter=emitter, parent_span_id="a"
         )
-    assert [e.type for e in events] == [EventType.MODEL_STARTED, EventType.MODEL_ENDED]
+    assert [e.type for e in events] == [
+        LearningEvent.MULTIPLE_CHOICE_GENERATION_STARTED,
+        EventType.MODEL_STARTED,
+        EventType.MODEL_ENDED,
+        LearningEvent.MULTIPLE_CHOICE_GENERATION_ENDED,
+    ]
+    assert events[-2].payload["ok"] is False
     assert events[-1].payload["ok"] is False
     assert provider.calls == 1
 

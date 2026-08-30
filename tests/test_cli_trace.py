@@ -213,7 +213,8 @@ async def test_run_quiz_persists_session_trace_forest_and_prints_trace_id(tmp_pa
         roots = build_span_tree(events)
         assert [r.type for r in roots] == ["assessment", "assessment"]
         for root in roots:
-            assert [c.type for c in root.children] == ["model"]
+            assert [c.type for c in root.children] == ["learning.multiple_choice_generation"]
+            assert [c.type for c in root.children[0].children] == ["model"]
     finally:
         store.close()
 

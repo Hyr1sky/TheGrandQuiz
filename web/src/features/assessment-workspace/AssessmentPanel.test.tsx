@@ -47,6 +47,7 @@ const readyAssessment = {
   },
   judgement: null,
   error: null,
+  recovery_stage: null,
 };
 
 afterEach(() => {
@@ -55,6 +56,73 @@ afterEach(() => {
 });
 
 describe("AssessmentPanel", () => {
+  it("offers retry and skip when question generation is degraded", async () => {
+    const degradedAssessment = {
+      ...readyAssessment,
+      status: "degraded",
+      question: null,
+      error: "本题生成失败，可以重试本题或跳过继续",
+      recovery_stage: "question_generation",
+    };
+    const preparingAssessment = {
+      ...degradedAssessment,
+      status: "preparing",
+      error: null,
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const request = input instanceof Request ? input : new Request(String(input));
+      if (request.method === "POST" && request.url.endsWith("/api/v1/assessments")) {
+        return Response.json(degradedAssessment, { status: 201 });
+      }
+      if (request.method === "POST" && request.url.endsWith("/retry")) {
+        return Response.json(preparingAssessment, { status: 202 });
+      }
+      throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AssessmentPanel
+        resourceId="resource-1"
+        questionTypePlan={["选择题", "选择题"]}
+        onClose={() => undefined}
+      />,
+    );
+
+    expect(await screen.findByText("本题生成失败，可以重试本题或跳过继续")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重试本题" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "跳过此题" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "重试本题" }));
+    expect(await screen.findByText("正在生成第 1 题")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("only offers skip when a submitted answer could not be graded", async () => {
+    const degradedAssessment = {
+      ...readyAssessment,
+      status: "degraded",
+      error: "本题判卷失败，可以跳过此题继续",
+      recovery_stage: "grading",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(degradedAssessment, { status: 201 })),
+    );
+
+    render(
+      <AssessmentPanel
+        resourceId="resource-1"
+        questionTypePlan={["简答题", "简答题"]}
+        onClose={() => undefined}
+      />,
+    );
+
+    expect(await screen.findByText("本题判卷失败，可以跳过此题继续")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重试本题" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "跳过此题" })).toBeInTheDocument();
+  });
+
   it("asks before replacing a text draft with a voice transcript", async () => {
     const openAssessment = {
       ...readyAssessment,

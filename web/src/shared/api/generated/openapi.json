@@ -1041,6 +1041,22 @@
               }
             ]
           },
+          "recovery_stage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "question_generation",
+                  "grading",
+                  "workflow"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Stage"
+          },
           "round_index": {
             "minimum": 1.0,
             "title": "Round Index",
@@ -1058,6 +1074,7 @@
           "status": {
             "enum": [
               "preparing",
+              "degraded",
               "awaiting_answer",
               "grading",
               "judged",
@@ -5914,6 +5931,58 @@
         "summary": "Start Voice Run",
         "tags": [
           "voice"
+        ]
+      }
+    },
+    "/api/v1/assessments/{session_id}/retry": {
+      "post": {
+        "operationId": "retry_assessment_round_api_v1_assessments__session_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NextRoundRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Assessment Round",
+        "tags": [
+          "assessments"
         ]
       }
     },

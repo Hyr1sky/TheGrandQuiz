@@ -58,8 +58,7 @@ class AssessmentSession:
     ) -> AssessmentResult:
         """运行下一轮单题 workflow，并推进本会话的覆盖台账与随机序列。"""
         seed = self._next_seed
-        self._next_seed += 1
-        return await assess_once(
+        result = await assess_once(
             store=self._store,
             provider=self._provider,
             responder=self._responder,
@@ -76,3 +75,7 @@ class AssessmentSession:
             difficulty=self._difficulty,
             learning_facts=self._learning_facts,
         )
+        # 只有一轮 workflow 完整返回后才消费随机位置。若出题质量门耗尽，Web 的“重试本题”会
+        # 复用同一 seed，从而保持同一目标 KnowledgeItem，而不是悄悄换一道题。
+        self._next_seed += 1
+        return result

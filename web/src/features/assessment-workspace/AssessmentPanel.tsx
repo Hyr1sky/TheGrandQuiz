@@ -5,10 +5,12 @@
  */
 
 import {
+  ArrowClockwiseIcon,
   ArrowRightIcon,
   ChatCircleDotsIcon,
   CheckCircleIcon,
   EyeIcon,
+  SkipForwardIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
 import {
@@ -25,6 +27,7 @@ import {
   getAssessment,
   nextRound,
   revealEvidence,
+  retryRound,
   startAssessment,
   submitAppeal,
   submitAnswer,
@@ -78,6 +81,9 @@ export const AssessmentPanel = forwardRef<
     requestId: string;
   } | null>(null);
   const nextCommand = useRef<{ roundIndex: number; requestId: string } | null>(
+    null,
+  );
+  const retryCommand = useRef<{ roundIndex: number; requestId: string } | null>(
     null,
   );
   const appealCommand = useRef<{
@@ -320,9 +326,36 @@ export const AssessmentPanel = forwardRef<
       revealRequested.current = null;
       answerCommand.current = null;
       appealCommand.current = null;
+      retryCommand.current = null;
       notifyUpdate(next);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法进入下一题");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retryCurrent = async () => {
+    if (assessment === null) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const existing = retryCommand.current;
+      const command =
+        existing?.roundIndex === assessment.round_index
+          ? existing
+          : {
+              roundIndex: assessment.round_index,
+              requestId: commandId("retry-question"),
+            };
+      retryCommand.current = command;
+      const next = await retryRound(assessment.session_id, command.requestId);
+      retryCommand.current = null;
+      notifyUpdate(next);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "无法重试本题");
     } finally {
       setBusy(false);
     }
@@ -436,6 +469,52 @@ export const AssessmentPanel = forwardRef<
             {error}
           </p>
         ) : null}
+      </section>
+    );
+  }
+
+  if (assessment.status === "degraded") {
+    return (
+      <section className="assessment-panel" aria-label="考核面板">
+        <header className="assessment-panel__header">
+          <h2>
+            {assessment.recovery_stage === "grading"
+              ? "本题暂时无法判卷"
+              : "本题暂时无法生成"}
+          </h2>
+          <button
+            type="button"
+            className="assessment-panel__close"
+            aria-label="结束考核"
+            onClick={() => void close()}
+          >
+            <XCircleIcon aria-hidden size={19} />
+            结束考核
+          </button>
+        </header>
+        <p className="assessment-panel__error" role="alert">
+          {assessment.error ?? "本题生成失败，可以重试本题或跳过继续"}
+        </p>
+        <div className="assessment-panel__actions">
+          {assessment.recovery_stage === "question_generation" ? (
+            <button type="button" disabled={busy} onClick={() => void retryCurrent()}>
+              <ArrowClockwiseIcon aria-hidden size={18} />
+              重试本题
+            </button>
+          ) : null}
+          <button type="button" disabled={busy} onClick={() => void advance()}>
+            <SkipForwardIcon aria-hidden size={18} />
+            跳过此题
+          </button>
+        </div>
+        {error !== null ? (
+          <p className="assessment-panel__error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <footer className="assessment-panel__trace">
+          <code>trace_id: {assessment.trace_id}</code>
+        </footer>
       </section>
     );
   }

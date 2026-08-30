@@ -67,7 +67,7 @@ from grandquiz.domain.learning.difficulty import (
     DifficultyLedger,
     DifficultyTier,
     difficulty_prompt_hint,
-    distractor_quality_floor,
+    distractor_quality_policy,
     effective_difficulty_tier,
     target_option_count,
 )
@@ -99,13 +99,10 @@ _ASSESSMENT_ENDED = "assessment.ended"
 _WEAK_VERDICTS: frozenset[VerdictLabel] = frozenset({"勉强", "错"})
 _MAX_ASKED_QUESTIONS_PER_ITEM = 20
 
-# 选择题出题重试头寸（SE-S5b 兜底，2026-07-15 dogfood 洞察）：judge 验收闸门开启（高档，
-# quality_floor 非 None）时，"出题→judge→不达标重生成"会吃掉重试预算——dogfood 里一道 tier4 题
-# 踩着默认 3 次上限才过，再差一版就 QuestionError 跳整轮。故闸门开启时给更多头寸（5），降低偶发
-# 跳题；闸门关闭（默认档 / eval harness）沿用 3（= generate_multiple_choice 默认，字节等价改动前）。
-# 这是零风险兜底、不碰难度语义（选项数 / 门槛 / 档位映射不变）；真正的判官策略重设计另议。
+# 选择题只允许一次初始生成 + 两次有界修复。高档质量策略会保留已通过的题干、答案、Evidence 与
+# 干扰项，只补坏项，不再靠把完整重生成预算放大到 5 次掩盖乘法失败。
 _MC_ATTEMPTS_DEFAULT = 3
-_MC_ATTEMPTS_WITH_JUDGE_FLOOR = 5
+_MC_ATTEMPTS_WITH_QUALITY_POLICY = 3
 
 
 def _resolve_language(preferences: PreferenceMemory | None) -> str:
@@ -352,17 +349,16 @@ async def assess_once(
                 if current_tier is not None and current_tier != DEFAULT_TIER
                 else None
             )
-            # SE-S5b 选择题硬杠杆②：干扰项质量 judge 验收闸门。distractor_quality_floor 内部**只对
-            # 高于默认档（3）的 tier 返回非 None**（tier 4→"较弱干扰"、5→"合理干扰"，≤3→None），故
-            # 不必在此再判 tier != DEFAULT_TIER；但 current_tier is None（未接难度台账 / difficulty
-            # =None）时必须 None——保证默认路径 / eval harness 一次都不调 judge、字节等价改动前。
-            quality_floor = (
-                distractor_quality_floor(current_tier) if current_tier is not None else None
+            # 高档题启用集合质量策略：每项有最低线，同时只要求一定数量的“合理干扰”，避免
+            # “所有干扰项都必须最优”导致薄材料反复整题重生成。默认/低档仍不调用实时 judge。
+            quality_policy = (
+                distractor_quality_policy(current_tier) if current_tier is not None else None
             )
-            # judge 闸门开启时给出题更多重试头寸（免踩线跳题，见 _MC_ATTEMPTS_* 注释）；关闭时
-            # 沿用默认 3，与改动前逐字节等价（max_attempts 不进 message / replay_key）。
+            # 两条路径都保持三次有界预算；高档路径通过局部修复与 judge 缓存降低成本，而非扩到五次。
             mc_attempts = (
-                _MC_ATTEMPTS_WITH_JUDGE_FLOOR if quality_floor is not None else _MC_ATTEMPTS_DEFAULT
+                _MC_ATTEMPTS_WITH_QUALITY_POLICY
+                if quality_policy is not None
+                else _MC_ATTEMPTS_DEFAULT
             )
             mc = await generate_multiple_choice(
                 target,
@@ -372,7 +368,7 @@ async def assess_once(
                 language=language,
                 asked_before=asked_before,
                 num_options=num_options,
-                quality_floor=quality_floor,
+                quality_policy=quality_policy,
                 max_attempts=mc_attempts,
             )
             question_text = mc.question

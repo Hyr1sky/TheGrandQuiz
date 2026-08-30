@@ -388,20 +388,18 @@ def tier_change_reason(
 # SE-S5a：档位 → 选择题目标选项数（选择题硬杠杆①，确定性映射）
 # ============================================================================
 
-# 难度档 → 选择题目标选项数（1 正确项 + N-1 干扰项）的确定性映射。设计意图：档 ≤ 默认档给
-# 最简 3 项（最易靠排除法蒙对）、默认档（3）给 4 项、高档递增到 6 项——档位越高、干扰项越多、
-# 越难排除，把"难度"落到可断言的题面结构上（PRD 决策 4 杠杆①）。**单调不减**（难度只加不减
-# 选项，不出现"更难反而选项更少"）。具体值是 v1 校准、可调：改映射只动这张表一处，
-# ``target_option_count`` 随之变，不散落各处。5 档全覆盖（``DifficultyTier`` = 1..5）。
-_TIER_OPTION_COUNTS: dict[DifficultyTier, int] = {1: 3, 2: 3, 3: 4, 4: 5, 5: 6}
+# 难度档 → 选择题目标选项数（1 正确项 + N-1 干扰项）的确定性映射。高档不再靠堆到 5/6 项制造
+# 表面难度：真实 dogfood 证明，薄 Evidence 下要求 5 个高质量干扰项会形成乘法失败并诱发凑数。
+# 1/2 档保留 3 项；标准及高档统一 4 项，难度由干扰项构成质量与题干深度承担。
+_TIER_OPTION_COUNTS: dict[DifficultyTier, int] = {1: 3, 2: 3, 3: 4, 4: 4, 5: 4}
 
 
 def target_option_count(tier: DifficultyTier) -> int:
     """据难度档返回选择题的目标选项数（1 正确项 + N-1 干扰项）——纯函数、无 I/O、确定性。
 
-    映射见 ``_TIER_OPTION_COUNTS``：1/2 档 3 项、3 档（默认档）4 项、4 档 5 项、5 档 6 项——
-    档位越高、干扰项越多、越难靠排除法蒙对（PRD 决策 4 杠杆①）。映射**单调不减**（难度只加不
-    减选项）。具体值 v1 校准、可调：只动 ``_TIER_OPTION_COUNTS`` 一处。``tier`` 由
+    映射见 ``_TIER_OPTION_COUNTS``：1/2 档 3 项，3/4/5 档 4 项。高档不再增加选项数量，避免为了
+    凑足干扰项牺牲质量；难度改由 ``DistractorQualityPolicy`` 的构成要求承担。映射仍单调不减。
+    具体值可调：只动 ``_TIER_OPTION_COUNTS`` 一处。``tier`` 由
     ``DifficultyTier`` 收敛为 1..5、5 档全覆盖，故直接索引不会 KeyError（越界档在 ``_coerce_tier``
     读取点已大声失败）。
     """
@@ -422,32 +420,32 @@ _DISTRACTOR_LABEL_RANK: dict[DistractorLabel, int] = {
     "合理干扰": 2,
 }
 
-# 难度档 → 该档要求的**最低可接受干扰项档**（None = 不设 judge 闸门）的确定性映射。设计意图：干扰项
-# 质量闸门是"变难"方向的杠杆，故**只对高于默认档（3）的 tier 设门**——降档 / 默认档 / 新概念不该
-# 反过来要求更硬的干扰项（那会与 SE-S5a"默认档不加杠杆"的取向自相矛盾、且徒增默认路径重试耗尽
-# 风险）。tier 5 → "合理干扰"（最严：拒 较弱 / 无效）；tier 4 → "较弱干扰"（拒 无效）；tier 1/2/3
-# → None（不设门）。具体门槛是 v1 校准、可调：改映射只动这张表一处。5 档全覆盖。
-_TIER_QUALITY_FLOOR: dict[DifficultyTier, DistractorLabel | None] = {
+
+@dataclass(frozen=True)
+class DistractorQualityPolicy:
+    """最终干扰项集合的构成契约，而非“每项必须同一最高档”的全有或全无门。"""
+
+    minimum_label: DistractorLabel
+    minimum_reasonable: int = 0
+
+    def __post_init__(self) -> None:
+        if self.minimum_reasonable < 0:
+            raise ValueError("minimum_reasonable 不能为负数")
+
+
+_TIER_QUALITY_POLICIES: dict[DifficultyTier, DistractorQualityPolicy | None] = {
     1: None,
     2: None,
     3: None,
-    4: "较弱干扰",
-    5: "合理干扰",
+    4: DistractorQualityPolicy(minimum_label="较弱干扰", minimum_reasonable=1),
+    5: DistractorQualityPolicy(minimum_label="较弱干扰", minimum_reasonable=2),
 }
 
 
-def distractor_quality_floor(tier: DifficultyTier) -> DistractorLabel | None:
-    """据难度档返回选择题干扰项的**最低可接受质量档**——纯函数、无 I/O、确定性（SE-S5b 杠杆②）。
+def distractor_quality_policy(tier: DifficultyTier) -> DistractorQualityPolicy | None:
+    """返回高档选择题的集合质量契约；默认及低档不启用实时 judge。"""
 
-    映射见 ``_TIER_QUALITY_FLOOR``：**只对高于默认档（3）的 tier 设 judge 闸门**——tier 5 要求全部
-    干扰项达"合理干扰"（拒 较弱 / 无效）、tier 4 要求达"较弱干扰"（拒 无效）、tier 1/2/3 返回
-    ``None``（不设门，档位不比默认更难时不该反要求更硬干扰项）。返回 ``None`` 时调用方
-    （``assess_once`` → ``generate_multiple_choice``）**完全不调 judge**——本闸门只在升过默认档的
-    概念上生效，把"难度"落到"干扰项够不够迷惑"这条可 judge 断言的题面维度上（PRD 决策 4 杠杆②）。
-    具体门槛 v1 校准、可调：只动 ``_TIER_QUALITY_FLOOR`` 一处。``tier`` 由 ``DifficultyTier`` 收敛
-    为 1..5、5 档全覆盖，故直接索引不会 KeyError。
-    """
-    return _TIER_QUALITY_FLOOR[tier]
+    return _TIER_QUALITY_POLICIES[tier]
 
 
 def distractor_meets_floor(label: DistractorLabel, floor: DistractorLabel) -> bool:

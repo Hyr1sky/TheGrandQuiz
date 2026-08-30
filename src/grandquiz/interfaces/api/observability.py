@@ -308,6 +308,8 @@ def _trace_status(events: list[AgentEvent]) -> TraceStatus:
         status = event.payload.get("status")
         if status == "cancelled":
             return "cancelled"
+        if status == "degraded":
+            return "waiting_input"
         if status == "failed":
             return "failed"
         if status == "completed":

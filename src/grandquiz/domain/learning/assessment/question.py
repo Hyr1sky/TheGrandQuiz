@@ -24,7 +24,11 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
-from grandquiz.domain.learning.difficulty import distractor_meets_floor
+from grandquiz.domain.learning.difficulty import (
+    DistractorQualityPolicy,
+    distractor_meets_floor,
+)
+from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.judge import DistractorLabel, judge_distractor
 from grandquiz.domain.learning.models import (
     CitedEvidence,
@@ -131,6 +135,17 @@ class ModelRetry(Exception):
     被本模块的有界重试循环捕获——把校验错误反馈进下一次调用的上下文；重试预算耗尽则升级为
     ``QuestionError``。它是"输出可验证"的运行时门，不冒泡给调用方。
     """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_code: str = "invalid_output",
+        retained_options: Sequence[str] = (),
+    ) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+        self.retained_options = tuple(retained_options)
 
 
 class ExpectedPoint(BaseModel):
@@ -416,7 +431,7 @@ async def generate_multiple_choice(
     language: str = "中文",
     asked_before: Sequence[str] = (),
     num_options: int | None = None,
-    quality_floor: DistractorLabel | None = None,
+    quality_policy: DistractorQualityPolicy | None = None,
 ) -> MultipleChoiceQuestion:
     """为 ``item`` 产一道锚定的选择题（首次接触概念的热身题型）；持续失败 → ``QuestionError``。
 
@@ -432,33 +447,18 @@ async def generate_multiple_choice(
     ``language`` 同 ``generate_question``：字面替换模板 ``{{LANGUAGE}}`` 哨兵，版本号跨语言稳定。
     ``asked_before`` 同 ``generate_question``：非空时注入"换角度"约束、并在 ``_parse_mc`` 归一化
     去重门用作重复判定（为空则 message 一字不改）——会话内不重复出同一道选择题。
-    ``num_options``：**选择题难度硬杠杆①**（SE-S5a）——按被考 item 的难度档算出的目标选项数，由
-    ``assess_once`` 读难度台账后下传（档越高、选项越多、越难靠排除法蒙对，见
-    ``difficulty.target_option_count``）。**仅当非 None 时**才追加一条选项数约束（照
-    ``asked_before`` 的"可选追加、为空一字不改"先例，见 ``_append_num_options``），并在
-    ``_parse_mc`` 末尾加一道"至少 ``num_options`` 项"的门。**``None`` 时（默认路径 / 既有调用方 /
-    eval harness）不追加任何 message、``_parse_mc`` 行为完全不变**——发出的 message / replay_key /
-    prompt 版本号与改动前逐字节相同（eval / cassette 字节等价的命根子）。
-    ``quality_floor``：**选择题难度硬杠杆②**（SE-S5b）——按被考 item 难度档要求的**最低可接受干扰项
-    质量档**（``DistractorLabel``），由 ``assess_once`` 读难度台账后经 ``distractor_quality_floor``
-    算出并下传（仅高档 4/5 非 None，见 ``difficulty.distractor_quality_floor``）。
-    **仅当非 None 时**，在 ``_parse_mc`` 拿到合法 MC **之后**、``return`` 之前，对**每个干扰项**
-    （``options`` 里除 ``answer_index`` 外的项）调 ``judge_distractor``（Tier-2 判官、role=basic）
-    评其 plausibility；
-    **任一**干扰项未达 ``quality_floor``（``not distractor_meets_floor``）→ ``ModelRetry``（点名太弱
-    的那个、要求换更有迷惑性的干扰项），由既有有界重试循环重新生成；重试预算耗尽仍不达标 →
-    ``QuestionError``（同 ``num_options`` 门，交 ``RecoveryPolicy`` DEGRADED 跳过本轮、不炸会话）。
-    **``None`` 时（默认路径 / 既有调用方 / eval harness）一次都不调 judge，行为与改动前逐字节等价**
-    （judge 一调都不调是 cassette 不破的命根子）——judge 只在升过默认档的概念上触发。judge 的 model
-    span 挂在传入的 ``parent_span_id`` 之下（``judge_distractor`` 自负责发 MODEL_STARTED/ENDED），
-    故高档题的 trace 里能看到 judge 评了几次、重生成了几次（可观测）。
-    **成本护栏**：judge 每题最多评 ``(选项数 - 1) × max_attempts`` 次（每次重生成都要重评全部干扰
-    项），且**仅高档（4/5）触发**——默认 / 降档 / 新概念（``quality_floor is None``）零 judge 开销。
-    门槛表（``_TIER_QUALITY_FLOOR``）与达标比较（``distractor_meets_floor``）均在 ``difficulty.py``
-    集中、可调。
+    ``num_options`` 是确定性的目标选项数；传入时追加约束并严格校验，未传时保持默认出题路径。
+    ``quality_policy`` 是高档题的**集合质量契约**，例如“每项至少较弱，其中至少两项合理”。它不再
+    要求所有干扰项都达到最高档，也不靠 5/6 个选项堆出表面难度。首次产出后会评审每个干扰项；未
+    达标时冻结题干、正确项、证据与已通过项，只让模型替换必要的坏项。相同选项的 judge 结果在一次
+    生成任务内复用，避免每轮全量重评。耗尽有界预算后抛 ``QuestionError``，由接口层恢复策略决定
+    重试或跳过，不把整个考核误判为不可恢复失败。
+    整个过程用一个 question-generation span 包住 model 与 judge 子 span，并记录拒绝原因、修复次数
+    和 judge 调用数，便于区分“生成慢”“质量门拒绝”和“局部修复失败”。
     """
     if max_attempts < 1:
         raise ValueError("max_attempts 至少为 1")
+    effective_policy = quality_policy
     prompt = load_prompt("question_multiple_choice")
     valid_quotes = {ev.quote for ev in item.evidence}
     evidence_block = "\n".join(f"- {ev.quote}" for ev in item.evidence)
@@ -477,84 +477,231 @@ async def generate_multiple_choice(
     ]
     _append_asked_before(base_messages, asked_before)
     _append_num_options(base_messages, num_options)
+    generation_span = emitter.new_span_id()
+    emitter.emit(
+        LearningEvent.MULTIPLE_CHOICE_GENERATION_STARTED,
+        span_id=generation_span,
+        parent_span_id=parent_span_id,
+        payload={
+            "status": "running",
+            "item_id": item.item_id,
+            "question_type": "选择题",
+            "target_option_count": num_options,
+            "max_attempts": max_attempts,
+            "quality_policy": (
+                None
+                if effective_policy is None
+                else {
+                    "minimum_label": effective_policy.minimum_label,
+                    "minimum_reasonable": effective_policy.minimum_reasonable,
+                }
+            ),
+        },
+    )
     retry_note: str | None = None
     last_error = ""
-    for _ in range(max_attempts):
-        messages = list(base_messages)
-        if retry_note is not None:
-            messages.append(Message(role="user", content=retry_note))
-        completion = await _call_model(
-            messages,
-            provider=provider,
-            emitter=emitter,
-            parent_span_id=parent_span_id,
-            prompt_version=prompt.version,
-        )
-        try:
-            mc = _parse_mc(
-                completion.text,
-                valid_quotes,
-                asked_before=asked_before,
-                num_options=num_options,
+    last_reason_code = "invalid_output"
+    anchor: MultipleChoiceQuestion | None = None
+    retained_options: tuple[str, ...] = ()
+    verdict_cache: dict[str, DistractorLabel] = {}
+    attempts = 0
+    repair_attempts = 0
+    failure_stage = "model_call"
+    try:
+        for attempt in range(1, max_attempts + 1):
+            attempts = attempt
+            is_repair = anchor is not None
+            if is_repair:
+                repair_attempts += 1
+            messages = list(base_messages)
+            if retry_note is not None:
+                messages.append(Message(role="user", content=retry_note))
+            failure_stage = "model_call"
+            completion = await _call_model(
+                messages,
+                provider=provider,
+                emitter=emitter,
+                parent_span_id=generation_span,
+                prompt_version=prompt.version,
             )
-            # judge 验收闸门（SE-S5b 杠杆②，**仅当调用方按难度档传入 quality_floor 时生效**）：
-            # 拿到合法 MC 后再逐个 judge 干扰项，任一不达标 → ModelRetry 重生成（由本循环重试）。
-            # quality_floor is None（默认路径 / 既有调用方 / eval harness）时**整个不参与、judge
-            # 一次都不调**——行为与改动前逐字节等价（cassette / replay 不破的命根子）。
-            if quality_floor is not None:
-                await _enforce_distractor_floor(
-                    mc,
-                    item,
-                    quality_floor,
-                    provider=provider,
-                    emitter=emitter,
-                    parent_span_id=parent_span_id,
+            failure_stage = "validation"
+            mc: MultipleChoiceQuestion | None = None
+            try:
+                mc = _parse_mc(
+                    completion.text,
+                    valid_quotes,
+                    asked_before=asked_before,
+                    num_options=num_options,
                 )
-            return mc
-        except ModelRetry as exc:
-            last_error = str(exc)
-            retry_note = f"上一次出题无法采用：{exc}。请只返回合法 JSON，且引用真实证据。"
-    raise QuestionError(f"选择题出题失败（{max_attempts} 次尝试仍无合法输出）：{last_error}")
+                if anchor is not None:
+                    failure_stage = "repair_validation"
+                    _validate_mc_repair(anchor, mc, retained_options)
+                if effective_policy is not None:
+                    failure_stage = "distractor_quality"
+                    retained_options = await _assess_distractor_policy(
+                        mc,
+                        item,
+                        effective_policy,
+                        verdict_cache=verdict_cache,
+                        provider=provider,
+                        emitter=emitter,
+                        parent_span_id=generation_span,
+                    )
+                emitter.emit(
+                    LearningEvent.MULTIPLE_CHOICE_GENERATION_ENDED,
+                    span_id=generation_span,
+                    parent_span_id=parent_span_id,
+                    payload={
+                        "ok": True,
+                        "attempts": attempts,
+                        "repair_attempts": repair_attempts,
+                        "judge_calls": len(verdict_cache),
+                    },
+                )
+                return mc
+            except ModelRetry as exc:
+                last_error = str(exc)
+                last_reason_code = exc.reason_code
+                if exc.reason_code == "distractor_quality_unmet" and mc is not None:
+                    retained_options = exc.retained_options
+                    anchor = mc
+                emitter.emit(
+                    LearningEvent.MULTIPLE_CHOICE_GENERATION_ATTEMPT_REJECTED,
+                    parent_span_id=generation_span,
+                    payload={
+                        "attempt": attempt,
+                        "stage": "repair" if is_repair else "generation",
+                        "reason_code": exc.reason_code,
+                        "retained_distractor_count": len(retained_options),
+                    },
+                )
+                retry_note = _multiple_choice_retry_note(
+                    exc,
+                    anchor=anchor,
+                    retained_options=retained_options,
+                )
+        raise QuestionError(f"选择题出题失败（{max_attempts} 次尝试仍无合法输出）：{last_error}")
+    except Exception as exc:
+        failure_payload: dict[str, object] = {
+            "ok": False,
+            "attempts": attempts,
+            "repair_attempts": repair_attempts,
+            "judge_calls": len(verdict_cache),
+            "stage": failure_stage,
+        }
+        if isinstance(exc, QuestionError):
+            failure_payload["reason_code"] = last_reason_code
+        else:
+            failure_payload["error_type"] = type(exc).__name__
+        emitter.emit(
+            LearningEvent.MULTIPLE_CHOICE_GENERATION_ENDED,
+            span_id=generation_span,
+            parent_span_id=parent_span_id,
+            payload=failure_payload,
+        )
+        raise
 
 
-async def _enforce_distractor_floor(
+async def _assess_distractor_policy(
     mc: MultipleChoiceQuestion,
     item: KnowledgeItem,
-    quality_floor: DistractorLabel,
+    policy: DistractorQualityPolicy,
     *,
+    verdict_cache: dict[str, DistractorLabel],
     provider: Provider,
     emitter: EventEmitter,
     parent_span_id: str | None,
-) -> None:
-    """对 MC 的每个干扰项跑 Tier-2 judge，任一未达 ``quality_floor`` → ``ModelRetry``（点名该项）。
-
-    干扰项 = ``options`` 里除 ``answer_index`` 外的全部项；正确项 = ``options[answer_index]``。
-    逐项调 ``judge_distractor``（role=basic，自负责发 model span 挂 ``parent_span_id`` 下），首个
-    不达标的干扰项即抛 ``ModelRetry``（**短路**：无需评完剩余项就知道本版不合格），反馈进下一次
-    出题上下文让重试换更有迷惑性的干扰项。全部达标则静默返回、调用方采用该 MC。``judge_distractor``
-    自身有界重试用尽会抛 ``JudgeError``（DEGRADED），本函数不拦截、任其冒泡由上层
-    ``RecoveryPolicy`` 优雅降级（不与"干扰项太弱"的确定性重生成信号混淆）。**仅在
-    ``quality_floor is not None`` 时被调用**，故只有高档（4/5）题会走到这里——成本护栏见
-    ``generate_multiple_choice`` docstring。
-    """
+) -> tuple[str, ...]:
+    """评完整组干扰项；达标返回，未达标只要求替换必要项并保留其余项。"""
     correct_answer = mc.options[mc.answer_index]
-    for index, option in enumerate(mc.options):
-        if index == mc.answer_index:
-            continue
-        verdict = await judge_distractor(
-            item,
-            question=mc.question,
-            correct_answer=correct_answer,
-            distractor=option,
-            provider=provider,
-            emitter=emitter,
-            parent_span_id=parent_span_id,
-        )
-        if not distractor_meets_floor(verdict.label, quality_floor):
-            raise ModelRetry(
-                f"干扰项「{option}」质量不足：judge 判为「{verdict.label}」，本题难度档要求至少"
-                f"「{quality_floor}」——请换一个更有迷惑性、需真懂概念才能排除的干扰项"
+    distractors = [option for index, option in enumerate(mc.options) if index != mc.answer_index]
+    labels: dict[str, DistractorLabel] = {}
+    for option in distractors:
+        label = verdict_cache.get(option)
+        if label is None:
+            verdict = await judge_distractor(
+                item,
+                question=mc.question,
+                correct_answer=correct_answer,
+                distractor=option,
+                provider=provider,
+                emitter=emitter,
+                parent_span_id=parent_span_id,
             )
+            label = verdict.label
+            verdict_cache[option] = label
+        labels[option] = label
+
+    replacements = {
+        option
+        for option, label in labels.items()
+        if not distractor_meets_floor(label, policy.minimum_label)
+    }
+    reasonable_count = sum(label == "合理干扰" for label in labels.values())
+    reasonable_shortfall = max(0, policy.minimum_reasonable - reasonable_count)
+    if reasonable_shortfall:
+        weak_candidates = [
+            option
+            for option in distractors
+            if labels[option] == "较弱干扰" and option not in replacements
+        ]
+        replacements.update(weak_candidates[:reasonable_shortfall])
+
+    if not replacements:
+        return tuple(distractors)
+    retained = tuple(option for option in distractors if option not in replacements)
+    rejected = "、".join(f"「{option}」({labels[option]})" for option in replacements)
+    raise ModelRetry(
+        "干扰项集合未达到质量策略："
+        f"需每项至少「{policy.minimum_label}」且至少 {policy.minimum_reasonable} 项为「合理干扰」；"
+        f"请只替换 {rejected}",
+        reason_code="distractor_quality_unmet",
+        retained_options=retained,
+    )
+
+
+def _validate_mc_repair(
+    anchor: MultipleChoiceQuestion,
+    candidate: MultipleChoiceQuestion,
+    retained_options: Sequence[str],
+) -> None:
+    """局部修复不得改写已经通过的题干、答案、证据与干扰项。"""
+    invariant_changed = (
+        candidate.question != anchor.question
+        or candidate.answer_index != anchor.answer_index
+        or candidate.options[candidate.answer_index] != anchor.options[anchor.answer_index]
+        or list(candidate.cited_evidence) != list(anchor.cited_evidence)
+    )
+    missing_retained = [option for option in retained_options if option not in candidate.options]
+    if invariant_changed or missing_retained:
+        raise ModelRetry(
+            "局部修复改写了题干、正确项、证据或已通过干扰项；只能替换被拒绝的干扰项",
+            reason_code="repair_contract_violated",
+            retained_options=retained_options,
+        )
+
+
+def _multiple_choice_retry_note(
+    exc: ModelRetry,
+    *,
+    anchor: MultipleChoiceQuestion | None,
+    retained_options: Sequence[str],
+) -> str:
+    if anchor is None:
+        return f"上一次出题无法采用：{exc}。请只返回合法 JSON，且引用真实证据。"
+    frozen = {
+        "question": anchor.question,
+        "correct_answer": anchor.options[anchor.answer_index],
+        "answer_index": anchor.answer_index,
+        "cited_evidence": list(anchor.cited_evidence),
+        "retained_distractors": list(retained_options),
+    }
+    return (
+        f"上一次选择题的干扰项需要局部修复：{exc}。"
+        "请返回完整合法 JSON，但必须原样保留下列题干、正确项、answer_index、证据和已通过干扰项；"
+        "只替换未通过的干扰项，不得扩写摘要中没有被 cited_evidence 直接支持的事实。\n"
+        f"冻结内容：{json.dumps(frozen, ensure_ascii=False, sort_keys=True)}"
+    )
 
 
 def _append_num_options(messages: list[Message], num_options: int | None) -> None:
@@ -574,6 +721,8 @@ def _append_num_options(messages: list[Message], num_options: int | None) -> Non
                 f"本题请恰好给出 {num_options} 个选项："
                 f"1 个正确项 + {num_options - 1} 个有迷惑性、需真懂概念才能排除的干扰项；"
                 "选项之间在长度 / 具体度上保持平行，不要让正确项被表面特征出卖。"
+                "摘要只用于帮助理解概念；正确答案的实质主张必须由 cited_evidence 直接支持。"
+                "若 Evidence 只支持较窄主张，就缩小问题，不得把摘要额外细节伪装成原文事实。"
             ),
         )
     )
@@ -588,22 +737,32 @@ def _parse_mc(
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise ModelRetry(f"非法 JSON：{exc}") from exc
+        raise ModelRetry(f"非法 JSON：{exc}", reason_code="invalid_json") from exc
     try:
         mc = MultipleChoiceQuestion.model_validate(data)
     except ValidationError as exc:
-        raise ModelRetry(f"输出不符合 schema：{_stable_error_summary(exc)}") from exc
+        raise ModelRetry(
+            f"输出不符合 schema：{_stable_error_summary(exc)}",
+            reason_code="schema_invalid",
+        ) from exc
     # 可判卷门：选项 ≥ 2、正确项下标合法——否则确定性判卷无从比对。
     if len(mc.options) < 2:
-        raise ModelRetry(f"选项至少需 2 项（现 {len(mc.options)} 项）：选择题需可区分的干扰项")
+        raise ModelRetry(
+            f"选项至少需 2 项（现 {len(mc.options)} 项）：选择题需可区分的干扰项",
+            reason_code="option_count_invalid",
+        )
     if not 0 <= mc.answer_index < len(mc.options):
         raise ModelRetry(
-            f"answer_index 越界：{mc.answer_index} 不在合法下标 [0, {len(mc.options)}) 内"
+            f"answer_index 越界：{mc.answer_index} 不在合法下标 [0, {len(mc.options)}) 内",
+            reason_code="answer_index_invalid",
         )
     # 选项须两两可区分：确定性判卷按文本比对，重复选项会让"选了干扰项"被误判为对、污染薄弱账本。
     # （空 / 纯空白选项已由 options 的 NonEmptyStr 挡下。）
     if len(set(mc.options)) != len(mc.options):
-        raise ModelRetry(f"选项含重复文本：{mc.options}——确定性判卷按文本比对，选项须两两可区分")
+        raise ModelRetry(
+            f"选项含重复文本：{mc.options}——确定性判卷按文本比对，选项须两两可区分",
+            reason_code="duplicate_options",
+        )
     # 反-tell 门（缝 3）：只挡表面泄漏、不测 plausibility——干扰项 plausibility（"不懂概念能否排除"）
     # 的真打分是 Tier 2 LLM-judge，显式不在本 issue。放在可判卷门之后（options ≥ 2、answer_index
     # 合法已保证），故可安全区分正确项 / 干扰项。prompt 已把这些从软约束升为硬约束，这两道确定性门
@@ -612,32 +771,44 @@ def _parse_mc(
     if has_meta_option(mc.options):
         raise ModelRetry(
             "含 meta 选项（如'以上都对 / 都不对 / all of the above'）：每个干扰项须是具体的常见"
-            "误解或邻近但错的概念，不得用 meta 选项泄漏题型"
+            "误解或邻近但错的概念，不得用 meta 选项泄漏题型",
+            reason_code="meta_option",
         )
     # (b) 长度离群：正确项 > 最长干扰项 2 倍、或 < 最短干扰项一半（答案被长度出卖）。
     if has_length_outlier(mc.options, mc.answer_index):
         raise ModelRetry(
-            "正确项与干扰项长度悬殊（答案被长度出卖）：请让所有选项在长度 / 具体度 / 语法上平行"
+            "正确项与干扰项长度悬殊（答案被长度出卖）：请让所有选项在长度 / 具体度 / 语法上平行",
+            reason_code="length_outlier",
         )
     # 刻意不加"题干回声"（stem-echo）门：中文无可靠分词，按字 / n-gram 匹配误报率高（正解与题干
     # 天然共享领域词），易误伤合法题；题干回声只在 prompt 里硬禁，其检测留给 Tier 2 judge。
     # 防幽灵题门（与开放题同规则）：cited_evidence 非空 + 每条都锚定被考 item 真实证据（子串即可）。
     if not mc.cited_evidence:
-        raise ModelRetry("cited_evidence 不能为空：题必须引用被考知识点的原文证据")
+        raise ModelRetry(
+            "cited_evidence 不能为空：题必须引用被考知识点的原文证据",
+            reason_code="evidence_missing",
+        )
     ghost = ungrounded_citations(mc.cited_evidence, valid_quotes)
     if ghost:
-        raise ModelRetry(f"引用了不属于被考知识点的证据（幽灵引文）：{ghost}")
+        raise ModelRetry(
+            f"引用了不属于被考知识点的证据（幽灵引文）：{ghost}",
+            reason_code="ghost_evidence",
+        )
     # 归一化去重门（缝 3，与开放题同规则）：题干归一化后命中会话内"已问过"台账 → ModelRetry。
     if is_duplicate(mc.question, asked_before):
-        raise ModelRetry("与已问过的题重复：请换一个角度提问，不要重复已考过的问题")
+        raise ModelRetry(
+            "与已问过的题重复：请换一个角度提问，不要重复已考过的问题",
+            reason_code="question_repeated",
+        )
     # 选项数硬杠杆门（SE-S5a，缝 3，**仅当调用方按难度档传入 num_options 时生效**）：档越高、要求
     # 选项越多、越难靠排除法蒙对。少于目标数 → ModelRetry，反馈进下一次上下文让重试补足干扰项。
     # 放在所有既有门之后（不与既有 >= 2 / answer_index / 去重 / meta / 长度门抢先报错）；
     # num_options is None（默认路径 / 既有调用方 / eval harness）时**此门整个不参与**——行为与
     # 改动前逐字节等价。
-    if num_options is not None and len(mc.options) < num_options:
+    if num_options is not None and len(mc.options) != num_options:
         raise ModelRetry(
-            f"选项数不足：本题难度档要求至少 {num_options} 个选项（现 {len(mc.options)} 项），"
-            "请补足有迷惑性、需真懂概念才能排除的干扰项"
+            f"选项数不符：本题要求恰好 {num_options} 个选项（现 {len(mc.options)} 项），"
+            "请只返回指定数量且有迷惑性、需真懂概念才能排除的选项",
+            reason_code="option_count_unmet",
         )
     return mc

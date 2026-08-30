@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 
 from grandquiz.domain.learning.assessment.engine import AssessmentResult, assess_once
+from grandquiz.domain.learning.assessment.question import QuestionError
 from grandquiz.domain.learning.assessment.scope import (
     ALL_SCOPE,
     QuizScope,
@@ -277,11 +278,13 @@ async def test_fresh_concept_routes_to_mc_with_deterministic_grade(
         rng=new_rng(_SEED),
     )
 
-    # 事件流：MC 路径只有一对出题 model span（无判卷 model span）；判"错"再追加 FOLLOWUP_GIVEN。
+    # 事件流：question-generation span 包住唯一出题 model span；MC 判卷仍不调用模型。
     expected_stream = [
         _ASSESSMENT_STARTED,
+        LearningEvent.MULTIPLE_CHOICE_GENERATION_STARTED,
         EventType.MODEL_STARTED,
         EventType.MODEL_ENDED,
+        LearningEvent.MULTIPLE_CHOICE_GENERATION_ENDED,
         LearningEvent.QUESTION_ASKED,
         LearningEvent.ANSWER_JUDGED,
         LearningEvent.CONCEPT_STATE_CHANGED,
@@ -328,12 +331,14 @@ async def test_fresh_concept_routes_to_mc_with_deterministic_grade(
         assert memory.state_of(result.item_id) is None
         assert LearningEvent.FOLLOWUP_GIVEN not in types
 
-    # span 树：assessment 根 → 只有 1 个 model 子 span（出题；MC 判卷是代码、无 span）。
+    # span 树：assessment → question-generation → model；MC 判卷仍无模型 span。
     roots = trace.span_tree("run")
     assert len(roots) == 1
     assert roots[0].type == "assessment"
-    assert [c.type for c in roots[0].children] == ["model"]
-    assert all(child.end_ts is not None for child in roots[0].children)
+    assert [c.type for c in roots[0].children] == ["learning.multiple_choice_generation"]
+    generation = roots[0].children[0]
+    assert [child.type for child in generation.children] == ["model"]
+    assert generation.end_ts is not None
     trace.close()
 
 
@@ -668,6 +673,44 @@ async def test_assessment_session_owns_multi_round_coverage_state() -> None:
 
     assert first.status == second.status == "judged"
     assert first.item_id != second.item_id
+    trace.close()
+
+
+class _QuestionFailsOnceProvider(_AssessProvider):
+    def __init__(self) -> None:
+        super().__init__(verdict="对")
+        self._invalid_calls_left = 3
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        if role == "enrich" and self._invalid_calls_left > 0:
+            self._invalid_calls_left -= 1
+            return Completion(text="not-json", usage=Usage(prompt_tokens=1, completion_tokens=1))
+        return await super().complete(messages, role=role, tools=tools)
+
+
+async def test_assessment_session_retries_failed_question_generation_on_same_item() -> None:
+    emitter, events, trace = _harness()
+    store, _item_ids = _stocked_store()
+    session = AssessmentSession(
+        store=store,
+        provider=_QuestionFailsOnceProvider(),
+        responder=ScriptedResponder(answer=_MC_CORRECT),
+        memory=LearningMemory(),
+        seed=_SEED,
+    )
+
+    with pytest.raises(QuestionError):
+        await session.assess(emitter=emitter, question_type="选择题")
+    retried = await session.assess(emitter=emitter, question_type="选择题")
+
+    generation_targets = [
+        event.payload["item_id"]
+        for event in events
+        if event.type == "learning.multiple_choice_generation.started"
+    ]
+    assert generation_targets == [retried.item_id, retried.item_id]
     trace.close()
 
 

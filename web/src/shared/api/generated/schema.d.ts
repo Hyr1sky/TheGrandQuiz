@@ -210,6 +210,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assessments/{session_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Assessment Round */
+        post: operations["retry_assessment_round_api_v1_assessments__session_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chat/sessions": {
         parameters: {
             query?: never;
@@ -1346,6 +1363,8 @@ export interface components {
             error?: string | null;
             judgement?: components["schemas"]["AssessmentJudgementView"] | null;
             question?: components["schemas"]["AssessmentQuestionView"] | null;
+            /** Recovery Stage */
+            recovery_stage?: ("question_generation" | "grading" | "workflow") | null;
             /** Round Index */
             round_index: number;
             /** Rounds */
@@ -1356,7 +1375,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "preparing" | "awaiting_answer" | "grading" | "judged" | "completed" | "refused" | "failed" | "cancelled";
+            status: "preparing" | "degraded" | "awaiting_answer" | "grading" | "judged" | "completed" | "refused" | "failed" | "cancelled";
             /** Trace Id */
             trace_id: string;
         };
@@ -3411,6 +3430,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    retry_assessment_round_api_v1_assessments__session_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NextRoundRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

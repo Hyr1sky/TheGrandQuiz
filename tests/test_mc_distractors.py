@@ -21,6 +21,7 @@ from grandquiz.domain.learning.assessment.question import (
     QuestionError,
     generate_multiple_choice,
 )
+from grandquiz.domain.learning.difficulty import DistractorQualityPolicy
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
@@ -43,6 +44,14 @@ class _FixedProvider:
         self.calls += 1
         self.roles.append(role)
         return Completion(text=self.text, usage=Usage(prompt_tokens=5, completion_tokens=2))
+
+
+class _ExplodingProvider:
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        del messages, role, tools
+        raise RuntimeError("provider unavailable")
 
 
 def _emitter() -> tuple[EventEmitter, list[AgentEvent]]:
@@ -116,6 +125,23 @@ async def test_balanced_mc_without_meta_passes() -> None:
     )
     assert isinstance(mc, MultipleChoiceQuestion)
     assert provider.calls == 1
+
+
+async def test_provider_failure_closes_generation_span_without_invalid_output_diagnosis() -> None:
+    emitter, events = _emitter()
+
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        await generate_multiple_choice(
+            _item(), provider=_ExplodingProvider(), emitter=emitter, parent_span_id="a"
+        )
+
+    ended = next(
+        event for event in events if event.type == "learning.multiple_choice_generation.ended"
+    )
+    assert ended.payload["ok"] is False
+    assert ended.payload["stage"] == "model_call"
+    assert ended.payload["error_type"] == "RuntimeError"
+    assert "reason_code" not in ended.payload
 
 
 @pytest.mark.parametrize(
@@ -250,7 +276,12 @@ async def test_existing_fake_options_pass_anti_tell_gates(
     )
     assert list(mc.options) == options
     assert provider.calls == 1  # 首次即过、无误伤重试
-    assert [e.type for e in events] == [EventType.MODEL_STARTED, EventType.MODEL_ENDED]
+    assert [e.type for e in events] == [
+        "learning.multiple_choice_generation.started",
+        EventType.MODEL_STARTED,
+        EventType.MODEL_ENDED,
+        "learning.multiple_choice_generation.ended",
+    ]
 
 
 # --- SE-S5a：选项数硬杠杆门（num_options 传入才生效；None 时行为逐字节等价改动前）------------
@@ -305,6 +336,33 @@ async def test_num_options_six_with_three_options_retries_then_raises() -> None:
     assert provider.calls == 2  # 每次都因选项不足重试 → 用尽
 
 
+async def test_num_options_is_an_exact_contract_and_rejects_extra_options() -> None:
+    provider = _MessageCapturingProvider(
+        _mc_json(options=[*_THREE_OPTIONS, "定义时环境", "调用时环境"], answer_index=0)
+    )
+    emitter, events = _emitter()
+
+    with pytest.raises(QuestionError):
+        await generate_multiple_choice(
+            _item(),
+            provider=provider,
+            emitter=emitter,
+            parent_span_id="a",
+            max_attempts=2,
+            num_options=4,
+        )
+
+    rejected = [
+        event
+        for event in events
+        if event.type == "learning.multiple_choice_generation.attempt_rejected"
+    ]
+    assert [event.payload["reason_code"] for event in rejected] == [
+        "option_count_unmet",
+        "option_count_unmet",
+    ]
+
+
 async def test_num_options_none_with_three_options_still_passes() -> None:
     # **关键对照**：不传 num_options（默认 None）→ 选项数门整个不参与，3 选项仍过既有 >= 2 门。
     # 证明默认路径逐字节等价改动前：既有调用方 / eval harness 不受新门影响。
@@ -319,7 +377,23 @@ async def test_num_options_none_with_three_options_still_passes() -> None:
     assert "个选项" not in provider.last_text  # None 时不注入任何选项数约束
 
 
-# --- SE-S5b：judge 验收闸门（quality_floor 传入才生效；None 时 judge 零调用、字节等价改动前）----
+async def test_correct_answer_claims_must_be_directly_supported_by_evidence() -> None:
+    provider = _MessageCapturingProvider(_mc_json(options=_THREE_OPTIONS, answer_index=0))
+    emitter, _ = _emitter()
+
+    await generate_multiple_choice(
+        _item(),
+        provider=provider,
+        emitter=emitter,
+        parent_span_id="a",
+        num_options=3,
+    )
+
+    assert "摘要只用于帮助理解概念" in provider.last_text
+    assert "正确答案的实质主张必须由 cited_evidence 直接支持" in provider.last_text
+
+
+# --- SE-S5b：集合质量策略（传入才生效；None 时 judge 零调用）----
 
 
 class _JudgingProvider:
@@ -327,8 +401,7 @@ class _JudgingProvider:
 
     judge_distractor 走 role=basic（同判卷官），MC 出题走 role=enrich——本文件 generate_multiple_
     choice 路径下 basic 槽**只可能**是 judge（MC 判卷是确定性代码、不打 LLM），按 role 分流无歧义。
-    分别计 ``enrich_calls``（出题）与 ``judge_calls``（评审）——断言 quality_floor=None 时 judge 零
-    调用、非 None 时 judge 触发重生成。
+    分别计 ``enrich_calls``（出题）与 ``judge_calls``（评审）。
     """
 
     def __init__(self, *, mc_json: str, judge_label: str) -> None:
@@ -350,15 +423,12 @@ class _JudgingProvider:
         return Completion(text=verdict, usage=Usage(prompt_tokens=5, completion_tokens=2))
 
 
-async def test_quality_floor_weak_distractor_retries_then_raises() -> None:
-    # quality_floor="合理干扰"、judge 把干扰项判"无效干扰"（未达门槛）→ ModelRetry 重生成，重试
-    # 用尽 → QuestionError。judge 首个不达标干扰项即短路（每轮只 1 次 judge 调用），出题被重调
-    # max_attempts 次（证明发生了重生成）。
+async def test_quality_policy_invalid_distractors_exhaust_bounded_repairs() -> None:
     provider = _JudgingProvider(
         mc_json=_mc_json(options=["变量本身", "值的快照", "外层作用域"], answer_index=0),
         judge_label="无效干扰",
     )
-    emitter, _ = _emitter()
+    emitter, events = _emitter()
 
     with pytest.raises(QuestionError):
         await generate_multiple_choice(
@@ -367,16 +437,21 @@ async def test_quality_floor_weak_distractor_retries_then_raises() -> None:
             emitter=emitter,
             parent_span_id="a",
             max_attempts=2,
-            quality_floor="合理干扰",
+            quality_policy=DistractorQualityPolicy(minimum_label="较弱干扰"),
         )
-    assert provider.enrich_calls == 2  # 每轮 judge 不达标 → 重生成 → 用尽
-    assert provider.judge_calls == 2  # 每轮短路在首个干扰项 → 1 次/轮
+    assert provider.enrich_calls == 2
+    # 第二版复用了完全相同的选项；一次生成任务内不会重复 judge 同一文本。
+    assert provider.judge_calls == 2
+    rejected = [
+        event
+        for event in events
+        if event.type == "learning.multiple_choice_generation.attempt_rejected"
+    ]
+    assert [event.payload["stage"] for event in rejected] == ["generation", "repair"]
+    assert [event.payload["retained_distractor_count"] for event in rejected] == [0, 0]
 
 
-async def test_quality_floor_reasonable_distractors_pass_first_try() -> None:
-    # quality_floor="合理干扰"、judge 把每个干扰项都判"合理干扰"（达标）→ 首次即过、无重生成。
-    # 2 个干扰项都被评（无短路，因都达标）→ judge_calls == 2；出题只 1 次。judge 的 model span 亦
-    # 上脊柱（basic 槽事件可见）——高档题 trace 里能看到 judge 评了几次（可观测）。
+async def test_quality_policy_reasonable_distractors_pass_first_try() -> None:
     provider = _JudgingProvider(
         mc_json=_mc_json(options=["变量本身", "值的快照", "外层作用域"], answer_index=0),
         judge_label="合理干扰",
@@ -388,23 +463,22 @@ async def test_quality_floor_reasonable_distractors_pass_first_try() -> None:
         provider=provider,
         emitter=emitter,
         parent_span_id="a",
-        quality_floor="合理干扰",
+        quality_policy=DistractorQualityPolicy(minimum_label="较弱干扰", minimum_reasonable=2),
     )
     assert isinstance(mc, MultipleChoiceQuestion)
     assert provider.enrich_calls == 1  # 首次即过
     assert provider.judge_calls == 2  # 2 个干扰项各评一次
-    # judge 的 model span 挂在传入 parent_span_id 下、发 basic 角色的 MODEL_STARTED（可观测）。
+    generation = next(
+        event for event in events if event.type == "learning.multiple_choice_generation.started"
+    )
     basic_starts = [
         e for e in events if e.type == EventType.MODEL_STARTED and e.payload.get("role") == "basic"
     ]
-    assert len(basic_starts) == 2  # 两次 judge 调用各一个 model span
-    assert all(e.parent_span_id == "a" for e in basic_starts)
+    assert len(basic_starts) == 2
+    assert all(e.parent_span_id == generation.span_id for e in basic_starts)
 
 
-async def test_quality_floor_none_never_calls_judge() -> None:
-    # **关键对照**：不传 quality_floor（默认 None）→ judge 一次都不调，哪怕干扰项本会被判"无效"。
-    # 首次即过、无重生成。证明默认路径逐字节等价改动前：judge 零调用是 cassette / replay
-    # 不破的命根。
+async def test_quality_policy_none_never_calls_judge() -> None:
     provider = _JudgingProvider(
         mc_json=_mc_json(options=["变量本身", "值的快照", "外层作用域"], answer_index=0),
         judge_label="无效干扰",  # 若 judge 被调会判不达标——但 None 时根本不调
@@ -417,6 +491,86 @@ async def test_quality_floor_none_never_calls_judge() -> None:
     assert isinstance(mc, MultipleChoiceQuestion)
     assert provider.enrich_calls == 1  # 首次即过
     assert provider.judge_calls == 0  # **judge 零调用**——默认路径不触发闸门
-    # 事件序仅出题一对 model span，无任何 basic（judge）槽事件——与改动前逐字节一致。
-    assert [e.type for e in events] == [EventType.MODEL_STARTED, EventType.MODEL_ENDED]
+    assert [e.type for e in events] == [
+        "learning.multiple_choice_generation.started",
+        EventType.MODEL_STARTED,
+        EventType.MODEL_ENDED,
+        "learning.multiple_choice_generation.ended",
+    ]
     assert all(e.payload.get("role") != "basic" for e in events)  # 无 judge（basic）span
+
+
+class _RepairingDistractorProvider:
+    """首版含一个无效干扰项；修复版保留已通过选项，只替换坏项。"""
+
+    def __init__(self) -> None:
+        self.enrich_calls = 0
+        self.judge_calls = 0
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        text = "\n".join(message.content for message in messages)
+        if role == "enrich":
+            self.enrich_calls += 1
+            options = (
+                ["变量本身", "值的快照", "外层作用域", "调用时环境"]
+                if self.enrich_calls == 1
+                else ["变量本身", "值的快照", "动态作用域", "调用时环境"]
+            )
+            return Completion(
+                text=_mc_json(options=options, answer_index=0),
+                usage=Usage(prompt_tokens=5, completion_tokens=2),
+            )
+        self.judge_calls += 1
+        if "待评干扰项：外层作用域" in text:
+            label = "无效干扰"
+        elif "待评干扰项：动态作用域" in text:
+            label = "较弱干扰"
+        else:
+            label = "合理干扰"
+        return Completion(
+            text=json.dumps({"label": label, "rationale": "测试理由"}, ensure_ascii=False),
+            usage=Usage(prompt_tokens=5, completion_tokens=2),
+        )
+
+
+async def test_quality_policy_repairs_only_rejected_distractor_and_records_trace() -> None:
+    provider = _RepairingDistractorProvider()
+    emitter, events = _emitter()
+
+    mc = await generate_multiple_choice(
+        _item(),
+        provider=provider,
+        emitter=emitter,
+        parent_span_id="a",
+        max_attempts=3,
+        num_options=4,
+        quality_policy=DistractorQualityPolicy(
+            minimum_label="较弱干扰",
+            minimum_reasonable=2,
+        ),
+    )
+
+    assert list(mc.options) == ["变量本身", "值的快照", "动态作用域", "调用时环境"]
+    assert provider.enrich_calls == 2
+    assert provider.judge_calls == 4  # 首版 3 项 + 只评新替换的 1 项
+    event_types = [event.type for event in events]
+    assert "learning.multiple_choice_generation.started" in event_types
+    rejected = next(
+        event
+        for event in events
+        if event.type == "learning.multiple_choice_generation.attempt_rejected"
+    )
+    assert rejected.payload["reason_code"] == "distractor_quality_unmet"
+    assert rejected.payload["retained_distractor_count"] == 2
+    ended = next(
+        event for event in events if event.type == "learning.multiple_choice_generation.ended"
+    )
+    assert ended.payload == {
+        "ok": True,
+        "attempts": 2,
+        "repair_attempts": 1,
+        "judge_calls": 4,
+    }
+    assert [event.seq for event in events] == list(range(len(events)))

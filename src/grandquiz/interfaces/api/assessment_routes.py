@@ -147,6 +147,33 @@ async def start_next_assessment_round(
 
 
 @router.post(
+    "/{session_id}/retry",
+    response_model=AssessmentView,
+    status_code=202,
+)
+async def retry_assessment_round(
+    session_id: str,
+    command: NextRoundRequest,
+    request: Request,
+) -> AssessmentView:
+    try:
+        assessment = assessment_manager_from(request).retry_round(session_id, command)
+    except AssessmentCommandConflict as exc:
+        raise ApiError(
+            status_code=409,
+            code="assessment_retry_conflict",
+            message=str(exc),
+        ) from exc
+    if assessment is None:
+        raise ApiError(
+            status_code=404,
+            code="assessment_not_found",
+            message=f"考核会话不存在：{session_id}",
+        )
+    return assessment
+
+
+@router.post(
     "/{session_id}/questions/{question_id}/evidence/reveal",
     response_model=AssessmentView,
 )

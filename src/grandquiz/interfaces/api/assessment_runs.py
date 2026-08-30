@@ -15,11 +15,12 @@ from grandquiz.domain.learning.assessment.appeal import (
 )
 from grandquiz.domain.learning.assessment.grading import (
     AssessmentDiagnosisKind,
+    GradingError,
     Verdict,
     grade_answer,
 )
 from grandquiz.domain.learning.assessment.plan import AssessmentPlan
-from grandquiz.domain.learning.assessment.question import QuestionSpec
+from grandquiz.domain.learning.assessment.question import QuestionError, QuestionSpec
 from grandquiz.domain.learning.assessment.scope import SelectedScope
 from grandquiz.domain.learning.assessment.selection import Focus, apply_scope
 from grandquiz.domain.learning.assessment.session import AssessmentSession
@@ -42,11 +43,13 @@ from grandquiz.interfaces.api.observability import TraceObservatory
 from grandquiz.interfaces.learning_outbox import publish_pending_learning_facts
 from grandquiz.kernel.clock import Clock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
+from grandquiz.kernel.recovery import Decision, RecoveryPolicy
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Provider
 
 AssessmentStatus = Literal[
     "preparing",
+    "degraded",
     "awaiting_answer",
     "grading",
     "judged",
@@ -56,9 +59,11 @@ AssessmentStatus = Literal[
     "cancelled",
 ]
 AssessmentAppealStatus = Literal["available", "grading", "resolved", "failed", "cancelled"]
+AssessmentRecoveryStage = Literal["question_generation", "grading", "workflow"]
 
 ASSESSMENT_RUN_STARTED = "web.assessment_run.started"
 ASSESSMENT_RUN_ENDED = "web.assessment_run.ended"
+ASSESSMENT_RUN_DEGRADED = "web.assessment_run.degraded"
 ASSESSMENT_APPEAL_STARTED = "web.assessment_appeal.started"
 ASSESSMENT_APPEAL_ENDED = "web.assessment_appeal.ended"
 _PUBLIC_ASSESSMENT_DIAGNOSES = frozenset(
@@ -193,6 +198,7 @@ class AssessmentView(BaseModel):
     judgement: AssessmentJudgementView | None = None
     appeal: AssessmentAppealView | None = None
     error: str | None = None
+    recovery_stage: AssessmentRecoveryStage | None = None
 
 
 class _WebResponder(Responder):
@@ -255,10 +261,12 @@ class _AssessmentRecord:
     submitted_answer: str | None = None
     attempt_id: str | None = None
     error: str | None = None
+    recovery_stage: AssessmentRecoveryStage | None = None
     task: asyncio.Task[None] | None = None
     appeal_task: asyncio.Task[None] | None = None
     appeal_span_id: str | None = None
     next_request_ids: set[str] = field(default_factory=_empty_strings)
+    retry_request_ids: set[str] = field(default_factory=_empty_strings)
     terminal_emitted: bool = False
 
     def view(self) -> AssessmentView:
@@ -289,6 +297,7 @@ class _AssessmentRecord:
             judgement=self.judgement,
             appeal=self.appeal,
             error=self.error,
+            recovery_stage=self.recovery_stage,
         )
 
 
@@ -460,11 +469,20 @@ class AssessmentManager:
             return record.view()
         if record.appeal is not None and record.appeal.status == "grading":
             raise AssessmentCommandConflict("补充说明正在重判，暂时不能进入下一题")
-        if record.status != "judged" or record.round_index >= record.plan.rounds:
+        if record.status not in {"judged", "degraded"}:
             raise AssessmentCommandConflict("当前考核不能进入下一题")
+        if record.round_index >= record.plan.rounds:
+            if record.status != "degraded":
+                raise AssessmentCommandConflict("当前考核不能进入下一题")
+            record.next_request_ids.add(command.request_id)
+            record.status = "completed"
+            self._emit_terminal(record, "completed")
+            return record.view()
         record.next_request_ids.add(command.request_id)
         record.round_index += 1
         record.status = "preparing"
+        record.error = None
+        record.recovery_stage = None
         record.question_id = None
         record.item_id = None
         record.question_text = None
@@ -484,6 +502,28 @@ class AssessmentManager:
         record.task = asyncio.create_task(
             self._run_round(record),
             name=f"grandquiz-api-assessment:{session_id}:{record.round_index}",
+        )
+        return record.view()
+
+    def retry_round(
+        self,
+        session_id: str,
+        command: NextRoundRequest,
+    ) -> AssessmentView | None:
+        record = self._records.get(session_id)
+        if record is None:
+            return None
+        if command.request_id in record.retry_request_ids:
+            return record.view()
+        if record.status != "degraded" or record.recovery_stage != "question_generation":
+            raise AssessmentCommandConflict("当前题目不需要重试")
+        record.retry_request_ids.add(command.request_id)
+        record.status = "preparing"
+        record.error = None
+        record.recovery_stage = None
+        record.task = asyncio.create_task(
+            self._run_round(record),
+            name=f"grandquiz-api-assessment-retry:{session_id}:{record.round_index}",
         )
         return record.view()
 
@@ -591,13 +631,42 @@ class AssessmentManager:
             self._emit_terminal(record, "cancelled")
             raise
         except Exception as exc:
-            record.status = "failed"
-            record.error = "本轮考核失败，请通过 trace_id 查看详情"
+            decision = RecoveryPolicy(record.emitter).decide(exc)
             record.emitter.emit(
                 EventType.ERROR,
                 span_id=record.run_span_id,
                 payload={"error_type": type(exc).__name__},
             )
+            if decision is Decision.SKIP:
+                if isinstance(exc, QuestionError):
+                    stage: AssessmentRecoveryStage = "question_generation"
+                    reason_code = "question_generation_exhausted"
+                    message = "本题生成失败，可以重试本题或跳过继续"
+                elif isinstance(exc, GradingError):
+                    stage = "grading"
+                    reason_code = "grading_exhausted"
+                    message = "本题判卷失败，可以跳过此题继续"
+                else:
+                    stage = "workflow"
+                    reason_code = "workflow_degraded"
+                    message = "本轮处理失败，可以跳过此题继续"
+                record.status = "degraded"
+                record.error = message
+                record.recovery_stage = stage
+                record.emitter.emit(
+                    ASSESSMENT_RUN_DEGRADED,
+                    span_id=record.run_span_id,
+                    payload={
+                        "status": "degraded",
+                        "round_index": record.round_index,
+                        "stage": stage,
+                        "reason_code": reason_code,
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                return
+            record.status = "failed"
+            record.error = "本轮考核失败，请通过 trace_id 查看详情"
             self._emit_terminal(record, "failed")
 
     async def _run_appeal(self, record: _AssessmentRecord) -> None:

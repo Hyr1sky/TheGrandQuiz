@@ -14,15 +14,19 @@ setup:
     - lang_correct
 expected_events:
   - assessment.started
+  - learning.multiple_choice_generation.started
   - model.started
   - model.ended
+  - learning.multiple_choice_generation.ended
   - learning.question_asked
   - learning.answer_judged
   - learning.concept_state_changed
   - assessment.ended
   - assessment.started
+  - learning.multiple_choice_generation.started
   - model.started
   - model.ended
+  - learning.multiple_choice_generation.ended
   - learning.question_asked
   - learning.answer_judged
   - learning.concept_state_changed

@@ -18,24 +18,30 @@ expected_events:
   - model.ended
   - tool_call.started
   - assessment.started
+  - learning.multiple_choice_generation.started
   - model.started
   - model.ended
+  - learning.multiple_choice_generation.ended
   - learning.question_asked
   - learning.answer_judged
   - learning.concept_state_changed
   - learning.followup_given
   - assessment.ended
   - assessment.started
+  - learning.multiple_choice_generation.started
   - model.started
   - model.ended
+  - learning.multiple_choice_generation.ended
   - learning.question_asked
   - learning.answer_judged
   - learning.concept_state_changed
   - learning.followup_given
   - assessment.ended
   - assessment.started
+  - learning.multiple_choice_generation.started
   - model.started
   - model.ended
+  - learning.multiple_choice_generation.ended
   - learning.question_asked
   - learning.answer_judged
   - learning.concept_state_changed

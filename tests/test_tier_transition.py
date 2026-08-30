@@ -18,7 +18,7 @@ from grandquiz.domain.learning.difficulty import (
     MasterySignals,
     difficulty_prompt_hint,
     distractor_meets_floor,
-    distractor_quality_floor,
+    distractor_quality_policy,
     next_tier,
     target_option_count,
 )
@@ -295,8 +295,8 @@ def test_target_option_count_each_tier() -> None:
     assert target_option_count(1) == 3
     assert target_option_count(2) == 3
     assert target_option_count(3) == 4
-    assert target_option_count(4) == 5
-    assert target_option_count(5) == 6
+    assert target_option_count(4) == 4
+    assert target_option_count(5) == 4
 
 
 def test_target_option_count_default_tier_is_four() -> None:
@@ -311,10 +311,10 @@ def test_target_option_count_is_monotonic_non_decreasing() -> None:
     assert all(counts[i] <= counts[i + 1] for i in range(len(counts) - 1))
 
 
-def test_target_option_count_boundaries_are_min_three_max_six() -> None:
-    # 边界：最低档不低于 3 项（选择题至少要有可排除的干扰项），最高档到 6 项。
+def test_target_option_count_boundaries_are_min_three_max_four() -> None:
+    # 边界：最低档不低于 3 项；高档不靠堆选项制造表面难度，最多 4 项。
     assert target_option_count(1) == 3  # 下界
-    assert target_option_count(5) == 6  # 上界
+    assert target_option_count(5) == 4  # 上界
 
 
 def test_target_option_count_deterministic() -> None:
@@ -322,37 +322,20 @@ def test_target_option_count_deterministic() -> None:
     assert target_option_count(4) == target_option_count(4)
 
 
-# --- SE-S5b：档位 → 干扰项质量闸门（``distractor_quality_floor`` + ``distractor_meets_floor``）----
+def test_high_tier_quality_policy_is_compositional() -> None:
+    tier4 = distractor_quality_policy(4)
+    tier5 = distractor_quality_policy(5)
+    assert tier4 is not None
+    assert tier5 is not None
+    assert (tier4.minimum_label, tier4.minimum_reasonable) == ("较弱干扰", 1)
+    assert (tier5.minimum_label, tier5.minimum_reasonable) == ("较弱干扰", 2)
 
 
-def test_quality_floor_only_gates_above_default_tier() -> None:
-    # 逐档钉死：只有高于默认档（3）的 tier 设 judge 闸门；≤3 一律 None（不设门）。
-    assert distractor_quality_floor(1) is None
-    assert distractor_quality_floor(2) is None
-    assert distractor_quality_floor(3) is None
-    assert distractor_quality_floor(4) == "较弱干扰"
-    assert distractor_quality_floor(5) == "合理干扰"
-
-
-def test_quality_floor_default_tier_is_none() -> None:
-    # 默认档（从没考过的概念起点）不设闸门——与 SE-S5a"默认档不加杠杆"取向一致。
-    assert distractor_quality_floor(DEFAULT_TIER) is None
-
-
-def test_quality_floor_tier_five_strictest_tier_four_looser() -> None:
-    # tier 5 门槛（合理干扰）严于 tier 4（较弱干扰）：越高档要求干扰项越硬（钉死单调"变严"意图）。
-    floor5 = distractor_quality_floor(5)
-    floor4 = distractor_quality_floor(4)
-    assert floor5 == "合理干扰"
-    assert floor4 == "较弱干扰"
-    # 达 tier5 门槛的必也达 tier4 门槛，反之不然（门槛可比、且 5 严于 4）。
-    assert distractor_meets_floor("合理干扰", floor4)
-    assert not distractor_meets_floor("较弱干扰", floor5)
-
-
-def test_quality_floor_deterministic() -> None:
-    # 纯函数：同输入恒同输出。
-    assert distractor_quality_floor(5) == distractor_quality_floor(5)
+def test_quality_policy_only_gates_above_default_tier_and_is_deterministic() -> None:
+    assert distractor_quality_policy(1) is None
+    assert distractor_quality_policy(2) is None
+    assert distractor_quality_policy(DEFAULT_TIER) is None
+    assert distractor_quality_policy(5) == distractor_quality_policy(5)
 
 
 def test_meets_floor_合理干扰_floor_accepts_only_合理() -> None:

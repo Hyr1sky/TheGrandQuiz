@@ -361,8 +361,7 @@ class _NumOptionsEchoProvider:
 
 
 async def test_high_tier_requests_more_mc_options() -> None:
-    # 全库所有 item 预置最高档（5）→ 无论选中哪个，target_option_count(5)=6 → 出题请求 6 个选项，
-    # 且发出的 QUESTION_ASKED 带 6 个选项（外部可断言：选项数随档位增）。
+    # 全库所有 item 预置最高档（5）→ 请求标准四选一；高档难度交给质量策略，而非继续堆选项。
     store, item_ids = build_stocked_store()
     difficulty = DictDifficultyLedger()
     for item_id in item_ids:
@@ -382,9 +381,9 @@ async def test_high_tier_requests_more_mc_options() -> None:
     )
 
     assert result.question_type == "选择题"
-    assert provider.requested == [6]  # 档 5 → 6 个选项被请求（tier → num_options 接线生效）
+    assert provider.requested == [4]
     asked = next(e for e in events if e.type == LearningEvent.QUESTION_ASKED)
-    assert len(asked.payload["options"]) == 6
+    assert len(asked.payload["options"]) == 4
 
 
 async def test_default_none_difficulty_requests_baseline_options() -> None:
@@ -456,9 +455,7 @@ class _JudgingEchoProvider:
 
 
 async def test_high_tier_triggers_distractor_judge_gate() -> None:
-    # 全库预置最高档（5）→ distractor_quality_floor(5)="合理干扰" 下传 → 出题后每个干扰项过 judge。
-    # judge 全判"合理干扰"（达标）→ 首次即过。tier5 → 6 选项 → 5 个干扰项 → judge 被调 5 次（外部
-    # 可断言：高档触发 judge 闸门）。
+    # 全库预置最高档（5）→ 四选一 + 集合质量策略 → 三个干扰项各评一次。
     store, item_ids = build_stocked_store()
     difficulty = DictDifficultyLedger()
     for item_id in item_ids:
@@ -479,12 +476,50 @@ async def test_high_tier_triggers_distractor_judge_gate() -> None:
 
     assert result.question_type == "选择题"
     assert provider.enrich_calls == 1  # judge 全达标 → 无重生成
-    assert provider.judge_calls == 5  # 6 选项 → 5 个干扰项各评一次（高档触发闸门）
+    assert provider.judge_calls == 3  # 4 选项 → 3 个干扰项各评一次（高档触发闸门）
+
+
+class _CompositionalJudgeProvider(_JudgingEchoProvider):
+    """三个干扰项中两个合理、一个较弱，满足 tier5 的集合策略。"""
+
+    async def complete(
+        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
+    ) -> Completion:
+        if role == "enrich":
+            return await super().complete(messages, role=role, tools=tools)
+        self.judge_calls += 1
+        label = "较弱干扰" if self.judge_calls == 3 else "合理干扰"
+        return Completion(
+            text=json.dumps({"label": label, "rationale": "测试理由"}, ensure_ascii=False),
+            usage=Usage(prompt_tokens=5, completion_tokens=2),
+        )
+
+
+async def test_tier_five_accepts_two_reasonable_and_one_weak_distractor() -> None:
+    store, item_ids = build_stocked_store()
+    difficulty = DictDifficultyLedger()
+    for item_id in item_ids:
+        difficulty.set_tier(item_id, 5)
+    provider = _CompositionalJudgeProvider(judge_label="合理干扰")
+    emitter, _ = _harness()
+
+    result = await assess_once(
+        store=store,
+        provider=provider,
+        responder=ScriptedResponder(answer="正确选项"),
+        memory=LearningMemory(),
+        emitter=emitter,
+        rng=new_rng(_SEED),
+        difficulty=difficulty,
+    )
+
+    assert result.status == "judged"
+    assert provider.enrich_calls == 1
+    assert provider.judge_calls == 3
 
 
 async def test_default_tier_does_not_trigger_distractor_judge_gate() -> None:
-    # 对照：全库预置默认档（3）→ distractor_quality_floor(3)=None → quality_floor 下传 None → judge
-    # 一次都不调（judge_calls == 0）。默认档不加干扰项质量杠杆（与 SE-S5a 取向一致）。
+    # 默认档不启用集合质量策略，judge 一次都不调。
     store, item_ids = build_stocked_store()
     difficulty = DictDifficultyLedger()
     for item_id in item_ids:
@@ -508,7 +543,7 @@ async def test_default_tier_does_not_trigger_distractor_judge_gate() -> None:
 
 
 async def test_none_difficulty_does_not_trigger_distractor_judge_gate() -> None:
-    # 对照：不传 difficulty（默认 None）→ current_tier=None → quality_floor=None → judge 零调用。
+    # 对照：不传 difficulty（默认 None）→ current_tier=None → judge 零调用。
     # 与 difficulty=None 的选项数 gated 一致：默认路径字节等价改动前，judge 一次都不碰。
     store, _item_ids = build_stocked_store()
     memory = LearningMemory()  # fresh → 选择题（MC）路径
@@ -526,77 +561,6 @@ async def test_none_difficulty_does_not_trigger_distractor_judge_gate() -> None:
 
     assert result.question_type == "选择题"
     assert provider.judge_calls == 0  # difficulty=None → 无 judge 闸门
-
-
-# --------------------------------------------------------------------------- #
-# SE-S5b 兜底：judge 闸门开启（高档）时出题重试头寸 > 默认 3（免踩线跳题）
-# --------------------------------------------------------------------------- #
-
-
-class _FlakyJudgeProvider:
-    """enrich 回产 MC；basic judge 在前 ``fail_attempts`` 次出题时判"无效干扰"（触发重生成），此后
-    判"合理干扰"（达标）。用于验证 SE-S5b 兜底——高档 judge 闸门开启时出题 max_attempts 提到 5，
-    容忍前几版被判不达标而不 QuestionError 跳题。``enrich_calls`` 记出题次数（含被重生成的）。
-    """
-
-    def __init__(self, *, fail_attempts: int) -> None:
-        self._fail_attempts = fail_attempts
-        self.enrich_calls = 0
-
-    async def complete(
-        self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
-    ) -> Completion:
-        text = "\n".join(m.content for m in messages)
-        if role == "enrich":
-            self.enrich_calls += 1
-            quote = next(q for q in QUOTES if q in text)
-            match = re.search(r"恰好给出 (\d+) 个选项", text)
-            n = int(match.group(1)) if match else 2
-            options = ["正确选项", *(f"干扰项{i}" for i in range(1, n))]
-            payload = {
-                "question": "该知识点的核心是什么？",
-                "options": options,
-                "answer_index": 0,
-                "cited_evidence": [quote],
-            }
-            return Completion(
-                text=json.dumps(payload, ensure_ascii=False),
-                usage=Usage(prompt_tokens=7, completion_tokens=3),
-            )
-        # judge：前 fail_attempts 次出题判不达标（首个干扰项即"无效"→ 短路重生成），之后达标。
-        label = "无效干扰" if self.enrich_calls <= self._fail_attempts else "合理干扰"
-        return Completion(
-            text=json.dumps({"label": label, "rationale": "测试理由"}, ensure_ascii=False),
-            usage=Usage(prompt_tokens=5, completion_tokens=2),
-        )
-
-
-async def test_high_tier_gets_extra_generation_headroom() -> None:
-    # SE-S5b 兜底：judge 闸门开启（高档）→ 出题 max_attempts 提到 5，容忍前几版被判不达标而不跳题。
-    # provider 前 3 次出题的干扰项被判"无效"（各触发一次重生成），第 4 次达标——**旧默认 3 次上限会
-    # QuestionError 跳整轮**，5 次头寸下第 4 次得以采用。断言考核成功产出 + enrich 被调 4 次（3 次
-    # 重生成 + 第 4 次采用）。这条是兜底的回归钉死：若把 _MC_ATTEMPTS_WITH_JUDGE_FLOOR 退回 3，
-    # 第 3 次即耗尽 → assess_once 冒泡 QuestionError → 本用例变红。
-    store, item_ids = build_stocked_store()
-    difficulty = DictDifficultyLedger()
-    for item_id in item_ids:
-        difficulty.set_tier(item_id, 5)  # 高档 → judge 闸门开启
-    memory = LearningMemory()  # fresh → 选择题（MC）路径
-    provider = _FlakyJudgeProvider(fail_attempts=3)
-    emitter, _ = _harness()
-
-    result = await assess_once(
-        store=store,
-        provider=provider,
-        responder=ScriptedResponder(answer="正确选项"),
-        memory=memory,
-        emitter=emitter,
-        rng=new_rng(_SEED),
-        difficulty=difficulty,
-    )
-
-    assert result.status == "judged"  # 没被 QuestionError 跳题（第 4 次出题在 5 次头寸内采用）
-    assert provider.enrich_calls == 4  # 前 3 次重生成 + 第 4 次采用 → 证明 max_attempts > 3
 
 
 # --------------------------------------------------------------------------- #

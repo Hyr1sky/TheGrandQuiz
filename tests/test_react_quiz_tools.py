@@ -328,6 +328,8 @@ async def test_start_quiz_mc_wrong_records_weak_and_gives_followup() -> None:
     # 事件序（内部 assess_once 经 scoped emitter 挂 TOOL_CALL 下）：出题 → 判卷 → 记账 → 追问
     learning = [t for t in _types(events) if t.startswith("learning.")]
     assert learning == [
+        "learning.multiple_choice_generation.started",
+        "learning.multiple_choice_generation.ended",
         "learning.question_asked",
         "learning.answer_judged",
         "learning.concept_state_changed",
