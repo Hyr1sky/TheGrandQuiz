@@ -7,6 +7,11 @@
 > 与生产 selected search → bounded read → exact node citation 均已完成，静态四门和 `775` 项 pytest 全绿。
 > DS-S5 KnowledgeRelation 经最终 eval gate 关闭：未出现关系能力才能解决的产品缺口，未创建关系 schema 或生产
 > 消费路径；未来须以独立证据和预注册对照 eval 重开。
+>
+> 规划澄清（2026-08-31）：本 ADR 第 4 节的 `prerequisite / related / contradicts` 记录的是已关闭 DS-S5 的
+> 早期候选，不是获批的生产 vocabulary。后续复合考核 Prototype 使用更可判别、能说明如何改变出题的
+> `prerequisite_of / contrasts_with / implements / failure_mode_of / tradeoff_with`；明确不提供宽泛
+> `related_to`。该 vocabulary 仍受 Prototype / Eval gate 阻挡，不代表关系 schema 已获批准。
 
 ## 背景
 

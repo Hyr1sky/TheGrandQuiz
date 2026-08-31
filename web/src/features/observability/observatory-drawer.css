@@ -250,7 +250,10 @@
   font-size: 10px;
 }
 
-.observatory-span p {
+.observatory-span__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
   margin: 3px 0 0;
 }
 

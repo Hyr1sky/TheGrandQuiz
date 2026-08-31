@@ -46,26 +46,23 @@ def test_chat_session_exposes_an_idle_observability_snapshot(tmp_path: Path) -> 
 
     assert response.status_code == 200
     snapshot = response.json()
+    assert snapshot["schema_version"] == 1
+    assert snapshot["trace_id"] == session["trace_id"]
+    assert snapshot["status"] == "idle"
+    assert snapshot["started_at"] is None
+    assert snapshot["ended_at"] is None
+    assert snapshot["workflow_kind"] is None
     assert snapshot["summary"] == {
-        "trace_id": session["trace_id"],
-        "status": "idle",
-        "event_count": 0,
         "model_calls": 0,
-        "tool_calls": 0,
+        "retries": 0,
+        "rejection_counts": [],
         "error_count": 0,
-        "recovery_count": 0,
         "prompt_tokens": 0,
         "completion_tokens": 0,
-        "total_tokens": 0,
-        "estimated_context_tokens": None,
-        "context_budget_tokens": None,
-        "remaining_context_tokens": None,
-        "context_estimation": None,
-        "started_at": None,
-        "updated_at": None,
         "latency_ms": None,
+        "headline": None,
+        "recommended_action": None,
     }
-    assert snapshot["spans"] == []
     assert snapshot["events"] == []
 
 
@@ -91,25 +88,13 @@ def test_completed_turn_snapshot_contains_only_safe_runtime_metrics(tmp_path: Pa
 
     assert response.status_code == 200
     snapshot = response.json()
-    assert snapshot["summary"]["status"] == "completed"
-    assert snapshot["summary"]["event_count"] == 6
+    assert snapshot["status"] == "completed"
+    assert snapshot["workflow_kind"] is None
     assert snapshot["summary"]["model_calls"] == 1
-    assert snapshot["summary"]["tool_calls"] == 0
     assert snapshot["summary"]["error_count"] == 0
-    assert snapshot["summary"]["total_tokens"] == 15
     assert snapshot["summary"]["prompt_tokens"] == 12
     assert snapshot["summary"]["completion_tokens"] == 3
-    assert snapshot["summary"]["context_budget_tokens"] == 20_000
-    assert snapshot["summary"]["estimated_context_tokens"] > 0
-    assert [span["type"] for span in snapshot["spans"]] == ["run", "model"]
-    assert [event["type"] for event in snapshot["events"]] == [
-        "run",
-        "runtime",
-        "model",
-        "model",
-        "model",
-        "run",
-    ]
+    assert [event["operation"] for event in snapshot["events"]] == ["other"] * 6
     serialized = response.text
     for forbidden in (
         "secret user text",
@@ -136,6 +121,7 @@ def test_observability_sse_resumes_after_known_sequence(tmp_path: Path) -> None:
             f"/api/v1/observability/traces/{session['trace_id']}/events",
             params={"after": 2, "follow": "false"},
         )
+        detail = client.get(f"/api/v1/observability/traces/{session['trace_id']}").json()
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
@@ -145,12 +131,8 @@ def test_observability_sse_resumes_after_known_sequence(tmp_path: Path) -> None:
         if line.startswith("data: ")
     ]
     assert [event["sequence"] for event in projected] == [3, 4, 5, 6]
-    assert [event["type"] for event in projected] == [
-        "model",
-        "model",
-        "model",
-        "run",
-    ]
+    assert projected == detail["events"][2:]
+    assert [event["operation"] for event in projected] == ["other"] * 4
     assert "safe echo" not in response.text
 
 
@@ -176,7 +158,8 @@ async def test_observatory_live_iterator_wakes_on_agent_event(tmp_path: Path) ->
     store.close()
 
     assert projected.sequence == 1
-    assert projected.type == "model"
+    assert projected.operation == "other"
+    assert projected.phase == "started"
     assert "secret" not in projected.model_dump_json()
 
 
@@ -214,6 +197,147 @@ def test_observatory_recovers_historical_trace_after_store_restart(tmp_path: Pat
     finally:
         restarted_store.close()
 
-    assert snapshot.summary.status == "completed"
-    assert [event.type for event in snapshot.events] == ["run", "run"]
-    assert [span.type for span in snapshot.spans] == ["run"]
+    assert snapshot.status == "completed"
+    assert [event.operation for event in snapshot.events] == ["other", "other"]
+
+
+def test_observability_detail_rebuilds_safe_semantics_after_store_restart(
+    tmp_path: Path,
+) -> None:
+    trace_id = "historical-safe-trace"
+    path = tmp_path / "trace.db"
+    store = TraceStore(path)
+    store.record(
+        AgentEvent(
+            type="learning.multiple_choice_generation.attempt_rejected",
+            seq=0,
+            ts=1.0,
+            trace_id=trace_id,
+            parent_span_id="generation",
+            payload={
+                "attempt": 2,
+                "stage": "repair",
+                "reason_code": "distractor_quality_unmet",
+                "prompt": "SECRET-HISTORICAL-PROMPT",
+            },
+        )
+    )
+    store.record(
+        AgentEvent(
+            type="web.assessment_run.degraded",
+            seq=1,
+            ts=2.0,
+            trace_id=trace_id,
+            span_id="assessment",
+            payload={
+                "status": "degraded",
+                "stage": "question_generation",
+                "reason_code": "question_generation_exhausted",
+                "answer": "SECRET-HISTORICAL-ANSWER",
+            },
+        )
+    )
+    store.close()
+
+    with TestClient(_app(tmp_path)) as client:
+        response = client.get(f"/api/v1/observability/traces/{trace_id}")
+
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["schema_version"] == 1
+    assert detail["trace_id"] == trace_id
+    assert detail["status"] == "waiting_input"
+    assert detail["summary"]["retries"] == 1
+    assert detail["summary"]["rejection_counts"] == [
+        {"reason_code": "distractor_quality_unmet", "count": 1}
+    ]
+    assert [event["operation"] for event in detail["events"]] == [
+        "multiple_choice_generation",
+        "assessment_run",
+    ]
+    assert "SECRET-HISTORICAL-PROMPT" not in response.text
+    assert "SECRET-HISTORICAL-ANSWER" not in response.text
+
+
+def test_observability_openapi_exposes_only_finite_semantic_event_fields(
+    tmp_path: Path,
+) -> None:
+    with TestClient(_app(tmp_path)) as client:
+        schema = client.get("/openapi.json").json()
+
+    event_schema = schema["components"]["schemas"]["SafeTraceEventV1"]
+    properties = event_schema["properties"]
+    assert properties["operation"]["enum"] == [
+        "assessment_run",
+        "multiple_choice_generation",
+        "distractor_judgement",
+        "grading",
+        "learning_commit",
+        "other",
+    ]
+    assert properties["phase"]["enum"] == [
+        "started",
+        "attempt_rejected",
+        "ended",
+        "waiting_input",
+        "event",
+    ]
+    assert properties["status"]["enum"] == [
+        "running",
+        "waiting_input",
+        "completed",
+        "failed",
+        "event",
+    ]
+    assert properties["stage"]["anyOf"][0]["enum"] == [
+        "question_generation",
+        "generation",
+        "repair",
+        "model_call",
+        "validation",
+        "repair_validation",
+        "distractor_quality",
+        "grading",
+        "learning_commit",
+        "workflow",
+        "other",
+    ]
+    assert properties["reason_code"]["anyOf"][0]["enum"] == [
+        "invalid_json",
+        "schema_invalid",
+        "option_count_invalid",
+        "answer_index_invalid",
+        "duplicate_options",
+        "meta_option",
+        "length_outlier",
+        "evidence_missing",
+        "ghost_evidence",
+        "question_repeated",
+        "option_count_unmet",
+        "distractor_quality_unmet",
+        "repair_contract_violated",
+        "question_generation_exhausted",
+        "grading_exhausted",
+        "workflow_degraded",
+        "other",
+    ]
+    assert properties["quality_label"]["anyOf"][0]["enum"] == [
+        "invalid",
+        "weak",
+        "reasonable",
+    ]
+    assert set(properties) == {
+        "sequence",
+        "timestamp",
+        "span_id",
+        "parent_span_id",
+        "operation",
+        "phase",
+        "status",
+        "attempt",
+        "stage",
+        "reason_code",
+        "quality_label",
+        "tokens",
+        "latency_ms",
+    }

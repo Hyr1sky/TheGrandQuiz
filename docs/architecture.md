@@ -129,9 +129,11 @@ LearningResource（稳定 locator）
 ```
 
 三类关系严格分层：DocumentNode 父子边只表达原文结构；KnowledgeItem 到 Evidence / DocumentNode 的边表达
-可校验 grounding；KnowledgeItem 之间的 prerequisite / related / contradicts 才是带置信度、provenance 与
-eval 门控的语义关系。`section_path` 用于 LLM 和用户导航，不作为节点身份。第一阶段用 SQLite adjacency rows、
-recursive CTE 与 FTS5，不引入向量库、图数据库或 Knowhere 重运行时。
+可校验 grounding；KnowledgeItem 之间的语义关系仍受 Prototype / Eval gate 阻挡，当前不存在生产
+KnowledgeRelation。首批实验 vocabulary 限定为 `prerequisite_of / contrasts_with / implements /
+failure_mode_of / tradeoff_with`，通过实验后才考虑用 SQLite adjacency rows、recursive CTE 与 FTS5
+生产化；现阶段不引入向量库、图数据库或 Knowhere 重运行时。`section_path` 用于 LLM 和用户导航，不作为
+节点身份。
 
 ingest Reader 按树的自然节点确定性覆盖材料，保留核心 workflow；开放 ReAct 才让 LLM 执行“大纲 → 搜索 →
 展开 → 精确正文”的 Agentic Search。所有解析、搜索、节点选择、预算与 citation 都上同一条事件脊柱。

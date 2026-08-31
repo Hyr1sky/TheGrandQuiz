@@ -8,11 +8,8 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
 from grandquiz.interfaces.api.errors import ApiError
-from grandquiz.interfaces.api.observability import (
-    TraceObservatory,
-    TraceSnapshot,
-    TraceUiEvent,
-)
+from grandquiz.interfaces.api.observability import TraceObservatory
+from grandquiz.interfaces.trace_projection import SafeTraceEventV1, SafeTraceRunV1
 
 router = APIRouter(prefix="/api/v1/observability", tags=["observability"])
 
@@ -21,8 +18,8 @@ def observatory_from(request: Request) -> TraceObservatory:
     return cast("TraceObservatory", request.app.state.trace_observatory)
 
 
-@router.get("/traces/{trace_id}", response_model=TraceSnapshot)
-async def get_trace_snapshot(trace_id: str, request: Request) -> TraceSnapshot:
+@router.get("/traces/{trace_id}", response_model=SafeTraceRunV1)
+async def get_trace_snapshot(trace_id: str, request: Request) -> SafeTraceRunV1:
     observatory = observatory_from(request)
     if not observatory.exists(trace_id):
         raise ApiError(
@@ -38,10 +35,10 @@ async def get_trace_snapshot(trace_id: str, request: Request) -> TraceSnapshot:
     response_class=StreamingResponse,
     responses={
         200: {
-            "model": TraceUiEvent,
+            "model": SafeTraceEventV1,
             "content": {
                 "text/event-stream": {
-                    "schema": {"$ref": "#/components/schemas/TraceUiEvent"},
+                    "schema": {"$ref": "#/components/schemas/SafeTraceEventV1"},
                 }
             },
         }

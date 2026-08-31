@@ -462,7 +462,7 @@ def test_cancel_active_turn_is_idempotent_and_session_accepts_next_turn(
     assert provider.cancelled.wait(timeout=1)
     assert any(event["type"] == "chat.turn_cancelled" for event in cancelled_events)
     assert not any(event["type"] == "chat.turn_ended" for event in cancelled_events)
-    assert cancelled_snapshot["summary"]["status"] == "cancelled"
+    assert cancelled_snapshot["status"] == "cancelled"
     assert next_message.status_code == 202
     assert any(
         event["type"] == "chat.turn_ended" and event["data"]["output"] == "second turn completed"

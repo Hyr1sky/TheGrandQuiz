@@ -2505,6 +2505,90 @@ export interface components {
             /** Trace Id */
             trace_id: string;
         };
+        /** SafeTraceEventV1 */
+        SafeTraceEventV1: {
+            /** Attempt */
+            attempt?: number | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "assessment_run" | "multiple_choice_generation" | "distractor_judgement" | "grading" | "learning_commit" | "other";
+            /** Parent Span Id */
+            parent_span_id: string | null;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "started" | "attempt_rejected" | "ended" | "waiting_input" | "event";
+            /** Quality Label */
+            quality_label?: ("invalid" | "weak" | "reasonable") | null;
+            /** Reason Code */
+            reason_code?: ("invalid_json" | "schema_invalid" | "option_count_invalid" | "answer_index_invalid" | "duplicate_options" | "meta_option" | "length_outlier" | "evidence_missing" | "ghost_evidence" | "question_repeated" | "option_count_unmet" | "distractor_quality_unmet" | "repair_contract_violated" | "question_generation_exhausted" | "grading_exhausted" | "workflow_degraded" | "other") | null;
+            /** Sequence */
+            sequence: number;
+            /** Span Id */
+            span_id: string | null;
+            /** Stage */
+            stage?: ("question_generation" | "generation" | "repair" | "model_call" | "validation" | "repair_validation" | "distractor_quality" | "grading" | "learning_commit" | "workflow" | "other") | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "waiting_input" | "completed" | "failed" | "event";
+            /** Timestamp */
+            timestamp: number;
+            /** Tokens */
+            tokens?: number | null;
+        };
+        /** SafeTraceRunV1 */
+        SafeTraceRunV1: {
+            /** Ended At */
+            ended_at: number | null;
+            /** Events */
+            events: components["schemas"]["SafeTraceEventV1"][];
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Started At */
+            started_at: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "idle" | "running" | "waiting_input" | "completed" | "failed" | "cancelled";
+            summary: components["schemas"]["SafeTraceSummaryV1"];
+            /** Trace Id */
+            trace_id: string;
+            /** Workflow Kind */
+            workflow_kind: "assessment" | null;
+        };
+        /** SafeTraceSummaryV1 */
+        SafeTraceSummaryV1: {
+            /** Completion Tokens */
+            completion_tokens: number | null;
+            /** Error Count */
+            error_count: number;
+            /** Headline */
+            headline?: string | null;
+            /** Latency Ms */
+            latency_ms: number | null;
+            /** Model Calls */
+            model_calls: number;
+            /** Prompt Tokens */
+            prompt_tokens: number | null;
+            /** Recommended Action */
+            recommended_action?: string | null;
+            /** Rejection Counts */
+            rejection_counts: components["schemas"]["TraceRejectionCountV1"][];
+            /** Retries */
+            retries: number;
+        };
         /** SessionView */
         SessionView: {
             /** Session Id */
@@ -2628,114 +2712,15 @@ export interface components {
             /** Trace Id */
             trace_id: string;
         };
-        /** TraceSnapshot */
-        TraceSnapshot: {
-            /** Events */
-            events: components["schemas"]["TraceUiEvent"][];
-            /** Spans */
-            spans: components["schemas"]["TraceSpanView"][];
-            summary: components["schemas"]["TraceSummary"];
-        };
-        /** TraceSpanView */
-        TraceSpanView: {
-            /** Ended At */
-            ended_at: number | null;
-            /** Latency Ms */
-            latency_ms: number | null;
-            /** Parent Span Id */
-            parent_span_id: string | null;
-            /** Span Id */
-            span_id: string;
-            /** Start Sequence */
-            start_sequence: number;
-            /** Started At */
-            started_at: number;
+        /** TraceRejectionCountV1 */
+        TraceRejectionCountV1: {
+            /** Count */
+            count: number;
             /**
-             * Status
+             * Reason Code
              * @enum {string}
              */
-            status: "running" | "completed" | "failed";
-            /** Tokens */
-            tokens: number | null;
-            /** Tool Name */
-            tool_name: string | null;
-            /**
-             * Type
-             * @enum {string}
-             */
-            type: "run" | "model" | "tool" | "assessment" | "approval" | "recovery" | "error" | "runtime";
-        };
-        /** TraceSummary */
-        TraceSummary: {
-            /** Completion Tokens */
-            completion_tokens: number;
-            /** Context Budget Tokens */
-            context_budget_tokens: number | null;
-            /** Context Estimation */
-            context_estimation: "heuristic" | null;
-            /** Error Count */
-            error_count: number;
-            /** Estimated Context Tokens */
-            estimated_context_tokens: number | null;
-            /** Event Count */
-            event_count: number;
-            /** Latency Ms */
-            latency_ms: number | null;
-            /** Model Calls */
-            model_calls: number;
-            /** Prompt Tokens */
-            prompt_tokens: number;
-            /** Recovery Count */
-            recovery_count: number;
-            /** Remaining Context Tokens */
-            remaining_context_tokens: number | null;
-            /** Started At */
-            started_at: number | null;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "idle" | "running" | "waiting_input" | "completed" | "failed" | "cancelled";
-            /** Tool Calls */
-            tool_calls: number;
-            /** Total Tokens */
-            total_tokens: number;
-            /** Trace Id */
-            trace_id: string;
-            /** Updated At */
-            updated_at: number | null;
-        };
-        /** TraceUiEvent */
-        TraceUiEvent: {
-            /** Latency Ms */
-            latency_ms?: number | null;
-            /** Parent Span Id */
-            parent_span_id: string | null;
-            /**
-             * Recovered
-             * @default false
-             */
-            recovered: boolean;
-            /** Sequence */
-            sequence: number;
-            /** Span Id */
-            span_id: string | null;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "started" | "completed" | "failed" | "event";
-            /** Timestamp */
-            timestamp: number;
-            /** Tokens */
-            tokens?: number | null;
-            /** Tool Name */
-            tool_name?: string | null;
-            /**
-             * Type
-             * @enum {string}
-             */
-            type: "run" | "model" | "tool" | "assessment" | "approval" | "recovery" | "error" | "runtime";
+            reason_code: "invalid_json" | "schema_invalid" | "option_count_invalid" | "answer_index_invalid" | "duplicate_options" | "meta_option" | "length_outlier" | "evidence_missing" | "ghost_evidence" | "question_repeated" | "option_count_unmet" | "distractor_quality_unmet" | "repair_contract_violated" | "question_generation_exhausted" | "grading_exhausted" | "workflow_degraded" | "other";
         };
         /** TurnCancelled */
         TurnCancelled: {
@@ -4551,7 +4536,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TraceSnapshot"];
+                    "application/json": components["schemas"]["SafeTraceRunV1"];
                 };
             };
             /** @description Validation Error */
@@ -4585,8 +4570,8 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TraceUiEvent"];
-                    "text/event-stream": components["schemas"]["TraceUiEvent"];
+                    "application/json": components["schemas"]["SafeTraceEventV1"];
+                    "text/event-stream": components["schemas"]["SafeTraceEventV1"];
                 };
             };
             /** @description Validation Error */

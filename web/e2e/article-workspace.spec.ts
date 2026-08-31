@@ -510,5 +510,5 @@ test("cancels an abandoned Assessment before returning to reading", async ({
     `/api/v1/observability/traces/${started.trace_id}`,
   );
   expect(snapshot.ok()).toBe(true);
-  expect((await snapshot.json()).summary.status).toBe("cancelled");
+  expect((await snapshot.json()).status).toBe("cancelled");
 });

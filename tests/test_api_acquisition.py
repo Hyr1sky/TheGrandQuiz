@@ -207,7 +207,7 @@ def test_upload_can_resume_approval_after_service_restart(tmp_path: Path) -> Non
         resources = restarted.get("/api/v1/resources").json()["items"]
         assert [resource["resource_id"] for resource in resources] == [resource_id]
         observability = restarted.get(f"/api/v1/observability/traces/{creation['trace_id']}").json()
-        assert observability["summary"]["status"] == "completed"
+        assert observability["status"] == "completed"
 
     with LearningPersistence(tmp_path / "learning.db") as persistence:
         history = persistence.classifications.history_for_item(item_id)
@@ -405,7 +405,7 @@ def test_running_upload_can_be_cancelled_without_polluting_store(tmp_path: Path)
         assert cancelled.status_code == 200
         assert cancelled.json()["status"] == "cancelled"
         observability = client.get(f"/api/v1/observability/traces/{creation['trace_id']}").json()
-        assert observability["summary"]["status"] == "cancelled"
+        assert observability["status"] == "cancelled"
         with LearningPersistence(tmp_path / "learning.db") as persistence:
             assert persistence.store.all_resources() == []
 
@@ -432,7 +432,7 @@ def test_processing_error_is_sanitized_and_leaves_zero_pollution(tmp_path: Path)
         observability = client.get(f"/api/v1/observability/traces/{creation['trace_id']}").json()
 
     assert failed["error_code"] == "processing_failed"
-    assert observability["summary"]["status"] == "failed"
+    assert observability["status"] == "failed"
     error_message = failed["error_message"]
     assert isinstance(error_message, str)
     assert "provider secret" not in error_message
@@ -458,7 +458,7 @@ def test_domain_ingest_failure_keeps_safe_code_stage_reason_and_counts_error(
     assert failed["error_code"] == "quote_mismatch"
     assert failed["error_stage"] == "evidence_validation"
     assert failed["error_message"] == "Evidence 引文无法精确定位到原文节点"
-    assert observability["summary"]["status"] == "failed"
+    assert observability["status"] == "failed"
     assert observability["summary"]["error_count"] == 1
     assert "原文中不存在的证据" not in json.dumps(observability, ensure_ascii=False)
     with LearningPersistence(tmp_path / "learning.db") as persistence:

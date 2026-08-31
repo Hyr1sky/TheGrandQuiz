@@ -1,4 +1,4 @@
-import type { TraceUiEvent } from "./api";
+import type { SafeTraceEvent } from "./api";
 
 function baseUrl(): string {
   return globalThis.location?.origin ?? "http://localhost";
@@ -7,7 +7,7 @@ function baseUrl(): string {
 export function streamTraceEvents(
   traceId: string,
   after: number,
-  onEvent: (event: TraceUiEvent) => void,
+  onEvent: (event: SafeTraceEvent) => void,
   onConnectionChange?: (
     state: "connected" | "disconnected",
   ) => void,
@@ -25,7 +25,7 @@ export function streamTraceEvents(
   };
   source.addEventListener("trace.event", (event) => {
     onEvent(
-      JSON.parse((event as MessageEvent<string>).data) as TraceUiEvent,
+      JSON.parse((event as MessageEvent<string>).data) as SafeTraceEvent,
     );
   });
 

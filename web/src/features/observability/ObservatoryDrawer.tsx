@@ -4,7 +4,9 @@ import { useDismissibleLayer } from "../../shared/hooks/useDismissibleLayer";
 import { ActivityIndicator } from "../../shared/components/ActivityIndicator";
 import {
   getTraceSnapshot,
-  type TraceSnapshot,
+  type SafeTraceEvent,
+  type SafeTraceRun,
+  type SafeTraceSummary,
 } from "./api";
 import { streamTraceEvents } from "./traceEvents";
 import "./observatory-drawer.css";
@@ -25,6 +27,15 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: "已取消",
 };
 
+const OPERATION_LABELS: Record<SafeTraceEvent["operation"], string> = {
+  assessment_run: "考核运行",
+  multiple_choice_generation: "选择题生成",
+  distractor_judgement: "干扰项评审",
+  grading: "判卷",
+  learning_commit: "学习事实提交",
+  other: "其他运行事件",
+};
+
 function formatDuration(value: number | null | undefined): string {
   if (value === null || value === undefined) {
     return "—";
@@ -35,11 +46,21 @@ function formatDuration(value: number | null | undefined): string {
   return `${(value / 1000).toFixed(2)} s`;
 }
 
-function lastSequence(snapshot: TraceSnapshot): number {
+function lastSequence(snapshot: SafeTraceRun): number {
   return snapshot.events.reduce(
     (cursor, event) => Math.max(cursor, event.sequence),
     0,
   );
+}
+
+function totalTokens(summary: SafeTraceSummary): number | null {
+  if (
+    summary.prompt_tokens === null ||
+    summary.completion_tokens === null
+  ) {
+    return null;
+  }
+  return summary.prompt_tokens + summary.completion_tokens;
 }
 
 export function ObservatoryDrawer({
@@ -48,7 +69,7 @@ export function ObservatoryDrawer({
   onClose,
   anchorRef,
 }: ObservatoryDrawerProps) {
-  const [snapshot, setSnapshot] = useState<TraceSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<SafeTraceRun | null>(null);
   const [error, setError] = useState<{
     traceId: string;
     message: string;
@@ -119,7 +140,7 @@ export function ObservatoryDrawer({
   }, [open, traceId]);
 
   const currentSnapshot =
-    snapshot?.summary.trace_id === traceId ? snapshot : null;
+    snapshot?.trace_id === traceId ? snapshot : null;
   const currentError =
     error !== null && error.traceId === traceId ? error.message : null;
 
@@ -176,12 +197,12 @@ export function ObservatoryDrawer({
           >
             <div>
               <span
-                className={`observatory-status__beacon observatory-status__beacon--${currentSnapshot.summary.status}`}
+                className={`observatory-status__beacon observatory-status__beacon--${currentSnapshot.status}`}
                 aria-hidden
               />
               <strong>
-                {STATUS_LABELS[currentSnapshot.summary.status] ??
-                  currentSnapshot.summary.status}
+                {STATUS_LABELS[currentSnapshot.status] ??
+                  currentSnapshot.status}
               </strong>
             </div>
             <span
@@ -197,26 +218,23 @@ export function ObservatoryDrawer({
           >
             <article>
               <span>事件</span>
-              <strong>{currentSnapshot.summary.event_count}</strong>
+              <strong>{currentSnapshot.events.length}</strong>
             </article>
             <article>
               <span>模型调用</span>
               <strong>{currentSnapshot.summary.model_calls}</strong>
             </article>
             <article>
-              <span>工具调用</span>
-              <strong>{currentSnapshot.summary.tool_calls}</strong>
+              <span>重试</span>
+              <strong>{currentSnapshot.summary.retries}</strong>
             </article>
             <article>
               <span>总 Token</span>
-              <strong>{currentSnapshot.summary.total_tokens}</strong>
+              <strong>{totalTokens(currentSnapshot.summary) ?? "—"}</strong>
             </article>
             <article>
-              <span>错误 / 恢复</span>
-              <strong>
-                {currentSnapshot.summary.error_count} /{" "}
-                {currentSnapshot.summary.recovery_count}
-              </strong>
+              <span>错误</span>
+              <strong>{currentSnapshot.summary.error_count}</strong>
             </article>
             <article>
               <span>总耗时</span>
@@ -228,22 +246,22 @@ export function ObservatoryDrawer({
 
           <section
             className="observatory-timeline"
-            aria-label="Span 时间线"
+            aria-label="语义事件"
           >
             <div className="observatory-section-title">
-              <h3>Span 时间线</h3>
-              <span>{currentSnapshot.spans.length}</span>
+              <h3>语义事件</h3>
+              <span>{currentSnapshot.events.length}</span>
             </div>
-            {currentSnapshot.spans.length === 0 ? (
+            {currentSnapshot.events.length === 0 ? (
               <p className="observatory-drawer__empty">
-                尚未产生可展示的 span。
+                尚未产生可展示的运行事件。
               </p>
             ) : (
               <ol>
-                {currentSnapshot.spans.map((span) => (
+                {currentSnapshot.events.map((event) => (
                   <li
-                    key={span.span_id}
-                    className={`observatory-span observatory-span--${span.status}`}
+                    key={event.sequence}
+                    className={`observatory-span observatory-span--${event.status}`}
                   >
                     <span
                       className="observatory-span__rail"
@@ -252,17 +270,27 @@ export function ObservatoryDrawer({
                     <div className="observatory-span__body">
                       <div>
                         <strong>
-                          {span.tool_name ?? span.type}
+                          {OPERATION_LABELS[event.operation]}
                         </strong>
                         <span>
-                          {formatDuration(span.latency_ms)}
+                          {formatDuration(event.latency_ms)}
                         </span>
                       </div>
-                      <p>
-                        #{span.start_sequence}
-                        {span.tokens === null
-                          ? ""
-                          : ` · ${span.tokens} tokens`}
+                      <p className="observatory-span__meta">
+                        <span>#{event.sequence}</span>
+                        <span>{event.phase}</span>
+                        {event.attempt === null ? null : (
+                          <span>第 {event.attempt} 次</span>
+                        )}
+                        {event.stage === null ? null : (
+                          <span>{event.stage}</span>
+                        )}
+                        {event.reason_code === null ? null : (
+                          <span>{event.reason_code}</span>
+                        )}
+                        {event.tokens === null ? null : (
+                          <span>{event.tokens} tokens</span>
+                        )}
                       </p>
                     </div>
                   </li>

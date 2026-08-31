@@ -190,7 +190,9 @@ interface adapter；长操作形成可查询 run，进度是同一 `AgentEvent` 
 DocumentNode 大纲/节点 → GroundedDocumentAnswer → 精确 citation 变成空间化阅读体验，并把既有
 `AssessmentSession` 投影成显式 scope、一题一步、Evidence reveal 可审计、提交/下一题幂等的考核交互；
 顶栏 exact material 已进入 Chat turn context，跨轮 SSE 使用单调 cursor，底部罗盘通过
-`TraceObservatory` 安全投影当前 Chat/Assessment 的状态、耗时、token、model/tool/error/recovery 与 span。
+`TraceObservatory` 把当前 Chat/Assessment 投影成版本化 `SafeTraceRunV1`：浏览器只接收有限
+`operation / phase / stage / reason_code / attempt`、安全 token/latency 与未知事件的 `other` 降级；raw event
+type、payload 和完整 spans 只保留在内部 TraceStore、CLI 审计与 Tier-1 Eval。
 Web Acquisition 通过上传 Markdown/Text 或公开 URL 创建持久 run，`queued/running/needs_input/succeeded/
 failed/cancelled` 全生命周期与安全 SSE 投影共用事件脊柱；`needs_input` 候选和单次过期 token 可跨服务重启
 恢复，审批后才原子提交知识快照。失败以稳定、安全的 `code / stage / reason` 进入 ledger、AgentEvent、
@@ -205,10 +207,10 @@ _Avoid_: 通用数据库 dashboard、浏览器直连 SQLite、把完整内部 Ag
 _Avoid_: 原始 HTTP response 对象、把 canonical URL 悄悄改成资源身份、质量失败后继续调用 Reader、把完整网页 body 塞进事件
 
 **KnowledgeRelation**（ADR-0008，DS-S5 eval-gated，当前关闭）:
-两个 source-grounded KnowledgeItem 之间的类型化语义边，首批关系限定为 prerequisite / related /
-contradicts，必须携带 confidence、evidence provenance、抽取版本、trace id 与 review status。它是 LLM 推断的
-可撤销投影，不与 DocumentNode 的确定性结构边混同，也不藏在 metadata JSON 中。
-_Avoid_: 把文档层级自动提升为知识图谱、无置信度/无出处的自由三元组、用关系边替代 KnowledgeItem 身份
+一条 accepted Knowledge Relation Assertion 对 current revisions 仍有效时，在 Active Knowledge Graph 中形成的
+可撤销关系投影，不是独立真相源。首批实验 vocabulary 限定为 `prerequisite_of / contrasts_with / implements /
+failure_mode_of / tradeoff_with`；Prototype 与 Eval 晋升前不存在生产 KnowledgeRelation。
+_Avoid_: `related_to`、把文档层级自动提升为知识图谱、无出处的自由三元组、用关系边替代 KnowledgeItem 身份
 
 **LearningTask**（已消解，ADR-0005）:
 ~~学习主题的容器与考核范围~~——**已废弃**。真机 dogfood 暴露"会话绑一个启动标题 = 换标题换库"

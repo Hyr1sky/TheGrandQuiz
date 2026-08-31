@@ -27,12 +27,21 @@ from grandquiz.interfaces.api.voice_runs import (
     VoiceRunStartCommand,
     VoiceRunSubmitCommand,
 )
+from grandquiz.interfaces.trace_projection import SafeTraceRunV1
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.speech import (
     SpeechRecognitionError,
     TranscriptionRequest,
     TranscriptionResult,
 )
+
+
+def _span_ids(snapshot: SafeTraceRunV1, phase: str) -> set[str]:
+    return {
+        event.span_id
+        for event in snapshot.events
+        if event.phase == phase and event.span_id is not None
+    }
 
 
 class _MutableClock:
@@ -379,10 +388,12 @@ async def test_cancelled_voice_run_ignores_provider_late_result(tmp_path: Path) 
     assert persisted is not None
     assert persisted.status == "cancelled"
     assert persisted.reviewable_transcript is None
-    assert snapshot.summary.status == "cancelled"
-    assert len(snapshot.spans) == 2
-    assert all(span.ended_at is not None for span in snapshot.spans)
-    assert all(span.status == "failed" for span in snapshot.spans)
+    assert snapshot.status == "cancelled"
+    ended_events = [event for event in snapshot.events if event.phase == "ended"]
+    assert len(ended_events) == 2
+    assert _span_ids(snapshot, "started") == _span_ids(snapshot, "ended")
+    assert all(event.latency_ms is not None for event in ended_events)
+    assert all(event.status == "failed" for event in ended_events)
     assert attempt_audit is not None
     assert attempt_audit[0] == "cancelled"
     assert attempt_audit[1] == "late-provider-request"
@@ -438,11 +449,19 @@ async def test_failed_voice_run_allows_one_explicit_retry_only(tmp_path: Path) -
     assert reviewable.provider_attempt_count == 2
     assert reviewable.retryable is False
     assert len(speech.requests) == 2
-    assert retry_snapshot.summary.status == "waiting_input"
-    assert [span.status for span in retry_snapshot.spans] == [
+    assert retry_snapshot.status == "waiting_input"
+    started_spans = _span_ids(retry_snapshot, "started")
+    ended_spans = _span_ids(retry_snapshot, "ended")
+    assert ended_spans < started_spans
+    assert len(started_spans - ended_spans) == 1
+    active_span_id = next(iter(started_spans - ended_spans))
+    assert any(
+        event.span_id == active_span_id and event.phase == "started" and event.status == "running"
+        for event in retry_snapshot.events
+    )
+    assert [event.status for event in retry_snapshot.events if event.phase == "ended"] == [
         "failed",
         "failed",
-        "running",
         "completed",
     ]
 
@@ -601,9 +620,11 @@ async def test_service_stop_converges_interrupted_transcription_to_retryable_fai
     assert recovered.retryable is True
     assert recovered.error is not None
     assert recovered.error.code == "service_stopped"
-    assert stopped_snapshot.summary.status == "failed"
-    assert len(stopped_snapshot.spans) == 2
-    assert all(span.ended_at is not None for span in stopped_snapshot.spans)
+    assert stopped_snapshot.status == "failed"
+    stopped_ends = [event for event in stopped_snapshot.events if event.phase == "ended"]
+    assert len(stopped_ends) == 2
+    assert _span_ids(stopped_snapshot, "started") == _span_ids(stopped_snapshot, "ended")
+    assert all(event.latency_ms is not None for event in stopped_ends)
 
 
 @pytest.mark.asyncio
@@ -632,7 +653,7 @@ async def test_voice_trace_is_balanced_and_excludes_audio_transcript_and_terms(
         await _wait_for_status(manager, started.voice_run_id, "reviewable")
         waiting_snapshot = observatory.snapshot(started.trace_id)
         serialized = waiting_snapshot.model_dump_json()
-        assert waiting_snapshot.summary.status == "waiting_input"
+        assert waiting_snapshot.status == "waiting_input"
         for forbidden in ("private-webm-audio", "ReAct", "推理与动作", "entry-1"):
             assert forbidden not in serialized
 
@@ -648,8 +669,12 @@ async def test_voice_trace_is_balanced_and_excludes_audio_transcript_and_terms(
         await manager.aclose()
         trace_store.close()
 
-    assert terminal_snapshot.summary.status == "completed"
-    assert [span.status for span in terminal_snapshot.spans] == ["completed", "completed"]
+    assert terminal_snapshot.status == "completed"
+    assert _span_ids(terminal_snapshot, "started") == _span_ids(terminal_snapshot, "ended")
+    assert [event.status for event in terminal_snapshot.events if event.phase == "ended"] == [
+        "completed",
+        "completed",
+    ]
     assert "ReAct" not in json.dumps(
         terminal_snapshot.model_dump(mode="json"),
         ensure_ascii=False,

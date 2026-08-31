@@ -451,7 +451,7 @@ def test_selected_resource_starts_one_real_question_and_waits_for_answer(
     }
     assert payload["judgement"] is None
     assert payload["trace_id"]
-    assert trace_snapshot["summary"]["status"] == "waiting_input"
+    assert trace_snapshot["status"] == "waiting_input"
 
 
 def test_fastapi_consumes_mixed_question_type_plan_in_order(tmp_path: Path) -> None:
@@ -644,7 +644,7 @@ def test_answer_submission_is_idempotent_and_records_one_judgement(tmp_path: Pat
         "concept_state": None,
         "correct_answer": None,
     }
-    assert trace_snapshot["summary"]["status"] == "completed"
+    assert trace_snapshot["status"] == "completed"
 
     trace = TraceStore(tmp_path / "trace.db")
     try:
@@ -1101,7 +1101,7 @@ def test_assessment_failure_projects_a_failed_terminal_trace(tmp_path: Path) -> 
         trace_snapshot = client.get(f"/api/v1/observability/traces/{started['trace_id']}").json()
 
     assert failed["error"] == "本轮考核失败，请通过 trace_id 查看详情"
-    assert trace_snapshot["summary"]["status"] == "failed"
+    assert trace_snapshot["status"] == "failed"
     assert trace_snapshot["summary"]["error_count"] == 1
 
 
@@ -1149,7 +1149,7 @@ def test_question_generation_exhaustion_is_degraded_and_can_retry_or_skip(
     assert recovery.payload["decision"] == "skip"
     degraded_event = next(event for event in events if event.type == "web.assessment_run.degraded")
     assert degraded_event.payload["status"] == "degraded"
-    assert trace_snapshot["summary"]["status"] == "waiting_input"
+    assert trace_snapshot["status"] == "waiting_input"
     assert not any(event.type == "web.assessment_run.ended" for event in events)
     assert retried.status_code == 202
     assert skipped.status_code == 202
@@ -1260,7 +1260,7 @@ def test_user_cancel_is_idempotent_and_closes_the_trace(tmp_path: Path) -> None:
     assert first.json()["status"] == "cancelled"
     assert second.status_code == 200
     assert second.json()["status"] == "cancelled"
-    assert trace_snapshot["summary"]["status"] == "cancelled"
+    assert trace_snapshot["status"] == "cancelled"
 
 
 def test_open_question_wrong_answer_waits_for_explicit_next_round(tmp_path: Path) -> None:
@@ -1426,13 +1426,13 @@ def test_appeal_has_an_independent_trace_lifecycle_and_can_be_cancelled(
         attempt = client.get(f"/api/v1/learning/attempts/{completed['attempt_id']}").json()
         cancelled_trace = client.get(f"/api/v1/observability/traces/{started['trace_id']}").json()
 
-    assert running_trace["summary"]["status"] == "running"
+    assert running_trace["status"] == "running"
     assert cancelled.status_code == 200
     assert cancelled.json()["appeal"]["status"] == "cancelled"
     assert provider.appeal_cancelled.wait(timeout=1)
     assert attempt["supplemental_answer"] is None
     assert attempt["final_verdict"] == "错"
-    assert cancelled_trace["summary"]["status"] == "cancelled"
+    assert cancelled_trace["status"] == "cancelled"
 
     trace = TraceStore(tmp_path / "trace.db")
     try:
@@ -1484,10 +1484,10 @@ def test_failed_appeal_can_retry_same_frozen_command_once_provider_recovers(
         attempt = client.get(f"/api/v1/learning/attempts/{completed['attempt_id']}").json()
 
     assert failed["appeal"]["status"] == "failed"
-    assert failed_trace["summary"]["status"] == "failed"
+    assert failed_trace["status"] == "failed"
     assert retried.status_code == 202
     assert resolved["appeal"]["status"] == "resolved"
-    assert resolved_trace["summary"]["status"] == "completed"
+    assert resolved_trace["status"] == "completed"
     assert attempt["supplemental_answer"] == command["supplemental_answer"]
     assert attempt["final_verdict"] == "对"
     assert provider.grading_calls == 3

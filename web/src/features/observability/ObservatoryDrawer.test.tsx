@@ -33,45 +33,40 @@ class FakeEventSource {
 }
 
 const snapshot = {
+  schema_version: 1,
+  trace_id: "trace-1",
+  status: "completed",
+  started_at: 1,
+  ended_at: 1.12,
+  workflow_kind: "assessment",
   summary: {
-    trace_id: "trace-1",
-    status: "completed",
-    event_count: 4,
     model_calls: 1,
-    tool_calls: 0,
+    retries: 1,
+    rejection_counts: [
+      { reason_code: "distractor_quality_unmet", count: 1 },
+    ],
     error_count: 0,
-    recovery_count: 0,
-    total_tokens: 42,
-    started_at: 1,
-    updated_at: 1.12,
+    prompt_tokens: 30,
+    completion_tokens: 12,
     latency_ms: 120,
+    headline: null,
+    recommended_action: null,
   },
-  spans: [
-    {
-      span_id: "turn-1",
-      parent_span_id: null,
-      type: "agent_turn",
-      status: "completed",
-      start_sequence: 1,
-      started_at: 1,
-      ended_at: 1.12,
-      latency_ms: 120,
-      tokens: 42,
-      tool_name: null,
-    },
-  ],
   events: [
     {
       sequence: 4,
-      type: "agent.turn.ended",
+      operation: "multiple_choice_generation",
+      phase: "attempt_rejected",
       timestamp: 1.12,
-      span_id: "turn-1",
-      parent_span_id: null,
-      status: "completed",
-      tokens: 42,
-      latency_ms: 120,
-      tool_name: null,
-      recovered: false,
+      span_id: null,
+      parent_span_id: "generation",
+      status: "event",
+      attempt: 2,
+      stage: "repair",
+      reason_code: "distractor_quality_unmet",
+      quality_label: null,
+      tokens: null,
+      latency_ms: null,
     },
   ],
 };
@@ -102,8 +97,11 @@ describe("ObservatoryDrawer", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("已完成")).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
-    expect(screen.getByText("agent_turn")).toBeInTheDocument();
-    expect(screen.getAllByText("120 ms")).toHaveLength(2);
+    expect(screen.getByText("选择题生成")).toBeInTheDocument();
+    expect(screen.getByText("第 2 次")).toBeInTheDocument();
+    expect(screen.getByText("repair")).toBeInTheDocument();
+    expect(screen.getByText("distractor_quality_unmet")).toBeInTheDocument();
+    expect(screen.getByText("120 ms")).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent("secret user text");
 
     await waitFor(() => {

@@ -3960,6 +3960,358 @@
         "title": "RunView",
         "type": "object"
       },
+      "SafeTraceEventV1": {
+        "properties": {
+          "attempt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "operation": {
+            "enum": [
+              "assessment_run",
+              "multiple_choice_generation",
+              "distractor_judgement",
+              "grading",
+              "learning_commit",
+              "other"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "parent_span_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Span Id"
+          },
+          "phase": {
+            "enum": [
+              "started",
+              "attempt_rejected",
+              "ended",
+              "waiting_input",
+              "event"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "quality_label": {
+            "anyOf": [
+              {
+                "enum": [
+                  "invalid",
+                  "weak",
+                  "reasonable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Label"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "invalid_json",
+                  "schema_invalid",
+                  "option_count_invalid",
+                  "answer_index_invalid",
+                  "duplicate_options",
+                  "meta_option",
+                  "length_outlier",
+                  "evidence_missing",
+                  "ghost_evidence",
+                  "question_repeated",
+                  "option_count_unmet",
+                  "distractor_quality_unmet",
+                  "repair_contract_violated",
+                  "question_generation_exhausted",
+                  "grading_exhausted",
+                  "workflow_degraded",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "span_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span Id"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "question_generation",
+                  "generation",
+                  "repair",
+                  "model_call",
+                  "validation",
+                  "repair_validation",
+                  "distractor_quality",
+                  "grading",
+                  "learning_commit",
+                  "workflow",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "waiting_input",
+              "completed",
+              "failed",
+              "event"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "timestamp": {
+            "title": "Timestamp",
+            "type": "number"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens"
+          }
+        },
+        "required": [
+          "sequence",
+          "timestamp",
+          "span_id",
+          "parent_span_id",
+          "operation",
+          "phase",
+          "status"
+        ],
+        "title": "SafeTraceEventV1",
+        "type": "object"
+      },
+      "SafeTraceRunV1": {
+        "properties": {
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/SafeTraceEventV1"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "idle",
+              "running",
+              "waiting_input",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/SafeTraceSummaryV1"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "workflow_kind": {
+            "anyOf": [
+              {
+                "const": "assessment",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Kind"
+          }
+        },
+        "required": [
+          "trace_id",
+          "status",
+          "started_at",
+          "ended_at",
+          "workflow_kind",
+          "summary",
+          "events"
+        ],
+        "title": "SafeTraceRunV1",
+        "type": "object"
+      },
+      "SafeTraceSummaryV1": {
+        "properties": {
+          "completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Tokens"
+          },
+          "error_count": {
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "headline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "model_calls": {
+            "title": "Model Calls",
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Tokens"
+          },
+          "recommended_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommended Action"
+          },
+          "rejection_counts": {
+            "items": {
+              "$ref": "#/components/schemas/TraceRejectionCountV1"
+            },
+            "title": "Rejection Counts",
+            "type": "array"
+          },
+          "retries": {
+            "title": "Retries",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "model_calls",
+          "retries",
+          "rejection_counts",
+          "error_count",
+          "prompt_tokens",
+          "completion_tokens",
+          "latency_ms"
+        ],
+        "title": "SafeTraceSummaryV1",
+        "type": "object"
+      },
       "SessionView": {
         "properties": {
           "session_id": {
@@ -4288,397 +4640,41 @@
         "title": "TagCandidateV1",
         "type": "object"
       },
-      "TraceSnapshot": {
+      "TraceRejectionCountV1": {
         "properties": {
-          "events": {
-            "items": {
-              "$ref": "#/components/schemas/TraceUiEvent"
-            },
-            "title": "Events",
-            "type": "array"
-          },
-          "spans": {
-            "items": {
-              "$ref": "#/components/schemas/TraceSpanView"
-            },
-            "title": "Spans",
-            "type": "array"
-          },
-          "summary": {
-            "$ref": "#/components/schemas/TraceSummary"
-          }
-        },
-        "required": [
-          "summary",
-          "spans",
-          "events"
-        ],
-        "title": "TraceSnapshot",
-        "type": "object"
-      },
-      "TraceSpanView": {
-        "properties": {
-          "ended_at": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ended At"
-          },
-          "latency_ms": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Latency Ms"
-          },
-          "parent_span_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parent Span Id"
-          },
-          "span_id": {
-            "title": "Span Id",
-            "type": "string"
-          },
-          "start_sequence": {
-            "title": "Start Sequence",
+          "count": {
+            "title": "Count",
             "type": "integer"
           },
-          "started_at": {
-            "title": "Started At",
-            "type": "number"
-          },
-          "status": {
+          "reason_code": {
             "enum": [
-              "running",
-              "completed",
-              "failed"
+              "invalid_json",
+              "schema_invalid",
+              "option_count_invalid",
+              "answer_index_invalid",
+              "duplicate_options",
+              "meta_option",
+              "length_outlier",
+              "evidence_missing",
+              "ghost_evidence",
+              "question_repeated",
+              "option_count_unmet",
+              "distractor_quality_unmet",
+              "repair_contract_violated",
+              "question_generation_exhausted",
+              "grading_exhausted",
+              "workflow_degraded",
+              "other"
             ],
-            "title": "Status",
-            "type": "string"
-          },
-          "tokens": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tokens"
-          },
-          "tool_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tool Name"
-          },
-          "type": {
-            "enum": [
-              "run",
-              "model",
-              "tool",
-              "assessment",
-              "approval",
-              "recovery",
-              "error",
-              "runtime"
-            ],
-            "title": "Type",
+            "title": "Reason Code",
             "type": "string"
           }
         },
         "required": [
-          "span_id",
-          "parent_span_id",
-          "type",
-          "status",
-          "start_sequence",
-          "started_at",
-          "ended_at",
-          "latency_ms",
-          "tokens",
-          "tool_name"
+          "reason_code",
+          "count"
         ],
-        "title": "TraceSpanView",
-        "type": "object"
-      },
-      "TraceSummary": {
-        "properties": {
-          "completion_tokens": {
-            "title": "Completion Tokens",
-            "type": "integer"
-          },
-          "context_budget_tokens": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Context Budget Tokens"
-          },
-          "context_estimation": {
-            "anyOf": [
-              {
-                "const": "heuristic",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Context Estimation"
-          },
-          "error_count": {
-            "title": "Error Count",
-            "type": "integer"
-          },
-          "estimated_context_tokens": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Estimated Context Tokens"
-          },
-          "event_count": {
-            "title": "Event Count",
-            "type": "integer"
-          },
-          "latency_ms": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Latency Ms"
-          },
-          "model_calls": {
-            "title": "Model Calls",
-            "type": "integer"
-          },
-          "prompt_tokens": {
-            "title": "Prompt Tokens",
-            "type": "integer"
-          },
-          "recovery_count": {
-            "title": "Recovery Count",
-            "type": "integer"
-          },
-          "remaining_context_tokens": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Remaining Context Tokens"
-          },
-          "started_at": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Started At"
-          },
-          "status": {
-            "enum": [
-              "idle",
-              "running",
-              "waiting_input",
-              "completed",
-              "failed",
-              "cancelled"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "tool_calls": {
-            "title": "Tool Calls",
-            "type": "integer"
-          },
-          "total_tokens": {
-            "title": "Total Tokens",
-            "type": "integer"
-          },
-          "trace_id": {
-            "title": "Trace Id",
-            "type": "string"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "trace_id",
-          "status",
-          "event_count",
-          "model_calls",
-          "tool_calls",
-          "error_count",
-          "recovery_count",
-          "prompt_tokens",
-          "completion_tokens",
-          "total_tokens",
-          "estimated_context_tokens",
-          "context_budget_tokens",
-          "remaining_context_tokens",
-          "context_estimation",
-          "started_at",
-          "updated_at",
-          "latency_ms"
-        ],
-        "title": "TraceSummary",
-        "type": "object"
-      },
-      "TraceUiEvent": {
-        "properties": {
-          "latency_ms": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Latency Ms"
-          },
-          "parent_span_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parent Span Id"
-          },
-          "recovered": {
-            "default": false,
-            "title": "Recovered",
-            "type": "boolean"
-          },
-          "sequence": {
-            "title": "Sequence",
-            "type": "integer"
-          },
-          "span_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Span Id"
-          },
-          "status": {
-            "enum": [
-              "started",
-              "completed",
-              "failed",
-              "event"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "timestamp": {
-            "title": "Timestamp",
-            "type": "number"
-          },
-          "tokens": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tokens"
-          },
-          "tool_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tool Name"
-          },
-          "type": {
-            "enum": [
-              "run",
-              "model",
-              "tool",
-              "assessment",
-              "approval",
-              "recovery",
-              "error",
-              "runtime"
-            ],
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "sequence",
-          "type",
-          "timestamp",
-          "span_id",
-          "parent_span_id",
-          "status"
-        ],
-        "title": "TraceUiEvent",
+        "title": "TraceRejectionCountV1",
         "type": "object"
       },
       "TurnCancelled": {
@@ -7481,7 +7477,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TraceSnapshot"
+                  "$ref": "#/components/schemas/SafeTraceRunV1"
                 }
               }
             },
@@ -7544,12 +7540,12 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TraceUiEvent"
+                  "$ref": "#/components/schemas/SafeTraceEventV1"
                 }
               },
               "text/event-stream": {
                 "schema": {
-                  "$ref": "#/components/schemas/TraceUiEvent"
+                  "$ref": "#/components/schemas/SafeTraceEventV1"
                 }
               }
             },
