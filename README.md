@@ -280,6 +280,10 @@ v0.5.0 仍是个人维护的早期版本：核心学习闭环已经可用，但�
 深化空间。如果你有好的 idea、真实学习场景或不佳体验，欢迎在 issue 中讨论；Bug 请尽量附上版本、
 最小复现和脱敏后的 `trace_id`。
 
+## 社区
+
+本项目在 [LINUX DO](https://linux.do/) 社区进行开源交流与推广，感谢社区提供的交流、反馈与共建环境。
+
 ## 许可证
 
 TheGrandQuiz 以 [MIT License](LICENSE) 发布，Copyright © 2026 Hyr1sky。允许个人与商业使用、
