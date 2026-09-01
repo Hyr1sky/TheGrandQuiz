@@ -24,6 +24,12 @@ from grandquiz.domain.learning.assessment.question import QuestionError, Questio
 from grandquiz.domain.learning.assessment.scope import SelectedScope
 from grandquiz.domain.learning.assessment.selection import Focus, apply_scope
 from grandquiz.domain.learning.assessment.session import AssessmentSession
+from grandquiz.domain.learning.assessment.workflow import (
+    COMMIT_LEARNING,
+    GENERATE_QUESTION,
+    GRADE_ANSWER,
+    SELECT_TARGET,
+)
 from grandquiz.domain.learning.classification import KnowledgeKind
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.knowledge_facets import (
@@ -394,6 +400,7 @@ class AssessmentManager:
                 "question_type_plan": list(plan.question_type_intents),
                 "knowledge_kinds": sorted(request.knowledge_kinds),
                 "facet_match_count": None if frozen_item_ids is None else len(frozen_item_ids),
+                "node_id": SELECT_TARGET,
             },
         )
         record.task = asyncio.create_task(
@@ -642,14 +649,17 @@ class AssessmentManager:
                     stage: AssessmentRecoveryStage = "question_generation"
                     reason_code = "question_generation_exhausted"
                     message = "本题生成失败，可以重试本题或跳过继续"
+                    node_id = exc.node_id
                 elif isinstance(exc, GradingError):
                     stage = "grading"
                     reason_code = "grading_exhausted"
                     message = "本题判卷失败，可以跳过此题继续"
+                    node_id = GRADE_ANSWER
                 else:
                     stage = "workflow"
                     reason_code = "workflow_degraded"
                     message = "本轮处理失败，可以跳过此题继续"
+                    node_id = GENERATE_QUESTION
                 record.status = "degraded"
                 record.error = message
                 record.recovery_stage = stage
@@ -662,6 +672,7 @@ class AssessmentManager:
                         "stage": stage,
                         "reason_code": reason_code,
                         "error_type": type(exc).__name__,
+                        "node_id": node_id,
                     },
                 )
                 return
@@ -805,7 +816,11 @@ class AssessmentManager:
         record.emitter.emit(
             ASSESSMENT_RUN_ENDED,
             span_id=record.run_span_id,
-            payload={"status": status, "ok": status == "completed"},
+            payload={
+                "status": status,
+                "ok": status == "completed",
+                **({"node_id": COMMIT_LEARNING} if status == "completed" else {}),
+            },
         )
 
     @staticmethod

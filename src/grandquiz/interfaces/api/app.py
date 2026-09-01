@@ -36,6 +36,7 @@ from grandquiz.interfaces.api.settings_routes import router as settings_router
 from grandquiz.interfaces.api.voice_routes import router as voice_router
 from grandquiz.interfaces.api.voice_runs import VoiceRunManager
 from grandquiz.interfaces.learning_outbox import publish_pending_learning_facts
+from grandquiz.interfaces.trace_projection import resolve_assessment_workflow_descriptor
 from grandquiz.kernel.clock import Clock, SystemClock
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Provider
@@ -94,7 +95,10 @@ def create_app(
         persistence = LearningPersistence(settings.learning_db_path, clock=app_clock)
         trace_store = TraceStore(settings.trace_db_path)
         publish_pending_learning_facts(persistence.learning_facts, trace_store)
-        trace_observatory = TraceObservatory(trace_store)
+        trace_observatory = TraceObservatory(
+            trace_store,
+            descriptor_resolver=resolve_assessment_workflow_descriptor,
+        )
         run_manager = RunManager(
             store=persistence.store,
             provider=provider,

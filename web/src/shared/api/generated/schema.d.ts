@@ -2609,6 +2609,8 @@ export interface components {
             attempt?: number | null;
             /** Latency Ms */
             latency_ms?: number | null;
+            /** Node Id */
+            node_id?: ("select_target" | "generate_question" | "validate_evidence" | "judge_distractors" | "await_answer" | "grade_answer" | "commit_learning") | null;
             /**
              * Operation
              * @enum {string}
@@ -2663,6 +2665,7 @@ export interface components {
             summary: components["schemas"]["SafeTraceSummaryV1"];
             /** Trace Id */
             trace_id: string;
+            workflow?: components["schemas"]["SafeWorkflowRunV1"] | null;
             /** Workflow Kind */
             workflow_kind: "assessment" | null;
         };
@@ -2686,6 +2689,63 @@ export interface components {
             rejection_counts: components["schemas"]["TraceRejectionCountV1"][];
             /** Retries */
             retries: number;
+        };
+        /** SafeWorkflowEdgeV1 */
+        SafeWorkflowEdgeV1: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "next" | "optional";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "select_target" | "generate_question" | "validate_evidence" | "judge_distractors" | "await_answer" | "grade_answer" | "commit_learning";
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "select_target" | "generate_question" | "validate_evidence" | "judge_distractors" | "await_answer" | "grade_answer" | "commit_learning";
+        };
+        /** SafeWorkflowNodeV1 */
+        SafeWorkflowNodeV1: {
+            /** Attempts */
+            attempts: number | null;
+            /** Label */
+            label: string;
+            /** Latency Ms */
+            latency_ms: number | null;
+            /**
+             * Node Id
+             * @enum {string}
+             */
+            node_id: "select_target" | "generate_question" | "validate_evidence" | "judge_distractors" | "await_answer" | "grade_answer" | "commit_learning";
+            /** Optional */
+            optional: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "running" | "waiting" | "completed" | "failed";
+        };
+        /** SafeWorkflowRunV1 */
+        SafeWorkflowRunV1: {
+            /** Edges */
+            edges: components["schemas"]["SafeWorkflowEdgeV1"][];
+            /** Nodes */
+            nodes: components["schemas"]["SafeWorkflowNodeV1"][];
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /**
+             * Variant
+             * @enum {string}
+             */
+            variant: "open" | "multiple_choice";
         };
         /** SessionView */
         SessionView: {

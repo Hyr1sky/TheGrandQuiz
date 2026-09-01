@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Sequence
 
+from grandquiz.domain.learning.assessment.workflow import AssessmentWorkflowDescriptor
 from grandquiz.interfaces.trace_projection import (
     SafeTraceEventV1,
     SafeTraceRunV1,
@@ -18,8 +19,16 @@ from grandquiz.kernel.trace import TraceStore
 class TraceObservatory:
     """为本地 Web 提供持久 trace snapshot 与可恢复增量订阅。"""
 
-    def __init__(self, trace_store: TraceStore) -> None:
+    def __init__(
+        self,
+        trace_store: TraceStore,
+        *,
+        descriptor_resolver: (
+            Callable[[Sequence[AgentEvent]], AssessmentWorkflowDescriptor | None] | None
+        ) = None,
+    ) -> None:
         self._trace_store = trace_store
+        self._descriptor_resolver = descriptor_resolver
         self._known_traces: set[str] = set()
         self._changed: dict[str, asyncio.Event] = {}
 
@@ -36,7 +45,11 @@ class TraceObservatory:
         return trace_id in self._known_traces or bool(self._trace_store.events(trace_id))
 
     def snapshot(self, trace_id: str) -> SafeTraceRunV1:
-        return project_trace(self._trace_store.events(trace_id), trace_id=trace_id)
+        events = self._trace_store.events(trace_id)
+        descriptor = (
+            self._descriptor_resolver(events) if self._descriptor_resolver is not None else None
+        )
+        return project_trace(events, trace_id=trace_id, descriptor=descriptor)
 
     def list_runs(
         self,
@@ -77,9 +90,18 @@ class TraceObservatory:
         changed = self._changed.setdefault(trace_id, asyncio.Event())
         while True:
             raw_events = self._trace_store.events(trace_id)
+            descriptor = (
+                self._descriptor_resolver(raw_events)
+                if self._descriptor_resolver is not None
+                else None
+            )
             fresh = [
                 event
-                for event in project_trace(raw_events, trace_id=trace_id).events
+                for event in project_trace(
+                    raw_events,
+                    trace_id=trace_id,
+                    descriptor=descriptor,
+                ).events
                 if event.sequence > cursor
             ]
             for event in fresh:

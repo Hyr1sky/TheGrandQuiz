@@ -8,6 +8,20 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel
 
+from grandquiz.domain.learning.assessment.workflow import (
+    AWAIT_ANSWER,
+    COMMIT_LEARNING,
+    GENERATE_QUESTION,
+    GRADE_ANSWER,
+    JUDGE_DISTRACTORS,
+    SELECT_TARGET,
+    VALIDATE_EVIDENCE,
+    AssessmentWorkflowDescriptor,
+    AssessmentWorkflowVariant,
+    WorkflowEdgeKind,
+    WorkflowNodeId,
+    describe_assessment_workflow,
+)
 from grandquiz.kernel.events import AgentEvent, EventType
 
 TraceRunStatus = Literal[
@@ -61,6 +75,7 @@ TraceReasonCode = Literal[
     "other",
 ]
 TraceQualityLabel = Literal["invalid", "weak", "reasonable"]
+WorkflowNodeState = Literal["pending", "running", "waiting", "completed", "failed"]
 
 _MC_STARTED = "learning.multiple_choice_generation.started"
 _MC_REJECTED = "learning.multiple_choice_generation.attempt_rejected"
@@ -82,6 +97,24 @@ _LEARNING_COMMIT_EVENTS = frozenset(
         "learning.difficulty_tier_changed",
     }
 )
+_ALLOWED_NODES_BY_EVENT_TYPE: Mapping[str, frozenset[WorkflowNodeId]] = {
+    "assessment.started": frozenset({SELECT_TARGET}),
+    "web.assessment_run.started": frozenset({SELECT_TARGET}),
+    _MC_STARTED: frozenset({GENERATE_QUESTION}),
+    _MC_REJECTED: frozenset({VALIDATE_EVIDENCE, JUDGE_DISTRACTORS}),
+    _MC_ENDED: frozenset({GENERATE_QUESTION, VALIDATE_EVIDENCE, JUDGE_DISTRACTORS}),
+    EventType.MODEL_STARTED: frozenset({GENERATE_QUESTION, JUDGE_DISTRACTORS, GRADE_ANSWER}),
+    EventType.MODEL_ENDED: frozenset({GENERATE_QUESTION, JUDGE_DISTRACTORS, GRADE_ANSWER}),
+    "learning.question_asked": frozenset({AWAIT_ANSWER}),
+    "learning.answer_judged": frozenset({GRADE_ANSWER}),
+    "learning.assessment_judgement_committed": frozenset({COMMIT_LEARNING}),
+    "learning.concept_state_changed": frozenset({COMMIT_LEARNING}),
+    "learning.difficulty_tier_changed": frozenset({COMMIT_LEARNING}),
+    "web.assessment_run.degraded": frozenset(
+        {GENERATE_QUESTION, VALIDATE_EVIDENCE, JUDGE_DISTRACTORS, GRADE_ANSWER}
+    ),
+    "web.assessment_run.ended": frozenset({COMMIT_LEARNING}),
+}
 _PUBLIC_STAGES = frozenset(TraceStage.__args__)
 _PUBLIC_REASONS = frozenset(TraceReasonCode.__args__)
 _REASON_LABELS: Mapping[TraceReasonCode, str] = {
@@ -136,6 +169,29 @@ class SafeTraceEventV1(BaseModel):
     quality_label: TraceQualityLabel | None = None
     tokens: int | None = None
     latency_ms: float | None = None
+    node_id: WorkflowNodeId | None = None
+
+
+class SafeWorkflowNodeV1(BaseModel):
+    node_id: WorkflowNodeId
+    label: str
+    optional: bool
+    state: WorkflowNodeState
+    attempts: int | None
+    latency_ms: float | None
+
+
+class SafeWorkflowEdgeV1(BaseModel):
+    source: WorkflowNodeId
+    target: WorkflowNodeId
+    kind: WorkflowEdgeKind
+
+
+class SafeWorkflowRunV1(BaseModel):
+    schema_version: Literal[1] = 1
+    variant: AssessmentWorkflowVariant
+    nodes: list[SafeWorkflowNodeV1]
+    edges: list[SafeWorkflowEdgeV1]
 
 
 class SafeTraceRunV1(BaseModel):
@@ -147,14 +203,20 @@ class SafeTraceRunV1(BaseModel):
     workflow_kind: Literal["assessment"] | None
     summary: SafeTraceSummaryV1
     events: list[SafeTraceEventV1]
+    workflow: SafeWorkflowRunV1 | None = None
 
 
-def project_trace(events: Sequence[AgentEvent], *, trace_id: str) -> SafeTraceRunV1:
+def project_trace(
+    events: Sequence[AgentEvent],
+    *,
+    trace_id: str,
+    descriptor: AssessmentWorkflowDescriptor | None = None,
+) -> SafeTraceRunV1:
     """从完整 trace 构造新的 allowlist 对象；从不复制 raw payload。"""
     if any(event.trace_id != trace_id for event in events):
         raise ValueError("events 必须全部属于指定 trace_id")
 
-    projected = _project_events(events)
+    projected = _project_events(events, descriptor=descriptor)
     status = _trace_status(events)
     reason_counts: Counter[TraceReasonCode] = Counter()
     for event in projected:
@@ -193,6 +255,166 @@ def project_trace(events: Sequence[AgentEvent], *, trace_id: str) -> SafeTraceRu
             recommended_action=recommended_action,
         ),
         events=projected,
+        workflow=(
+            _project_workflow(
+                projected[_latest_assessment_round_index(events) :],
+                descriptor=descriptor,
+            )
+            if descriptor is not None
+            else None
+        ),
+    )
+
+
+def resolve_assessment_workflow_descriptor(
+    events: Sequence[AgentEvent],
+) -> AssessmentWorkflowDescriptor | None:
+    """Resolve the latest assessment round at the interface event-name boundary."""
+    current = events[_latest_assessment_round_index(events) :]
+    assessment_event = any(
+        event.type.startswith("assessment.")
+        or event.type.startswith("web.assessment_run.")
+        or event.type.startswith("learning.multiple_choice_generation.")
+        or event.type
+        in {
+            "learning.question_asked",
+            "learning.answer_judged",
+            "learning.assessment_judgement_committed",
+        }
+        for event in current
+    )
+    if not assessment_event:
+        return None
+    multiple_choice = any(
+        event.type.startswith("learning.multiple_choice_generation.")
+        or (event.type == "learning.question_asked" and event.payload.get("effective") == "选择题")
+        for event in current
+    )
+    return describe_assessment_workflow("multiple_choice" if multiple_choice else "open")
+
+
+def _latest_assessment_round_index(events: Sequence[AgentEvent]) -> int:
+    return max(
+        (index for index, event in enumerate(events) if event.type == "assessment.started"),
+        default=0,
+    )
+
+
+def _project_workflow(
+    events: Sequence[SafeTraceEventV1],
+    *,
+    descriptor: AssessmentWorkflowDescriptor,
+) -> SafeWorkflowRunV1:
+    states: dict[WorkflowNodeId, WorkflowNodeState] = {
+        node.node_id: "pending" for node in descriptor.nodes
+    }
+    attempts: dict[WorkflowNodeId, int | None] = {node.node_id: None for node in descriptor.nodes}
+    latencies: dict[WorkflowNodeId, float | None] = {
+        node.node_id: None for node in descriptor.nodes
+    }
+    optional: set[WorkflowNodeId] = {node.node_id for node in descriptor.nodes if node.optional}
+    node_order: list[WorkflowNodeId] = [node.node_id for node in descriptor.nodes]
+    events_by_node: dict[WorkflowNodeId, list[SafeTraceEventV1]] = {
+        node_id: [] for node_id in node_order
+    }
+    for event in events:
+        if event.node_id in events_by_node:
+            events_by_node[event.node_id].append(event)
+
+    generation_attempts = [
+        event.attempt
+        for event in events
+        if event.operation == "multiple_choice_generation" and event.attempt is not None
+    ]
+    if generation_attempts:
+        attempts["generate_question"] = max(generation_attempts)
+
+    for index, node_id in enumerate(node_order):
+        node_events = events_by_node[node_id]
+        if not node_events:
+            continue
+        for predecessor in node_order[:index]:
+            if predecessor not in optional and states[predecessor] in {
+                "pending",
+                "running",
+                "waiting",
+            }:
+                states[predecessor] = "completed"
+        if attempts[node_id] is None and node_id in {
+            GENERATE_QUESTION,
+            JUDGE_DISTRACTORS,
+            GRADE_ANSWER,
+        }:
+            started_events = [event for event in node_events if event.phase == "started"]
+            started_span_ids = {
+                event.span_id for event in started_events if event.span_id is not None
+            }
+            nested_starts = [
+                event for event in started_events if event.parent_span_id in started_span_ids
+            ]
+            countable_starts = nested_starts or started_events
+            attempts[node_id] = len(countable_starts) or None
+        started_spans = {
+            event.span_id
+            for event in node_events
+            if event.phase == "started" and event.span_id is not None
+        }
+        parent_spans = {
+            event.parent_span_id
+            for event in node_events
+            if event.phase == "started" and event.parent_span_id is not None
+        }
+        leaf_spans = started_spans - parent_spans
+        node_latencies = [
+            event.latency_ms
+            for event in node_events
+            if event.latency_ms is not None and event.span_id in leaf_spans
+        ]
+        latencies[node_id] = sum(node_latencies) if node_latencies else None
+        last = node_events[-1]
+        failed = last.status == "failed" or (
+            last.status == "waiting_input" and last.reason_code is not None
+        )
+        if failed:
+            states[node_id] = "failed"
+        elif last.node_id == AWAIT_ANSWER and last.status == "waiting_input":
+            states[node_id] = "waiting"
+        elif last.phase == "started" or last.phase == "attempt_rejected":
+            states[node_id] = "running"
+        else:
+            states[node_id] = "completed"
+
+    awaiting_events = events_by_node.get(AWAIT_ANSWER, [])
+    if awaiting_events and latencies[AWAIT_ANSWER] is None:
+        later_events = [
+            event
+            for node_id in node_order[node_order.index(AWAIT_ANSWER) + 1 :]
+            for event in events_by_node[node_id]
+        ]
+        if later_events:
+            latencies[AWAIT_ANSWER] = max(
+                0.0,
+                (min(event.timestamp for event in later_events) - awaiting_events[0].timestamp)
+                * 1000,
+            )
+
+    return SafeWorkflowRunV1(
+        variant=descriptor.variant,
+        nodes=[
+            SafeWorkflowNodeV1(
+                node_id=node.node_id,
+                label=node.label,
+                optional=node.optional,
+                state=states[node.node_id],
+                attempts=attempts[node.node_id],
+                latency_ms=latencies[node.node_id],
+            )
+            for node in descriptor.nodes
+        ],
+        edges=[
+            SafeWorkflowEdgeV1(source=edge.source, target=edge.target, kind=edge.kind)
+            for edge in descriptor.edges
+        ],
     )
 
 
@@ -281,7 +503,11 @@ def _latest_question_generation_failure_slice(
     return events[boundary + 1 : failure_index + 1]
 
 
-def _project_events(events: Sequence[AgentEvent]) -> list[SafeTraceEventV1]:
+def _project_events(
+    events: Sequence[AgentEvent],
+    *,
+    descriptor: AssessmentWorkflowDescriptor | None,
+) -> list[SafeTraceEventV1]:
     starts: dict[str, float] = {}
     span_operations: dict[str, TraceOperation] = {}
     question_asked_spans: set[str] = set()
@@ -309,7 +535,7 @@ def _project_events(events: Sequence[AgentEvent]) -> list[SafeTraceEventV1]:
                 operation=operation,
                 phase=phase,
                 status=_event_status(event, phase),
-                attempt=_safe_int(event.payload, "attempt") if operation != "other" else None,
+                attempt=(_safe_attempt(event.payload) if operation != "other" else None),
                 stage=_stage(event.payload) if operation != "other" else None,
                 reason_code=_reason(event.payload) if operation != "other" else None,
                 tokens=_usage_total(event.payload),
@@ -318,9 +544,25 @@ def _project_events(events: Sequence[AgentEvent]) -> list[SafeTraceEventV1]:
                     if start_ts is not None and event.type.endswith(".ended")
                     else None
                 ),
+                node_id=_node_id(event, descriptor=descriptor),
             )
         )
     return projected
+
+
+def _node_id(
+    event: AgentEvent,
+    *,
+    descriptor: AssessmentWorkflowDescriptor | None,
+) -> WorkflowNodeId | None:
+    value = event.payload.get("node_id")
+    if not isinstance(value, str) or descriptor is None:
+        return None
+    allowed_for_type = _ALLOWED_NODES_BY_EVENT_TYPE.get(event.type, frozenset())
+    if value not in allowed_for_type:
+        return None
+    allowed = {node.node_id for node in descriptor.nodes}
+    return value if value in allowed else None
 
 
 def _operation(
@@ -435,6 +677,11 @@ def _reason(payload: Mapping[str, Any]) -> TraceReasonCode | None:
 def _safe_int(payload: Mapping[str, Any], key: str) -> int | None:
     value = payload.get(key)
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _safe_attempt(payload: Mapping[str, Any]) -> int | None:
+    attempt = _safe_int(payload, "attempt")
+    return attempt if attempt is not None else _safe_int(payload, "attempts")
 
 
 def _usage_total(payload: Mapping[str, Any]) -> int | None:

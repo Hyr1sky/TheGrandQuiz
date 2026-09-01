@@ -57,11 +57,10 @@ Eval 是项目的承重卖点。E0–E4 已在不改变 case、cassette、评分
 下一条产品主线默认进入 Material Channels。E8 完成表示控制契约与 bypass tests 已落地，不表示已有真实
 候选通过新 Release Holdout 并激活；第一次真实晋升仍是显式 HITL。
 
-## 当前工作焦点：v0.5.x 可靠性与“失败即解释”
+## 最近完成：v0.5.x 可靠性与“失败即解释”
 
-下一轮不扩大考核能力，先让现有失败能够被用户和开发者直接理解。当前选择题质量补丁已建立
-`multiple_choice_generation` 结构化事件、稳定拒绝原因和 Web 可恢复状态；后续竖切以一个安全的
-Trace Semantic Projection 同时服务运行观测、Eval 报告和诊断包：
+本周期没有扩大考核能力，而是让现有失败能够被用户和开发者直接理解。五个竖切已经通过同一个安全的
+Trace Semantic Projection 完成交付：
 
 1. 失败卡直接打开本次 Trace，不再要求复制 ID；
 2. 只投影有限、版本化的 operation / stage / reason_code / attempt / quality_label，不暴露正文、Prompt
@@ -70,8 +69,9 @@ Trace Semantic Projection 同时服务运行观测、Eval 报告和诊断包：
 4. Assessment workflow 提供真实节点描述，事件只为节点着色，前端不手写可能漂移的流程图；
 5. 导出只含选中 Trace、安全配置身份和白名单字段的诊断包；本地设置展示当前实际数据目录。
 
-进入条件已经满足：选择题 dogfood 产生了可复现的五次质量门耗尽，现有 Trace 能记录但不能解释。完成条件
-以独立 PRD 的用户行为和安全字段测试为准，不以“做出一张图”代替可解释性。
+Assessment workflow graph 只展示最新一题的真实领域节点与允许边；mixed multi-round、unknown node、缺失
+attempt/latency、跨节点与嵌套 span 均有诚实语义测试。完成证据见 devrecords 52–57。下一条默认产品工作仍从
+P1 Prototype/Eval 开始，不因有了 workflow graph 就提前生产化 KnowledgeRelation。
 
 ## 下一阶段产品候选
 

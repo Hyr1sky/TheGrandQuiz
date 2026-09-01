@@ -16,6 +16,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ValidationError
 
+from grandquiz.domain.learning.assessment.workflow import JUDGE_DISTRACTORS
 from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.events import EventEmitter, EventType
@@ -125,6 +126,7 @@ async def _call_model(
             "messages": [m.model_dump() for m in messages],
             "prompt_version": prompt_version,
             "role": "basic",
+            "node_id": JUDGE_DISTRACTORS,
         },
     )
     try:
@@ -134,14 +136,19 @@ async def _call_model(
             EventType.MODEL_ENDED,
             span_id=span_id,
             parent_span_id=parent_span_id,
-            payload={"ok": False, "error": repr(exc)},
+            payload={"ok": False, "error": repr(exc), "node_id": JUDGE_DISTRACTORS},
         )
         raise
     emitter.emit(
         EventType.MODEL_ENDED,
         span_id=span_id,
         parent_span_id=parent_span_id,
-        payload={"ok": True, "output": completion.text, "usage": completion.usage.model_dump()},
+        payload={
+            "ok": True,
+            "output": completion.text,
+            "usage": completion.usage.model_dump(),
+            "node_id": JUDGE_DISTRACTORS,
+        },
     )
     return completion
 

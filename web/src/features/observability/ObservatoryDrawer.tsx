@@ -9,6 +9,7 @@ import {
   type SafeTraceRun,
   type SafeTraceStatus,
   type SafeTraceSummary,
+  type SafeWorkflowRun,
 } from "./api";
 import { streamTraceEvents } from "./traceEvents";
 import "./observatory-drawer.css";
@@ -51,6 +52,17 @@ const OPERATION_LABELS: Record<SafeTraceEvent["operation"], string> = {
   other: "其他运行事件",
 };
 
+const WORKFLOW_STATE_LABELS: Record<
+  SafeWorkflowRun["nodes"][number]["state"],
+  string
+> = {
+  pending: "未经过",
+  running: "进行中",
+  waiting: "等待输入",
+  completed: "已完成",
+  failed: "失败",
+};
+
 function formatDuration(value: number | null | undefined): string {
   if (value === null || value === undefined) {
     return "未知";
@@ -76,6 +88,68 @@ function totalTokens(summary: SafeTraceSummary): number | null {
     return null;
   }
   return summary.prompt_tokens + summary.completion_tokens;
+}
+
+function AssessmentWorkflow({ workflow }: { workflow: SafeWorkflowRun }) {
+  const labels = new Map(workflow.nodes.map((node) => [node.node_id, node.label]));
+  return (
+    <section className="observatory-workflow" aria-label="考核流程">
+      <div className="observatory-section-title">
+        <h3>考核流程</h3>
+        <span>{workflow.variant === "multiple_choice" ? "选择题" : "开放题"}</span>
+      </div>
+      <ol aria-label="流程节点">
+        {workflow.nodes.map((node) => {
+          const stateLabel = WORKFLOW_STATE_LABELS[node.state];
+          const accessibleLabel = [
+            node.label,
+            stateLabel,
+            node.optional ? "可选" : null,
+          ]
+            .filter(Boolean)
+            .join("，");
+          return (
+            <li
+              key={node.node_id}
+              className={`observatory-workflow-node observatory-workflow-node--${node.state}`}
+              aria-label={accessibleLabel}
+            >
+              <span className="observatory-workflow-node__rail" aria-hidden />
+              <div className="observatory-workflow-node__body">
+                <div>
+                  <strong>{node.label}</strong>
+                  <span className="observatory-workflow-node__state">{stateLabel}</span>
+                </div>
+                <p>
+                  {node.optional ? <span>可选</span> : null}
+                  {node.attempts === null ? null : <span>共 {node.attempts} 次</span>}
+                  <span>{formatDuration(node.latency_ms)}</span>
+                </p>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      <div className="observatory-workflow-edges">
+        <h4>允许路径</h4>
+        <ul aria-label="流程连接">
+          {workflow.edges.map((edge) => {
+            const source = labels.get(edge.source) ?? edge.source;
+            const target = labels.get(edge.target) ?? edge.target;
+            const optional = edge.kind === "optional" ? "（可选分支）" : "";
+            return (
+              <li key={`${edge.source}:${edge.target}:${edge.kind}`}>
+                <span>{source}</span>
+                <span aria-hidden>→</span>
+                <span>{target}</span>
+                {optional}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </section>
+  );
 }
 
 export function ObservatoryDrawer({
@@ -364,6 +438,11 @@ export function ObservatoryDrawer({
               </strong>
             </article>
           </section>
+
+          {currentSnapshot.workflow === null ||
+          currentSnapshot.workflow === undefined ? null : (
+            <AssessmentWorkflow workflow={currentSnapshot.workflow} />
+          )}
 
           <a
             className="observatory-download"

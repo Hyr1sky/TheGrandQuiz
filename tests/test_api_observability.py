@@ -65,6 +65,7 @@ def test_chat_session_exposes_an_idle_observability_snapshot(tmp_path: Path) -> 
         "recommended_action": None,
     }
     assert snapshot["events"] == []
+    assert snapshot["workflow"] is None
 
 
 def test_completed_turn_snapshot_contains_only_safe_runtime_metrics(tmp_path: Path) -> None:
@@ -200,6 +201,47 @@ def test_observatory_recovers_historical_trace_after_store_restart(tmp_path: Pat
 
     assert snapshot.status == "completed"
     assert [event.operation for event in snapshot.events] == ["other", "other"]
+
+
+def test_api_recovers_assessment_workflow_descriptor_after_restart(tmp_path: Path) -> None:
+    trace_id = "historical-assessment-workflow"
+    store = TraceStore(tmp_path / "trace.db")
+    for event in (
+        AgentEvent(
+            type="assessment.started",
+            seq=0,
+            ts=1.0,
+            trace_id=trace_id,
+            span_id="assessment",
+            payload={"node_id": "select_target"},
+        ),
+        AgentEvent(
+            type="learning.question_asked",
+            seq=1,
+            ts=2.0,
+            trace_id=trace_id,
+            parent_span_id="assessment",
+            payload={"effective": "开放", "node_id": "await_answer"},
+        ),
+    ):
+        store.record(event)
+    store.close()
+
+    with TestClient(_app(tmp_path)) as client:
+        response = client.get(f"/api/v1/observability/traces/{trace_id}")
+
+    assert response.status_code == 200
+    workflow = response.json()["workflow"]
+    assert workflow["variant"] == "open"
+    assert [node["node_id"] for node in workflow["nodes"]] == [
+        "select_target",
+        "generate_question",
+        "validate_evidence",
+        "await_answer",
+        "grade_answer",
+        "commit_learning",
+    ]
+    assert workflow["nodes"][3]["state"] == "waiting"
 
 
 def test_observability_detail_rebuilds_safe_semantics_after_store_restart(
@@ -432,5 +474,36 @@ def test_observability_openapi_exposes_only_finite_semantic_event_fields(
         "reason_code",
         "quality_label",
         "tokens",
+        "latency_ms",
+        "node_id",
+    }
+    assert properties["node_id"]["anyOf"][0]["enum"] == [
+        "select_target",
+        "generate_question",
+        "validate_evidence",
+        "judge_distractors",
+        "await_answer",
+        "grade_answer",
+        "commit_learning",
+    ]
+    workflow_schema = schema["components"]["schemas"]["SafeWorkflowRunV1"]
+    assert workflow_schema["properties"]["variant"]["enum"] == [
+        "open",
+        "multiple_choice",
+    ]
+    node_schema = schema["components"]["schemas"]["SafeWorkflowNodeV1"]
+    assert node_schema["properties"]["state"]["enum"] == [
+        "pending",
+        "running",
+        "waiting",
+        "completed",
+        "failed",
+    ]
+    assert set(node_schema["required"]) == {
+        "node_id",
+        "label",
+        "optional",
+        "state",
+        "attempts",
         "latency_ms",
     }

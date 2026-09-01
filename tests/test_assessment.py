@@ -31,6 +31,15 @@ from grandquiz.domain.learning.assessment.scope import (
 )
 from grandquiz.domain.learning.assessment.selection import Focus, select_target
 from grandquiz.domain.learning.assessment.session import AssessmentSession
+from grandquiz.domain.learning.assessment.workflow import (
+    AWAIT_ANSWER,
+    COMMIT_LEARNING,
+    GENERATE_QUESTION,
+    GRADE_ANSWER,
+    SELECT_TARGET,
+    VALIDATE_EVIDENCE,
+    describe_assessment_workflow,
+)
 from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.memory import LearningMemory
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
@@ -294,6 +303,48 @@ async def test_fresh_concept_routes_to_mc_with_deterministic_grade(
     expected_stream.append(_ASSESSMENT_ENDED)
     types = [e.type for e in events]
     assert types == expected_stream
+
+    descriptor_node_ids = {
+        node.node_id for node in describe_assessment_workflow("multiple_choice").nodes
+    }
+    referenced_node_ids = {
+        node_id for event in events if isinstance((node_id := event.payload.get("node_id")), str)
+    }
+    assert referenced_node_ids <= descriptor_node_ids
+    assert (
+        next(event for event in events if event.type == _ASSESSMENT_STARTED).payload["node_id"]
+        == SELECT_TARGET
+    )
+    assert (
+        next(event for event in events if event.type == EventType.MODEL_STARTED).payload["node_id"]
+        == GENERATE_QUESTION
+    )
+    assert (
+        next(
+            event
+            for event in events
+            if event.type == LearningEvent.MULTIPLE_CHOICE_GENERATION_ENDED
+        ).payload["node_id"]
+        == VALIDATE_EVIDENCE
+    )
+    assert (
+        next(event for event in events if event.type == LearningEvent.QUESTION_ASKED).payload[
+            "node_id"
+        ]
+        == AWAIT_ANSWER
+    )
+    assert (
+        next(event for event in events if event.type == LearningEvent.ANSWER_JUDGED).payload[
+            "node_id"
+        ]
+        == GRADE_ANSWER
+    )
+    assert (
+        next(
+            event for event in events if event.type == LearningEvent.CONCEPT_STATE_CHANGED
+        ).payload["node_id"]
+        == COMMIT_LEARNING
+    )
 
     # 路由到选择题（首次接触）——决策上脊柱 + 透出到 result。
     assert result.question_type == "选择题"
@@ -985,6 +1036,7 @@ async def test_unresolved_scope_refuses_before_candidate_read_and_llm_call() -> 
         "resource_ids": None,
         "candidate_pool_size": 0,
         "requested_label": "不存在的分布式系统文章",
+        "node_id": SELECT_TARGET,
     }
     assert events[1].payload["reason"] == "unresolved_scope"
 

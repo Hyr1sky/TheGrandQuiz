@@ -430,7 +430,7 @@ async def test_quality_policy_invalid_distractors_exhaust_bounded_repairs() -> N
     )
     emitter, events = _emitter()
 
-    with pytest.raises(QuestionError):
+    with pytest.raises(QuestionError) as raised:
         await generate_multiple_choice(
             _item(),
             provider=provider,
@@ -439,6 +439,7 @@ async def test_quality_policy_invalid_distractors_exhaust_bounded_repairs() -> N
             max_attempts=2,
             quality_policy=DistractorQualityPolicy(minimum_label="较弱干扰"),
         )
+    assert raised.value.node_id == "judge_distractors"
     assert provider.enrich_calls == 2
     # 第二版复用了完全相同的选项；一次生成任务内不会重复 judge 同一文本。
     assert provider.judge_calls == 2
@@ -449,6 +450,10 @@ async def test_quality_policy_invalid_distractors_exhaust_bounded_repairs() -> N
     ]
     assert [event.payload["stage"] for event in rejected] == ["generation", "repair"]
     assert [event.payload["retained_distractor_count"] for event in rejected] == [0, 0]
+    ended = next(
+        event for event in events if event.type == "learning.multiple_choice_generation.ended"
+    )
+    assert ended.payload["node_id"] == "judge_distractors"
 
 
 async def test_quality_policy_reasonable_distractors_pass_first_try() -> None:
@@ -572,5 +577,6 @@ async def test_quality_policy_repairs_only_rejected_distractor_and_records_trace
         "attempts": 2,
         "repair_attempts": 1,
         "judge_calls": 4,
+        "node_id": "judge_distractors",
     }
     assert [event.seq for event in events] == list(range(len(events)))

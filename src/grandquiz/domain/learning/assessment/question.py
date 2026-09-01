@@ -24,6 +24,12 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
+from grandquiz.domain.learning.assessment.workflow import (
+    GENERATE_QUESTION,
+    JUDGE_DISTRACTORS,
+    VALIDATE_EVIDENCE,
+    WorkflowNodeId,
+)
 from grandquiz.domain.learning.difficulty import (
     DistractorQualityPolicy,
     distractor_meets_floor,
@@ -127,6 +133,15 @@ class QuestionError(Exception):
     """
 
     error_class = ErrorClass.DEGRADED
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        node_id: WorkflowNodeId = VALIDATE_EVIDENCE,
+    ) -> None:
+        super().__init__(message)
+        self.node_id = node_id
 
 
 class ModelRetry(Exception):
@@ -361,6 +376,7 @@ async def _call_model(
             "messages": [m.model_dump() for m in messages],
             "prompt_version": prompt_version,
             "role": "enrich",
+            "node_id": GENERATE_QUESTION,
         },
     )
     try:
@@ -371,14 +387,19 @@ async def _call_model(
             EventType.MODEL_ENDED,
             span_id=span_id,
             parent_span_id=parent_span_id,
-            payload={"ok": False, "error": repr(exc)},
+            payload={"ok": False, "error": repr(exc), "node_id": GENERATE_QUESTION},
         )
         raise
     emitter.emit(
         EventType.MODEL_ENDED,
         span_id=span_id,
         parent_span_id=parent_span_id,
-        payload={"ok": True, "output": completion.text, "usage": completion.usage.model_dump()},
+        payload={
+            "ok": True,
+            "output": completion.text,
+            "usage": completion.usage.model_dump(),
+            "node_id": GENERATE_QUESTION,
+        },
     )
     return completion
 
@@ -496,6 +517,7 @@ async def generate_multiple_choice(
                     "minimum_reasonable": effective_policy.minimum_reasonable,
                 }
             ),
+            "node_id": GENERATE_QUESTION,
         },
     )
     retry_note: str | None = None
@@ -556,6 +578,7 @@ async def generate_multiple_choice(
                         "attempts": attempts,
                         "repair_attempts": repair_attempts,
                         "judge_calls": len(verdict_cache),
+                        "node_id": (JUDGE_DISTRACTORS if verdict_cache else VALIDATE_EVIDENCE),
                     },
                 )
                 return mc
@@ -573,6 +596,11 @@ async def generate_multiple_choice(
                         "stage": "repair" if is_repair else "generation",
                         "reason_code": exc.reason_code,
                         "retained_distractor_count": len(retained_options),
+                        "node_id": (
+                            JUDGE_DISTRACTORS
+                            if exc.reason_code == "distractor_quality_unmet"
+                            else VALIDATE_EVIDENCE
+                        ),
                     },
                 )
                 retry_note = _multiple_choice_retry_note(
@@ -580,7 +608,14 @@ async def generate_multiple_choice(
                     anchor=anchor,
                     retained_options=retained_options,
                 )
-        raise QuestionError(f"选择题出题失败（{max_attempts} 次尝试仍无合法输出）：{last_error}")
+        raise QuestionError(
+            f"选择题出题失败（{max_attempts} 次尝试仍无合法输出）：{last_error}",
+            node_id=(
+                JUDGE_DISTRACTORS
+                if last_reason_code == "distractor_quality_unmet"
+                else VALIDATE_EVIDENCE
+            ),
+        )
     except Exception as exc:
         failure_payload: dict[str, object] = {
             "ok": False,
@@ -588,6 +623,13 @@ async def generate_multiple_choice(
             "repair_attempts": repair_attempts,
             "judge_calls": len(verdict_cache),
             "stage": failure_stage,
+            "node_id": (
+                JUDGE_DISTRACTORS
+                if failure_stage == "distractor_quality"
+                else VALIDATE_EVIDENCE
+                if failure_stage in {"validation", "repair_validation"}
+                else GENERATE_QUESTION
+            ),
         }
         if isinstance(exc, QuestionError):
             failure_payload["reason_code"] = last_reason_code

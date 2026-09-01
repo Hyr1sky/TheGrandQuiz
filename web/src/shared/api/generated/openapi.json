@@ -4139,6 +4139,26 @@
             ],
             "title": "Latency Ms"
           },
+          "node_id": {
+            "anyOf": [
+              {
+                "enum": [
+                  "select_target",
+                  "generate_question",
+                  "validate_evidence",
+                  "judge_distractors",
+                  "await_answer",
+                  "grade_answer",
+                  "commit_learning"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
           "operation": {
             "enum": [
               "assessment_run",
@@ -4353,6 +4373,16 @@
             "title": "Trace Id",
             "type": "string"
           },
+          "workflow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SafeWorkflowRunV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "workflow_kind": {
             "anyOf": [
               {
@@ -4465,6 +4495,158 @@
           "latency_ms"
         ],
         "title": "SafeTraceSummaryV1",
+        "type": "object"
+      },
+      "SafeWorkflowEdgeV1": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "next",
+              "optional"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "select_target",
+              "generate_question",
+              "validate_evidence",
+              "judge_distractors",
+              "await_answer",
+              "grade_answer",
+              "commit_learning"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "enum": [
+              "select_target",
+              "generate_question",
+              "validate_evidence",
+              "judge_distractors",
+              "await_answer",
+              "grade_answer",
+              "commit_learning"
+            ],
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "target",
+          "kind"
+        ],
+        "title": "SafeWorkflowEdgeV1",
+        "type": "object"
+      },
+      "SafeWorkflowNodeV1": {
+        "properties": {
+          "attempts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempts"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "node_id": {
+            "enum": [
+              "select_target",
+              "generate_question",
+              "validate_evidence",
+              "judge_distractors",
+              "await_answer",
+              "grade_answer",
+              "commit_learning"
+            ],
+            "title": "Node Id",
+            "type": "string"
+          },
+          "optional": {
+            "title": "Optional",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "running",
+              "waiting",
+              "completed",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "label",
+          "optional",
+          "state",
+          "attempts",
+          "latency_ms"
+        ],
+        "title": "SafeWorkflowNodeV1",
+        "type": "object"
+      },
+      "SafeWorkflowRunV1": {
+        "properties": {
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/SafeWorkflowEdgeV1"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/SafeWorkflowNodeV1"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "variant": {
+            "enum": [
+              "open",
+              "multiple_choice"
+            ],
+            "title": "Variant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "variant",
+          "nodes",
+          "edges"
+        ],
+        "title": "SafeWorkflowRunV1",
         "type": "object"
       },
       "SessionView": {

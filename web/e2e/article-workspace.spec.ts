@@ -385,6 +385,17 @@ test("navigates from Chat to Assessment and closes the trace", async ({ page }) 
   await page.getByRole("button", { name: "打开运行观测" }).click();
   const observatory = page.getByRole("dialog", { name: "运行观测" });
   await expect(observatory).toContainText("已完成");
+  const workflow = observatory.getByRole("region", { name: "考核流程" });
+  await expect(workflow).toBeVisible();
+  await expect(
+    workflow.getByRole("listitem", { name: "等待作答，已完成" }),
+  ).toBeVisible();
+  await expect(
+    workflow.getByRole("listitem", { name: "判卷，已完成" }),
+  ).toBeVisible();
+  await expect(
+    workflow.getByRole("listitem", { name: "提交学习事实，已完成" }),
+  ).toBeVisible();
   const bundlePath = `/api/v1/observability/traces/${started.trace_id}/diagnostic-bundle`;
   await expect(
     observatory.getByRole("link", { name: "导出脱敏诊断包" }),
@@ -566,6 +577,11 @@ test("opens the exact generation-degraded trace and keeps it after returning to 
   await expect(firstDrawer.getByRole("region", { name: "运行摘要" })).toContainText(
     "选择题生成失败：3 次尝试",
   );
+  await expect(
+    firstDrawer
+      .getByRole("region", { name: "考核流程" })
+      .getByRole("listitem", { name: "校验证据，失败" }),
+  ).toBeVisible();
 
   await page
     .getByRole("dialog", { name: "运行观测" })
@@ -639,6 +655,11 @@ test("opens the exact grading-degraded trace", async ({ page }) => {
   expect((await traceRead).ok()).toBe(true);
   const drawer = page.getByRole("dialog", { name: "运行观测" });
   await expect(drawer).toBeVisible();
+  await expect(
+    drawer
+      .getByRole("region", { name: "考核流程" })
+      .getByRole("listitem", { name: "判卷，失败" }),
+  ).toBeVisible();
   await drawer.getByRole("button", { name: "关闭运行观测" }).click();
   await page.getByRole("button", { name: "结束考核" }).click();
   await expect(page.getByRole("main", { name: "文章内容" })).toBeVisible();

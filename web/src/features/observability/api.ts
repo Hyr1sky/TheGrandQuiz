@@ -5,6 +5,8 @@ export type SafeTraceRun = components["schemas"]["SafeTraceRunV1"];
 export type SafeTraceSummary = components["schemas"]["SafeTraceSummaryV1"];
 export type SafeTraceEvent = components["schemas"]["SafeTraceEventV1"];
 export type SafeTraceStatus = SafeTraceRun["status"];
+export type SafeWorkflowRun = components["schemas"]["SafeWorkflowRunV1"];
+export type SafeWorkflowNode = components["schemas"]["SafeWorkflowNodeV1"];
 
 export async function listTraceSnapshots(
   status: SafeTraceStatus | null,

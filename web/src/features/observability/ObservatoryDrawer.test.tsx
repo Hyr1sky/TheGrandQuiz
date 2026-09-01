@@ -73,8 +73,80 @@ const snapshot = {
       quality_label: null,
       tokens: null,
       latency_ms: null,
+      node_id: "validate_evidence",
     },
   ],
+  workflow: {
+    schema_version: 1,
+    variant: "multiple_choice",
+    nodes: [
+      {
+        node_id: "select_target",
+        label: "选择知识点",
+        optional: false,
+        state: "completed",
+        attempts: null,
+        latency_ms: 0,
+      },
+      {
+        node_id: "generate_question",
+        label: "生成题目",
+        optional: false,
+        state: "completed",
+        attempts: 2,
+        latency_ms: 120,
+      },
+      {
+        node_id: "validate_evidence",
+        label: "校验证据",
+        optional: false,
+        state: "failed",
+        attempts: null,
+        latency_ms: null,
+      },
+      {
+        node_id: "judge_distractors",
+        label: "评审干扰项",
+        optional: true,
+        state: "pending",
+        attempts: null,
+        latency_ms: null,
+      },
+      {
+        node_id: "await_answer",
+        label: "等待作答",
+        optional: false,
+        state: "pending",
+        attempts: null,
+        latency_ms: null,
+      },
+      {
+        node_id: "grade_answer",
+        label: "判卷",
+        optional: false,
+        state: "pending",
+        attempts: null,
+        latency_ms: null,
+      },
+      {
+        node_id: "commit_learning",
+        label: "提交学习事实",
+        optional: false,
+        state: "pending",
+        attempts: null,
+        latency_ms: null,
+      },
+    ],
+    edges: [
+      { source: "select_target", target: "generate_question", kind: "next" },
+      { source: "generate_question", target: "validate_evidence", kind: "next" },
+      { source: "validate_evidence", target: "judge_distractors", kind: "optional" },
+      { source: "validate_evidence", target: "await_answer", kind: "next" },
+      { source: "judge_distractors", target: "await_answer", kind: "next" },
+      { source: "await_answer", target: "grade_answer", kind: "next" },
+      { source: "grade_answer", target: "commit_learning", kind: "next" },
+    ],
+  },
 };
 
 function observabilityResponse(
@@ -120,10 +192,33 @@ describe("ObservatoryDrawer", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
     expect(screen.getByText("选择题生成")).toBeInTheDocument();
-    expect(screen.getByText("第 2 次")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "语义事件" })).getByText(
+        "第 2 次",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText("repair")).toBeInTheDocument();
     expect(screen.getByText("distractor_quality_unmet")).toBeInTheDocument();
-    expect(screen.getByText("120 ms")).toBeInTheDocument();
+    expect(
+      screen.getByText("总耗时").closest("article"),
+    ).toHaveTextContent("120 ms");
+    const workflow = screen.getByRole("region", { name: "考核流程" });
+    expect(
+      within(workflow).getByRole("listitem", {
+        name: "校验证据，失败",
+      }),
+    ).toBeInTheDocument();
+    expect(within(workflow).getByText("共 2 次")).toBeInTheDocument();
+    expect(within(workflow).getByText("0 ms")).toBeInTheDocument();
+    expect(
+      within(workflow).getByRole("listitem", {
+        name: "评审干扰项，未经过，可选",
+      }),
+    ).toBeInTheDocument();
+    const edges = within(workflow).getByRole("list", { name: "流程连接" });
+    expect(edges).toHaveTextContent("校验证据→等待作答");
+    expect(edges).toHaveTextContent("校验证据→评审干扰项（可选分支）");
+    expect(within(workflow).getAllByText("未知").length).toBeGreaterThan(0);
     expect(
       screen.getByRole("link", { name: "导出脱敏诊断包" }),
     ).toHaveAttribute(
@@ -141,6 +236,50 @@ describe("ObservatoryDrawer", () => {
     expect(String(FakeEventSource.instances[0]?.url)).toContain(
       "/api/v1/observability/traces/trace-1/events?after=4",
     );
+  });
+
+  it("renders the real open workflow without inventing the choice-only judge node", async () => {
+    const openSnapshot = {
+      ...snapshot,
+      workflow: {
+        ...snapshot.workflow,
+        variant: "open",
+        nodes: snapshot.workflow.nodes.filter(
+          (node) => node.node_id !== "judge_distractors",
+        ),
+        edges: snapshot.workflow.edges.filter(
+          (edge) =>
+            edge.source !== "judge_distractors" &&
+            edge.target !== "judge_distractors",
+        ),
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        observabilityResponse(input, openSnapshot),
+      ),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+
+    render(
+      <ObservatoryDrawer
+        open
+        traceId="trace-1"
+        onClose={vi.fn()}
+        onSelectTrace={vi.fn()}
+      />,
+    );
+
+    const workflow = await screen.findByRole("region", { name: "考核流程" });
+    const nodes = within(workflow).getByRole("list", { name: "流程节点" });
+    expect(
+      within(nodes).getByRole("listitem", { name: "生成题目，已完成" }),
+    ).toBeInTheDocument();
+    expect(
+      within(nodes).queryByRole("listitem", { name: /评审干扰项/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "语义事件" })).toBeInTheDocument();
   });
 
   it("can be closed without affecting the running trace", async () => {

@@ -61,6 +61,12 @@ from grandquiz.domain.learning.assessment.scope import (
     UnresolvedScope,
 )
 from grandquiz.domain.learning.assessment.selection import Focus, apply_scope, select_target
+from grandquiz.domain.learning.assessment.workflow import (
+    AWAIT_ANSWER,
+    COMMIT_LEARNING,
+    GRADE_ANSWER,
+    SELECT_TARGET,
+)
 from grandquiz.domain.learning.assessment_history import assessment_fact
 from grandquiz.domain.learning.difficulty import (
     DEFAULT_TIER,
@@ -258,6 +264,7 @@ async def assess_once(
         "mode": scope.mode,
         "resource_ids": resource_ids,
         "candidate_pool_size": len(items),
+        "node_id": SELECT_TARGET,
     }
     if candidate_item_ids is not None:
         scope_payload["facet_filtered"] = True
@@ -407,6 +414,7 @@ async def assess_once(
             "question_type": effective,
             "routed": routed,
             "effective": effective,
+            "node_id": AWAIT_ANSWER,
         }
         if mc is not None:
             # MC 另带 options 供"用户视图"；answer_index 刻意不进事件（不泄露答案键——判卷走 in-code
@@ -506,6 +514,7 @@ async def assess_once(
                 "matched_points": matched_points,
                 "missing_points": missing_points,
                 "cited_evidence": judged_evidence,
+                "node_id": GRADE_ANSWER,
             },
         )
 
@@ -566,6 +575,7 @@ async def assess_once(
                 "from_state": transition.from_state,
                 "to_state": transition.to_state,
                 "consecutive_correct": transition.consecutive_correct,
+                "node_id": COMMIT_LEARNING,
             },
         )
 
@@ -580,6 +590,7 @@ async def assess_once(
                     "from_tier": change.from_tier,
                     "to_tier": change.to_tier,
                     "reason": change.reason,
+                    "node_id": COMMIT_LEARNING,
                 },
             )
 
@@ -587,7 +598,10 @@ async def assess_once(
             emitter.emit(
                 LearningEvent.ASSESSMENT_JUDGEMENT_COMMITTED,
                 parent_span_id=assessment_span,
-                payload=committed.learning_fact.model_dump(mode="json"),
+                payload={
+                    **committed.learning_fact.model_dump(mode="json"),
+                    "node_id": COMMIT_LEARNING,
+                },
             )
             learning_facts.mark_published(committed.learning_fact.event_id)
 
