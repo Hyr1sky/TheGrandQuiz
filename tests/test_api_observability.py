@@ -6,6 +6,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from grandquiz.interfaces.api.app import ApiSettings, create_app
@@ -257,6 +258,98 @@ def test_observability_detail_rebuilds_safe_semantics_after_store_restart(
     ]
     assert "SECRET-HISTORICAL-PROMPT" not in response.text
     assert "SECRET-HISTORICAL-ANSWER" not in response.text
+
+
+def test_observability_lists_recent_runs_and_filters_status_after_restart(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "trace.db"
+    store = TraceStore(path)
+    fixtures: tuple[tuple[str, float, str, dict[str, object]], ...] = (
+        ("trace-completed", 1.0, "assessment.ended", {"ok": True}),
+        ("trace-waiting", 2.0, "learning.question_asked", {}),
+        ("trace-failed", 3.0, "assessment.ended", {"ok": False}),
+        ("trace-cancelled", 4.0, "assessment.ended", {"status": "cancelled"}),
+        ("trace-running", 5.0, "assessment.started", {"status": "running"}),
+    )
+    for trace_id, timestamp, event_type, payload in fixtures:
+        store.record(
+            AgentEvent(
+                type=event_type,
+                seq=0,
+                ts=timestamp,
+                trace_id=trace_id,
+                span_id=f"{trace_id}:assessment",
+                payload=payload,
+            )
+        )
+    store.close()
+
+    with TestClient(_app(tmp_path)) as client:
+        recent = client.get("/api/v1/observability/traces", params={"limit": 2})
+        failed = client.get(
+            "/api/v1/observability/traces",
+            params={"status": "failed", "limit": 10},
+        )
+        invalid_status = client.get(
+            "/api/v1/observability/traces",
+            params={"status": "SECRET-INTERNAL-STATUS"},
+        )
+        excessive_limit = client.get(
+            "/api/v1/observability/traces",
+            params={"limit": 51},
+        )
+
+    assert recent.status_code == 200
+    assert [run["trace_id"] for run in recent.json()] == [
+        "trace-running",
+        "trace-cancelled",
+    ]
+    assert [run["trace_id"] for run in failed.json()] == ["trace-failed"]
+    assert failed.json()[0]["status"] == "failed"
+    assert invalid_status.status_code == 422
+    assert excessive_limit.status_code == 422
+
+    with TestClient(_app(tmp_path)) as client:
+        for status in ("running", "waiting_input", "completed", "failed", "cancelled"):
+            response = client.get(
+                "/api/v1/observability/traces",
+                params={"status": status, "limit": 10},
+            )
+            assert response.status_code == 200
+            assert [run["status"] for run in response.json()] == [status]
+
+
+def test_observatory_status_filter_scans_history_in_bounded_pages() -> None:
+    store = TraceStore(":memory:")
+    store.record(
+        AgentEvent(
+            type="assessment.ended",
+            seq=0,
+            ts=1.0,
+            trace_id="older-failed",
+            payload={"ok": False},
+        )
+    )
+    for index in range(55):
+        store.record(
+            AgentEvent(
+                type="assessment.started",
+                seq=0,
+                ts=float(index + 2),
+                trace_id=f"recent-running-{index:02d}",
+                payload={"status": "running"},
+            )
+        )
+    observatory = TraceObservatory(store)
+    try:
+        assert [run.trace_id for run in observatory.list_runs(status="failed", limit=1)] == [
+            "older-failed"
+        ]
+        with pytest.raises(ValueError, match="limit"):
+            observatory.list_runs(status="failed", limit=0)
+    finally:
+        store.close()
 
 
 def test_observability_openapi_exposes_only_finite_semantic_event_fields(

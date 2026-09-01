@@ -668,6 +668,7 @@ export function App() {
           open={observatoryOpen}
           traceId={observatoryTraceId}
           onClose={() => setObservatoryOpen(false)}
+          onSelectTrace={setObservatoryTraceId}
           anchorRef={observatoryTriggerRef}
         />
         <AcquisitionDrawer

@@ -543,7 +543,11 @@ test("opens the exact generation-degraded trace and keeps it after returning to 
   );
   await page.getByRole("button", { name: "查看本次运行" }).click();
   expect((await firstTraceRead).ok()).toBe(true);
-  await expect(page.getByRole("dialog", { name: "运行观测" })).toBeVisible();
+  const firstDrawer = page.getByRole("dialog", { name: "运行观测" });
+  await expect(firstDrawer).toBeVisible();
+  await expect(firstDrawer.getByRole("region", { name: "运行摘要" })).toContainText(
+    "选择题生成失败：3 次尝试",
+  );
 
   await page
     .getByRole("dialog", { name: "运行观测" })
@@ -561,6 +565,23 @@ test("opens the exact generation-degraded trace and keeps it after returning to 
   );
   await page.getByRole("button", { name: "打开运行观测" }).click();
   expect((await secondTraceRead).ok()).toBe(true);
+
+  await page.reload();
+  await dismissOnboarding(page);
+  await page.getByRole("button", { name: "打开运行观测" }).click();
+  const historicalRun = page.getByRole("button", {
+    name: `运行 ${started.trace_id}，已取消`,
+  });
+  await expect(historicalRun).toBeVisible();
+  const historicalTraceRead = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      response.url().endsWith(
+        `/api/v1/observability/traces/${started.trace_id}`,
+      ),
+  );
+  await historicalRun.click();
+  expect((await historicalTraceRead).ok()).toBe(true);
 });
 
 test("opens the exact grading-degraded trace", async ({ page }) => {
@@ -637,5 +658,9 @@ test("opens the exact fatal assessment trace", async ({ page }) => {
   await page.getByRole("button", { name: "查看本次运行" }).click();
   expect((await traceRead).ok()).toBe(true);
   await expect(page.getByRole("dialog", { name: "运行观测" })).toBeVisible();
-  await expect(page.getByText("失败", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "运行状态" }).getByText("失败", {
+      exact: true,
+    }),
+  ).toBeVisible();
 });

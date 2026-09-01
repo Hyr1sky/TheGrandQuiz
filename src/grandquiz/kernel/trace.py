@@ -219,6 +219,19 @@ class TraceStore:
             )
         return events
 
+    def recent_trace_ids(self, *, limit: int, offset: int = 0) -> list[str]:
+        """按最后事件时间返回确定排序的 trace identity；不解释领域状态。"""
+        if limit < 1:
+            raise ValueError("limit 必须大于 0")
+        if offset < 0:
+            raise ValueError("offset 不能小于 0")
+        sql = (
+            "SELECT trace_id, MAX(ts) AS last_ts FROM events "
+            "GROUP BY trace_id ORDER BY last_ts DESC, trace_id DESC LIMIT ? OFFSET ?"
+        )
+        cursor = self._conn.execute(sql, (limit, offset))
+        return [str(row[0]) for row in cursor.fetchall()]
+
     def span_tree(self, trace_id: str) -> list[Span]:
         return build_span_tree(self.events(trace_id))
 

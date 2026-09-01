@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ObservatoryDrawer } from "./ObservatoryDrawer";
@@ -71,6 +77,17 @@ const snapshot = {
   ],
 };
 
+function observabilityResponse(
+  input: RequestInfo | URL,
+  detail: unknown = snapshot,
+): Response {
+  const request =
+    input instanceof Request ? input : new Request(String(input));
+  return Response.json(
+    request.url.includes("/observability/traces?") ? [detail] : detail,
+  );
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   FakeEventSource.instances = [];
@@ -80,7 +97,7 @@ describe("ObservatoryDrawer", () => {
   it("shows a safe live trace summary and resumes after the snapshot cursor", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => Response.json(snapshot)),
+      vi.fn(async (input: RequestInfo | URL) => observabilityResponse(input)),
     );
     vi.stubGlobal("EventSource", FakeEventSource);
 
@@ -89,13 +106,18 @@ describe("ObservatoryDrawer", () => {
         open
         traceId="trace-1"
         onClose={vi.fn()}
+        onSelectTrace={vi.fn()}
       />,
     );
 
     expect(
       await screen.findByRole("dialog", { name: "运行观测" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("已完成")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "运行状态" })).getByText(
+        "已完成",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
     expect(screen.getByText("选择题生成")).toBeInTheDocument();
     expect(screen.getByText("第 2 次")).toBeInTheDocument();
@@ -115,7 +137,7 @@ describe("ObservatoryDrawer", () => {
   it("can be closed without affecting the running trace", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => Response.json(snapshot)),
+      vi.fn(async (input: RequestInfo | URL) => observabilityResponse(input)),
     );
     vi.stubGlobal("EventSource", FakeEventSource);
     const close = vi.fn();
@@ -126,6 +148,7 @@ describe("ObservatoryDrawer", () => {
         open
         traceId="trace-1"
         onClose={close}
+        onSelectTrace={vi.fn()}
       />,
     );
 
@@ -136,13 +159,21 @@ describe("ObservatoryDrawer", () => {
   });
 
   it("dismisses the read-only panel from an outside click or Escape", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json(snapshot)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => observabilityResponse(input)),
+    );
     vi.stubGlobal("EventSource", FakeEventSource);
     const close = vi.fn();
     const user = userEvent.setup();
 
     const { rerender } = render(
-      <ObservatoryDrawer open traceId="trace-1" onClose={close} />,
+      <ObservatoryDrawer
+        open
+        traceId="trace-1"
+        onClose={close}
+        onSelectTrace={vi.fn()}
+      />,
     );
     await screen.findByRole("dialog", { name: "运行观测" });
 
@@ -150,20 +181,40 @@ describe("ObservatoryDrawer", () => {
     expect(close).toHaveBeenCalledOnce();
 
     rerender(
-      <ObservatoryDrawer open={false} traceId="trace-1" onClose={close} />,
+      <ObservatoryDrawer
+        open={false}
+        traceId="trace-1"
+        onClose={close}
+        onSelectTrace={vi.fn()}
+      />,
     );
     rerender(
-      <ObservatoryDrawer open traceId="trace-1" onClose={close} />,
+      <ObservatoryDrawer
+        open
+        traceId="trace-1"
+        onClose={close}
+        onSelectTrace={vi.fn()}
+      />,
     );
     await user.keyboard("{Escape}");
     expect(close).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the close control circular and the icon upright on hover", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json(snapshot)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => observabilityResponse(input)),
+    );
     vi.stubGlobal("EventSource", FakeEventSource);
 
-    render(<ObservatoryDrawer open traceId="trace-1" onClose={vi.fn()} />);
+    render(
+      <ObservatoryDrawer
+        open
+        traceId="trace-1"
+        onClose={vi.fn()}
+        onSelectTrace={vi.fn()}
+      />,
+    );
     const close = await screen.findByRole("button", { name: "关闭运行观测" });
     fireEvent.mouseEnter(close);
 
@@ -181,6 +232,9 @@ describe("ObservatoryDrawer", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const request =
         input instanceof Request ? input : new Request(String(input));
+      if (request.url.includes("/observability/traces?")) {
+        return Response.json([snapshot]);
+      }
       if (request.url.endsWith("/trace-1")) {
         return Response.json(snapshot);
       }
@@ -195,16 +249,32 @@ describe("ObservatoryDrawer", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
 
     const { rerender } = render(
-      <ObservatoryDrawer open traceId="trace-1" onClose={vi.fn()} />,
+      <ObservatoryDrawer
+        open
+        traceId="trace-1"
+        onClose={vi.fn()}
+        onSelectTrace={vi.fn()}
+      />,
     );
-    expect(await screen.findByText("已完成")).toBeInTheDocument();
+    expect(
+      within(
+        await screen.findByRole("region", { name: "运行状态" }),
+      ).getByText("已完成"),
+    ).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
 
     rerender(
-      <ObservatoryDrawer open traceId="trace-2" onClose={vi.fn()} />,
+      <ObservatoryDrawer
+        open
+        traceId="trace-2"
+        onClose={vi.fn()}
+        onSelectTrace={vi.fn()}
+      />,
     );
     expect(screen.getByText("正在读取事件脊柱...")).toBeInTheDocument();
-    expect(screen.queryByText("已完成")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "运行状态" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("42")).not.toBeInTheDocument();
 
     await waitFor(() => expect(rejectNextTrace).toBeDefined());
@@ -213,7 +283,220 @@ describe("ObservatoryDrawer", () => {
     expect(
       await screen.findByRole("alert", { name: "" }),
     ).toHaveTextContent("无法读取运行轨迹");
-    expect(screen.queryByText("已完成")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "运行状态" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("42")).not.toBeInTheDocument();
+  });
+
+  it("lists recent runs, filters on the server, and selects an exact historical trace", async () => {
+    const failedSnapshot = {
+      ...snapshot,
+      trace_id: "trace-2",
+      status: "failed",
+    };
+    let resolveFailedHistory: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const request =
+        input instanceof Request ? input : new Request(String(input));
+      if (request.url.includes("/observability/traces?")) {
+        if (request.url.includes("status=failed")) {
+          return await new Promise<Response>((resolve) => {
+            resolveFailedHistory = resolve;
+          });
+        }
+        return Response.json([failedSnapshot, snapshot]);
+      }
+      if (request.url.endsWith("/trace-1")) {
+        return Response.json(snapshot);
+      }
+      throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const onSelectTrace = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <ObservatoryDrawer
+        open
+        traceId="trace-1"
+        onClose={vi.fn()}
+        onSelectTrace={onSelectTrace}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("button", { name: /运行 trace-2/ }),
+    ).toBeInTheDocument();
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "按状态筛选运行" }),
+      "failed",
+    );
+    expect(screen.getByText("正在读取近期运行...")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /运行 trace-1/ }),
+    ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: expect.stringContaining("status=failed"),
+        }),
+      );
+    });
+    resolveFailedHistory?.(Response.json([failedSnapshot]));
+    expect(
+      await screen.findByRole("button", { name: /运行 trace-2/ }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /运行 trace-2/ }));
+    expect(onSelectTrace).toHaveBeenCalledWith("trace-2");
+  });
+
+  it("shows honest history loading, empty, and error states", async () => {
+    let resolveHistory: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const request =
+        input instanceof Request ? input : new Request(String(input));
+      if (request.url.includes("/observability/traces?")) {
+        if (request.url.includes("status=failed")) {
+          throw new Error("history unavailable");
+        }
+        return await new Promise<Response>((resolve) => {
+          resolveHistory = resolve;
+        });
+      }
+      return Response.json(snapshot);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const user = userEvent.setup();
+
+    render(
+      <ObservatoryDrawer
+        open
+        traceId="trace-1"
+        onClose={vi.fn()}
+        onSelectTrace={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("正在读取近期运行...")).toBeInTheDocument();
+    resolveHistory?.(Response.json([]));
+    expect(await screen.findByText("没有符合条件的运行。")).toBeInTheDocument();
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "按状态筛选运行" }),
+      "failed",
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "无法读取近期运行",
+    );
+  });
+
+  it("places the structured explanation above metrics and history", async () => {
+    const explainedSnapshot = {
+      ...snapshot,
+      summary: {
+        ...snapshot.summary,
+        headline: "选择题生成失败：3 次尝试；干扰项质量不足 2 次",
+        recommended_action: "可以重试本题，或跳过此题继续。",
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        observabilityResponse(input, explainedSnapshot),
+      ),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+
+    render(
+      <ObservatoryDrawer
+        open
+        traceId="trace-1"
+        onClose={vi.fn()}
+        onSelectTrace={vi.fn()}
+      />,
+    );
+
+    const summary = await screen.findByRole("region", { name: "运行摘要" });
+    expect(summary).toHaveTextContent(
+      "选择题生成失败：3 次尝试；干扰项质量不足 2 次",
+    );
+    expect(summary).toHaveTextContent(
+      "可以重试本题，或跳过此题继续。",
+    );
+    const metrics = screen.getByRole("region", { name: "运行指标" });
+    const history = screen.getByRole("region", { name: "近期运行" });
+    expect(
+      summary.compareDocumentPosition(metrics) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      metrics.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("renders missing usage as unknown while preserving real zero", async () => {
+    const unknownSnapshot = {
+      ...snapshot,
+      summary: {
+        ...snapshot.summary,
+        prompt_tokens: null,
+        completion_tokens: null,
+        latency_ms: null,
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        observabilityResponse(input, unknownSnapshot),
+      ),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+
+    const view = render(
+      <ObservatoryDrawer
+        open
+        traceId="trace-1"
+        onClose={vi.fn()}
+        onSelectTrace={vi.fn()}
+      />,
+    );
+
+    const tokenMetric = (await screen.findByText("总 Token")).closest("article");
+    const latencyMetric = screen.getByText("总耗时").closest("article");
+    expect(tokenMetric).toHaveTextContent("未知");
+    expect(latencyMetric).toHaveTextContent("未知");
+
+    view.unmount();
+    const zeroSnapshot = {
+      ...snapshot,
+      trace_id: "trace-zero",
+      summary: {
+        ...snapshot.summary,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        latency_ms: 0,
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        observabilityResponse(input, zeroSnapshot),
+      ),
+    );
+    render(
+      <ObservatoryDrawer
+        open
+        traceId="trace-zero"
+        onClose={vi.fn()}
+        onSelectTrace={vi.fn()}
+      />,
+    );
+    expect(
+      (await screen.findByText("总 Token")).closest("article"),
+    ).toHaveTextContent("0");
+    expect(screen.getByText("总耗时").closest("article")).toHaveTextContent(
+      "0 ms",
+    );
   });
 });

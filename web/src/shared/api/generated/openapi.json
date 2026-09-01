@@ -7458,6 +7458,79 @@
         ]
       }
     },
+    "/api/v1/observability/traces": {
+      "get": {
+        "operationId": "list_trace_snapshots_api_v1_observability_traces_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "idle",
+                    "running",
+                    "waiting_input",
+                    "completed",
+                    "failed",
+                    "cancelled"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SafeTraceRunV1"
+                  },
+                  "title": "Response List Trace Snapshots Api V1 Observability Traces Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Trace Snapshots",
+        "tags": [
+          "observability"
+        ]
+      }
+    },
     "/api/v1/observability/traces/{trace_id}": {
       "get": {
         "operationId": "get_trace_snapshot_api_v1_observability_traces__trace_id__get",

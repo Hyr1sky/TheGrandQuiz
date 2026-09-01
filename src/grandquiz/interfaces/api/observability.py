@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator
 from grandquiz.interfaces.trace_projection import (
     SafeTraceEventV1,
     SafeTraceRunV1,
+    TraceRunStatus,
     project_trace,
 )
 from grandquiz.kernel.events import AgentEvent
@@ -36,6 +37,34 @@ class TraceObservatory:
 
     def snapshot(self, trace_id: str) -> SafeTraceRunV1:
         return project_trace(self._trace_store.events(trace_id), trace_id=trace_id)
+
+    def list_runs(
+        self,
+        *,
+        status: TraceRunStatus | None = None,
+        limit: int = 20,
+    ) -> list[SafeTraceRunV1]:
+        """返回有界安全历史；状态在共享 projector 之后于服务端筛选。"""
+        if not 1 <= limit <= 50:
+            raise ValueError("limit 必须在 1 到 50 之间")
+        batch_size = 50
+        offset = 0
+        runs: list[SafeTraceRunV1] = []
+        while len(runs) < limit:
+            trace_ids = self._trace_store.recent_trace_ids(
+                limit=min(batch_size, limit) if status is None else batch_size,
+                offset=offset,
+            )
+            if not trace_ids:
+                break
+            for trace_id in trace_ids:
+                run = self.snapshot(trace_id)
+                if status is None or run.status == status:
+                    runs.append(run)
+                if len(runs) == limit:
+                    break
+            offset += len(trace_ids)
+        return runs
 
     async def iter_events(
         self,

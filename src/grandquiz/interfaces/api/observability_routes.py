@@ -2,20 +2,33 @@
 
 import json
 from collections.abc import AsyncIterator
-from typing import cast
+from typing import Annotated, cast
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
 from grandquiz.interfaces.api.errors import ApiError
 from grandquiz.interfaces.api.observability import TraceObservatory
-from grandquiz.interfaces.trace_projection import SafeTraceEventV1, SafeTraceRunV1
+from grandquiz.interfaces.trace_projection import (
+    SafeTraceEventV1,
+    SafeTraceRunV1,
+    TraceRunStatus,
+)
 
 router = APIRouter(prefix="/api/v1/observability", tags=["observability"])
 
 
 def observatory_from(request: Request) -> TraceObservatory:
     return cast("TraceObservatory", request.app.state.trace_observatory)
+
+
+@router.get("/traces", response_model=list[SafeTraceRunV1])
+async def list_trace_snapshots(
+    request: Request,
+    status: Annotated[TraceRunStatus | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> list[SafeTraceRunV1]:
+    return observatory_from(request).list_runs(status=status, limit=limit)
 
 
 @router.get("/traces/{trace_id}", response_model=SafeTraceRunV1)

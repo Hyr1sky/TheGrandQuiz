@@ -159,3 +159,27 @@ def test_interleaved_traces_keep_independent_contiguous_sequences() -> None:
     assert [event.seq for event in store.events("first")] == [0, 1]
     assert [event.seq for event in store.events("second")] == [0, 1]
     store.close()
+
+
+def test_trace_store_lists_recent_trace_ids_with_deterministic_limit() -> None:
+    store = TraceStore(":memory:")
+    for trace_id, timestamp in (
+        ("older", 1.0),
+        ("same-b", 3.0),
+        ("same-a", 3.0),
+        ("newest", 5.0),
+    ):
+        store.record(
+            AgentEvent(
+                type="assessment.started",
+                seq=0,
+                ts=timestamp,
+                trace_id=trace_id,
+                span_id=f"{trace_id}:assessment",
+                payload={"status": "running"},
+            )
+        )
+
+    assert store.recent_trace_ids(limit=3) == ["newest", "same-b", "same-a"]
+    assert store.recent_trace_ids(limit=2, offset=1) == ["same-b", "same-a"]
+    store.close()

@@ -84,6 +84,25 @@ _LEARNING_COMMIT_EVENTS = frozenset(
 )
 _PUBLIC_STAGES = frozenset(TraceStage.__args__)
 _PUBLIC_REASONS = frozenset(TraceReasonCode.__args__)
+_REASON_LABELS: Mapping[TraceReasonCode, str] = {
+    "invalid_json": "输出格式无效",
+    "schema_invalid": "输出结构无效",
+    "option_count_invalid": "选项数量不符",
+    "answer_index_invalid": "答案位置无效",
+    "duplicate_options": "选项重复",
+    "meta_option": "出现元选项",
+    "length_outlier": "选项长度异常",
+    "evidence_missing": "缺少材料证据",
+    "ghost_evidence": "证据无法定位",
+    "question_repeated": "题目重复",
+    "option_count_unmet": "选项数量不足",
+    "distractor_quality_unmet": "干扰项质量不足",
+    "repair_contract_violated": "修复结果不合约",
+    "question_generation_exhausted": "出题尝试已耗尽",
+    "grading_exhausted": "判卷尝试已耗尽",
+    "workflow_degraded": "考核流程降级",
+    "other": "其他公开原因",
+}
 
 
 class TraceRejectionCountV1(BaseModel):
@@ -146,6 +165,11 @@ def project_trace(events: Sequence[AgentEvent], *, trace_id: str) -> SafeTraceRu
     started_at = events[0].ts if events else None
     ended_at = events[-1].ts if events and status in {"completed", "failed", "cancelled"} else None
     latency_ms = max(0.0, (events[-1].ts - events[0].ts) * 1000) if len(events) >= 2 else None
+    headline, recommended_action = _summary_explanation(
+        projected,
+        status=status,
+        error_count=sum(event.type == EventType.ERROR for event in events),
+    )
     return SafeTraceRunV1(
         trace_id=trace_id,
         status=status,
@@ -165,9 +189,96 @@ def project_trace(events: Sequence[AgentEvent], *, trace_id: str) -> SafeTraceRu
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             latency_ms=latency_ms,
+            headline=headline,
+            recommended_action=recommended_action,
         ),
         events=projected,
     )
+
+
+def _summary_explanation(
+    events: Sequence[SafeTraceEventV1],
+    *,
+    status: TraceRunStatus,
+    error_count: int,
+) -> tuple[str | None, str | None]:
+    """只从安全枚举与计数生成文案，不读取 raw payload 或异常正文。"""
+    if status == "failed":
+        suffix = f"；记录到 {error_count} 个错误" if error_count else ""
+        return f"运行失败{suffix}", "请查看失败阶段与原因；可以结束本轮后重试。"
+    if status == "cancelled":
+        return "运行已取消", "可以在准备好后重新开始。"
+    if status == "completed":
+        return "运行已完成", None
+    if status == "running":
+        return "运行正在进行", None
+    if status == "idle":
+        return None, None
+
+    generation_slice = _latest_question_generation_failure_slice(events)
+    question_generation_failed = generation_slice is not None
+    current_generation = generation_slice or ()
+    reasons: Counter[TraceReasonCode] = Counter(
+        event.reason_code
+        for event in current_generation
+        if event.phase == "attempt_rejected" and event.reason_code is not None
+    )
+    attempt_values = [event.attempt for event in current_generation if event.attempt is not None]
+    attempts = max(attempt_values) if attempt_values else None
+    is_multiple_choice = any(
+        event.operation == "multiple_choice_generation" for event in current_generation
+    )
+    latest_waiting = next(
+        (event for event in reversed(events) if event.status == "waiting_input"),
+        None,
+    )
+    grading_failed = latest_waiting is not None and (
+        latest_waiting.reason_code == "grading_exhausted"
+        or (latest_waiting.operation == "assessment_run" and latest_waiting.stage == "grading")
+    )
+
+    if question_generation_failed:
+        headline = "选择题生成失败" if is_multiple_choice else "题目生成失败"
+        if attempts is not None:
+            headline += f"：{attempts} 次尝试"
+        parts = [headline]
+        parts.extend(
+            f"{_REASON_LABELS[reason]} {count} 次"
+            for reason, count in sorted(reasons.items(), key=lambda item: (-item[1], item[0]))
+        )
+        return "；".join(parts), "可以重试本题，或跳过此题继续。"
+    if grading_failed:
+        return "判卷未完成", "可以跳过此题继续考核。"
+    return "考核正在等待输入", "请提交答案或完成当前审批后继续。"
+
+
+def _latest_question_generation_failure_slice(
+    events: Sequence[SafeTraceEventV1],
+) -> Sequence[SafeTraceEventV1] | None:
+    """把 headline 归属到当前题，避免早期题型和 attempt 污染多轮考核。"""
+    failure_index: int | None = None
+    for index, event in enumerate(events):
+        if event.reason_code == "question_generation_exhausted" or (
+            event.operation == "assessment_run"
+            and event.stage == "question_generation"
+            and event.status in {"failed", "waiting_input"}
+        ):
+            failure_index = index
+    if failure_index is None:
+        return None
+
+    latest_waiting_index = max(
+        (index for index, event in enumerate(events) if event.status == "waiting_input"),
+        default=-1,
+    )
+    if latest_waiting_index != failure_index:
+        return None
+
+    boundary = -1
+    for index, event in enumerate(events[:failure_index]):
+        if event.operation == "assessment_run" and event.status == "waiting_input":
+            boundary = index
+    return events[boundary + 1 : failure_index + 1]
 
 
 def _project_events(events: Sequence[AgentEvent]) -> list[SafeTraceEventV1]:

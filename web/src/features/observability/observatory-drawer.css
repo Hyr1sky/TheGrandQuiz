@@ -172,6 +172,84 @@
   text-overflow: ellipsis;
 }
 
+.observatory-summary {
+  margin: 0 0 12px;
+  padding: 12px;
+  border-left: 3px solid var(--brass);
+  border-radius: 0 8px 8px 0;
+  background: var(--evidence-soft);
+}
+
+.observatory-summary strong {
+  color: var(--text-strong);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.observatory-summary p,
+.observatory-history__message {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.observatory-history {
+  margin-top: 22px;
+}
+
+.observatory-history select {
+  min-height: 30px;
+  padding: 4px 24px 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-quiet);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+}
+
+.observatory-history ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 0 0;
+  list-style: none;
+}
+
+.observatory-history button {
+  display: flex;
+  width: 100%;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-quiet);
+  color: var(--text);
+  text-align: left;
+}
+
+.observatory-history button[aria-current="true"] {
+  border-color: var(--brass);
+  background: var(--evidence-soft);
+}
+
+.observatory-history button span {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.observatory-history code {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+
 .observatory-timeline {
   margin-top: 22px;
 }

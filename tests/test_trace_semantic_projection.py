@@ -1,5 +1,7 @@
 """安全、版本化的 Trace Semantic Projection 行为契约。"""
 
+import pytest
+
 from grandquiz.interfaces.trace_projection import project_trace
 from grandquiz.kernel.events import AgentEvent
 
@@ -231,6 +233,231 @@ def test_project_trace_distinguishes_generation_judgement_grading_and_commit() -
         "SECRET-ITEM",
     ):
         assert forbidden not in serialized
+
+
+def test_project_trace_builds_failure_summary_from_structured_counts_only() -> None:
+    run = project_trace(
+        [
+            _event(
+                "learning.multiple_choice_generation.attempt_rejected",
+                0,
+                payload={
+                    "attempt": 1,
+                    "stage": "generation",
+                    "reason_code": "invalid_json",
+                    "exception": "SECRET-NATURAL-LANGUAGE-FAILURE",
+                },
+            ),
+            _event(
+                "learning.multiple_choice_generation.attempt_rejected",
+                1,
+                payload={
+                    "attempt": 2,
+                    "stage": "distractor_quality",
+                    "reason_code": "distractor_quality_unmet",
+                },
+            ),
+            _event(
+                "learning.multiple_choice_generation.attempt_rejected",
+                2,
+                payload={
+                    "attempt": 3,
+                    "stage": "distractor_quality",
+                    "reason_code": "distractor_quality_unmet",
+                },
+            ),
+            _event(
+                "web.assessment_run.degraded",
+                3,
+                payload={
+                    "status": "degraded",
+                    "stage": "question_generation",
+                    "reason_code": "question_generation_exhausted",
+                },
+            ),
+        ],
+        trace_id="trace-safe",
+    )
+
+    assert run.summary.headline == (
+        "选择题生成失败：3 次尝试；干扰项质量不足 2 次；输出格式无效 1 次"
+    )
+    assert run.summary.recommended_action == "可以重试本题，或跳过此题继续。"
+    assert "SECRET-NATURAL-LANGUAGE-FAILURE" not in run.model_dump_json()
+
+
+def test_project_trace_does_not_invent_mc_attempts_for_open_question_failure() -> None:
+    run = project_trace(
+        [
+            _event(
+                "web.assessment_run.degraded",
+                0,
+                payload={
+                    "status": "degraded",
+                    "stage": "question_generation",
+                    "reason_code": "question_generation_exhausted",
+                },
+            )
+        ],
+        trace_id="trace-safe",
+    )
+
+    assert run.summary.headline == "题目生成失败"
+    assert "选择题" not in run.summary.headline
+    assert "0 次尝试" not in run.summary.headline
+    assert run.summary.recommended_action == "可以重试本题，或跳过此题继续。"
+
+
+def test_project_trace_omits_unknown_mc_attempt_count() -> None:
+    run = project_trace(
+        [
+            _event(
+                "learning.multiple_choice_generation.started",
+                0,
+                span_id="generation",
+            ),
+            _event(
+                "web.assessment_run.degraded",
+                1,
+                payload={
+                    "status": "degraded",
+                    "stage": "question_generation",
+                    "reason_code": "question_generation_exhausted",
+                },
+            ),
+        ],
+        trace_id="trace-safe",
+    )
+
+    assert run.summary.headline == "选择题生成失败"
+    assert "0 次尝试" not in run.summary.headline
+
+
+def test_project_trace_scopes_generation_failure_to_current_round_in_mixed_plan() -> None:
+    run = project_trace(
+        [
+            _event(
+                "learning.multiple_choice_generation.started",
+                0,
+                span_id="round-1-generation",
+            ),
+            _event(
+                "learning.multiple_choice_generation.attempt_rejected",
+                1,
+                payload={
+                    "attempt": 5,
+                    "stage": "distractor_quality",
+                    "reason_code": "distractor_quality_unmet",
+                },
+            ),
+            _event("learning.question_asked", 2, parent_span_id="assessment"),
+            _event("learning.answer_judged", 3, parent_span_id="assessment"),
+            _event(
+                "web.assessment_run.degraded",
+                4,
+                payload={
+                    "status": "degraded",
+                    "stage": "question_generation",
+                    "reason_code": "question_generation_exhausted",
+                },
+            ),
+        ],
+        trace_id="trace-safe",
+    )
+
+    assert run.summary.headline == "题目生成失败"
+    assert "选择题" not in run.summary.headline
+    assert "5 次尝试" not in run.summary.headline
+    assert "干扰项质量不足" not in run.summary.headline
+
+
+@pytest.mark.parametrize(
+    ("tail", "headline", "action"),
+    [
+        (
+            [_event("learning.multiple_choice_generation.started", 1)],
+            "运行正在进行",
+            None,
+        ),
+        (
+            [_event("learning.question_asked", 1)],
+            "考核正在等待输入",
+            "请提交答案或完成当前审批后继续。",
+        ),
+        (
+            [_event("assessment.ended", 1, payload={"ok": True})],
+            "运行已完成",
+            None,
+        ),
+    ],
+)
+def test_project_trace_does_not_keep_stale_generation_failure_after_recovery(
+    tail: list[AgentEvent],
+    headline: str,
+    action: str | None,
+) -> None:
+    degraded = _event(
+        "web.assessment_run.degraded",
+        0,
+        payload={
+            "status": "degraded",
+            "stage": "question_generation",
+            "reason_code": "question_generation_exhausted",
+        },
+    )
+
+    run = project_trace([degraded, *tail], trace_id="trace-safe")
+
+    assert run.summary.headline == headline
+    assert run.summary.recommended_action == action
+
+
+@pytest.mark.parametrize(
+    ("events", "headline", "action"),
+    [
+        (
+            [
+                _event(
+                    "web.assessment_run.degraded",
+                    0,
+                    payload={"status": "degraded", "stage": "grading"},
+                )
+            ],
+            "判卷未完成",
+            "可以跳过此题继续考核。",
+        ),
+        (
+            [_event("learning.question_asked", 0)],
+            "考核正在等待输入",
+            "请提交答案或完成当前审批后继续。",
+        ),
+        (
+            [
+                _event("error", 0),
+                _event("assessment.ended", 1, payload={"ok": False}),
+            ],
+            "运行失败；记录到 1 个错误",
+            "请查看失败阶段与原因；可以结束本轮后重试。",
+        ),
+        (
+            [_event("assessment.ended", 0, payload={"status": "cancelled"})],
+            "运行已取消",
+            "可以在准备好后重新开始。",
+        ),
+        ([_event("assessment.ended", 0, payload={"ok": True})], "运行已完成", None),
+        ([_event("assessment.started", 0)], "运行正在进行", None),
+        ([], None, None),
+    ],
+)
+def test_project_trace_summary_branches_use_only_supported_actions(
+    events: list[AgentEvent],
+    headline: str | None,
+    action: str | None,
+) -> None:
+    run = project_trace(events, trace_id="trace-safe")
+
+    assert run.summary.headline == headline
+    assert run.summary.recommended_action == action
 
 
 def test_project_trace_marks_fatal_assessment_end_as_failed() -> None:

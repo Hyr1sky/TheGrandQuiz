@@ -4,8 +4,10 @@ import { useDismissibleLayer } from "../../shared/hooks/useDismissibleLayer";
 import { ActivityIndicator } from "../../shared/components/ActivityIndicator";
 import {
   getTraceSnapshot,
+  listTraceSnapshots,
   type SafeTraceEvent,
   type SafeTraceRun,
+  type SafeTraceStatus,
   type SafeTraceSummary,
 } from "./api";
 import { streamTraceEvents } from "./traceEvents";
@@ -15,6 +17,7 @@ interface ObservatoryDrawerProps {
   open: boolean;
   traceId: string | null;
   onClose: () => void;
+  onSelectTrace: (traceId: string) => void;
   anchorRef?: RefObject<HTMLElement | null>;
 }
 
@@ -27,6 +30,18 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: "已取消",
 };
 
+const HISTORY_FILTERS: Array<{
+  value: "all" | SafeTraceStatus;
+  label: string;
+}> = [
+  { value: "all", label: "全部状态" },
+  { value: "running", label: "运行中" },
+  { value: "waiting_input", label: "等待输入" },
+  { value: "completed", label: "已完成" },
+  { value: "failed", label: "失败" },
+  { value: "cancelled", label: "已取消" },
+];
+
 const OPERATION_LABELS: Record<SafeTraceEvent["operation"], string> = {
   assessment_run: "考核运行",
   multiple_choice_generation: "选择题生成",
@@ -38,7 +53,7 @@ const OPERATION_LABELS: Record<SafeTraceEvent["operation"], string> = {
 
 function formatDuration(value: number | null | undefined): string {
   if (value === null || value === undefined) {
-    return "—";
+    return "未知";
   }
   if (value < 1000) {
     return `${Math.round(value)} ms`;
@@ -67,6 +82,7 @@ export function ObservatoryDrawer({
   open,
   traceId,
   onClose,
+  onSelectTrace,
   anchorRef,
 }: ObservatoryDrawerProps) {
   const [snapshot, setSnapshot] = useState<SafeTraceRun | null>(null);
@@ -77,6 +93,17 @@ export function ObservatoryDrawer({
   const [connection, setConnection] = useState<
     "connected" | "disconnected"
   >("connected");
+  const [historyFilter, setHistoryFilter] = useState<
+    "all" | SafeTraceStatus
+  >("all");
+  const [historyResult, setHistoryResult] = useState<{
+    filter: "all" | SafeTraceStatus;
+    runs: SafeTraceRun[];
+  } | null>(null);
+  const [historyFailure, setHistoryFailure] = useState<{
+    filter: "all" | SafeTraceStatus;
+    message: string;
+  } | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drawerRef = useDismissibleLayer<HTMLElement>({
     open,
@@ -139,6 +166,33 @@ export function ObservatoryDrawer({
     };
   }, [open, traceId]);
 
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    let active = true;
+    void listTraceSnapshots(
+      historyFilter === "all" ? null : historyFilter,
+    )
+      .then((runs) => {
+        if (active) {
+          setHistoryResult({ filter: historyFilter, runs });
+          setHistoryFailure(null);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setHistoryFailure({
+            filter: historyFilter,
+            message: "无法读取近期运行",
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [historyFilter, open]);
+
   const currentSnapshot =
     snapshot?.trace_id === traceId ? snapshot : null;
   const currentError =
@@ -147,6 +201,64 @@ export function ObservatoryDrawer({
   if (!open) {
     return null;
   }
+  const history =
+    historyResult?.filter === historyFilter ? historyResult.runs : null;
+  const historyError =
+    historyFailure?.filter === historyFilter
+      ? historyFailure.message
+      : null;
+
+  const historySection = (
+    <section className="observatory-history" aria-label="近期运行">
+      <div className="observatory-section-title">
+        <h3>近期运行</h3>
+        <select
+          aria-label="按状态筛选运行"
+          value={historyFilter}
+          onChange={(event) =>
+            setHistoryFilter(
+              event.target.value as "all" | SafeTraceStatus,
+            )
+          }
+        >
+          {HISTORY_FILTERS.map((filter) => (
+            <option key={filter.value} value={filter.value}>
+              {filter.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {historyError !== null ? (
+        <p className="observatory-history__message" role="alert">
+          {historyError}
+        </p>
+      ) : history === null ? (
+        <ActivityIndicator
+          className="observatory-history__message"
+          label="正在读取近期运行..."
+          tone="brass"
+        />
+      ) : history.length === 0 ? (
+        <p className="observatory-history__message">没有符合条件的运行。</p>
+      ) : (
+        <ol>
+          {history.map((run) => (
+            <li key={run.trace_id}>
+              <button
+                type="button"
+                aria-current={run.trace_id === traceId ? "true" : undefined}
+                aria-label={`运行 ${run.trace_id}，${STATUS_LABELS[run.status]}`}
+                onClick={() => onSelectTrace(run.trace_id)}
+              >
+                <span>{run.summary.headline ?? "运行记录"}</span>
+                <code>{run.trace_id.slice(0, 12)}</code>
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
 
   return (
     <aside
@@ -212,6 +324,15 @@ export function ObservatoryDrawer({
             </span>
           </section>
 
+          {currentSnapshot.summary.headline === null ? null : (
+            <section className="observatory-summary" aria-label="运行摘要">
+              <strong>{currentSnapshot.summary.headline}</strong>
+              {currentSnapshot.summary.recommended_action === null ? null : (
+                <p>{currentSnapshot.summary.recommended_action}</p>
+              )}
+            </section>
+          )}
+
           <section
             className="observatory-metrics"
             aria-label="运行指标"
@@ -230,7 +351,7 @@ export function ObservatoryDrawer({
             </article>
             <article>
               <span>总 Token</span>
-              <strong>{totalTokens(currentSnapshot.summary) ?? "—"}</strong>
+              <strong>{totalTokens(currentSnapshot.summary) ?? "未知"}</strong>
             </article>
             <article>
               <span>错误</span>
@@ -243,6 +364,8 @@ export function ObservatoryDrawer({
               </strong>
             </article>
           </section>
+
+          {historySection}
 
           <section
             className="observatory-timeline"
@@ -300,6 +423,7 @@ export function ObservatoryDrawer({
           </section>
         </>
       )}
+      {currentSnapshot === null ? historySection : null}
     </aside>
   );
 }
