@@ -1420,6 +1420,35 @@
         "title": "CreateDiscoveryRequest",
         "type": "object"
       },
+      "DataLocationView": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "learning",
+              "trace",
+              "voice"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "read_only": {
+            "const": true,
+            "default": true,
+            "title": "Read Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "path"
+        ],
+        "title": "DataLocationView",
+        "type": "object"
+      },
       "DatasetSnapshotItemV1": {
         "properties": {
           "candidate_id": {
@@ -1742,6 +1771,132 @@
           "trace_id"
         ],
         "title": "DemandValidationV1",
+        "type": "object"
+      },
+      "DiagnosticBundleV1": {
+        "properties": {
+          "config_identity": {
+            "$ref": "#/components/schemas/DiagnosticConfigIdentityV1"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/SafeTraceEventV1"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/DiagnosticManifestV1"
+          },
+          "schema_version": {
+            "const": "diagnostic_bundle.v1",
+            "default": "diagnostic_bundle.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/SafeTraceSummaryV1"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trace_id",
+          "config_identity",
+          "summary",
+          "events",
+          "manifest"
+        ],
+        "title": "DiagnosticBundleV1",
+        "type": "object"
+      },
+      "DiagnosticConfigIdentityV1": {
+        "properties": {
+          "application_version": {
+            "title": "Application Version",
+            "type": "string"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/DiagnosticProviderIdentityV1"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "settings_schema_version": {
+            "const": "settings.v1",
+            "default": "settings.v1",
+            "title": "Settings Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "application_version",
+          "providers"
+        ],
+        "title": "DiagnosticConfigIdentityV1",
+        "type": "object"
+      },
+      "DiagnosticManifestV1": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "created_at"
+        ],
+        "title": "DiagnosticManifestV1",
+        "type": "object"
+      },
+      "DiagnosticProviderIdentityV1": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "endpoint_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Host"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "role": {
+            "enum": [
+              "basic",
+              "enrich",
+              "speech"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "configured",
+          "model",
+          "endpoint_host"
+        ],
+        "title": "DiagnosticProviderIdentityV1",
         "type": "object"
       },
       "DifficultySettingView": {
@@ -4381,6 +4536,20 @@
       },
       "SettingsView": {
         "properties": {
+          "data_locations": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DataLocationView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Locations"
+          },
           "difficulty": {
             "$ref": "#/components/schemas/DifficultySettingView"
           },
@@ -7568,6 +7737,48 @@
           }
         },
         "summary": "Get Trace Snapshot",
+        "tags": [
+          "observability"
+        ]
+      }
+    },
+    "/api/v1/observability/traces/{trace_id}/diagnostic-bundle": {
+      "get": {
+        "operationId": "download_diagnostic_bundle_api_v1_observability_traces__trace_id__diagnostic_bundle_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "trace_id",
+            "required": true,
+            "schema": {
+              "title": "Trace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticBundleV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Diagnostic Bundle",
         "tags": [
           "observability"
         ]

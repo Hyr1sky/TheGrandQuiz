@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Sequence
 from typing import Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict
@@ -50,11 +51,18 @@ class DifficultySettingView(BaseModel):
     tier_counts: dict[str, int]
 
 
+class DataLocationView(BaseModel):
+    kind: Literal["learning", "trace", "voice"]
+    path: str
+    read_only: Literal[True] = True
+
+
 class SettingsView(BaseModel):
     schema_version: Literal["settings.v1"] = "settings.v1"
     preferences: PreferenceSettingView
     difficulty: DifficultySettingView
     providers: list[ProviderSettingView]
+    data_locations: list[DataLocationView] | None = None
 
 
 class SettingsPatch(BaseModel):
@@ -76,14 +84,16 @@ class LocalSettings:
         speech_provider: SpeechRecognitionProvider | None,
         voice_hint_policy: VoiceHintPolicy | None,
         asr_hints_default: bool,
+        data_locations: Sequence[DataLocationView],
     ) -> None:
         self._persistence = persistence
         self._provider = provider
         self._speech_provider = speech_provider
         self._voice_hint_policy = voice_hint_policy
         self._asr_hints_default = asr_hints_default
+        self._data_locations = list(data_locations)
 
-    def view(self) -> SettingsView:
+    def view(self, *, include_data_locations: bool = False) -> SettingsView:
         preferences = self._persistence.preferences
         asr_preference = preferences.get_preference(ASR_MATERIAL_HINTS_KEY)
         return SettingsView(
@@ -99,10 +109,16 @@ class LocalSettings:
                 ),
             ),
             difficulty=self._difficulty_view(),
-            providers=self._provider_views(),
+            providers=self.provider_views(),
+            data_locations=list(self._data_locations) if include_data_locations else None,
         )
 
-    def update(self, patch: SettingsPatch) -> SettingsView:
+    def update(
+        self,
+        patch: SettingsPatch,
+        *,
+        include_data_locations: bool = False,
+    ) -> SettingsView:
         preferences = self._persistence.preferences
         with self._persistence.transaction_owner.transaction():
             if patch.question_language is not None:
@@ -116,7 +132,7 @@ class LocalSettings:
                 )
         if patch.asr_material_hints_enabled is not None and self._voice_hint_policy is not None:
             self._voice_hint_policy.set_hints_enabled(patch.asr_material_hints_enabled)
-        return self.view()
+        return self.view(include_data_locations=include_data_locations)
 
     def _difficulty_view(self) -> DifficultySettingView:
         tiers = [
@@ -130,7 +146,8 @@ class LocalSettings:
             tier_counts={str(tier): counts[tier] for tier in range(1, 6)},
         )
 
-    def _provider_views(self) -> list[ProviderSettingView]:
+    def provider_views(self) -> list[ProviderSettingView]:
+        """Return the existing allowlisted provider identity projection."""
         models_object = getattr(self._provider, "model_for_role", {})
         models = cast("dict[str, str]", models_object) if isinstance(models_object, dict) else {}
         execution_object = getattr(self._provider, "execution_config_for_role", {})

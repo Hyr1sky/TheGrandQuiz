@@ -154,3 +154,45 @@ def test_settings_rejects_secret_like_unknown_fields(tmp_path: Path) -> None:
         "retryable": False,
         "trace_id": None,
     }
+
+
+def test_settings_expose_actual_read_only_data_locations_only_to_loopback(
+    tmp_path: Path,
+) -> None:
+    app = _app(tmp_path)
+    with TestClient(app, client=("127.0.0.1", 51000)) as loopback:
+        local_response = loopback.get("/api/v1/settings")
+    with TestClient(app, client=("198.51.100.9", 51001)) as remote:
+        remote_response = remote.get("/api/v1/settings")
+
+    assert local_response.status_code == 200
+    assert local_response.json()["data_locations"] == [
+        {
+            "kind": "learning",
+            "path": str(tmp_path / "learning.db"),
+            "read_only": True,
+        },
+        {
+            "kind": "trace",
+            "path": str(tmp_path / "trace.db"),
+            "read_only": True,
+        },
+        {
+            "kind": "voice",
+            "path": str(tmp_path / "voice.db"),
+            "read_only": True,
+        },
+    ]
+    assert remote_response.status_code == 200
+    assert remote_response.json()["data_locations"] is None
+
+
+def test_settings_cannot_rewrite_data_locations(tmp_path: Path) -> None:
+    with TestClient(_app(tmp_path), client=("127.0.0.1", 51000)) as client:
+        response = client.patch(
+            "/api/v1/settings",
+            json={"data_locations": [{"kind": "trace", "path": "/tmp/other.db"}]},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "invalid_request"

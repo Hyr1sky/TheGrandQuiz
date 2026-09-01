@@ -795,6 +795,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/observability/traces/{trace_id}/diagnostic-bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Diagnostic Bundle */
+        get: operations["download_diagnostic_bundle_api_v1_observability_traces__trace_id__diagnostic_bundle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/observability/traces/{trace_id}/events": {
         parameters: {
             query?: never;
@@ -1527,6 +1544,22 @@ export interface components {
             /** Topic */
             topic: string;
         };
+        /** DataLocationView */
+        DataLocationView: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "learning" | "trace" | "voice";
+            /** Path */
+            path: string;
+            /**
+             * Read Only
+             * @default true
+             * @constant
+             */
+            read_only: true;
+        };
         /** DatasetSnapshotItemV1 */
         DatasetSnapshotItemV1: {
             /** Candidate Id */
@@ -1649,6 +1682,54 @@ export interface components {
             validator_kind: "rule" | "calibrated_judge" | "user";
             /** Validator Version */
             validator_version: string;
+        };
+        /** DiagnosticBundleV1 */
+        DiagnosticBundleV1: {
+            config_identity: components["schemas"]["DiagnosticConfigIdentityV1"];
+            /** Events */
+            events: components["schemas"]["SafeTraceEventV1"][];
+            manifest: components["schemas"]["DiagnosticManifestV1"];
+            /**
+             * Schema Version
+             * @default diagnostic_bundle.v1
+             * @constant
+             */
+            schema_version: "diagnostic_bundle.v1";
+            summary: components["schemas"]["SafeTraceSummaryV1"];
+            /** Trace Id */
+            trace_id: string;
+        };
+        /** DiagnosticConfigIdentityV1 */
+        DiagnosticConfigIdentityV1: {
+            /** Application Version */
+            application_version: string;
+            /** Providers */
+            providers: components["schemas"]["DiagnosticProviderIdentityV1"][];
+            /**
+             * Settings Schema Version
+             * @default settings.v1
+             * @constant
+             */
+            settings_schema_version: "settings.v1";
+        };
+        /** DiagnosticManifestV1 */
+        DiagnosticManifestV1: {
+            /** Created At */
+            created_at: number;
+        };
+        /** DiagnosticProviderIdentityV1 */
+        DiagnosticProviderIdentityV1: {
+            /** Configured */
+            configured: boolean;
+            /** Endpoint Host */
+            endpoint_host: string | null;
+            /** Model */
+            model: string | null;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "basic" | "enrich" | "speech";
         };
         /** DifficultySettingView */
         DifficultySettingView: {
@@ -2624,6 +2705,8 @@ export interface components {
         };
         /** SettingsView */
         SettingsView: {
+            /** Data Locations */
+            data_locations?: components["schemas"]["DataLocationView"][] | null;
             difficulty: components["schemas"]["DifficultySettingView"];
             preferences: components["schemas"]["PreferenceSettingView"];
             /** Providers */
@@ -4586,6 +4669,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SafeTraceRunV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_diagnostic_bundle_api_v1_observability_traces__trace_id__diagnostic_bundle_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnosticBundleV1"];
                 };
             };
             /** @description Validation Error */

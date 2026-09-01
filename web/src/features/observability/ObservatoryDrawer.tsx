@@ -1,4 +1,4 @@
-import { XIcon } from "@phosphor-icons/react";
+import { DownloadSimpleIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { useDismissibleLayer } from "../../shared/hooks/useDismissibleLayer";
 import { ActivityIndicator } from "../../shared/components/ActivityIndicator";
@@ -364,6 +364,15 @@ export function ObservatoryDrawer({
               </strong>
             </article>
           </section>
+
+          <a
+            className="observatory-download"
+            href={`/api/v1/observability/traces/${encodeURIComponent(currentSnapshot.trace_id)}/diagnostic-bundle`}
+            download="grandquiz-trace-diagnostic.json"
+          >
+            <DownloadSimpleIcon aria-hidden size={17} />
+            <span>导出脱敏诊断包</span>
+          </a>
 
           {historySection}
 

@@ -5,8 +5,9 @@ from collections.abc import AsyncIterator
 from typing import Annotated, cast
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
+from grandquiz.interfaces.api.diagnostics import DiagnosticBundleExporter, DiagnosticBundleV1
 from grandquiz.interfaces.api.errors import ApiError
 from grandquiz.interfaces.api.observability import TraceObservatory
 from grandquiz.interfaces.trace_projection import (
@@ -20,6 +21,10 @@ router = APIRouter(prefix="/api/v1/observability", tags=["observability"])
 
 def observatory_from(request: Request) -> TraceObservatory:
     return cast("TraceObservatory", request.app.state.trace_observatory)
+
+
+def diagnostic_exporter_from(request: Request) -> DiagnosticBundleExporter:
+    return cast("DiagnosticBundleExporter", request.app.state.diagnostic_exporter)
 
 
 @router.get("/traces", response_model=list[SafeTraceRunV1])
@@ -41,6 +46,25 @@ async def get_trace_snapshot(trace_id: str, request: Request) -> SafeTraceRunV1:
             message=f"trace 不存在：{trace_id}",
         )
     return observatory.snapshot(trace_id)
+
+
+@router.get(
+    "/traces/{trace_id}/diagnostic-bundle",
+    response_model=DiagnosticBundleV1,
+)
+async def download_diagnostic_bundle(trace_id: str, request: Request) -> JSONResponse:
+    observatory = observatory_from(request)
+    if not observatory.exists(trace_id):
+        raise ApiError(
+            status_code=404,
+            code="trace_not_found",
+            message=f"trace 不存在：{trace_id}",
+        )
+    bundle = diagnostic_exporter_from(request).export(trace_id)
+    return JSONResponse(
+        content=bundle.model_dump(mode="json"),
+        headers={"Content-Disposition": ('attachment; filename="grandquiz-trace-diagnostic.json"')},
+    )
 
 
 @router.get(

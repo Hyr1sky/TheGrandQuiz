@@ -101,6 +101,10 @@ test("changes local runtime preferences from the unified settings drawer", async
   const drawer = page.getByRole("dialog", { name: "应用设置" });
   await expect(drawer).toBeVisible();
   await expect(drawer.getByText("Provider 与密钥")).toBeVisible();
+  await expect(drawer.getByText("本机数据位置")).toBeVisible();
+  await expect(drawer.getByText(/learning\.db$/)).toBeVisible();
+  await expect(drawer.getByText(/trace\.db$/)).toBeVisible();
+  await expect(drawer.getByText(/voice\.db$/)).toBeVisible();
 
   const materialHints = drawer.getByRole("switch", { name: "启用材料词表" });
   await expect(materialHints).not.toBeChecked();
@@ -339,7 +343,15 @@ test("navigates from Chat to Assessment and closes the trace", async ({ page }) 
   await dismissOnboarding(page);
   const composer = page.getByRole("textbox", { name: "发送消息" });
   await composer.fill("请结合当前材料考我一题");
+  const assessmentStarted = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith("/api/v1/assessments"),
+  );
   await page.getByRole("button", { name: "发送" }).click();
+  const started = (await (await assessmentStarted).json()) as {
+    trace_id: string;
+  };
 
   await expect(
     page.getByRole("heading", {
@@ -371,9 +383,15 @@ test("navigates from Chat to Assessment and closes the trace", async ({ page }) 
   await expect(page.getByText("本轮完成")).toBeVisible();
 
   await page.getByRole("button", { name: "打开运行观测" }).click();
-  await expect(page.getByRole("dialog", { name: "运行观测" })).toContainText(
-    "已完成",
-  );
+  const observatory = page.getByRole("dialog", { name: "运行观测" });
+  await expect(observatory).toContainText("已完成");
+  const bundlePath = `/api/v1/observability/traces/${started.trace_id}/diagnostic-bundle`;
+  await expect(
+    observatory.getByRole("link", { name: "导出脱敏诊断包" }),
+  ).toHaveAttribute("href", bundlePath);
+  const bundleResponse = await page.request.get(bundlePath);
+  expect(bundleResponse.ok()).toBe(true);
+  expect((await bundleResponse.json()).trace_id).toBe(started.trace_id);
 });
 
 test("appeals an open-answer verdict without replacing the original answer", async ({

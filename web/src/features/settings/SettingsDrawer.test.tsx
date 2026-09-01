@@ -51,6 +51,23 @@ const settings = {
       required_env_vars: ["DASHSCOPE_API_KEY", "DASHSCOPE_WORKSPACE_ID"],
     },
   ],
+  data_locations: [
+    {
+      kind: "learning" as const,
+      path: "/Users/test/.grandquiz/learning.db",
+      read_only: true as const,
+    },
+    {
+      kind: "trace" as const,
+      path: "/Users/test/.grandquiz/trace.db",
+      read_only: true as const,
+    },
+    {
+      kind: "voice" as const,
+      path: "/Users/test/.grandquiz/voice.db",
+      read_only: true as const,
+    },
+  ],
 };
 
 afterEach(() => {
@@ -83,6 +100,10 @@ it("edits hot preferences while keeping provider secrets read-only", async () =>
   expect(screen.getByText("deepseek-v4-pro")).toBeInTheDocument();
   expect(screen.getAllByText("由 .env 管理")).toHaveLength(3);
   expect(screen.queryByLabelText(/API Key/i)).not.toBeInTheDocument();
+  expect(screen.getByText("/Users/test/.grandquiz/learning.db")).toBeInTheDocument();
+  expect(screen.getByText("/Users/test/.grandquiz/trace.db")).toBeInTheDocument();
+  expect(screen.getByText("/Users/test/.grandquiz/voice.db")).toBeInTheDocument();
+  expect(screen.queryByRole("textbox", { name: /数据/ })).not.toBeInTheDocument();
 
   await user.click(screen.getByRole("switch", { name: "启用材料词表" }));
   await waitFor(() => {

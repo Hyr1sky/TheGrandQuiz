@@ -1,5 +1,6 @@
 import {
   CheckCircleIcon,
+  DatabaseIcon,
   GaugeIcon,
   KeyIcon,
   MicrophoneIcon,
@@ -22,6 +23,12 @@ const ROLE_LABELS = {
   basic: "基础推理",
   enrich: "出题富化",
   speech: "语音识别",
+} as const;
+
+const DATA_LOCATION_LABELS = {
+  learning: "学习数据",
+  trace: "运行轨迹",
+  voice: "语音审计",
 } as const;
 
 export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
@@ -233,6 +240,27 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
                 </div>
                 <p className="settings-note">需要更换 Key 或模型时编辑项目根目录 `.env` 后重启服务；页面不会读取或保存密钥原文。</p>
               </section>
+
+              {settings.data_locations === null || settings.data_locations === undefined ? null : (
+                <section className="settings-section" aria-labelledby="settings-data-locations">
+                  <div className="settings-section__heading">
+                    <DatabaseIcon aria-hidden size={21} weight="duotone" />
+                    <div>
+                      <h3 id="settings-data-locations">本机数据位置</h3>
+                      <p>仅在 loopback 连接中显示；路径只读。</p>
+                    </div>
+                  </div>
+                  <dl className="settings-data-locations">
+                    {settings.data_locations.map((location) => (
+                      <div key={location.kind}>
+                        <dt>{DATA_LOCATION_LABELS[location.kind]}</dt>
+                        <dd><code>{location.path}</code></dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <p className="settings-note">要迁移数据，请停止服务后在操作系统中处理；页面不会改写这些位置。</p>
+                </section>
+              )}
             </>
           )}
         </div>

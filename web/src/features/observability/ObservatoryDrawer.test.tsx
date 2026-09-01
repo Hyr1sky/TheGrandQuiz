@@ -124,6 +124,15 @@ describe("ObservatoryDrawer", () => {
     expect(screen.getByText("repair")).toBeInTheDocument();
     expect(screen.getByText("distractor_quality_unmet")).toBeInTheDocument();
     expect(screen.getByText("120 ms")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "导出脱敏诊断包" }),
+    ).toHaveAttribute(
+      "href",
+      "/api/v1/observability/traces/trace-1/diagnostic-bundle",
+    );
+    expect(
+      screen.getByRole("link", { name: "导出脱敏诊断包" }),
+    ).toHaveAttribute("download", "grandquiz-trace-diagnostic.json");
     expect(document.body).not.toHaveTextContent("secret user text");
 
     await waitFor(() => {

@@ -172,6 +172,32 @@
   text-overflow: ellipsis;
 }
 
+.observatory-download {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface-quiet);
+  color: var(--text-strong);
+  font: 600 12px/1 var(--font-interface);
+  text-decoration: none;
+}
+
+.observatory-download:hover {
+  border-color: var(--evidence);
+  background: var(--evidence-soft);
+  color: var(--evidence);
+}
+
+.observatory-download:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
 .observatory-summary {
   margin: 0 0 12px;
   padding: 12px;

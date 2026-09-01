@@ -31,6 +31,11 @@
 .settings-provider__status { display: flex; align-items: center; gap: 5px; color: var(--success); font-size: 11px; }
 .settings-provider__status small { padding: 3px 6px; border-radius: 999px; background: var(--evidence-soft); color: var(--evidence); }
 .settings-providers code { grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis; }
+.settings-data-locations { display: grid; gap: 8px; margin: 14px 0 0; }
+.settings-data-locations > div { display: grid; gap: 5px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); }
+.settings-data-locations dt { color: var(--text-strong); font-size: 11px; font-weight: 650; }
+.settings-data-locations dd { min-width: 0; margin: 0; }
+.settings-data-locations code { display: block; overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
 .settings-error, .settings-empty { color: var(--muted); font-size: 12px; }
 .settings-error { display: flex; align-items: center; gap: 7px; color: var(--danger); }
 .settings-save-state { justify-self: end; color: var(--muted); font-size: 10px; }

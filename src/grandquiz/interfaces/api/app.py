@@ -19,6 +19,7 @@ from grandquiz.interfaces.api.assessment_routes import router as assessments_rou
 from grandquiz.interfaces.api.assessment_runs import AssessmentManager
 from grandquiz.interfaces.api.chat import ChatManager
 from grandquiz.interfaces.api.chat_routes import router as chat_router
+from grandquiz.interfaces.api.diagnostics import DiagnosticBundleExporter
 from grandquiz.interfaces.api.discoveries import DiscoveryManager
 from grandquiz.interfaces.api.discovery_routes import router as discoveries_router
 from grandquiz.interfaces.api.errors import install_error_handlers
@@ -30,7 +31,7 @@ from grandquiz.interfaces.api.observability_routes import router as observabilit
 from grandquiz.interfaces.api.resources import router as resources_router
 from grandquiz.interfaces.api.run_routes import router as runs_router
 from grandquiz.interfaces.api.runs import RunManager
-from grandquiz.interfaces.api.settings import LocalSettings
+from grandquiz.interfaces.api.settings import DataLocationView, LocalSettings
 from grandquiz.interfaces.api.settings_routes import router as settings_router
 from grandquiz.interfaces.api.voice_routes import router as voice_router
 from grandquiz.interfaces.api.voice_runs import VoiceRunManager
@@ -130,6 +131,25 @@ def create_app(
             speech_provider=speech_provider,
             voice_hint_policy=voice_run_manager,
             asr_hints_default=asr_hints_default,
+            data_locations=[
+                DataLocationView(
+                    kind="learning",
+                    path=str(settings.learning_db_path.expanduser().resolve()),
+                ),
+                DataLocationView(
+                    kind="trace",
+                    path=str(settings.trace_db_path.expanduser().resolve()),
+                ),
+                DataLocationView(
+                    kind="voice",
+                    path=str(settings.resolved_voice_db_path().expanduser().resolve()),
+                ),
+            ],
+        )
+        diagnostic_exporter = DiagnosticBundleExporter(
+            observatory=trace_observatory,
+            provider_views=local_settings.provider_views,
+            clock=app_clock,
         )
         chat_manager = ChatManager(
             persistence=persistence,
@@ -163,6 +183,7 @@ def create_app(
         app.state.assessment_manager = assessment_manager
         app.state.voice_run_manager = voice_run_manager
         app.state.local_settings = local_settings
+        app.state.diagnostic_exporter = diagnostic_exporter
         app.state.chat_manager = chat_manager
         app.state.acquisition_manager = acquisition_manager
         app.state.discovery_manager = discovery_manager
