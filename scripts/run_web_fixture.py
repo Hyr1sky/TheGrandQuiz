@@ -9,7 +9,9 @@ import os
 import re
 import tempfile
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import uvicorn
 
@@ -34,6 +36,27 @@ from grandquiz.providers.base import (
 from grandquiz.providers.speech import TranscriptionRequest, TranscriptionResult
 
 REMOTE_IMAGE_URL = f"https://attacker.invalid/should-not-load.png?fixture_process={os.getpid()}"
+
+_AssessmentFailureMode = Literal["question_generation", "grading", "fatal"]
+
+
+@dataclass
+class _AssessmentFailureScenario:
+    mode: _AssessmentFailureMode | None = None
+    attempts_remaining: int = 0
+
+    def arm(self, mode: _AssessmentFailureMode) -> None:
+        self.mode = mode
+        self.attempts_remaining = 1 if mode == "fatal" else 3
+
+    def consume(self, mode: _AssessmentFailureMode) -> bool:
+        if self.mode != mode:
+            return False
+        self.attempts_remaining -= 1
+        if self.attempts_remaining == 0:
+            self.mode = None
+        return True
+
 
 CONTENT = f"""\
 # Runtime
@@ -107,6 +130,7 @@ class _FixtureProvider:
     def __init__(self, resource_id: str) -> None:
         self._question_calls = 0
         self._resource_id = resource_id
+        self._assessment_failure = _AssessmentFailureScenario()
 
     async def complete(
         self,
@@ -167,6 +191,13 @@ class _FixtureProvider:
                 )
         if role == "enrich":
             self._question_calls += 1
+            if self._assessment_failure.consume("fatal"):
+                raise RuntimeError("fixture fatal assessment failure")
+            if self._assessment_failure.consume("question_generation"):
+                return Completion(
+                    text="not-json",
+                    usage=Usage(prompt_tokens=5, completion_tokens=2),
+                )
             if any("expected_points" in message.content for message in messages):
                 open_questions = [
                     "durable processor 失败后为什么要阻断当前 turn？",
@@ -238,6 +269,11 @@ class _FixtureProvider:
                 usage=Usage(prompt_tokens=90, completion_tokens=20),
             )
         if role == "basic" and any("本题原子评分点" in message.content for message in messages):
+            if self._assessment_failure.consume("grading"):
+                return Completion(
+                    text="not-json",
+                    usage=Usage(prompt_tokens=5, completion_tokens=2),
+                )
             grading_input = messages[-1].content
             answer_units = re.findall(
                 r"^- \[(v1e\d+_\d+)\] (.+)$",
@@ -282,6 +318,12 @@ class _FixtureProvider:
                 await asyncio.Event().wait()
             has_tool_result = any(message.role == "tool" for message in messages)
             if "考" in user_text and not has_tool_result:
+                if "生成降级" in user_text:
+                    self._assessment_failure.arm("question_generation")
+                elif "判卷降级" in user_text:
+                    self._assessment_failure.arm("grading")
+                elif "致命失败" in user_text:
+                    self._assessment_failure.arm("fatal")
                 return Completion(
                     text="",
                     tool_calls=[

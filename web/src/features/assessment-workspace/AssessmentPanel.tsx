@@ -43,7 +43,23 @@ interface AssessmentPanelProps {
   resourceId: string;
   questionTypePlan: Array<string | null>;
   onClose: () => void;
+  onOpenTrace?: (traceId: string) => void;
   onUpdate?: (view: AssessmentView) => void;
+}
+
+function OpenTraceButton({
+  traceId,
+  onOpenTrace,
+}: {
+  traceId: string;
+  onOpenTrace: (traceId: string) => void;
+}) {
+  return (
+    <button type="button" onClick={() => onOpenTrace(traceId)}>
+      <EyeIcon aria-hidden size={18} />
+      查看本次运行
+    </button>
+  );
 }
 
 export interface AssessmentPanelHandle {
@@ -58,7 +74,7 @@ export const AssessmentPanel = forwardRef<
   AssessmentPanelHandle,
   AssessmentPanelProps
 >(function AssessmentPanel(
-  { resourceId, questionTypePlan, onClose, onUpdate },
+  { resourceId, questionTypePlan, onClose, onOpenTrace, onUpdate },
   ref,
 ) {
   const [assessment, setAssessment] = useState<AssessmentView | null>(null);
@@ -99,7 +115,9 @@ export const AssessmentPanel = forwardRef<
 
   // Notify parent of assessment state changes
   const onUpdateRef = useRef(onUpdate);
-  onUpdateRef.current = onUpdate;
+  useEffect(() => {
+    onUpdateRef.current = onUpdate;
+  }, [onUpdate]);
   const notifyUpdate = useCallback((view: AssessmentView) => {
     assessmentRef.current = view;
     setAssessment(view);
@@ -506,6 +524,12 @@ export const AssessmentPanel = forwardRef<
             <SkipForwardIcon aria-hidden size={18} />
             跳过此题
           </button>
+          {onOpenTrace ? (
+            <OpenTraceButton
+              traceId={assessment.trace_id}
+              onOpenTrace={onOpenTrace}
+            />
+          ) : null}
         </div>
         {error !== null ? (
           <p className="assessment-panel__error" role="alert">
@@ -538,6 +562,14 @@ export const AssessmentPanel = forwardRef<
         <p className="assessment-panel__error" role="alert">
           {assessment.error ?? "当前材料暂时无法开始考核。"}
         </p>
+        {assessment.status === "failed" && onOpenTrace ? (
+          <div className="assessment-panel__actions">
+            <OpenTraceButton
+              traceId={assessment.trace_id}
+              onOpenTrace={onOpenTrace}
+            />
+          </div>
+        ) : null}
       </section>
     );
   }

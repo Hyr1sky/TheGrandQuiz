@@ -175,4 +175,45 @@ describe("ObservatoryDrawer", () => {
       transform: "none",
     });
   });
+
+  it("shows only the next trace loading and error states when trace identity changes", async () => {
+    let rejectNextTrace: ((reason?: unknown) => void) | undefined;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const request =
+        input instanceof Request ? input : new Request(String(input));
+      if (request.url.endsWith("/trace-1")) {
+        return Response.json(snapshot);
+      }
+      if (request.url.endsWith("/trace-2")) {
+        return await new Promise<Response>((_resolve, reject) => {
+          rejectNextTrace = reject;
+        });
+      }
+      throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("EventSource", FakeEventSource);
+
+    const { rerender } = render(
+      <ObservatoryDrawer open traceId="trace-1" onClose={vi.fn()} />,
+    );
+    expect(await screen.findByText("已完成")).toBeInTheDocument();
+    expect(screen.getByText("42")).toBeInTheDocument();
+
+    rerender(
+      <ObservatoryDrawer open traceId="trace-2" onClose={vi.fn()} />,
+    );
+    expect(screen.getByText("正在读取事件脊柱...")).toBeInTheDocument();
+    expect(screen.queryByText("已完成")).not.toBeInTheDocument();
+    expect(screen.queryByText("42")).not.toBeInTheDocument();
+
+    await waitFor(() => expect(rejectNextTrace).toBeDefined());
+    rejectNextTrace?.(new Error("trace unavailable"));
+
+    expect(
+      await screen.findByRole("alert", { name: "" }),
+    ).toHaveTextContent("无法读取运行轨迹");
+    expect(screen.queryByText("已完成")).not.toBeInTheDocument();
+    expect(screen.queryByText("42")).not.toBeInTheDocument();
+  });
 });

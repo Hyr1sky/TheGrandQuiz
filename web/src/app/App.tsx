@@ -97,7 +97,9 @@ export function App() {
   const [documentView, setDocumentView] = useState<DocumentRead | null>(null);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [chatTraceId, setChatTraceId] = useState<string | null>(null);
+  const [observatoryTraceId, setObservatoryTraceId] = useState<string | null>(
+    null,
+  );
   const [observatoryOpen, setObservatoryOpen] = useState(false);
   const [acquisitionOpen, setAcquisitionOpen] = useState(false);
   const [evalOpen, setEvalOpen] = useState(false);
@@ -153,6 +155,7 @@ export function App() {
   // Track assessment state changes for history
   const handleAssessmentUpdate = useCallback((view: AssessmentView) => {
     setAssessment(view);
+    setObservatoryTraceId(view.trace_id);
     if (view.judgement !== null && view.judgement !== undefined) {
       setRoundHistory((prev) => {
         const exists = prev.some(
@@ -366,7 +369,12 @@ export function App() {
   }, []);
 
   const handleChatTraceChange = useCallback((traceId: string) => {
-    setChatTraceId(traceId);
+    setObservatoryTraceId(traceId);
+  }, []);
+
+  const handleOpenTrace = useCallback((traceId: string) => {
+    setObservatoryTraceId(traceId);
+    setObservatoryOpen(true);
   }, []);
 
   const completeOnboarding = useCallback(() => {
@@ -465,6 +473,7 @@ export function App() {
               resourceId={assessmentParams.resource_id}
               questionTypePlan={assessmentParams.question_type_plan}
               onClose={handleAssessmentClose}
+              onOpenTrace={handleOpenTrace}
               onUpdate={handleAssessmentUpdate}
             />
           </Suspense>
@@ -657,7 +666,7 @@ export function App() {
 
         <ObservatoryDrawer
           open={observatoryOpen}
-          traceId={assessment?.trace_id ?? chatTraceId}
+          traceId={observatoryTraceId}
           onClose={() => setObservatoryOpen(false)}
           anchorRef={observatoryTriggerRef}
         />

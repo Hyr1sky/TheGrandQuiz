@@ -512,3 +512,130 @@ test("cancels an abandoned Assessment before returning to reading", async ({
   expect(snapshot.ok()).toBe(true);
   expect((await snapshot.json()).status).toBe("cancelled");
 });
+
+test("opens the exact generation-degraded trace and keeps it after returning to reading", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await dismissOnboarding(page);
+  const assessmentStarted = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith("/api/v1/assessments"),
+  );
+  await page
+    .getByRole("textbox", { name: "发送消息" })
+    .fill("请触发生成降级并考我一题");
+  await page.getByRole("button", { name: "发送" }).click();
+  const started = (await (await assessmentStarted).json()) as {
+    trace_id: string;
+  };
+  await expect(
+    page.getByRole("heading", { name: "本题暂时无法生成" }),
+  ).toBeVisible();
+
+  const firstTraceRead = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      response.url().endsWith(
+        `/api/v1/observability/traces/${started.trace_id}`,
+      ),
+  );
+  await page.getByRole("button", { name: "查看本次运行" }).click();
+  expect((await firstTraceRead).ok()).toBe(true);
+  await expect(page.getByRole("dialog", { name: "运行观测" })).toBeVisible();
+
+  await page
+    .getByRole("dialog", { name: "运行观测" })
+    .getByRole("button", { name: "关闭运行观测" })
+    .click();
+  await page.getByRole("button", { name: "结束考核" }).click();
+  await expect(page.getByRole("main", { name: "文章内容" })).toBeVisible();
+
+  const secondTraceRead = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      response.url().endsWith(
+        `/api/v1/observability/traces/${started.trace_id}`,
+      ),
+  );
+  await page.getByRole("button", { name: "打开运行观测" }).click();
+  expect((await secondTraceRead).ok()).toBe(true);
+});
+
+test("opens the exact grading-degraded trace", async ({ page }) => {
+  await page.goto("/");
+  await dismissOnboarding(page);
+  const assessmentStarted = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith("/api/v1/assessments"),
+  );
+  await page
+    .getByRole("textbox", { name: "发送消息" })
+    .fill("请触发判卷降级，用简答题考我一题");
+  await page.getByRole("button", { name: "发送" }).click();
+  const started = (await (await assessmentStarted).json()) as {
+    trace_id: string;
+  };
+  await expect(
+    page.getByRole("heading", { name: ASSESSMENT_QUESTION }),
+  ).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "你的回答" })
+    .fill("继续会依赖不完整状态。");
+  await page.getByRole("button", { name: "提交答案" }).click();
+  await expect(
+    page.getByRole("heading", { name: "本题暂时无法判卷" }),
+  ).toBeVisible();
+
+  const traceRead = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      response.url().endsWith(
+        `/api/v1/observability/traces/${started.trace_id}`,
+      ),
+  );
+  await page.getByRole("button", { name: "查看本次运行" }).click();
+  expect((await traceRead).ok()).toBe(true);
+  const drawer = page.getByRole("dialog", { name: "运行观测" });
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole("button", { name: "关闭运行观测" }).click();
+  await page.getByRole("button", { name: "结束考核" }).click();
+  await expect(page.getByRole("main", { name: "文章内容" })).toBeVisible();
+});
+
+test("opens the exact fatal assessment trace", async ({ page }) => {
+  await page.goto("/");
+  await dismissOnboarding(page);
+  const assessmentStarted = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith("/api/v1/assessments"),
+  );
+  await page
+    .getByRole("textbox", { name: "发送消息" })
+    .fill("请触发致命失败并考我一题");
+  await page.getByRole("button", { name: "发送" }).click();
+  const started = (await (await assessmentStarted).json()) as {
+    trace_id: string;
+  };
+  await expect(
+    page.getByRole("heading", { name: "无法开始考核" }),
+  ).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText(
+    "本轮考核失败，请通过 trace_id 查看详情",
+  );
+
+  const traceRead = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      response.url().endsWith(
+        `/api/v1/observability/traces/${started.trace_id}`,
+      ),
+  );
+  await page.getByRole("button", { name: "查看本次运行" }).click();
+  expect((await traceRead).ok()).toBe(true);
+  await expect(page.getByRole("dialog", { name: "运行观测" })).toBeVisible();
+  await expect(page.getByText("失败", { exact: true })).toBeVisible();
+});

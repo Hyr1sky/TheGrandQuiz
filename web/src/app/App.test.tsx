@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -31,6 +31,33 @@ const outline = {
     },
   ],
 };
+
+function safeTraceSnapshot(traceId: string, status = "failed") {
+  return {
+    schema_version: 1,
+    trace_id: traceId,
+    status,
+    started_at: 1,
+    ended_at: 1.12,
+    workflow_kind: "assessment",
+    summary: {
+      model_calls: 1,
+      retries: 1,
+      rejection_counts: [],
+      error_count: 1,
+      prompt_tokens: 30,
+      completion_tokens: 12,
+      latency_ms: 120,
+      headline: null,
+      recommended_action: null,
+    },
+    events: [],
+  };
+}
+
+function requestUrl(input: RequestInfo | URL): string {
+  return input instanceof Request ? input.url : String(input);
+}
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -228,23 +255,7 @@ describe("Sidebar context switching", () => {
           "/api/v1/observability/traces/trace-chat-test",
         )
       ) {
-        return Response.json({
-          summary: {
-            trace_id: "trace-chat-test",
-            status: "idle",
-            event_count: 0,
-            model_calls: 0,
-            tool_calls: 0,
-            error_count: 0,
-            recovery_count: 0,
-            total_tokens: 0,
-            started_at: null,
-            updated_at: null,
-            latency_ms: null,
-          },
-          spans: [],
-          events: [],
-        });
+        return Response.json(safeTraceSnapshot("trace-chat-test", "idle"));
       }
       return baseFetchMock()(input);
     });
@@ -270,6 +281,172 @@ describe("Sidebar context switching", () => {
     expect(
       screen.getByRole("button", { name: "打开运行观测" }),
     ).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("keeps an explicitly opened assessment trace after returning to reading", async () => {
+    const degradedAssessment = {
+      session_id: "assess-degraded",
+      status: "degraded",
+      rounds: 1,
+      round_index: 1,
+      trace_id: "trace-assessment",
+      question: null,
+      judgement: null,
+      error: "本题生成失败，可以重试本题或跳过继续",
+      recovery_stage: "question_generation",
+    };
+    let assessmentStartCount = 0;
+    const fallbackFetch = baseFetchMock();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const request =
+        input instanceof Request ? input : new Request(String(input));
+      const url = request.url;
+      if (url.endsWith("/api/v1/chat/sessions") && request.method === "POST") {
+        return Response.json(
+          { session_id: "session-deep-link", trace_id: "trace-chat" },
+          { status: 201 },
+        );
+      }
+      if (url.includes("/messages") && request.method === "POST") {
+        return Response.json({ turn_id: "turn-deep-link" }, { status: 202 });
+      }
+      if (url.endsWith("/api/v1/assessments") && request.method === "POST") {
+        assessmentStartCount += 1;
+        return Response.json(
+          assessmentStartCount === 1
+            ? degradedAssessment
+            : {
+                ...degradedAssessment,
+                session_id: "assess-next",
+                trace_id: "trace-assessment-next",
+              },
+          { status: 201 },
+        );
+      }
+      if (
+        url.endsWith("/api/v1/assessments/assess-degraded") &&
+        request.method === "DELETE"
+      ) {
+        return Response.json({ ...degradedAssessment, status: "cancelled" });
+      }
+      if (url.endsWith("/api/v1/observability/traces/trace-assessment")) {
+        return Response.json(safeTraceSnapshot("trace-assessment"));
+      }
+      if (url.endsWith("/api/v1/observability/traces/trace-chat")) {
+        return Response.json(safeTraceSnapshot("trace-chat"));
+      }
+      if (
+        url.endsWith(
+          "/api/v1/observability/traces/trace-assessment-next",
+        )
+      ) {
+        return Response.json(safeTraceSnapshot("trace-assessment-next"));
+      }
+      return fallbackFetch(input);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("EventSource", FakeEventSource);
+    localStorage.setItem("grandquiz.onboarding.v1", "completed");
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Agent Runtime" });
+    await user.type(
+      screen.getByRole("textbox", { name: "发送消息" }),
+      "考我一道题",
+    );
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    await act(async () => {
+      FakeEventSource.instances[0]?.emit("chat.navigation", {
+        sequence: 1,
+        type: "chat.navigation",
+        session_id: "session-deep-link",
+        data: {
+          turn_id: "turn-deep-link",
+          target: "assessment",
+          params: {
+            resource_id: resource.resource_id,
+            question_type_plan: ["简答题"],
+          },
+        },
+      });
+    });
+
+    await user.click(
+      await screen.findByRole("button", { name: "查看本次运行" }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "运行观测" }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([input]) =>
+          requestUrl(input).includes(
+            "/api/v1/observability/traces/trace-assessment",
+          ),
+        ),
+      ).toHaveLength(1);
+    });
+
+    await user.click(
+      within(screen.getByRole("dialog", { name: "运行观测" })).getByRole(
+        "button",
+        { name: "关闭运行观测" },
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "结束考核" }));
+    await screen.findByRole("main", { name: "文章内容" });
+    await user.click(screen.getByRole("button", { name: "打开运行观测" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([input]) =>
+          requestUrl(input).includes(
+            "/api/v1/observability/traces/trace-assessment",
+          ),
+        ),
+      ).toHaveLength(2);
+    });
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        requestUrl(input).includes("/api/v1/observability/traces/trace-chat"),
+      ),
+    ).toBe(false);
+
+    await user.click(
+      within(screen.getByRole("dialog", { name: "运行观测" })).getByRole(
+        "button",
+        { name: "关闭运行观测" },
+      ),
+    );
+    await act(async () => {
+      FakeEventSource.instances[0]?.emit("chat.navigation", {
+        sequence: 2,
+        type: "chat.navigation",
+        session_id: "session-deep-link",
+        data: {
+          turn_id: "turn-deep-link",
+          target: "assessment",
+          params: {
+            resource_id: resource.resource_id,
+            question_type_plan: ["简答题"],
+          },
+        },
+      });
+    });
+    await screen.findByRole("button", { name: "查看本次运行" });
+    await user.click(screen.getByRole("button", { name: "打开运行观测" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([input]) =>
+          requestUrl(input).includes(
+            "/api/v1/observability/traces/trace-assessment-next",
+          ),
+        ),
+      ).toHaveLength(1);
+    });
   });
 
   it("keeps the observatory map decorative and outside the interaction layer", async () => {

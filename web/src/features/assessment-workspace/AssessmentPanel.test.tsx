@@ -57,6 +57,7 @@ afterEach(() => {
 
 describe("AssessmentPanel", () => {
   it("offers retry and skip when question generation is degraded", async () => {
+    const onOpenTrace = vi.fn();
     const degradedAssessment = {
       ...readyAssessment,
       status: "degraded",
@@ -86,12 +87,16 @@ describe("AssessmentPanel", () => {
         resourceId="resource-1"
         questionTypePlan={["选择题", "选择题"]}
         onClose={() => undefined}
+        onOpenTrace={onOpenTrace}
       />,
     );
 
     expect(await screen.findByText("本题生成失败，可以重试本题或跳过继续")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重试本题" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "跳过此题" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看本次运行" }));
+    expect(onOpenTrace).toHaveBeenCalledOnce();
+    expect(onOpenTrace).toHaveBeenCalledWith("trace-1");
 
     fireEvent.click(screen.getByRole("button", { name: "重试本题" }));
     expect(await screen.findByText("正在生成第 1 题")).toBeInTheDocument();
@@ -99,6 +104,7 @@ describe("AssessmentPanel", () => {
   });
 
   it("only offers skip when a submitted answer could not be graded", async () => {
+    const onOpenTrace = vi.fn();
     const degradedAssessment = {
       ...readyAssessment,
       status: "degraded",
@@ -115,12 +121,66 @@ describe("AssessmentPanel", () => {
         resourceId="resource-1"
         questionTypePlan={["简答题", "简答题"]}
         onClose={() => undefined}
+        onOpenTrace={onOpenTrace}
       />,
     );
 
     expect(await screen.findByText("本题判卷失败，可以跳过此题继续")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "重试本题" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "跳过此题" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看本次运行" }));
+    expect(onOpenTrace).toHaveBeenCalledWith("trace-1");
+  });
+
+  it("links fatal assessment failures to their exact trace but not refusals", async () => {
+    const failedAssessment = {
+      ...readyAssessment,
+      status: "failed",
+      question: null,
+      error: "考核运行异常终止",
+    };
+    const onOpenTrace = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(failedAssessment, { status: 201 })),
+    );
+
+    const { rerender } = render(
+      <AssessmentPanel
+        resourceId="resource-1"
+        questionTypePlan={["简答题"]}
+        onClose={() => undefined}
+        onOpenTrace={onOpenTrace}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "查看本次运行" }),
+    );
+    expect(onOpenTrace).toHaveBeenCalledWith("trace-1");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          { ...failedAssessment, status: "refused", error: "材料尚未就绪" },
+          { status: 201 },
+        ),
+      ),
+    );
+    rerender(
+      <AssessmentPanel
+        resourceId="resource-2"
+        questionTypePlan={["简答题"]}
+        onClose={() => undefined}
+        onOpenTrace={onOpenTrace}
+      />,
+    );
+
+    expect(await screen.findByText("材料尚未就绪")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "查看本次运行" }),
+    ).not.toBeInTheDocument();
   });
 
   it("asks before replacing a text draft with a voice transcript", async () => {
