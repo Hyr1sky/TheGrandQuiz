@@ -1387,6 +1387,8 @@ export interface components {
              * @default 3
              */
             rounds: number;
+            /** Trace Id */
+            trace_id?: string | null;
         };
         /** AssessmentView */
         AssessmentView: {
@@ -2603,6 +2605,18 @@ export interface components {
             /** Trace Id */
             trace_id: string;
         };
+        /** SafeProviderFailureV1 */
+        SafeProviderFailureV1: {
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "invalid_request" | "authentication" | "permission_denied" | "not_found" | "conflict" | "quota_exhausted" | "rate_limited" | "timeout" | "connection" | "server_error" | "unknown";
+            /** Retryable */
+            retryable: boolean;
+            /** Status Code */
+            status_code?: number | null;
+        };
         /** SafeTraceEventV1 */
         SafeTraceEventV1: {
             /** Attempt */
@@ -2623,10 +2637,11 @@ export interface components {
              * @enum {string}
              */
             phase: "started" | "attempt_rejected" | "ended" | "waiting_input" | "event";
+            provider_failure?: components["schemas"]["SafeProviderFailureV1"] | null;
             /** Quality Label */
             quality_label?: ("invalid" | "weak" | "reasonable") | null;
             /** Reason Code */
-            reason_code?: ("invalid_json" | "schema_invalid" | "option_count_invalid" | "answer_index_invalid" | "duplicate_options" | "meta_option" | "length_outlier" | "evidence_missing" | "ghost_evidence" | "question_repeated" | "option_count_unmet" | "distractor_quality_unmet" | "repair_contract_violated" | "question_generation_exhausted" | "grading_exhausted" | "workflow_degraded" | "other") | null;
+            reason_code?: ("invalid_json" | "schema_invalid" | "option_count_invalid" | "answer_index_invalid" | "duplicate_options" | "meta_option" | "length_outlier" | "evidence_missing" | "ghost_evidence" | "question_repeated" | "option_count_unmet" | "distractor_quality_unmet" | "repair_contract_violated" | "question_generation_exhausted" | "grading_exhausted" | "workflow_degraded" | "provider_quota_exhausted" | "provider_authentication_failed" | "provider_permission_denied" | "provider_request_invalid" | "provider_model_not_found" | "provider_conflict" | "provider_rate_limited" | "provider_timeout" | "provider_unavailable" | "provider_error" | "other") | null;
             /** Sequence */
             sequence: number;
             /** Span Id */
@@ -2643,12 +2658,24 @@ export interface components {
             /** Tokens */
             tokens?: number | null;
         };
+        /** SafeTraceLinkV1 */
+        SafeTraceLinkV1: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "assessment";
+            /** Trace Id */
+            trace_id: string;
+        };
         /** SafeTraceRunV1 */
         SafeTraceRunV1: {
             /** Ended At */
             ended_at: number | null;
             /** Events */
             events: components["schemas"]["SafeTraceEventV1"][];
+            /** Related Traces */
+            related_traces?: components["schemas"]["SafeTraceLinkV1"][];
             /**
              * Schema Version
              * @default 1
@@ -2880,7 +2907,7 @@ export interface components {
              * Reason Code
              * @enum {string}
              */
-            reason_code: "invalid_json" | "schema_invalid" | "option_count_invalid" | "answer_index_invalid" | "duplicate_options" | "meta_option" | "length_outlier" | "evidence_missing" | "ghost_evidence" | "question_repeated" | "option_count_unmet" | "distractor_quality_unmet" | "repair_contract_violated" | "question_generation_exhausted" | "grading_exhausted" | "workflow_degraded" | "other";
+            reason_code: "invalid_json" | "schema_invalid" | "option_count_invalid" | "answer_index_invalid" | "duplicate_options" | "meta_option" | "length_outlier" | "evidence_missing" | "ghost_evidence" | "question_repeated" | "option_count_unmet" | "distractor_quality_unmet" | "repair_contract_violated" | "question_generation_exhausted" | "grading_exhausted" | "workflow_degraded" | "provider_quota_exhausted" | "provider_authentication_failed" | "provider_permission_denied" | "provider_request_invalid" | "provider_model_not_found" | "provider_conflict" | "provider_rate_limited" | "provider_timeout" | "provider_unavailable" | "provider_error" | "other";
         };
         /** TurnCancelled */
         TurnCancelled: {

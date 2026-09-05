@@ -468,6 +468,7 @@ describe("ObservatoryDrawer", () => {
     render(
       <ObservatoryDrawer
         open
+        presentation="page"
         traceId="trace-1"
         onClose={vi.fn()}
         onSelectTrace={onSelectTrace}
@@ -500,6 +501,54 @@ describe("ObservatoryDrawer", () => {
     expect(onSelectTrace).toHaveBeenCalledWith("trace-2");
   });
 
+  it("keeps drawer history compact and opens full run details on a separate page", async () => {
+    const recentRuns = [
+      { ...snapshot, trace_id: "trace-5" },
+      { ...snapshot, trace_id: "trace-4" },
+      { ...snapshot, trace_id: "trace-3" },
+    ];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const request =
+        input instanceof Request ? input : new Request(String(input));
+      if (request.url.includes("/observability/traces?")) {
+        return Response.json(recentRuns);
+      }
+      return Response.json(snapshot);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("EventSource", FakeEventSource);
+
+    render(
+      <ObservatoryDrawer
+        open
+        traceId="trace-1"
+        onClose={vi.fn()}
+        onSelectTrace={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole("region", { name: "运行状态" });
+    const history = screen.getByRole("region", { name: "近期运行" });
+    expect(
+      within(history).queryByRole("combobox", { name: "按状态筛选运行" }),
+    ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => {
+        const request = input instanceof Request ? input : new Request(String(input));
+        return request.url.includes("limit=3");
+      })).toBe(true);
+    });
+    expect(
+      await within(history).findAllByRole("link", { name: /运行 trace-/ }),
+    ).toHaveLength(3);
+    expect(
+      within(history).getByRole("link", { name: /运行 trace-5/ }),
+    ).toHaveAttribute("href", "/?view=observatory&trace=trace-5");
+    expect(
+      within(history).getByRole("link", { name: "查看全部运行" }),
+    ).toHaveAttribute("target", "_blank");
+  });
+
   it("shows honest history loading, empty, and error states", async () => {
     let resolveHistory: ((response: Response) => void) | undefined;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -522,6 +571,7 @@ describe("ObservatoryDrawer", () => {
     render(
       <ObservatoryDrawer
         open
+        presentation="page"
         traceId="trace-1"
         onClose={vi.fn()}
         onSelectTrace={vi.fn()}
@@ -581,6 +631,44 @@ describe("ObservatoryDrawer", () => {
     expect(
       metrics.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("opens the explicitly linked assessment trace from a chat run", async () => {
+    const linkedSnapshot = {
+      ...snapshot,
+      workflow_kind: null,
+      related_traces: [
+        {
+          trace_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          kind: "assessment",
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        observabilityResponse(input, linkedSnapshot),
+      ),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const onSelectTrace = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <ObservatoryDrawer
+        open
+        traceId="trace-1"
+        onClose={vi.fn()}
+        onSelectTrace={onSelectTrace}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "查看关联考核运行" }),
+    );
+    expect(onSelectTrace).toHaveBeenCalledWith(
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
   });
 
   it("renders missing usage as unknown while preserving real zero", async () => {

@@ -19,6 +19,7 @@ from grandquiz.domain.learning.ingest.reader import ReaderError
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.recovery import Decision, ErrorClass, RecoveryPolicy, classify
+from grandquiz.providers.failure import ProviderFailure, ProviderFailureCategory
 from grandquiz.providers.replay import ReplayMiss
 
 
@@ -114,3 +115,22 @@ def test_decide_emits_for_propagated_error_too() -> None:
     assert len(recovery) == 1
     assert recovery[0].payload["decision"] == Decision.PROPAGATE.value
     assert recovery[0].payload["error_class"] == ErrorClass.FATAL.value
+
+
+def test_provider_failure_keeps_recovery_fatal_but_adds_safe_retry_facts() -> None:
+    policy, events = _policy_with_collector()
+    failure = ProviderFailure(
+        category=ProviderFailureCategory.TIMEOUT,
+        status_code=408,
+        provider_code="request_timeout",
+        retryable=True,
+    )
+
+    assert policy.decide(failure) is Decision.PROPAGATE
+
+    payload = events[-1].payload
+    assert payload["error_class"] == ErrorClass.FATAL.value
+    assert payload["provider_failure_category"] == "timeout"
+    assert payload["provider_failure_code"] == "provider_timeout"
+    assert payload["provider_status_code"] == 408
+    assert payload["provider_retryable"] is True

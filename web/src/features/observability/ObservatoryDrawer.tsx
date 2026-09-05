@@ -1,4 +1,10 @@
-import { DownloadSimpleIcon, XIcon } from "@phosphor-icons/react";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ArrowSquareOutIcon,
+  DownloadSimpleIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { useDismissibleLayer } from "../../shared/hooks/useDismissibleLayer";
 import { ActivityIndicator } from "../../shared/components/ActivityIndicator";
@@ -20,6 +26,7 @@ interface ObservatoryDrawerProps {
   onClose: () => void;
   onSelectTrace: (traceId: string) => void;
   anchorRef?: RefObject<HTMLElement | null>;
+  presentation?: "drawer" | "page";
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -62,6 +69,14 @@ const WORKFLOW_STATE_LABELS: Record<
   completed: "已完成",
   failed: "失败",
 };
+
+function tracePageHref(traceId: string | null): string {
+  const params = new URLSearchParams({ view: "observatory" });
+  if (traceId !== null) {
+    params.set("trace", traceId);
+  }
+  return `/?${params.toString()}`;
+}
 
 function formatDuration(value: number | null | undefined): string {
   if (value === null || value === undefined) {
@@ -158,6 +173,7 @@ export function ObservatoryDrawer({
   onClose,
   onSelectTrace,
   anchorRef,
+  presentation = "drawer",
 }: ObservatoryDrawerProps) {
   const [snapshot, setSnapshot] = useState<SafeTraceRun | null>(null);
   const [error, setError] = useState<{
@@ -180,7 +196,7 @@ export function ObservatoryDrawer({
   } | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drawerRef = useDismissibleLayer<HTMLElement>({
-    open,
+    open: open && presentation === "drawer",
     onDismiss: onClose,
     ignoredRefs: anchorRef === undefined ? [] : [anchorRef],
   });
@@ -246,7 +262,10 @@ export function ObservatoryDrawer({
     }
     let active = true;
     void listTraceSnapshots(
-      historyFilter === "all" ? null : historyFilter,
+      presentation === "page" && historyFilter !== "all"
+        ? historyFilter
+        : null,
+      presentation === "page" ? 20 : 3,
     )
       .then((runs) => {
         if (active) {
@@ -265,7 +284,7 @@ export function ObservatoryDrawer({
     return () => {
       active = false;
     };
-  }, [historyFilter, open]);
+  }, [historyFilter, open, presentation]);
 
   const currentSnapshot =
     snapshot?.trace_id === traceId ? snapshot : null;
@@ -286,21 +305,25 @@ export function ObservatoryDrawer({
     <section className="observatory-history" aria-label="近期运行">
       <div className="observatory-section-title">
         <h3>近期运行</h3>
-        <select
-          aria-label="按状态筛选运行"
-          value={historyFilter}
-          onChange={(event) =>
-            setHistoryFilter(
-              event.target.value as "all" | SafeTraceStatus,
-            )
-          }
-        >
-          {HISTORY_FILTERS.map((filter) => (
-            <option key={filter.value} value={filter.value}>
-              {filter.label}
-            </option>
-          ))}
-        </select>
+        {presentation === "page" ? (
+          <select
+            aria-label="按状态筛选运行"
+            value={historyFilter}
+            onChange={(event) =>
+              setHistoryFilter(
+                event.target.value as "all" | SafeTraceStatus,
+              )
+            }
+          >
+            {HISTORY_FILTERS.map((filter) => (
+              <option key={filter.value} value={filter.value}>
+                {filter.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span>最近 3 条</span>
+        )}
       </div>
       {historyError !== null ? (
         <p className="observatory-history__message" role="alert">
@@ -318,29 +341,53 @@ export function ObservatoryDrawer({
         <ol>
           {history.map((run) => (
             <li key={run.trace_id}>
-              <button
-                type="button"
-                aria-current={run.trace_id === traceId ? "true" : undefined}
-                aria-label={`运行 ${run.trace_id}，${STATUS_LABELS[run.status]}`}
-                onClick={() => onSelectTrace(run.trace_id)}
-              >
-                <span>{run.summary.headline ?? "运行记录"}</span>
-                <code>{run.trace_id.slice(0, 12)}</code>
-              </button>
+              {presentation === "page" ? (
+                <button
+                  type="button"
+                  aria-current={run.trace_id === traceId ? "true" : undefined}
+                  aria-label={`运行 ${run.trace_id}，${STATUS_LABELS[run.status]}`}
+                  onClick={() => onSelectTrace(run.trace_id)}
+                >
+                  <span>{run.summary.headline ?? "运行记录"}</span>
+                  <code>{run.trace_id.slice(0, 12)}</code>
+                </button>
+              ) : (
+                <a
+                  href={tracePageHref(run.trace_id)}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`运行 ${run.trace_id}，${STATUS_LABELS[run.status]}，在新页面打开`}
+                >
+                  <span>{run.summary.headline ?? "运行记录"}</span>
+                  <code>{run.trace_id.slice(0, 12)}</code>
+                </a>
+              )}
             </li>
           ))}
         </ol>
       )}
+      {presentation === "drawer" ? (
+        <a
+          className="observatory-history__all"
+          href={tracePageHref(traceId)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <span>查看全部运行</span>
+          <ArrowSquareOutIcon aria-hidden size={14} />
+        </a>
+      ) : null}
     </section>
   );
+  const Root = presentation === "page" ? "main" : "aside";
 
   return (
-    <aside
+    <Root
       ref={drawerRef}
       id="runtime-observatory"
-      className="observatory-drawer"
-      role="dialog"
-      aria-modal="false"
+      className={`observatory-drawer observatory-drawer--${presentation}`}
+      role={presentation === "page" ? "main" : "dialog"}
+      aria-modal={presentation === "drawer" ? "false" : undefined}
       aria-label="运行观测"
     >
       <header className="observatory-drawer__header">
@@ -348,14 +395,21 @@ export function ObservatoryDrawer({
           <p className="observatory-drawer__eyebrow">TRACE OBSERVATORY</p>
           <h2>运行观测</h2>
         </div>
-        <button
-          type="button"
-          className="observatory-drawer__close"
-          aria-label="关闭运行观测"
-          onClick={onClose}
-        >
-          <XIcon aria-hidden size={18} />
-        </button>
+        {presentation === "page" ? (
+          <a className="observatory-page__back" href="/">
+            <ArrowLeftIcon aria-hidden size={16} />
+            返回学习空间
+          </a>
+        ) : (
+          <button
+            type="button"
+            className="observatory-drawer__close"
+            aria-label="关闭运行观测"
+            onClick={onClose}
+          >
+            <XIcon aria-hidden size={18} />
+          </button>
+        )}
       </header>
 
       {traceId === null ? (
@@ -404,6 +458,26 @@ export function ObservatoryDrawer({
               {currentSnapshot.summary.recommended_action === null ? null : (
                 <p>{currentSnapshot.summary.recommended_action}</p>
               )}
+            </section>
+          )}
+
+          {(currentSnapshot.related_traces ?? []).length === 0 ? null : (
+            <section className="observatory-related" aria-label="关联运行">
+              <span>本次聊天启动了考核</span>
+              {(currentSnapshot.related_traces ?? []).map((related) => (
+                <button
+                  key={related.trace_id}
+                  type="button"
+                  aria-label="查看关联考核运行"
+                  onClick={() => onSelectTrace(related.trace_id)}
+                >
+                  <span>
+                    <strong>查看考核运行</strong>
+                    <code>{related.trace_id.slice(0, 12)}</code>
+                  </span>
+                  <ArrowRightIcon aria-hidden size={16} />
+                </button>
+              ))}
             </section>
           )}
 
@@ -512,6 +586,6 @@ export function ObservatoryDrawer({
         </>
       )}
       {currentSnapshot === null ? historySection : null}
-    </aside>
+    </Root>
   );
 }

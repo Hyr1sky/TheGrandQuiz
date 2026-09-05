@@ -19,7 +19,22 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 from urllib.parse import urlparse
 
-from openai import AsyncOpenAI, Omit, omit
+from openai import (
+    APIConnectionError,
+    APIError,
+    APIStatusError,
+    APITimeoutError,
+    AsyncOpenAI,
+    AuthenticationError,
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+    Omit,
+    PermissionDeniedError,
+    RateLimitError,
+    UnprocessableEntityError,
+    omit,
+)
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 
 from grandquiz.providers.base import (
@@ -35,11 +50,97 @@ from grandquiz.providers.base import (
     Usage,
     mark_malformed_arguments,
 )
+from grandquiz.providers.failure import (
+    ProviderFailure,
+    ProviderFailureCategory,
+    safe_provider_code,
+)
 
 _TRUTHY = {"1", "true", "yes", "on"}
 ProviderDialect = Literal["deepseek", "dashscope", "generic"]
 ThinkingMode = Literal["provider_default", "enabled", "disabled"]
 ReasoningEffort = Literal["high", "max"]
+
+_NON_RETRYABLE_QUOTA_CODES = frozenset({"allocationquota.freetieronly"})
+
+
+def _provider_code(exc: APIError) -> str | None:
+    direct = safe_provider_code(getattr(exc, "code", None))
+    if direct is not None:
+        return direct
+    body = getattr(exc, "body", None)
+    if not isinstance(body, Mapping):
+        return None
+    body_mapping = cast("Mapping[str, object]", body)
+    error = body_mapping.get("error")
+    if isinstance(error, Mapping):
+        return safe_provider_code(cast("Mapping[str, object]", error).get("code"))
+    return safe_provider_code(body_mapping.get("code"))
+
+
+def _is_quota_exhausted(exc: APIError, provider_code: str | None) -> bool:
+    # DashScope also uses quota-shaped codes such as Throttling.AllocationQuota for
+    # temporary TPS/TPM limits. Only codes with verified terminal semantics belong
+    # here; every other 429 must retain the SDK's retryable rate-limit category.
+    if provider_code is not None and provider_code.casefold() in _NON_RETRYABLE_QUOTA_CODES:
+        return True
+    body = getattr(exc, "body", None)
+    if not isinstance(body, Mapping):
+        return False
+    body_mapping = cast("Mapping[str, object]", body)
+    error = body_mapping.get("error")
+    message = (
+        cast("Mapping[str, object]", error).get("message")
+        if isinstance(error, Mapping)
+        else body_mapping.get("message")
+    )
+    return isinstance(message, str) and "free quota exhausted" in message.casefold()
+
+
+def _normalize_openai_failure(exc: APIError) -> ProviderFailure:
+    provider_code = _provider_code(exc)
+    status_code = getattr(exc, "status_code", None)
+    status = status_code if isinstance(status_code, int) else None
+
+    if _is_quota_exhausted(exc, provider_code):
+        category = ProviderFailureCategory.QUOTA_EXHAUSTED
+        retryable = False
+    elif isinstance(exc, APITimeoutError):
+        category = ProviderFailureCategory.TIMEOUT
+        retryable = True
+    elif isinstance(exc, APIConnectionError):
+        category = ProviderFailureCategory.CONNECTION
+        retryable = True
+    elif isinstance(exc, AuthenticationError):
+        category = ProviderFailureCategory.AUTHENTICATION
+        retryable = False
+    elif isinstance(exc, PermissionDeniedError):
+        category = ProviderFailureCategory.PERMISSION_DENIED
+        retryable = False
+    elif isinstance(exc, (BadRequestError, UnprocessableEntityError)):
+        category = ProviderFailureCategory.INVALID_REQUEST
+        retryable = False
+    elif isinstance(exc, NotFoundError):
+        category = ProviderFailureCategory.NOT_FOUND
+        retryable = False
+    elif isinstance(exc, ConflictError):
+        category = ProviderFailureCategory.CONFLICT
+        retryable = True
+    elif isinstance(exc, RateLimitError):
+        category = ProviderFailureCategory.RATE_LIMITED
+        retryable = True
+    elif isinstance(exc, APIStatusError) and status is not None and status >= 500:
+        category = ProviderFailureCategory.SERVER_ERROR
+        retryable = True
+    else:
+        category = ProviderFailureCategory.UNKNOWN
+        retryable = False
+    return ProviderFailure(
+        category=category,
+        status_code=status,
+        provider_code=provider_code,
+        retryable=retryable,
+    )
 
 
 def _to_oai_messages(messages: Sequence[Message]) -> list[ChatCompletionMessageParam]:
@@ -336,16 +437,18 @@ class OpenAICompatProvider:
         request = self._prepare_request(messages, role=role, tools=tools)
         # tools 走 omit 哨兵：无工具 → 与"不传该参数"等价（线上请求逐字节不变），既有纯文本
         # completion 路径与 golden cassette 完全不受影响（replay_key 也不含 tools）。
-        response = await request.client.chat.completions.create(
-            model=request.model,
-            messages=request.messages,
-            # temperature=0：出题（enrich）必须贪心解码——温度采样会让同一 message 每次录出不同题，
-            # 毁掉 record/replay 的可复现（replay_key 只按 message 算、不含温度，故这不改键、只稳定
-            # 录制输出）；判卷 / ReAct（basic）同样设 0 求判决稳定。
-            temperature=0,
-            extra_body=request.extra_body,
-            tools=request.tools,
-        )
+        try:
+            response = await request.client.chat.completions.create(
+                model=request.model,
+                messages=request.messages,
+                # temperature=0：出题（enrich）必须贪心解码。温度采样会让同一 message
+                # 每次录出不同题，毁掉 record/replay 可复现性；判卷 / ReAct 同样取 0。
+                temperature=0,
+                extra_body=request.extra_body,
+                tools=request.tools,
+            )
+        except APIError as exc:
+            raise _normalize_openai_failure(exc) from exc
         message = response.choices[0].message
         tool_calls = _parse_tool_calls(message)
         text = message.content or ""
@@ -364,15 +467,18 @@ class OpenAICompatProvider:
     ) -> AsyncIterator[ProviderStreamEvent]:
         """把 OpenAI chunk 归一成文本增量，并在边界内组装完整 tool calls。"""
         request = self._prepare_request(messages, role=role, tools=tools)
-        raw_stream = await request.client.chat.completions.create(
-            model=request.model,
-            messages=request.messages,
-            temperature=0,
-            extra_body=request.extra_body,
-            tools=request.tools,
-            stream=True,
-            stream_options={"include_usage": True},
-        )
+        try:
+            raw_stream = await request.client.chat.completions.create(
+                model=request.model,
+                messages=request.messages,
+                temperature=0,
+                extra_body=request.extra_body,
+                tools=request.tools,
+                stream=True,
+                stream_options={"include_usage": True},
+            )
+        except APIError as exc:
+            raise _normalize_openai_failure(exc) from exc
         stream = cast("Any", raw_stream)
 
         text_parts: list[str] = []
@@ -380,44 +486,47 @@ class OpenAICompatProvider:
         prompt_tokens = 0
         completion_tokens = 0
 
-        async for chunk in stream:
-            chunk_usage = getattr(chunk, "usage", None)
-            if chunk_usage is not None:
-                prompt_tokens = int(getattr(chunk_usage, "prompt_tokens", 0))
-                completion_tokens = int(getattr(chunk_usage, "completion_tokens", 0))
+        try:
+            async for chunk in stream:
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage is not None:
+                    prompt_tokens = int(getattr(chunk_usage, "prompt_tokens", 0))
+                    completion_tokens = int(getattr(chunk_usage, "completion_tokens", 0))
 
-            choices = getattr(chunk, "choices", None)
-            if not choices:
-                continue
-            delta = choices[0].delta
-            content = getattr(delta, "content", None) or ""
-            raw_tool_calls = cast(
-                "list[Any]",
-                getattr(delta, "tool_calls", None) or [],
-            )
-
-            if content:
-                text_parts.append(content)
-                yield TextDelta(text=content)
-
-            for raw_tool_call in raw_tool_calls:
-                index = int(raw_tool_call.index)
-                fragment = tool_fragments.setdefault(
-                    index,
-                    {"id": "", "name": "", "arguments": ""},
-                )
-                tool_call_id = getattr(raw_tool_call, "id", None)
-                if tool_call_id:
-                    fragment["id"] = str(tool_call_id)
-                function = getattr(raw_tool_call, "function", None)
-                if function is None:
+                choices = getattr(chunk, "choices", None)
+                if not choices:
                     continue
-                name = getattr(function, "name", None)
-                arguments = getattr(function, "arguments", None)
-                if name:
-                    fragment["name"] += str(name)
-                if arguments:
-                    fragment["arguments"] += str(arguments)
+                delta = choices[0].delta
+                content = getattr(delta, "content", None) or ""
+                raw_tool_calls = cast(
+                    "list[Any]",
+                    getattr(delta, "tool_calls", None) or [],
+                )
+
+                if content:
+                    text_parts.append(content)
+                    yield TextDelta(text=content)
+
+                for raw_tool_call in raw_tool_calls:
+                    index = int(raw_tool_call.index)
+                    fragment = tool_fragments.setdefault(
+                        index,
+                        {"id": "", "name": "", "arguments": ""},
+                    )
+                    tool_call_id = getattr(raw_tool_call, "id", None)
+                    if tool_call_id:
+                        fragment["id"] = str(tool_call_id)
+                    function = getattr(raw_tool_call, "function", None)
+                    if function is None:
+                        continue
+                    name = getattr(function, "name", None)
+                    arguments = getattr(function, "arguments", None)
+                    if name:
+                        fragment["name"] += str(name)
+                    if arguments:
+                        fragment["arguments"] += str(arguments)
+        except APIError as exc:
+            raise _normalize_openai_failure(exc) from exc
 
         tool_calls: list[ToolCall] | None = None
         if tool_fragments:

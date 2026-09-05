@@ -93,6 +93,7 @@ def project_assessment_diagnosis(value: object) -> AssessmentDiagnosisKind | Non
 
 
 class AssessmentStartRequest(BaseModel):
+    trace_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
     resource_ids: list[str] = Field(min_length=1)
     rounds: int = Field(default=3, ge=1, le=20)
     question_type: str | None = None
@@ -150,6 +151,10 @@ class AssessmentAppealRequest(BaseModel):
 
 class AssessmentCommandConflict(ValueError):
     """同一道题已经被另一个 command 提交，不能再次驱动记账。"""
+
+
+class AssessmentTraceConflict(ValueError):
+    """预分配的 Trace identity 已被使用，不能把两次运行写进同一条事件流。"""
 
 
 def _empty_strings() -> set[str]:
@@ -336,7 +341,15 @@ class AssessmentManager:
 
     def start(self, request: AssessmentStartRequest) -> AssessmentView:
         session_id = uuid.uuid4().hex
-        trace_id = uuid.uuid4().hex
+        trace_id = request.trace_id or uuid.uuid4().hex
+        if request.trace_id is not None:
+            trace_exists = (
+                self._trace_observatory.exists(trace_id)
+                if self._trace_observatory is not None
+                else bool(self._trace_store.events(trace_id))
+            )
+            if trace_exists:
+                raise AssessmentTraceConflict("预分配的考核 trace_id 已被使用")
         if self._trace_observatory is not None:
             self._trace_observatory.register_trace(trace_id)
         responder = _WebResponder()

@@ -86,6 +86,7 @@ function initialWorkspaceLayout() {
 interface AssessmentParams {
   resource_id: string;
   question_type_plan: Array<string | null>;
+  assessment_trace_id: string | null;
 }
 
 export function App() {
@@ -336,6 +337,11 @@ export function App() {
                 questionTypePlan.length > 0
                   ? questionTypePlan
                   : [null, null, null],
+              assessment_trace_id:
+                typeof params.assessment_trace_id === "string" &&
+                /^[0-9a-f]{32}$/.test(params.assessment_trace_id)
+                  ? params.assessment_trace_id
+                  : null,
             });
             setAssessmentEpoch((current) => current + 1);
             setAssessment(null);
@@ -472,6 +478,7 @@ export function App() {
               ref={assessmentPanelRef}
               resourceId={assessmentParams.resource_id}
               questionTypePlan={assessmentParams.question_type_plan}
+              traceId={assessmentParams.assessment_trace_id}
               onClose={handleAssessmentClose}
               onOpenTrace={handleOpenTrace}
               onUpdate={handleAssessmentUpdate}

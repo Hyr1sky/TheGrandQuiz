@@ -214,6 +214,7 @@ def test_start_assessment_projects_chat_navigation_event(tmp_path: Path) -> None
             json={"text": "考我几道选择题"},
         )
         events = _wait_for_events(client, sid)
+        trace_snapshot = client.get(f"/api/v1/observability/traces/{session['trace_id']}").json()
 
     types = [e["type"] for e in events]
     assert "chat.navigation" in types
@@ -223,10 +224,16 @@ def test_start_assessment_projects_chat_navigation_event(tmp_path: Path) -> None
     assert data["target"] == "assessment"
     params = cast("dict[str, Any]", data["params"])
     assert isinstance(params, dict)
+    assessment_trace_id = params.pop("assessment_trace_id")
+    assert isinstance(assessment_trace_id, str)
+    assert len(assessment_trace_id) == 32
     assert params == {
         "resource_id": "res-abc",
         "question_type_plan": ["选择题", "选择题", "选择题"],
     }
+    assert trace_snapshot["related_traces"] == [
+        {"trace_id": assessment_trace_id, "kind": "assessment"}
+    ]
 
     # Turn should also complete normally
     assert "chat.turn_ended" in types
@@ -249,6 +256,9 @@ def test_start_assessment_projects_one_normalized_mixed_question_type_plan(
 
     nav_event = next(event for event in events if event["type"] == "chat.navigation")
     params = cast("dict[str, Any]", nav_event["data"]["params"])
+    assessment_trace_id = params.pop("assessment_trace_id")
+    assert isinstance(assessment_trace_id, str)
+    assert len(assessment_trace_id) == 32
     assert params == {
         "resource_id": "res-http",
         "question_type_plan": ["选择题", "选择题", "简答题"],

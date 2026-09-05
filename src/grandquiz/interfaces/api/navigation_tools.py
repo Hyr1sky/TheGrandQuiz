@@ -7,6 +7,7 @@ handler 不执行重逻辑——校验参数 + 通过 ``ToolContext`` 发 ``navi
 返回确认文本给 LLM。前端监听投影后的 ``chat.navigation`` UI 事件驱动面板切换。
 """
 
+import uuid
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -48,6 +49,7 @@ async def _start_assessment_handler(params: _StartAssessmentParams, ctx: ToolCon
         "params": {
             "resource_id": params.resource_id,
             "question_type_plan": list(plan.question_type_intents),
+            "assessment_trace_id": uuid.uuid4().hex,
         },
     }
     ctx.emitter.emit(NAVIGATION_REQUESTED, payload=payload)

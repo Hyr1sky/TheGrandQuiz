@@ -16,6 +16,7 @@
 import enum
 
 from grandquiz.kernel.events import EventEmitter, EventType
+from grandquiz.providers.failure import provider_failure_payload
 
 
 class ErrorClass(enum.Enum):
@@ -81,6 +82,7 @@ class RecoveryPolicy:
                 "error": repr(exc),
                 "error_class": error_class.value,
                 "decision": decision.value,
+                **provider_failure_payload(exc),
             },
         )
         return decision

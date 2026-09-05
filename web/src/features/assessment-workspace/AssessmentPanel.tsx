@@ -37,11 +37,13 @@ import {
 } from "./api";
 import { VoiceAnswerControl } from "./VoiceAnswerControl";
 import { ActivityIndicator } from "../../shared/components/ActivityIndicator";
+import { getTraceSnapshot } from "../observability/api";
 import "./assessment-panel.css";
 
 interface AssessmentPanelProps {
   resourceId: string;
   questionTypePlan: Array<string | null>;
+  traceId?: string | null;
   onClose: () => void;
   onOpenTrace?: (traceId: string) => void;
   onUpdate?: (view: AssessmentView) => void;
@@ -55,10 +57,35 @@ function OpenTraceButton({
   onOpenTrace: (traceId: string) => void;
 }) {
   return (
-    <button type="button" onClick={() => onOpenTrace(traceId)}>
-      <EyeIcon aria-hidden size={18} />
+    <button
+      type="button"
+      className="assessment-panel__action-button"
+      onClick={() => onOpenTrace(traceId)}
+    >
+      <EyeIcon aria-hidden size={17} />
       查看本次运行
     </button>
+  );
+}
+
+function FailureNotice({
+  fallback,
+  explanation,
+}: {
+  fallback: string;
+  explanation: { headline: string; recommendedAction: string | null } | null;
+}) {
+  return (
+    <section
+      className="assessment-panel__failure-notice"
+      role="alert"
+      aria-label="失败说明"
+    >
+      <strong>{explanation?.headline ?? fallback}</strong>
+      {explanation?.recommendedAction ? (
+        <p>{explanation.recommendedAction}</p>
+      ) : null}
+    </section>
   );
 }
 
@@ -74,7 +101,7 @@ export const AssessmentPanel = forwardRef<
   AssessmentPanelHandle,
   AssessmentPanelProps
 >(function AssessmentPanel(
-  { resourceId, questionTypePlan, onClose, onOpenTrace, onUpdate },
+  { resourceId, questionTypePlan, traceId, onClose, onOpenTrace, onUpdate },
   ref,
 ) {
   const [assessment, setAssessment] = useState<AssessmentView | null>(null);
@@ -87,6 +114,11 @@ export const AssessmentPanel = forwardRef<
   const [supplementalAnswer, setSupplementalAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [traceExplanation, setTraceExplanation] = useState<{
+    traceId: string;
+    headline: string;
+    recommendedAction: string | null;
+  } | null>(null);
   const [hoverCountdown, setHoverCountdown] = useState<number | null>(null);
   const revealRequested = useRef<string | null>(null);
   const hoverRevealTimer = useRef<number | null>(null);
@@ -112,6 +144,34 @@ export const AssessmentPanel = forwardRef<
     promise: Promise<AssessmentView>;
   } | null>(null);
   const closeRequested = useRef(false);
+  const failureTraceId =
+    assessment !== null && ["degraded", "failed"].includes(assessment.status)
+      ? assessment.trace_id
+      : null;
+
+  useEffect(() => {
+    if (failureTraceId === null) {
+      return;
+    }
+    let active = true;
+    void getTraceSnapshot(failureTraceId)
+      .then((snapshot) => {
+        const headline = snapshot.summary.headline;
+        if (active && typeof headline === "string") {
+          setTraceExplanation({
+            traceId: failureTraceId,
+            headline,
+            recommendedAction: snapshot.summary.recommended_action ?? null,
+          });
+        }
+      })
+      .catch(() => {
+        // The assessment remains usable with its bounded fallback message.
+      });
+    return () => {
+      active = false;
+    };
+  }, [failureTraceId]);
 
   // Notify parent of assessment state changes
   const onUpdateRef = useRef(onUpdate);
@@ -126,12 +186,12 @@ export const AssessmentPanel = forwardRef<
 
   // Start assessment on mount
   useEffect(() => {
-    const key = `${resourceId}\u0000${JSON.stringify(questionTypePlan)}`;
+    const key = `${resourceId}\u0000${JSON.stringify(questionTypePlan)}\u0000${traceId ?? ""}`;
     let request = startRequest.current;
     if (request?.key !== key) {
       request = {
         key,
-        promise: startAssessment(resourceId, { questionTypePlan }),
+        promise: startAssessment(resourceId, { questionTypePlan, traceId }),
       };
       startRequest.current = request;
     }
@@ -158,7 +218,7 @@ export const AssessmentPanel = forwardRef<
     return () => {
       active = false;
     };
-  }, [resourceId, questionTypePlan, notifyUpdate]);
+  }, [resourceId, questionTypePlan, traceId, notifyUpdate]);
 
   // Poll for status changes
   const pollDelay = useRef(1000);
@@ -510,17 +570,32 @@ export const AssessmentPanel = forwardRef<
             结束考核
           </button>
         </header>
-        <p className="assessment-panel__error" role="alert">
-          {assessment.error ?? "本题生成失败，可以重试本题或跳过继续"}
-        </p>
+        <FailureNotice
+          fallback={assessment.error ?? "本题生成失败，可以重试本题或跳过继续"}
+          explanation={
+            traceExplanation?.traceId === assessment.trace_id
+              ? traceExplanation
+              : null
+          }
+        />
         <div className="assessment-panel__actions">
           {assessment.recovery_stage === "question_generation" ? (
-            <button type="button" disabled={busy} onClick={() => void retryCurrent()}>
+            <button
+              type="button"
+              className="assessment-panel__action-button"
+              disabled={busy}
+              onClick={() => void retryCurrent()}
+            >
               <ArrowClockwiseIcon aria-hidden size={18} />
               重试本题
             </button>
           ) : null}
-          <button type="button" disabled={busy} onClick={() => void advance()}>
+          <button
+            type="button"
+            className="assessment-panel__action-button"
+            disabled={busy}
+            onClick={() => void advance()}
+          >
             <SkipForwardIcon aria-hidden size={18} />
             跳过此题
           </button>
@@ -559,9 +634,15 @@ export const AssessmentPanel = forwardRef<
             返回阅读
           </button>
         </header>
-        <p className="assessment-panel__error" role="alert">
-          {assessment.error ?? "当前材料暂时无法开始考核。"}
-        </p>
+        <FailureNotice
+          fallback={assessment.error ?? "当前材料暂时无法开始考核。"}
+          explanation={
+            assessment.status === "failed" &&
+            traceExplanation?.traceId === assessment.trace_id
+              ? traceExplanation
+              : null
+          }
+        />
         {assessment.status === "failed" && onOpenTrace ? (
           <div className="assessment-panel__actions">
             <OpenTraceButton

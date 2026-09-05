@@ -22,6 +22,7 @@ from grandquiz.interfaces.api.app import ApiSettings, create_app
 from grandquiz.interfaces.api.assessment_runs import project_assessment_diagnosis
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, ToolSpec, Usage
+from grandquiz.providers.failure import ProviderFailure, ProviderFailureCategory
 from grandquiz.providers.speech import (
     SpeechRecognitionProvider,
     TranscriptionRequest,
@@ -264,6 +265,23 @@ class _FailingAssessmentProvider:
         raise RuntimeError("assessment provider failed")
 
 
+class _TypedFailingAssessmentProvider:
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        del messages, role, tools
+        raise ProviderFailure(
+            category=ProviderFailureCategory.RATE_LIMITED,
+            status_code=429,
+            provider_code="rate_limit_exceeded",
+            retryable=True,
+        )
+
+
 class _InvalidQuestionProvider:
     async def complete(
         self,
@@ -452,6 +470,38 @@ def test_selected_resource_starts_one_real_question_and_waits_for_answer(
     assert payload["judgement"] is None
     assert payload["trace_id"]
     assert trace_snapshot["status"] == "waiting_input"
+
+
+def test_assessment_start_uses_preallocated_navigation_trace_id(tmp_path: Path) -> None:
+    resource, _ = _seed_item(tmp_path)
+    trace_id = "a" * 32
+
+    with TestClient(_app(tmp_path)) as client:
+        response = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "trace_id": trace_id,
+            },
+        )
+        assert response.status_code == 202
+        started = response.json()
+        trace_snapshot = client.get(f"/api/v1/observability/traces/{trace_id}")
+        duplicate = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "trace_id": trace_id,
+            },
+        )
+
+    assert started["trace_id"] == trace_id
+    assert trace_snapshot.status_code == 200
+    assert trace_snapshot.json()["trace_id"] == trace_id
+    assert duplicate.status_code == 409
+    assert duplicate.json()["code"] == "assessment_trace_conflict"
 
 
 def test_fastapi_consumes_mixed_question_type_plan_in_order(tmp_path: Path) -> None:
@@ -1103,6 +1153,33 @@ def test_assessment_failure_projects_a_failed_terminal_trace(tmp_path: Path) -> 
     assert failed["error"] == "本轮考核失败，请通过 trace_id 查看详情"
     assert trace_snapshot["status"] == "failed"
     assert trace_snapshot["summary"]["error_count"] == 1
+
+
+def test_assessment_http_trace_projects_typed_provider_failure(tmp_path: Path) -> None:
+    resource, _ = _seed_item(tmp_path)
+
+    with TestClient(_app(tmp_path, _TypedFailingAssessmentProvider())) as client:
+        started = client.post(
+            "/api/v1/assessments",
+            json={
+                "resource_ids": [resource.resource_id],
+                "rounds": 1,
+                "question_type": "选择题",
+            },
+        ).json()
+        _wait_for_status(client, started["session_id"], "failed")
+        trace_snapshot = client.get(f"/api/v1/observability/traces/{started['trace_id']}").json()
+
+    assert trace_snapshot["summary"]["headline"] == "选择题生成失败：模型服务请求过于频繁"
+    model_failure = next(
+        event for event in trace_snapshot["events"] if event["provider_failure"] is not None
+    )
+    assert model_failure["reason_code"] == "provider_rate_limited"
+    assert model_failure["provider_failure"] == {
+        "category": "rate_limited",
+        "status_code": 429,
+        "retryable": True,
+    }
 
 
 def test_question_generation_exhaustion_is_degraded_and_can_retry_or_skip(

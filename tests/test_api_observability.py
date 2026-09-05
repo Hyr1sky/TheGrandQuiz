@@ -454,6 +454,16 @@ def test_observability_openapi_exposes_only_finite_semantic_event_fields(
         "question_generation_exhausted",
         "grading_exhausted",
         "workflow_degraded",
+        "provider_quota_exhausted",
+        "provider_authentication_failed",
+        "provider_permission_denied",
+        "provider_request_invalid",
+        "provider_model_not_found",
+        "provider_conflict",
+        "provider_rate_limited",
+        "provider_timeout",
+        "provider_unavailable",
+        "provider_error",
         "other",
     ]
     assert properties["quality_label"]["anyOf"][0]["enum"] == [
@@ -476,7 +486,27 @@ def test_observability_openapi_exposes_only_finite_semantic_event_fields(
         "tokens",
         "latency_ms",
         "node_id",
+        "provider_failure",
     }
+    provider_failure = schema["components"]["schemas"]["SafeProviderFailureV1"]
+    assert set(provider_failure["properties"]) == {
+        "category",
+        "status_code",
+        "retryable",
+    }
+    assert provider_failure["properties"]["category"]["enum"] == [
+        "invalid_request",
+        "authentication",
+        "permission_denied",
+        "not_found",
+        "conflict",
+        "quota_exhausted",
+        "rate_limited",
+        "timeout",
+        "connection",
+        "server_error",
+        "unknown",
+    ]
     assert properties["node_id"]["anyOf"][0]["enum"] == [
         "select_target",
         "generate_question",

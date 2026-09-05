@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from grandquiz.evals.rubrics import Rubric, get_rubric
 from grandquiz.kernel.events import EventEmitter, EventType
+from grandquiz.kernel.model_events import model_failure_event_payload
 from grandquiz.providers.base import Message, Provider, Usage
 
 QUALITY_JUDGE_STARTED = "eval.quality_judge.started"
@@ -139,7 +140,7 @@ class QualityJudge:
                     EventType.MODEL_ENDED,
                     span_id=model_span,
                     parent_span_id=workflow_span,
-                    payload={"ok": False, "error": repr(exc)},
+                    payload=model_failure_event_payload(exc),
                 )
                 emitter.emit(
                     QUALITY_JUDGE_ENDED,

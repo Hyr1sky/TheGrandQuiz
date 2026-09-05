@@ -14,6 +14,7 @@ import asyncio
 from grandquiz.kernel.context import ContextBudgetStatus, ContextBuilder
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.kernel.hooks import HookManager, HookVeto
+from grandquiz.kernel.model_events import model_failure_event_payload
 from grandquiz.kernel.recovery import Decision, RecoveryPolicy
 from grandquiz.kernel.tools import ToolContext, ToolRegistry
 from grandquiz.providers.base import (
@@ -26,6 +27,7 @@ from grandquiz.providers.base import (
     TextDelta,
     ToolCall,
 )
+from grandquiz.providers.failure import provider_failure_payload
 
 _TOOL_CALL_HOOK = "tool_call"
 # ReAct 编排固定走 basic 角色（已确认 deepseek 支持 function-calling）；显式常量避免散落字面量。
@@ -132,13 +134,13 @@ class Runner:
                 EventType.ERROR,
                 span_id=model_span,
                 parent_span_id=turn_span,
-                payload={"error": repr(exc)},
+                payload={"error": repr(exc), **provider_failure_payload(exc)},
             )
             self._emitter.emit(
                 EventType.MODEL_ENDED,
                 span_id=model_span,
                 parent_span_id=turn_span,
-                payload={"ok": False, "error": repr(exc)},
+                payload=model_failure_event_payload(exc),
             )
             self._emitter.emit(EventType.TURN_ENDED, span_id=turn_span, payload={"ok": False})
             raise
@@ -376,13 +378,13 @@ class Runner:
                 EventType.ERROR,
                 span_id=model_span,
                 parent_span_id=parent_span_id,
-                payload={"error": repr(exc)},
+                payload={"error": repr(exc), **provider_failure_payload(exc)},
             )
             self._emitter.emit(
                 EventType.MODEL_ENDED,
                 span_id=model_span,
                 parent_span_id=parent_span_id,
-                payload={"ok": False, "error": repr(exc)},
+                payload=model_failure_event_payload(exc),
             )
             raise
         output: dict[str, object] = {

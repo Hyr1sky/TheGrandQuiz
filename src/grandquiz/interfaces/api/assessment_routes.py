@@ -10,6 +10,7 @@ from grandquiz.interfaces.api.assessment_runs import (
     AssessmentCommandConflict,
     AssessmentManager,
     AssessmentStartRequest,
+    AssessmentTraceConflict,
     AssessmentView,
     EvidenceRevealRequest,
     NextRoundRequest,
@@ -28,7 +29,14 @@ async def start_assessment(
     command: AssessmentStartRequest,
     request: Request,
 ) -> AssessmentView:
-    return assessment_manager_from(request).start(command)
+    try:
+        return assessment_manager_from(request).start(command)
+    except AssessmentTraceConflict as exc:
+        raise ApiError(
+            status_code=409,
+            code="assessment_trace_conflict",
+            message=str(exc),
+        ) from exc
 
 
 @router.get("/{session_id}", response_model=AssessmentView)

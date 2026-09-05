@@ -177,8 +177,9 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
+  margin-top: 14px;
   min-height: 40px;
-  padding: 0 14px;
+  padding: 10px 16px;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
   background: var(--surface-quiet);
@@ -218,6 +219,60 @@
   color: var(--muted);
   font-size: 11px;
   line-height: 1.6;
+}
+
+.observatory-related {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-quiet);
+}
+
+.observatory-related > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.observatory-related button {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+.observatory-related button:hover {
+  border-color: var(--evidence);
+  background: var(--evidence-soft);
+}
+
+.observatory-related button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.observatory-related button > span {
+  display: grid;
+  gap: 2px;
+}
+
+.observatory-related strong {
+  font-size: 11px;
+}
+
+.observatory-related code {
+  color: var(--muted);
+  font-size: 9px;
 }
 
 .observatory-history {
@@ -335,8 +390,8 @@
 }
 
 .observatory-workflow-edges {
-  margin-top: 2px;
-  padding: 10px;
+  margin-top: 6px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-quiet);
@@ -390,7 +445,8 @@
   list-style: none;
 }
 
-.observatory-history button {
+.observatory-history button,
+.observatory-history li > a {
   display: flex;
   width: 100%;
   min-height: 42px;
@@ -402,6 +458,8 @@
   border-radius: 8px;
   background: var(--surface-quiet);
   color: var(--text);
+  font: inherit;
+  text-decoration: none;
   text-align: left;
 }
 
@@ -410,17 +468,40 @@
   background: var(--evidence-soft);
 }
 
-.observatory-history button span {
+.observatory-history button span,
+.observatory-history li > a span {
   overflow: hidden;
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.observatory-history li > a:hover {
+  border-color: var(--evidence);
+  background: var(--evidence-soft);
+  color: var(--text-strong);
+}
+
 .observatory-history code {
   flex-shrink: 0;
   color: var(--muted);
   font-size: 9px;
+}
+
+.observatory-history__all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 5px 0;
+  color: var(--evidence);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.observatory-history__all:hover {
+  color: var(--text-strong);
 }
 
 .observatory-timeline {
@@ -520,11 +601,71 @@
   color: var(--danger);
 }
 
+.observatory-page-shell {
+  position: relative;
+  min-height: 100vh;
+  padding: 28px;
+}
+
+.observatory-drawer--page {
+  position: relative;
+  z-index: 1;
+  inset: auto;
+  width: min(1080px, 100%);
+  min-height: calc(100vh - 56px);
+  margin: 0 auto;
+  overflow: visible;
+  padding: 28px 32px 40px;
+  backdrop-filter: blur(16px) saturate(0.9);
+}
+
+.observatory-page__back {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.observatory-page__back:hover {
+  background: var(--evidence-soft);
+  color: var(--text-strong);
+}
+
+.observatory-drawer--page .observatory-metrics {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.observatory-drawer--page .observatory-history ol {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
 @media (max-width: 759px) {
   .observatory-drawer {
     top: 52px;
     right: 8px;
     bottom: 44px;
     width: calc(100vw - 16px);
+  }
+
+  .observatory-page-shell {
+    padding: 0;
+  }
+
+  .observatory-drawer--page {
+    inset: auto;
+    width: 100%;
+    min-height: 100vh;
+    padding: 20px 16px 32px;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .observatory-drawer--page .observatory-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

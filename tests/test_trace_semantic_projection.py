@@ -95,6 +95,47 @@ def test_project_trace_explains_mc_rejection_without_leaking_internal_payload() 
         assert forbidden not in serialized
 
 
+def test_project_trace_exposes_allowlisted_assessment_trace_relation() -> None:
+    assessment_trace_id = "a" * 32
+    run = project_trace(
+        [
+            _event(
+                "navigation.requested",
+                0,
+                payload={
+                    "target": "assessment",
+                    "params": {
+                        "resource_id": "SECRET-RESOURCE",
+                        "assessment_trace_id": assessment_trace_id,
+                    },
+                },
+            ),
+            _event(
+                "navigation.requested",
+                1,
+                payload={
+                    "target": "assessment",
+                    "params": {"assessment_trace_id": "not-a-trace-id"},
+                },
+            ),
+            _event(
+                "plugin.future.secret_event",
+                2,
+                payload={"assessment_trace_id": "b" * 32},
+            ),
+        ],
+        trace_id="trace-safe",
+    )
+
+    assert [link.model_dump() for link in run.related_traces] == [
+        {"trace_id": assessment_trace_id, "kind": "assessment"}
+    ]
+    serialized = run.model_dump_json()
+    assert "SECRET-RESOURCE" not in serialized
+    assert "not-a-trace-id" not in serialized
+    assert "b" * 32 not in serialized
+
+
 def test_project_trace_distinguishes_generation_judgement_grading_and_commit() -> None:
     events = [
         _event("assessment.started", 0, span_id="assessment"),
@@ -486,6 +527,174 @@ def test_project_trace_marks_fatal_assessment_end_as_failed() -> None:
     assert run.events[-1].status == "failed"
     assert "SECRET-INTERNAL-ERROR" not in run.model_dump_json()
     assert "SECRET-FAILURE" not in run.model_dump_json()
+
+
+def test_project_trace_explains_provider_quota_exhaustion_without_leaking_raw_error() -> None:
+    raw_error = (
+        "PermissionDeniedError('Error code: 403 - "
+        "{\\'error\\': {\\'message\\': \\'Free quota exhausted.\\', "
+        "\\'code\\': \\'AllocationQuota.FreeTierOnly\\'}, "
+        "\\'request_id\\': \\'SECRET-REQUEST-ID\\'}')"
+    )
+    run = project_trace(
+        [
+            _event("assessment.started", 0, span_id="assessment"),
+            _event(
+                "learning.multiple_choice_generation.started",
+                1,
+                span_id="generation",
+                parent_span_id="assessment",
+            ),
+            _event(
+                "model.started",
+                2,
+                span_id="model",
+                parent_span_id="generation",
+                payload={"role": "enrich"},
+            ),
+            _event(
+                "model.ended",
+                3,
+                span_id="model",
+                parent_span_id="generation",
+                payload={"ok": False, "error": raw_error},
+            ),
+            _event(
+                "learning.multiple_choice_generation.ended",
+                4,
+                span_id="generation",
+                parent_span_id="assessment",
+                payload={
+                    "ok": False,
+                    "attempts": 1,
+                    "stage": "model_call",
+                    "error_type": "PermissionDeniedError",
+                },
+            ),
+            _event(
+                "assessment.ended",
+                5,
+                span_id="assessment",
+                payload={"ok": False, "error": raw_error},
+            ),
+            _event("error", 6, payload={"error_type": "PermissionDeniedError"}),
+        ],
+        trace_id="trace-safe",
+    )
+
+    assert run.status == "failed"
+    assert run.events[3].reason_code == "provider_quota_exhausted"
+    assert run.summary.headline == "选择题生成失败：模型服务免费额度已用尽"
+    assert run.summary.recommended_action == (
+        "请补充余额或关闭模型服务的“仅使用免费额度”设置，然后重试本题。"
+    )
+    serialized = run.model_dump_json()
+    assert "AllocationQuota.FreeTierOnly" not in serialized
+    assert "SECRET-REQUEST-ID" not in serialized
+
+
+def test_project_trace_exposes_typed_provider_failure_without_vendor_code() -> None:
+    run = project_trace(
+        [
+            _event("assessment.started", 0, span_id="assessment"),
+            _event(
+                "learning.multiple_choice_generation.started",
+                1,
+                span_id="generation",
+                parent_span_id="assessment",
+            ),
+            _event(
+                "model.started",
+                2,
+                span_id="model",
+                parent_span_id="generation",
+                payload={"role": "enrich"},
+            ),
+            _event(
+                "model.ended",
+                3,
+                span_id="model",
+                parent_span_id="generation",
+                payload={
+                    "ok": False,
+                    "error": "SECRET-UPSTREAM-BODY",
+                    "provider_failure_category": "rate_limited",
+                    "provider_failure_code": "provider_rate_limited",
+                    "provider_status_code": 429,
+                    "provider_code": "rate_limit_exceeded",
+                    "provider_retryable": True,
+                },
+            ),
+            _event("assessment.ended", 4, span_id="assessment", payload={"ok": False}),
+            _event("error", 5, payload={"error_type": "ProviderFailure"}),
+        ],
+        trace_id="trace-safe",
+    )
+
+    provider_failure = run.events[3].provider_failure
+    assert provider_failure is not None
+    assert provider_failure.category == "rate_limited"
+    assert provider_failure.status_code == 429
+    assert provider_failure.retryable is True
+    assert run.events[3].reason_code == "provider_rate_limited"
+    assert run.summary.headline == "选择题生成失败：模型服务请求过于频繁"
+    serialized = run.model_dump_json()
+    assert "rate_limit_exceeded" not in serialized
+    assert "SECRET-UPSTREAM-BODY" not in serialized
+
+
+def test_project_trace_completed_chat_uses_latest_turn_summary() -> None:
+    run = project_trace(
+        [
+            _event("agent_turn.started", 0, span_id="turn-1"),
+            _event(
+                "model.started",
+                1,
+                span_id="model-1",
+                parent_span_id="turn-1",
+                payload={"role": "basic"},
+            ),
+            _event(
+                "model.ended",
+                2,
+                span_id="model-1",
+                parent_span_id="turn-1",
+                payload={
+                    "ok": False,
+                    "provider_failure_category": "rate_limited",
+                    "provider_failure_code": "provider_rate_limited",
+                    "provider_status_code": 429,
+                    "provider_code": "rate_limit_exceeded",
+                    "provider_retryable": True,
+                },
+            ),
+            _event("agent_turn.ended", 3, span_id="turn-1", payload={"ok": False}),
+            _event("agent_turn.started", 4, span_id="turn-2"),
+            _event(
+                "model.started",
+                5,
+                span_id="model-2",
+                parent_span_id="turn-2",
+                payload={"role": "basic"},
+            ),
+            _event(
+                "model.ended",
+                6,
+                span_id="model-2",
+                parent_span_id="turn-2",
+                payload={
+                    "ok": True,
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                },
+            ),
+            _event("agent_turn.ended", 7, span_id="turn-2", payload={"ok": True}),
+        ],
+        trace_id="trace-safe",
+    )
+
+    assert run.status == "completed"
+    assert run.summary.headline == "运行已完成"
+    assert run.summary.recommended_action is None
 
 
 def test_project_trace_distinguishes_zero_usage_from_unknown_usage() -> None:

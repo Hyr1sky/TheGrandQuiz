@@ -386,7 +386,7 @@ describe("Sidebar context switching", () => {
             "/api/v1/observability/traces/trace-assessment",
           ),
         ),
-      ).toHaveLength(1);
+      ).toHaveLength(2);
     });
 
     await user.click(
@@ -406,7 +406,7 @@ describe("Sidebar context switching", () => {
             "/api/v1/observability/traces/trace-assessment",
           ),
         ),
-      ).toHaveLength(2);
+      ).toHaveLength(3);
     });
     expect(
       fetchMock.mock.calls.some(([input]) =>
@@ -445,7 +445,7 @@ describe("Sidebar context switching", () => {
             "/api/v1/observability/traces/trace-assessment-next",
           ),
         ),
-      ).toHaveLength(1);
+      ).toHaveLength(2);
     });
   });
 
@@ -657,6 +657,7 @@ describe("Sidebar context switching", () => {
           params: {
             resource_id: "resource-1",
             question_type_plan: ["选择题", "选择题", "简答题"],
+            assessment_trace_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           },
         },
       });
@@ -679,6 +680,22 @@ describe("Sidebar context switching", () => {
           );
         }),
       ).toBe(true);
+    });
+    const assessmentStartCall = fetchMock.mock.calls.find(([input]) => {
+      const request =
+        input instanceof Request ? input : new Request(String(input));
+      return (
+        request.method === "POST" &&
+        request.url.endsWith("/api/v1/assessments")
+      );
+    });
+    expect(assessmentStartCall).toBeDefined();
+    const assessmentStartRequest = assessmentStartCall?.[0];
+    expect(assessmentStartRequest).toBeInstanceOf(Request);
+    await expect(
+      (assessmentStartRequest as Request).clone().json(),
+    ).resolves.toMatchObject({
+      trace_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     });
 
     // A later Chat navigation must close the active backend run before

@@ -12,7 +12,7 @@ export type VerdictLabel =
 export type VoiceRunView = components["schemas"]["VoiceRunView"];
 export type VoiceRuntimeConfig = components["schemas"]["VoiceRuntimeConfig"];
 
-export type AssessmentStartPlan =
+export type AssessmentStartPlan = (
   | {
       rounds: number;
       questionType: string | null;
@@ -20,7 +20,8 @@ export type AssessmentStartPlan =
     }
   | {
       questionTypePlan: Array<string | null>;
-    };
+    }
+) & { traceId?: string | null };
 
 export async function startAssessment(
   resourceId: string,
@@ -43,6 +44,7 @@ export async function startAssessment(
     body: {
       resource_ids: [resourceId],
       ...planBody,
+      ...(plan.traceId ? { trace_id: plan.traceId } : {}),
       focus: "mixed",
     },
   });

@@ -319,6 +319,27 @@
   font: 400 14px/1.6 var(--font-interface);
 }
 
+.assessment-panel__failure-notice {
+  display: grid;
+  gap: 6px;
+  margin: 16px 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 44%, var(--line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--danger) 5%, var(--surface));
+  color: var(--danger);
+}
+
+.assessment-panel__failure-notice strong {
+  font: 500 14px/1.55 var(--font-interface);
+}
+
+.assessment-panel__failure-notice p {
+  margin: 0;
+  color: var(--text);
+  font: 400 13px/1.6 var(--font-interface);
+}
+
 /* ---- Judgement ---- */
 
 .assessment-panel__judgement {
@@ -398,6 +419,32 @@
 
 .assessment-panel__actions > button {
   min-height: 44px;
+}
+
+.assessment-panel__actions > .assessment-panel__action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  font: 400 15px/1.45 var(--font-reading);
+}
+
+.assessment-panel__action-button svg {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.assessment-panel__action-button:hover {
+  border-color: var(--evidence);
+  background: var(--evidence-soft);
+  color: var(--text-strong);
 }
 
 .assessment-panel__appeal {

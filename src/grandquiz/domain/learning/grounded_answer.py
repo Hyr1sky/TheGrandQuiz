@@ -25,6 +25,7 @@ from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.context import HeuristicTokenCounter, TokenCounter
 from grandquiz.kernel.events import EventEmitter, EventType
+from grandquiz.kernel.model_events import model_failure_event_payload
 from grandquiz.providers.base import Completion, Message, Provider
 
 GroundedAnswerStatus = Literal[
@@ -513,7 +514,7 @@ class GroundedDocumentAnswer:
                 EventType.MODEL_ENDED,
                 span_id=span_id,
                 parent_span_id=parent_span_id,
-                payload={"ok": False, "error": repr(exc)},
+                payload=model_failure_event_payload(exc),
             )
             raise
         emitter.emit(

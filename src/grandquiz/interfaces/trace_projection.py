@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypeGuard, cast
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from grandquiz.domain.learning.assessment.workflow import (
     AWAIT_ANSWER,
@@ -72,9 +72,32 @@ TraceReasonCode = Literal[
     "question_generation_exhausted",
     "grading_exhausted",
     "workflow_degraded",
+    "provider_quota_exhausted",
+    "provider_authentication_failed",
+    "provider_permission_denied",
+    "provider_request_invalid",
+    "provider_model_not_found",
+    "provider_conflict",
+    "provider_rate_limited",
+    "provider_timeout",
+    "provider_unavailable",
+    "provider_error",
     "other",
 ]
 TraceQualityLabel = Literal["invalid", "weak", "reasonable"]
+SafeProviderFailureCategory = Literal[
+    "invalid_request",
+    "authentication",
+    "permission_denied",
+    "not_found",
+    "conflict",
+    "quota_exhausted",
+    "rate_limited",
+    "timeout",
+    "connection",
+    "server_error",
+    "unknown",
+]
 WorkflowNodeState = Literal["pending", "running", "waiting", "completed", "failed"]
 
 _MC_STARTED = "learning.multiple_choice_generation.started"
@@ -134,8 +157,24 @@ _REASON_LABELS: Mapping[TraceReasonCode, str] = {
     "question_generation_exhausted": "出题尝试已耗尽",
     "grading_exhausted": "判卷尝试已耗尽",
     "workflow_degraded": "考核流程降级",
+    "provider_quota_exhausted": "模型服务免费额度已用尽",
+    "provider_authentication_failed": "模型服务身份验证失败",
+    "provider_permission_denied": "模型服务拒绝访问",
+    "provider_request_invalid": "模型服务请求无效",
+    "provider_model_not_found": "模型或端点不存在",
+    "provider_conflict": "模型服务请求冲突",
+    "provider_rate_limited": "模型服务请求过于频繁",
+    "provider_timeout": "模型服务响应超时",
+    "provider_unavailable": "模型服务暂不可用",
+    "provider_error": "模型服务调用失败",
     "other": "其他公开原因",
 }
+
+
+class SafeProviderFailureV1(BaseModel):
+    category: SafeProviderFailureCategory
+    status_code: int | None = Field(default=None, ge=100, le=599)
+    retryable: bool
 
 
 class TraceRejectionCountV1(BaseModel):
@@ -170,6 +209,7 @@ class SafeTraceEventV1(BaseModel):
     tokens: int | None = None
     latency_ms: float | None = None
     node_id: WorkflowNodeId | None = None
+    provider_failure: SafeProviderFailureV1 | None = None
 
 
 class SafeWorkflowNodeV1(BaseModel):
@@ -194,6 +234,11 @@ class SafeWorkflowRunV1(BaseModel):
     edges: list[SafeWorkflowEdgeV1]
 
 
+class SafeTraceLinkV1(BaseModel):
+    trace_id: str
+    kind: Literal["assessment"]
+
+
 class SafeTraceRunV1(BaseModel):
     schema_version: Literal[1] = 1
     trace_id: str
@@ -203,6 +248,7 @@ class SafeTraceRunV1(BaseModel):
     workflow_kind: Literal["assessment"] | None
     summary: SafeTraceSummaryV1
     events: list[SafeTraceEventV1]
+    related_traces: list[SafeTraceLinkV1] = Field(default_factory=list[SafeTraceLinkV1])
     workflow: SafeWorkflowRunV1 | None = None
 
 
@@ -218,6 +264,8 @@ def project_trace(
 
     projected = _project_events(events, descriptor=descriptor)
     status = _trace_status(events)
+    summary_start = _latest_summary_segment_index(events)
+    summary_events = projected[summary_start:]
     reason_counts: Counter[TraceReasonCode] = Counter()
     for event in projected:
         if event.phase == "attempt_rejected" and event.reason_code is not None:
@@ -228,9 +276,9 @@ def project_trace(
     ended_at = events[-1].ts if events and status in {"completed", "failed", "cancelled"} else None
     latency_ms = max(0.0, (events[-1].ts - events[0].ts) * 1000) if len(events) >= 2 else None
     headline, recommended_action = _summary_explanation(
-        projected,
+        summary_events,
         status=status,
-        error_count=sum(event.type == EventType.ERROR for event in events),
+        error_count=sum(event.type == EventType.ERROR for event in events[summary_start:]),
     )
     return SafeTraceRunV1(
         trace_id=trace_id,
@@ -255,6 +303,7 @@ def project_trace(
             recommended_action=recommended_action,
         ),
         events=projected,
+        related_traces=_related_traces(events),
         workflow=(
             _project_workflow(
                 projected[_latest_assessment_round_index(events) :],
@@ -263,6 +312,32 @@ def project_trace(
             if descriptor is not None
             else None
         ),
+    )
+
+
+def _related_traces(events: Sequence[AgentEvent]) -> list[SafeTraceLinkV1]:
+    """只投影导航契约中的显式关系；不从时间邻近性猜测关联。"""
+    related: list[SafeTraceLinkV1] = []
+    seen: set[str] = set()
+    for event in events:
+        if event.type != "navigation.requested" or event.payload.get("target") != "assessment":
+            continue
+        params = event.payload.get("params")
+        if not isinstance(params, Mapping):
+            continue
+        trace_id = cast("Mapping[str, object]", params).get("assessment_trace_id")
+        if not _is_public_trace_id(trace_id) or trace_id in seen:
+            continue
+        seen.add(trace_id)
+        related.append(SafeTraceLinkV1(trace_id=trace_id, kind="assessment"))
+    return related
+
+
+def _is_public_trace_id(value: object) -> TypeGuard[str]:
+    return (
+        isinstance(value, str)
+        and len(value) == 32
+        and all(character in "0123456789abcdef" for character in value)
     )
 
 
@@ -296,6 +371,24 @@ def resolve_assessment_workflow_descriptor(
 def _latest_assessment_round_index(events: Sequence[AgentEvent]) -> int:
     return max(
         (index for index, event in enumerate(events) if event.type == "assessment.started"),
+        default=0,
+    )
+
+
+def _latest_summary_segment_index(events: Sequence[AgentEvent]) -> int:
+    """Start of the latest user-visible execution episode within a reused trace."""
+
+    return max(
+        (
+            index
+            for index, event in enumerate(events)
+            if event.type
+            in {
+                EventType.TURN_STARTED,
+                EventType.AGENT_TURN_STARTED,
+                "assessment.started",
+            }
+        ),
         default=0,
     )
 
@@ -425,6 +518,76 @@ def _summary_explanation(
     error_count: int,
 ) -> tuple[str | None, str | None]:
     """只从安全枚举与计数生成文案，不读取 raw payload 或异常正文。"""
+    provider_failure_events = [
+        event
+        for event in reversed(events)
+        if event.provider_failure is not None or event.reason_code == "provider_quota_exhausted"
+    ]
+    provider_failure_event = next(
+        (event for event in provider_failure_events if event.operation != "other"),
+        provider_failure_events[0] if provider_failure_events else None,
+    )
+    if provider_failure_event is not None:
+        operation_label = {
+            "multiple_choice_generation": "选择题生成失败",
+            "distractor_judgement": "干扰项评审失败",
+            "grading": "判卷失败",
+        }.get(provider_failure_event.operation, "模型调用失败")
+        category = (
+            provider_failure_event.provider_failure.category
+            if provider_failure_event.provider_failure is not None
+            else "quota_exhausted"
+        )
+        explanation = {
+            "quota_exhausted": (
+                "模型服务免费额度已用尽",
+                "请补充余额或关闭模型服务的“仅使用免费额度”设置，然后重试本题。",
+            ),
+            "authentication": (
+                "模型服务身份验证失败",
+                "请检查本机模型服务密钥配置，然后重试。",
+            ),
+            "permission_denied": (
+                "模型服务拒绝访问",
+                "请检查模型访问权限或服务端账户设置，然后重试。",
+            ),
+            "invalid_request": (
+                "模型服务请求无效",
+                "请检查所选模型与当前请求能力是否兼容。",
+            ),
+            "not_found": (
+                "模型或端点不存在",
+                "请检查模型名称和服务端点配置。",
+            ),
+            "conflict": (
+                "模型服务请求冲突",
+                "该错误通常可以重试；若持续出现，请查看诊断包中的状态码。",
+            ),
+            "rate_limited": (
+                "模型服务请求过于频繁",
+                "请稍后重试；若持续出现，请检查服务端限流或账户配额。",
+            ),
+            "timeout": (
+                "模型服务响应超时",
+                "请检查网络或延长超时设置，然后重试。",
+            ),
+            "connection": (
+                "模型服务暂不可用",
+                "请检查网络和服务端点，然后重试。",
+            ),
+            "server_error": (
+                "模型服务暂不可用",
+                "服务端发生错误，请稍后重试。",
+            ),
+            "unknown": (
+                "模型服务调用失败",
+                "请查看诊断包中的安全错误分类和状态码。",
+            ),
+        }[category]
+        return (
+            f"{operation_label}：{explanation[0]}",
+            explanation[1],
+        )
     if status == "failed":
         suffix = f"；记录到 {error_count} 个错误" if error_count else ""
         return f"运行失败{suffix}", "请查看失败阶段与原因；可以结束本轮后重试。"
@@ -526,6 +689,7 @@ def _project_events(
             question_asked_spans.add(event.parent_span_id)
         phase = _phase(event)
         start_ts = starts.get(event.span_id) if event.span_id is not None else None
+        provider_failure = _safe_provider_failure(event.payload)
         projected.append(
             SafeTraceEventV1(
                 sequence=event.seq + 1,
@@ -537,7 +701,9 @@ def _project_events(
                 status=_event_status(event, phase),
                 attempt=(_safe_attempt(event.payload) if operation != "other" else None),
                 stage=_stage(event.payload) if operation != "other" else None,
-                reason_code=_reason(event.payload) if operation != "other" else None,
+                reason_code=(
+                    _reason(event) if operation != "other" or provider_failure is not None else None
+                ),
                 tokens=_usage_total(event.payload),
                 latency_ms=(
                     max(0.0, (event.ts - start_ts) * 1000)
@@ -545,6 +711,7 @@ def _project_events(
                     else None
                 ),
                 node_id=_node_id(event, descriptor=descriptor),
+                provider_failure=provider_failure,
             )
         )
     return projected
@@ -667,11 +834,46 @@ def _stage(payload: Mapping[str, Any]) -> TraceStage | None:
     return cast("TraceStage", value if value in _PUBLIC_STAGES else "other")
 
 
-def _reason(payload: Mapping[str, Any]) -> TraceReasonCode | None:
+def _reason(event: AgentEvent) -> TraceReasonCode | None:
+    payload = event.payload
     value = payload.get("reason_code")
-    if not isinstance(value, str):
+    if isinstance(value, str):
+        return cast("TraceReasonCode", value if value in _PUBLIC_REASONS else "other")
+    provider_failure = payload.get("provider_failure_code")
+    if isinstance(provider_failure, str) and provider_failure in _PUBLIC_REASONS:
+        return cast("TraceReasonCode", provider_failure)
+    raw_error = payload.get("error")
+    if (
+        event.type == EventType.MODEL_ENDED
+        and isinstance(raw_error, str)
+        and ("AllocationQuota.FreeTierOnly" in raw_error or "Free quota exhausted" in raw_error)
+    ):
+        return "provider_quota_exhausted"
+    return None
+
+
+def _safe_provider_failure(payload: Mapping[str, Any]) -> SafeProviderFailureV1 | None:
+    category = payload.get("provider_failure_category")
+    retryable = payload.get("provider_retryable")
+    if (
+        not isinstance(category, str)
+        or category not in SafeProviderFailureCategory.__args__
+        or not isinstance(retryable, bool)
+    ):
         return None
-    return cast("TraceReasonCode", value if value in _PUBLIC_REASONS else "other")
+    status_value = payload.get("provider_status_code")
+    status_code = (
+        status_value
+        if isinstance(status_value, int)
+        and not isinstance(status_value, bool)
+        and 100 <= status_value <= 599
+        else None
+    )
+    return SafeProviderFailureV1(
+        category=cast("SafeProviderFailureCategory", category),
+        status_code=status_code,
+        retryable=retryable,
+    )
 
 
 def _safe_int(payload: Mapping[str, Any], key: str) -> int | None:

@@ -11,6 +11,7 @@ from collections.abc import Sequence
 
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.events import EventEmitter, EventType
+from grandquiz.kernel.model_events import model_failure_event_payload
 from grandquiz.providers.base import Completion, Message, Provider
 
 
@@ -59,7 +60,7 @@ class LLMSummarizer:
             self._emitter.emit(
                 EventType.MODEL_ENDED,
                 span_id=span_id,
-                payload={"ok": False, "error": repr(exc)},
+                payload=model_failure_event_payload(exc),
             )
             raise
         self._emitter.emit(

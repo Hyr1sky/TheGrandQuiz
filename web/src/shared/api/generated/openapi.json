@@ -979,6 +979,18 @@
             "minimum": 1.0,
             "title": "Rounds",
             "type": "integer"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
           }
         },
         "required": [
@@ -4115,6 +4127,50 @@
         "title": "RunView",
         "type": "object"
       },
+      "SafeProviderFailureV1": {
+        "properties": {
+          "category": {
+            "enum": [
+              "invalid_request",
+              "authentication",
+              "permission_denied",
+              "not_found",
+              "conflict",
+              "quota_exhausted",
+              "rate_limited",
+              "timeout",
+              "connection",
+              "server_error",
+              "unknown"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "status_code": {
+            "anyOf": [
+              {
+                "maximum": 599.0,
+                "minimum": 100.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Code"
+          }
+        },
+        "required": [
+          "category",
+          "retryable"
+        ],
+        "title": "SafeProviderFailureV1",
+        "type": "object"
+      },
       "SafeTraceEventV1": {
         "properties": {
           "attempt": {
@@ -4193,6 +4249,16 @@
             "title": "Phase",
             "type": "string"
           },
+          "provider_failure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SafeProviderFailureV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "quality_label": {
             "anyOf": [
               {
@@ -4229,6 +4295,16 @@
                   "question_generation_exhausted",
                   "grading_exhausted",
                   "workflow_degraded",
+                  "provider_quota_exhausted",
+                  "provider_authentication_failed",
+                  "provider_permission_denied",
+                  "provider_request_invalid",
+                  "provider_model_not_found",
+                  "provider_conflict",
+                  "provider_rate_limited",
+                  "provider_timeout",
+                  "provider_unavailable",
+                  "provider_error",
                   "other"
                 ],
                 "type": "string"
@@ -4317,6 +4393,25 @@
         "title": "SafeTraceEventV1",
         "type": "object"
       },
+      "SafeTraceLinkV1": {
+        "properties": {
+          "kind": {
+            "const": "assessment",
+            "title": "Kind",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trace_id",
+          "kind"
+        ],
+        "title": "SafeTraceLinkV1",
+        "type": "object"
+      },
       "SafeTraceRunV1": {
         "properties": {
           "ended_at": {
@@ -4335,6 +4430,13 @@
               "$ref": "#/components/schemas/SafeTraceEventV1"
             },
             "title": "Events",
+            "type": "array"
+          },
+          "related_traces": {
+            "items": {
+              "$ref": "#/components/schemas/SafeTraceLinkV1"
+            },
+            "title": "Related Traces",
             "type": "array"
           },
           "schema_version": {
@@ -5015,6 +5117,16 @@
               "question_generation_exhausted",
               "grading_exhausted",
               "workflow_degraded",
+              "provider_quota_exhausted",
+              "provider_authentication_failed",
+              "provider_permission_denied",
+              "provider_request_invalid",
+              "provider_model_not_found",
+              "provider_conflict",
+              "provider_rate_limited",
+              "provider_timeout",
+              "provider_unavailable",
+              "provider_error",
               "other"
             ],
             "title": "Reason Code",

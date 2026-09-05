@@ -8,8 +8,19 @@ import json
 from collections.abc import AsyncIterator, Sequence
 from typing import Any, cast
 
+import httpx
 import pytest
-from openai import omit
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    InternalServerError,
+    PermissionDeniedError,
+    RateLimitError,
+    omit,
+)
 from pydantic import BaseModel
 
 import grandquiz.providers.llm as llm_mod
@@ -27,6 +38,11 @@ from grandquiz.providers.base import (
     ToolSpec,
     Usage,
     malformed_arguments_raw,
+)
+from grandquiz.providers.failure import (
+    ProviderFailure,
+    ProviderFailureCategory,
+    provider_failure_payload,
 )
 from grandquiz.providers.llm import OpenAICompatProvider, RoleConfig, RoleOverrides
 
@@ -81,6 +97,22 @@ class _FakeCompletions:
     async def create(self, **kwargs: object) -> _FakeResponse:
         self.calls.append(kwargs)
         return self._response
+
+
+class _FailingCompletions:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def create(self, **_kwargs: object) -> _FakeResponse:
+        raise self._error
+
+
+class _FailingClient:
+    def __init__(self, error: Exception) -> None:
+        self.chat = _FakeChat(_FailingCompletions(error))  # type: ignore[arg-type]
+
+    async def close(self) -> None:
+        return None
 
 
 class _FakeChat:
@@ -195,6 +227,13 @@ def _patch_client(
 
     monkeypatch.setattr(llm_mod, "AsyncOpenAI", _factory)
     return captured
+
+
+def _patch_failing_client(monkeypatch: pytest.MonkeyPatch, error: Exception) -> None:
+    def _factory(**_kwargs: object) -> _FailingClient:
+        return _FailingClient(error)
+
+    monkeypatch.setattr(llm_mod, "AsyncOpenAI", _factory)
 
 
 def _patch_streaming_client(
@@ -348,6 +387,192 @@ async def test_complete_maps_messages_and_response_and_disables_thinking(
     assert call["model"] == "deepseek-v4-flash"
     assert call["messages"] == [{"role": "user", "content": "hi"}]
     assert call["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
+async def test_complete_normalizes_provider_quota_failure_without_raw_response_leak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = httpx.Request("POST", "https://api.example.test/chat/completions")
+    response = httpx.Response(403, request=request)
+    upstream = PermissionDeniedError(
+        "Free quota exhausted; request_id=SECRET-REQUEST-ID",
+        response=response,
+        body={
+            "error": {
+                "message": "Free quota exhausted; request_id=SECRET-REQUEST-ID",
+                "code": "AllocationQuota.FreeTierOnly",
+            }
+        },
+    )
+    _patch_failing_client(monkeypatch, upstream)
+    provider = OpenAICompatProvider(
+        {
+            "basic": RoleConfig(
+                api_key="k",
+                base_url="https://api.example.test/v1",
+                model="m",
+            )
+        }
+    )
+
+    with pytest.raises(ProviderFailure) as caught:
+        await provider.complete([Message(role="user", content="hi")], role="basic")
+
+    failure = caught.value
+    assert failure.category is ProviderFailureCategory.QUOTA_EXHAUSTED
+    assert failure.status_code == 403
+    assert failure.provider_code == "AllocationQuota.FreeTierOnly"
+    assert failure.retryable is False
+    assert failure.public_reason_code == "provider_quota_exhausted"
+    assert "SECRET-REQUEST-ID" not in str(failure)
+    assert failure.__cause__ is upstream
+
+
+async def test_dashscope_token_quota_throttling_remains_retryable_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = httpx.Request("POST", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    response = httpx.Response(429, request=request)
+    upstream = RateLimitError(
+        "Allocated quota exceeded; tenant=SECRET-TENANT",
+        response=response,
+        body={
+            "error": {
+                "message": "Allocated quota exceeded; tenant=SECRET-TENANT",
+                "code": "Throttling.AllocationQuota",
+            }
+        },
+    )
+    _patch_failing_client(monkeypatch, upstream)
+    provider = OpenAICompatProvider(
+        {
+            "basic": RoleConfig(
+                api_key="k",
+                base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                model="qwen-plus",
+                api_dialect="dashscope",
+            )
+        }
+    )
+
+    with pytest.raises(ProviderFailure) as caught:
+        await provider.complete([Message(role="user", content="hi")], role="basic")
+
+    failure = caught.value
+    assert failure.category is ProviderFailureCategory.RATE_LIMITED
+    assert failure.provider_code == "Throttling.AllocationQuota"
+    assert failure.retryable is True
+    assert "SECRET-TENANT" not in repr(failure)
+
+
+async def test_stream_complete_normalizes_provider_failure_at_request_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = httpx.Request("POST", "https://api.example.test/chat/completions")
+    response = httpx.Response(403, request=request)
+    upstream = PermissionDeniedError(
+        "Access forbidden; tenant=SECRET-TENANT",
+        response=response,
+        body={"error": {"message": "Access forbidden", "code": "AccessDenied"}},
+    )
+    _patch_failing_client(monkeypatch, upstream)
+    provider = OpenAICompatProvider(
+        {"basic": RoleConfig(api_key="k", base_url="https://api.example.test/v1", model="m")}
+    )
+
+    with pytest.raises(ProviderFailure) as caught:
+        async for _event in provider.stream_complete(
+            [Message(role="user", content="hi")], role="basic"
+        ):
+            pass
+
+    failure = caught.value
+    assert failure.category is ProviderFailureCategory.PERMISSION_DENIED
+    assert failure.provider_code == "AccessDenied"
+    assert failure.retryable is False
+    assert "SECRET-TENANT" not in repr(failure)
+
+
+@pytest.mark.parametrize(
+    ("error_type", "status", "category", "retryable"),
+    [
+        (AuthenticationError, 401, ProviderFailureCategory.AUTHENTICATION, False),
+        (BadRequestError, 400, ProviderFailureCategory.INVALID_REQUEST, False),
+        (RateLimitError, 429, ProviderFailureCategory.RATE_LIMITED, True),
+        (InternalServerError, 503, ProviderFailureCategory.SERVER_ERROR, True),
+    ],
+)
+async def test_complete_normalizes_status_failures_and_retryability(
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[APIStatusError],
+    status: int,
+    category: ProviderFailureCategory,
+    retryable: bool,
+) -> None:
+    request = httpx.Request("POST", "https://api.example.test/chat/completions")
+    response = httpx.Response(status, request=request)
+    upstream = error_type(
+        "SECRET-UPSTREAM-MESSAGE",
+        response=response,
+        body={"error": {"message": "SECRET-UPSTREAM-MESSAGE", "code": "safe_code"}},
+    )
+    _patch_failing_client(monkeypatch, upstream)
+    provider = OpenAICompatProvider(
+        {"basic": RoleConfig(api_key="k", base_url="https://api.example.test/v1", model="m")}
+    )
+
+    with pytest.raises(ProviderFailure) as caught:
+        await provider.complete([Message(role="user", content="hi")], role="basic")
+
+    assert caught.value.category is category
+    assert caught.value.status_code == status
+    assert caught.value.retryable is retryable
+    assert "SECRET-UPSTREAM-MESSAGE" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("upstream", "category"),
+    [
+        (
+            APITimeoutError(httpx.Request("POST", "https://api.example.test/chat/completions")),
+            ProviderFailureCategory.TIMEOUT,
+        ),
+        (
+            APIConnectionError(
+                request=httpx.Request("POST", "https://api.example.test/chat/completions")
+            ),
+            ProviderFailureCategory.CONNECTION,
+        ),
+    ],
+)
+async def test_complete_normalizes_transport_failures_as_retryable(
+    monkeypatch: pytest.MonkeyPatch,
+    upstream: Exception,
+    category: ProviderFailureCategory,
+) -> None:
+    _patch_failing_client(monkeypatch, upstream)
+    provider = OpenAICompatProvider(
+        {"basic": RoleConfig(api_key="k", base_url="https://api.example.test/v1", model="m")}
+    )
+
+    with pytest.raises(ProviderFailure) as caught:
+        await provider.complete([Message(role="user", content="hi")], role="basic")
+
+    assert caught.value.category is category
+    assert caught.value.status_code is None
+    assert caught.value.retryable is True
+
+
+def test_provider_failure_drops_non_identifier_vendor_code_from_events() -> None:
+    failure = ProviderFailure(
+        category=ProviderFailureCategory.UNKNOWN,
+        provider_code="https://provider.example/error?token=SECRET",
+        retryable=False,
+    )
+
+    assert failure.provider_code is None
+    assert "provider_code" not in provider_failure_payload(failure)
+    assert "SECRET" not in repr(failure)
 
 
 async def test_deepseek_thinking_mode_and_effort_use_the_official_request_contract(
@@ -817,6 +1042,23 @@ class _CapturingProvider:
         return Completion(text="done")
 
 
+class _TypedFailureProvider:
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        del messages, role, tools
+        raise ProviderFailure(
+            category=ProviderFailureCategory.RATE_LIMITED,
+            status_code=429,
+            provider_code="rate_limit_exceeded",
+            retryable=True,
+        )
+
+
 def _events_emitter() -> tuple[EventEmitter, list[AgentEvent]]:
     events: list[AgentEvent] = []
     sink = EventSink()
@@ -850,3 +1092,18 @@ async def test_run_agent_turn_records_role_in_model_started_payload() -> None:
     # 修 dogfood trace 里 role 为空：ReAct 生成显式 role="basic" 且落进 model.started payload。
     assert started[0].payload["role"] == "basic"
     assert provider.role_seen == "basic"
+
+
+async def test_runner_projects_typed_provider_failure_into_model_events() -> None:
+    emitter, events = _events_emitter()
+    runner = Runner(provider=_TypedFailureProvider(), emitter=emitter)
+
+    with pytest.raises(ProviderFailure):
+        await runner.run_agent_turn("q")
+
+    ended = next(event for event in events if event.type == EventType.MODEL_ENDED)
+    assert ended.payload["provider_failure_category"] == "rate_limited"
+    assert ended.payload["provider_failure_code"] == "provider_rate_limited"
+    assert ended.payload["provider_status_code"] == 429
+    assert ended.payload["provider_code"] == "rate_limit_exceeded"
+    assert ended.payload["provider_retryable"] is True

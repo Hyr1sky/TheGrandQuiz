@@ -126,6 +126,101 @@ def test_bundle_is_allowlisted_and_repeatable_except_for_manifest_time(tmp_path:
     assert "required_env_vars" not in serialized
 
 
+def test_bundle_explains_provider_quota_failure_without_exporting_vendor_details(
+    tmp_path: Path,
+) -> None:
+    store = TraceStore(tmp_path / "trace.db")
+    trace_id = "trace-provider-quota"
+    raw_error = (
+        "PermissionDeniedError: Free quota exhausted; "
+        "code=AllocationQuota.FreeTierOnly; request_id=SECRET-REQUEST-ID"
+    )
+    events = (
+        AgentEvent(
+            type="learning.multiple_choice_generation.started",
+            seq=0,
+            ts=1.0,
+            trace_id=trace_id,
+            span_id="generation",
+            payload={"node_id": "generate_question"},
+        ),
+        AgentEvent(
+            type="model.started",
+            seq=1,
+            ts=2.0,
+            trace_id=trace_id,
+            span_id="model",
+            parent_span_id="generation",
+            payload={"role": "enrich", "node_id": "generate_question"},
+        ),
+        AgentEvent(
+            type="model.ended",
+            seq=2,
+            ts=3.0,
+            trace_id=trace_id,
+            span_id="model",
+            parent_span_id="generation",
+            payload={
+                "ok": False,
+                "error": raw_error,
+                "node_id": "generate_question",
+                "provider_failure_category": "quota_exhausted",
+                "provider_failure_code": "provider_quota_exhausted",
+                "provider_status_code": 403,
+                "provider_code": "AllocationQuota.FreeTierOnly",
+                "provider_retryable": False,
+            },
+        ),
+        AgentEvent(
+            type="learning.multiple_choice_generation.ended",
+            seq=3,
+            ts=4.0,
+            trace_id=trace_id,
+            span_id="generation",
+            payload={
+                "ok": False,
+                "attempts": 1,
+                "stage": "model_call",
+                "error_type": "PermissionDeniedError",
+                "node_id": "generate_question",
+            },
+        ),
+        AgentEvent(
+            type="error",
+            seq=4,
+            ts=5.0,
+            trace_id=trace_id,
+            payload={"error": raw_error, "error_type": "PermissionDeniedError"},
+        ),
+    )
+    for event in events:
+        store.record(event)
+    exporter = DiagnosticBundleExporter(
+        observatory=TraceObservatory(store),
+        provider_views=_providers,
+        clock=ManualClock(start=100.0),
+        application_version="test-version",
+    )
+
+    bundle = exporter.export(trace_id).model_dump(mode="json")
+    store.close()
+
+    assert bundle["summary"]["headline"] == "选择题生成失败：模型服务免费额度已用尽"
+    assert bundle["summary"]["recommended_action"] == (
+        "请补充余额或关闭模型服务的“仅使用免费额度”设置，然后重试本题。"
+    )
+    assert bundle["events"][2]["reason_code"] == "provider_quota_exhausted"
+    assert bundle["events"][2]["provider_failure"] == {
+        "category": "quota_exhausted",
+        "status_code": 403,
+        "retryable": False,
+    }
+    serialized = json.dumps(bundle, ensure_ascii=False)
+    assert "Free quota exhausted" not in serialized
+    assert "AllocationQuota.FreeTierOnly" not in serialized
+    assert "SECRET-REQUEST-ID" not in serialized
+
+
 def _app(tmp_path: Path):
     return create_app(
         settings=ApiSettings(

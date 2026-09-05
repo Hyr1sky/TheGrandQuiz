@@ -92,15 +92,24 @@ describe("AssessmentPanel", () => {
     );
 
     expect(await screen.findByText("本题生成失败，可以重试本题或跳过继续")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "重试本题" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "跳过此题" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "查看本次运行" }));
+    const retryButton = screen.getByRole("button", { name: "重试本题" });
+    const skipButton = screen.getByRole("button", { name: "跳过此题" });
+    const traceButton = screen.getByRole("button", { name: "查看本次运行" });
+    expect(retryButton).toHaveClass("assessment-panel__action-button");
+    expect(skipButton).toHaveClass("assessment-panel__action-button");
+    expect(traceButton).toHaveClass("assessment-panel__action-button");
+    expect(traceButton).toHaveStyle({
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "7px",
+    });
+    fireEvent.click(traceButton);
     expect(onOpenTrace).toHaveBeenCalledOnce();
     expect(onOpenTrace).toHaveBeenCalledWith("trace-1");
 
     fireEvent.click(screen.getByRole("button", { name: "重试本题" }));
     expect(await screen.findByText("正在生成第 1 题")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("only offers skip when a submitted answer could not be graded", async () => {
@@ -181,6 +190,61 @@ describe("AssessmentPanel", () => {
     expect(
       screen.queryByRole("button", { name: "查看本次运行" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows the safe provider failure reason directly on the failed card", async () => {
+    const failedAssessment = {
+      ...readyAssessment,
+      status: "failed",
+      question: null,
+      error: "考核运行异常终止",
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const request =
+        input instanceof Request ? input : new Request(String(input));
+      if (
+        request.method === "POST" &&
+        request.url.endsWith("/api/v1/assessments")
+      ) {
+        return Response.json(failedAssessment, { status: 202 });
+      }
+      if (request.url.endsWith("/api/v1/observability/traces/trace-1")) {
+        return Response.json({
+          trace_id: "trace-1",
+          status: "failed",
+          events: [],
+          related_traces: [],
+          summary: {
+            headline: "选择题生成失败：模型服务免费额度已用尽",
+            recommended_action:
+              "请补充余额或关闭模型服务的“仅使用免费额度”设置，然后重试本题。",
+          },
+        });
+      }
+      throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AssessmentPanel
+        resourceId="resource-1"
+        questionTypePlan={["选择题"]}
+        onClose={() => undefined}
+        onOpenTrace={vi.fn()}
+      />,
+    );
+
+    const explanation = await screen.findByRole("alert", {
+      name: "失败说明",
+    });
+    await waitFor(() => {
+      expect(explanation).toHaveTextContent(
+        "选择题生成失败：模型服务免费额度已用尽",
+      );
+      expect(explanation).toHaveTextContent(
+        "请补充余额或关闭模型服务的“仅使用免费额度”设置，然后重试本题。",
+      );
+    });
   });
 
   it("asks before replacing a text draft with a voice transcript", async () => {

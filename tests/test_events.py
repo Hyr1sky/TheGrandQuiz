@@ -3,6 +3,8 @@ from pydantic import ValidationError
 
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
+from grandquiz.kernel.model_events import model_failure_event_payload
+from grandquiz.providers.failure import ProviderFailure, ProviderFailureCategory
 
 
 def test_emitter_stamps_monotonic_seq_and_clock_ts() -> None:
@@ -70,3 +72,28 @@ def test_payload_is_isolated_from_source_mutation() -> None:
     event = emitter.emit(EventType.MODEL_STARTED, payload=source)
     inner.append(3)
     assert event.payload == {"a": [1, 2]}
+
+
+def test_model_failure_event_payload_combines_runtime_and_safe_provider_facts() -> None:
+    failure = ProviderFailure(
+        category=ProviderFailureCategory.RATE_LIMITED,
+        status_code=429,
+        provider_code="rate_limit_exceeded",
+        retryable=True,
+    )
+
+    payload = model_failure_event_payload(failure, node_id="generate_question")
+
+    assert payload == {
+        "ok": False,
+        "error": (
+            "ProviderFailure('provider request failed (category=rate_limited, "
+            "retryable=true, status=429, provider_code=rate_limit_exceeded)')"
+        ),
+        "node_id": "generate_question",
+        "provider_failure_category": "rate_limited",
+        "provider_failure_code": "provider_rate_limited",
+        "provider_retryable": True,
+        "provider_status_code": 429,
+        "provider_code": "rate_limit_exceeded",
+    }

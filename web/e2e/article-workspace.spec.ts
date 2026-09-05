@@ -403,6 +403,22 @@ test("navigates from Chat to Assessment and closes the trace", async ({ page }) 
   const bundleResponse = await page.request.get(bundlePath);
   expect(bundleResponse.ok()).toBe(true);
   expect((await bundleResponse.json()).trace_id).toBe(started.trace_id);
+  const recentRuns = observatory.getByRole("region", { name: "近期运行" });
+  await expect(recentRuns.getByText("最近 3 条")).toBeVisible();
+  await expect(
+    recentRuns.getByRole("combobox", { name: "按状态筛选运行" }),
+  ).toHaveCount(0);
+  const detailsOpened = page.waitForEvent("popup");
+  await recentRuns.getByRole("link", { name: "查看全部运行" }).click();
+  const detailsPage = await detailsOpened;
+  await expect(detailsPage.getByRole("main", { name: "运行观测" })).toBeVisible();
+  await expect(
+    detailsPage.getByRole("combobox", { name: "按状态筛选运行" }),
+  ).toBeVisible();
+  await expect(
+    detailsPage.getByRole("button", { name: "关闭运行观测" }),
+  ).toHaveCount(0);
+  await detailsPage.close();
 });
 
 test("appeals an open-answer verdict without replacing the original answer", async ({
@@ -603,19 +619,21 @@ test("opens the exact generation-degraded trace and keeps it after returning to 
   await page.reload();
   await dismissOnboarding(page);
   await page.getByRole("button", { name: "打开运行观测" }).click();
-  const historicalRun = page.getByRole("button", {
-    name: `运行 ${started.trace_id}，已取消`,
+  const historicalRun = page.getByRole("link", {
+    name: `运行 ${started.trace_id}，已取消，在新页面打开`,
   });
   await expect(historicalRun).toBeVisible();
-  const historicalTraceRead = page.waitForResponse(
-    (response) =>
-      response.request().method() === "GET" &&
-      response.url().endsWith(
-        `/api/v1/observability/traces/${started.trace_id}`,
-      ),
-  );
+  await expect(historicalRun).toHaveAttribute("target", "_blank");
+  const historicalPageOpened = page.waitForEvent("popup");
   await historicalRun.click();
-  expect((await historicalTraceRead).ok()).toBe(true);
+  const historicalPage = await historicalPageOpened;
+  await expect(
+    historicalPage.getByRole("main", { name: "运行观测" }),
+  ).toBeVisible();
+  await expect(historicalPage).toHaveURL(
+    new RegExp(`trace=${started.trace_id}$`),
+  );
+  await historicalPage.close();
 });
 
 test("opens the exact grading-degraded trace", async ({ page }) => {
@@ -684,7 +702,10 @@ test("opens the exact fatal assessment trace", async ({ page }) => {
     page.getByRole("heading", { name: "无法开始考核" }),
   ).toBeVisible();
   await expect(page.getByRole("alert")).toContainText(
-    "本轮考核失败，请通过 trace_id 查看详情",
+    "运行失败；记录到 1 个错误",
+  );
+  await expect(page.getByRole("alert")).toContainText(
+    "请查看失败阶段与原因；可以结束本轮后重试。",
   );
 
   const traceRead = page.waitForResponse(

@@ -22,6 +22,7 @@ from grandquiz.domain.learning.assessment.workflow import GRADE_ANSWER
 from grandquiz.domain.learning.models import CitedEvidence, ungrounded_citations
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.events import EventEmitter, EventType
+from grandquiz.kernel.model_events import model_failure_event_payload
 from grandquiz.kernel.recovery import ErrorClass
 from grandquiz.providers.base import Completion, Message, Provider
 
@@ -377,7 +378,7 @@ async def _call_model(
             EventType.MODEL_ENDED,
             span_id=span_id,
             parent_span_id=parent_span_id,
-            payload={"ok": False, "error": repr(exc), "node_id": GRADE_ANSWER},
+            payload=model_failure_event_payload(exc, node_id=GRADE_ANSWER),
         )
         raise
     emitter.emit(
