@@ -45,6 +45,29 @@ native_streaming = "supported"
 structured_output = "unknown"
 reasoning = "unknown"
 
+# Optional native Anthropic Messages profile. Uncomment the complete connection,
+# profile, capabilities, and a purpose/preset reference together. max_output_tokens
+# is required by Messages and is sent as the request's max_tokens.
+#
+# [connections.claude]
+# base_url = "https://api.anthropic.com"
+# api_key_env = "ANTHROPIC_API_KEY"
+# wire_api = "anthropic_messages"
+#
+# [profiles.claude]
+# connection = "claude"
+# model = "your-claude-model"
+# timeout_seconds = 60
+# thinking_mode = "disabled"
+# context_window_tokens = 32000
+# max_output_tokens = 4096
+#
+# [profiles.claude.capabilities]
+# tools = "supported"
+# native_streaming = "supported"
+# structured_output = "unknown"
+# reasoning = "unsupported"
+
 [purpose_overrides]
 question_generation = "writer"
 

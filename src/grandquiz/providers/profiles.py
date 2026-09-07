@@ -22,6 +22,7 @@ from grandquiz.providers.fallback import ProviderFallbackPolicy
 from grandquiz.providers.retry import ProviderRetryPolicy
 
 ConfigurationErrorCode = Literal["invalid_configuration", "unknown_purpose", "missing_credential"]
+WireAPI = Literal["openai_chat_completions", "anthropic_messages"]
 ModelCapability = Literal["tools", "native_streaming", "structured_output", "reasoning"]
 _MODEL_CAPABILITIES: tuple[ModelCapability, ...] = (
     "tools",
@@ -98,7 +99,7 @@ class _ConfigRecord(BaseModel):
 class ModelConnection(_ConfigRecord):
     base_url: str = Field(repr=False)
     api_key_env: str = Field(pattern=r"^[A-Z_][A-Z0-9_]{0,127}$", repr=False)
-    wire_api: Literal["openai_chat_completions"] = "openai_chat_completions"
+    wire_api: WireAPI = "openai_chat_completions"
 
     @field_validator("base_url")
     @classmethod
@@ -546,6 +547,18 @@ def parse_model_config(text: str, *, purposes: Collection[str]) -> ModelConfigur
             )
         ):
             raise ValueError("invalid reference")
+        for profile in document.profiles.values():
+            connection = document.connections[profile.connection]
+            if connection.wire_api == "anthropic_messages" and (
+                profile.max_output_tokens is None
+                or profile.api_dialect != "generic"
+                or profile.thinking_mode == "enabled"
+                or profile.reasoning_effort is not None
+                or profile.only_provider is not None
+                or profile.capabilities.reasoning == "supported"
+                or profile.capabilities.structured_output == "supported"
+            ):
+                raise ValueError("unsupported Anthropic profile options")
         for purpose, alternatives in document.fallback_candidates.items():
             profile_ids = [
                 document.purpose_overrides.get(purpose, document.default_profile),

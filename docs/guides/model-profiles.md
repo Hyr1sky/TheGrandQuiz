@@ -7,7 +7,8 @@ TheGrandQuiz 的模型调用分成四步：
 ```
 
 业务代码只说“这是出题”或“这是判卷”，不选择 DeepSeek、Qwen 或具体 URL。配置模块把用途绑定到
-一个冻结的模型；OpenAI-compatible Adapter 只负责消息、工具、流式输出和错误的协议翻译。
+一个冻结的模型；OpenAI-compatible 与 Anthropic Messages Adapter 只负责各自的消息、工具、流式输出和
+错误协议翻译。
 
 ## 最简配置
 
@@ -20,6 +21,7 @@ TheGrandQuiz 的模型调用分成四步：
 GRANDQUIZ_MODEL_CONFIG=/absolute/path/to/model-profiles.toml
 LLM_API_KEY=...
 DASHSCOPE_MODEL_KEY=...
+ANTHROPIC_API_KEY=...
 ```
 
 一旦指定文件，文件就是唯一配置来源，不会与 `LLM_*` 或 `ENRICH_LLM_*` 拼接。修改文件后需重启
@@ -66,7 +68,8 @@ grandquiz react --model-profile writer
 凭证引用，Profile 管模型、有效请求参数、容量与显式能力声明；retry 是所有用途共享的传输恢复上限，
 fallback 只管理已授权候选间的恢复，不属于某个厂商。
 
-- 本阶段只支持 `openai_chat_completions` wire API。
+- `wire_api` 支持 `openai_chat_completions` 与 `anthropic_messages`，必须在 Connection 显式声明，不按域名
+  或模型名猜测。
 - 凭证只写环境变量名，真实值仍放在 gitignored 的 `.env`。
 - 未知字段、未知用途、缺失引用、非法 URL、URL 鉴权/query、缺失凭证和不支持的参数组合都会在请求前失败。
 - 用途覆盖优先于默认 Profile；显式选择只影响被选择的对话运行，不连带覆盖出题、判卷或 Eval。
@@ -78,7 +81,7 @@ fallback 只管理已授权候选间的恢复，不属于某个厂商。
 - 启用 fallback 的主备 Profile 必须声明 `context_window_tokens` 与 `max_output_tokens`，备用容量不得低于
   主模型；请求要求的 tools/streaming/structured output/reasoning 和排除的部署身份也会在联网前检查。
   不合格候选不会通过删 Evidence、截断材料或移除工具来迁就。
-- 生产 Model Runtime 由应用统一管理传输重试，OpenAI SDK 的隐藏重试固定关闭。默认一次逻辑调用总计
+- 生产 Model Runtime 由应用统一管理传输重试，OpenAI／Anthropic SDK 的隐藏重试固定关闭。默认一次逻辑调用总计
   最多 3 次请求（包含首次），总期限 90 秒、累计等待最多 30 秒；限流、连接、超时、冲突和 5xx 仅在
   可安全重放且预算充足时重试。鉴权、权限、坏请求、永久额度和未知错误不会默认重试。
 - 可选 `[retry]` 能配置 `enabled`、`max_attempts`、`deadline_seconds`、`base_delay_seconds`、
@@ -100,6 +103,35 @@ max_attempts_per_candidate = 1
 [fallback_candidates]
 chat = ["writer"]
 ```
+
+原生 Anthropic Messages 的最小 Profile：
+
+```toml
+[connections.claude]
+base_url = "https://api.anthropic.com"
+api_key_env = "ANTHROPIC_API_KEY"
+wire_api = "anthropic_messages"
+
+[profiles.claude]
+connection = "claude"
+model = "your-claude-model"
+thinking_mode = "disabled"
+max_output_tokens = 4096
+
+[profiles.claude.capabilities]
+tools = "supported"
+native_streaming = "supported"
+structured_output = "unknown"
+reasoning = "unsupported"
+```
+
+Messages API 强制要求输出上限，因此 `max_output_tokens` 在该协议下既是资格容量，也是每次请求实际发送的
+`max_tokens`；缺失时启动即失败。首版将前置 system 文本放进独立 system blocks，把 assistant
+`tool_use` 与紧邻的 user `tool_result` 保真互译，支持并行 client tool calls。`end_turn`、
+`stop_sequence` 与 `tool_use` 是可完成终态；`max_tokens`、上下文超限、`refusal`、`pause_turn`，以及
+thinking、引用／多模态、服务端工具、厂商侧 fallback block 都明确失败，不会删掉后伪装普通成功。
+对应地，首版 Anthropic Profile 也不能把 `reasoning` 或 `structured_output` 声明为 `supported`；等 Adapter
+真正实现且有消费者验收后才能开放该能力事实。
 
 ## 执行身份与历史
 

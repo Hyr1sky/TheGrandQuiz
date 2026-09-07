@@ -65,7 +65,8 @@ class Message(BaseModel):
 
     - ``assistant`` 消息可携 ``tool_calls``（本轮 LLM 请求调的工具）；此时 ``content`` 常为空串。
     - ``role="tool"`` 是工具**结果**消息，用 ``tool_call_id`` 回指所答的那次 ``ToolCall``。
-    - 纯文本消息（system / user / 无工具 assistant）两字段皆 None——``replay_key`` 用
+      ``tool_error=True`` 表示该结果是可回灌给模型的工具失败，而不是普通成功文本。
+    - 纯文本消息（system / user / 无工具 assistant）的工具相关字段皆 None——``replay_key`` 用
       ``exclude_none`` 序列化，故其 hash 与加 tool 字段前逐字节一致（既有 cassette 不失效）。
     """
 
@@ -73,6 +74,7 @@ class Message(BaseModel):
     content: str
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None
+    tool_error: bool | None = None
 
 
 class Usage(BaseModel):
@@ -117,6 +119,25 @@ type ProviderStreamEvent = TextDelta | CompletionFinished
 
 class ProviderStreamProtocolError(RuntimeError):
     """上游流违反归一化契约，不能安全组装成一次 Completion。"""
+
+
+ProviderResponseErrorCode = Literal[
+    "invalid_message_sequence",
+    "invalid_response",
+    "unsupported_content",
+    "output_truncated",
+    "context_window_exceeded",
+    "content_refused",
+    "continuation_unsupported",
+]
+
+
+class ProviderResponseProtocolError(RuntimeError):
+    """A safe finite failure for provider response semantics the runtime cannot represent."""
+
+    def __init__(self, code: ProviderResponseErrorCode) -> None:
+        self.code = code
+        super().__init__(f"provider response rejected (code={code})")
 
 
 class Model(Protocol):

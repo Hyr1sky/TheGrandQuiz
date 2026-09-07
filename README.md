@@ -105,8 +105,9 @@ TheGrandQuiz 默认把数据保存在本机：
 ~/.grandquiz/eval-report/  # 离线 Eval HTML
 ```
 
-配置真实 LLM 后，system prompt、用户消息、选定材料节点和工具上下文会发送给 `.env` 中配置的
-OpenAI-compatible 服务。不要导入无权发送给该服务的私人、受限或机密材料。
+配置真实 LLM 后，system prompt、用户消息、选定材料节点和工具上下文会发送给 `.env`／Profile 中配置的
+OpenAI-compatible 或原生 Anthropic Messages 服务。不要导入无权发送给所选候选服务的私人、受限或
+机密材料。
 
 Web Search 只是返回候选，不代表允许抓取或入库；选中 URL 后的内容仍按不可信输入处理，并经过
 大小、域名、质量、prompt-injection 和人工审批边界。Trace 不保存完整抓取网页正文，但可能包含
@@ -119,8 +120,8 @@ Web Search 只是返回候选，不代表允许抓取或入库；选中 URL 后�
 
 ### 1. 准备环境
 
-需要 Python 3.12+、[uv](https://docs.astral.sh/uv/) 和一个 OpenAI-compatible LLM。Docker 不是基础依赖；
-只有选择自托管 SearXNG 时才需要。
+需要 Python 3.12+、[uv](https://docs.astral.sh/uv/) 和一个 OpenAI-compatible LLM；也可以通过显式
+Profile 使用原生 Anthropic Messages。Docker 不是基础依赖；只有选择自托管 SearXNG 时才需要。
 
 ```bash
 git clone https://github.com/Hyr1sky/TheGrandQuiz.git
@@ -141,7 +142,8 @@ ENRICH 字段全部缺失或空白时继承整组默认参数；任一字段非�
 [TOML 样例](model-profiles.example.toml)。业务代码只声明用途；启动装配负责选定并冻结模型，
 Provider Adapter 只处理协议、流和统一错误。配置可把 fast／quality 预设映射到明确 Profile；Web 按本轮、
 CLI ReAct 按会话显式选择，并在联网前核验工具与原生流能力。应用统一执行有界传输重试并记录每次请求与
-等待；流开始输出后不会自动重放。目前没有自动路由或跨模型 fallback。
+等待；流开始输出后不会自动重放。跨模型 fallback 仅在配置列出有序候选且策略显式启用时发生；目前没有
+自动质量路由。
 
 语音答题是可选能力：配置 `DASHSCOPE_API_KEY` 后，桌面 Chromium 的开放题会出现录音入口。机器转写只会
 生成可编辑草稿，不会自动提交；材料词表可在 Web 设置中开关。

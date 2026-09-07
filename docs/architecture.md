@@ -84,6 +84,7 @@ src/grandquiz/
 │   ├── retry.py             # Provider-neutral 有界 retry 纯策略与注入运行依赖
 │   ├── fallback.py          # 显式候选间的可用性切换纯策略
 │   ├── llm.py               # OpenAI-compatible 单模型 Adapter；旧双槽 facade 仅兼容
+│   ├── anthropic.py         # 原生 Anthropic Messages Adapter；不执行工具或厂商 Agent loop
 │   ├── model_replay.py      # 身份感知的 Model Record/Replay v4（只读兼容 v3）
 │   ├── legacy.py            # basic/enrich 与旧假件的显式兼容边界
 │   ├── replay.py            # 旧 Provider cassette v1/v2 reader
@@ -110,8 +111,10 @@ src/grandquiz/
 模型调用按“用途 → 控制面选择 → Adapter 执行 → 事件记录”分层。领域代码只声明有限用途，例如出题、
 判卷或材料深读；composition 从默认 Profile、可选用途覆盖或用户对当前运行的显式选择中冻结一个
 `Model`。Model 的调用
-接口不再携带 basic/enrich，也不接收厂商 URL、鉴权或任意 SDK 参数。OpenAI-compatible Adapter 只负责
-wire API、方言参数、流式终结、连接生命周期与 `ProviderFailure` 正规化，不参与学习业务选择。
+接口不再携带 basic/enrich，也不接收厂商 URL、鉴权或任意 SDK 参数。OpenAI-compatible 与原生
+Anthropic Messages 各有独立 Adapter，负责自己的消息／工具协议、流式终结、连接生命周期与
+`ProviderFailure` 正规化，不参与学习业务选择。Connection 的 `wire_api` 显式选择协议，不靠 endpoint
+域名或模型名称猜测。
 
 配置在进程启动时解析；无新配置文件时，旧环境变量经显式 importer 映射到用途，以保留原双配置分工。
 显式 Profile 或 fast/quality 预设在 Chat turn／CLI ReAct 会话边界冻结，真实消费者按声明的 tools、
@@ -120,15 +123,17 @@ wire API、方言参数、流式终结、连接生命周期与 `ProviderFailure`
 Replay v4 与 Eval Subject v2 使用同一项历史事实。设置页的当前绑定不能反向补写旧 Trace。
 
 应用的统一 Model Call Executor 拥有有界传输 retry 与显式授权的串行 fallback；Adapter 只正规化
-ProviderFailure 与 Retry-After，OpenAI SDK 的隐藏重试关闭。一个 `model` logical span 下展开真实
+ProviderFailure 与 Retry-After，OpenAI／Anthropic SDK 的隐藏重试都关闭。一个 `model` logical span 下展开真实
 attempt、retry/fallback 决定与等待子事件；同一调用的主备候选共享总 attempt、deadline 和等待预算。
 只有配置或一次显式选择列出的 Profile 才可能接收请求，鉴权/配置/永久额度错误不跨厂商绕过；流收到任何
-上游 chunk 后禁止自动重放，最终 token 只在 logical end 汇总。智能路由与新协议 Adapter 仍由后续独立
-验收门拉动。详见
+上游 chunk 后禁止自动重放，最终 token 只在 logical end 汇总。Anthropic 首版只接受文本、前置 system、
+client tools 与明确成功终态；thinking、服务端工具、continuation、拒绝和截断均 fail-closed。智能路由仍由
+后续独立验收门拉动。详见
 [ADR-0013](adr/0013-purpose-bound-model-execution.md)、
 [ADR-0014](adr/0014-explicit-model-selection-and-capability-gating.md)、
 [ADR-0015](adr/0015-application-owned-provider-retry.md)、
-[ADR-0016](adr/0016-explicit-authorized-provider-fallback.md) 与
+[ADR-0016](adr/0016-explicit-authorized-provider-fallback.md)、
+[ADR-0017](adr/0017-native-anthropic-messages-adapter.md) 与
 [配置指南](guides/model-profiles.md)。
 
 ## 五大基建模块设计要点

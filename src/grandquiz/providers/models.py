@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from grandquiz.providers.anthropic import AnthropicMessagesConfig, AnthropicMessagesModel
 from grandquiz.providers.base import (
     Completion,
     CompletionFinished,
@@ -27,6 +28,7 @@ from grandquiz.providers.profiles import (
     ModelSelectionError,
     ModelSelectionOption,
     ResolvedProfile,
+    WireAPI,
 )
 from grandquiz.providers.retry import RetryRuntime
 
@@ -314,10 +316,14 @@ def identities_of(source: ModelSource) -> tuple[ModelIdentity, ...]:
     return () if identity is None else (identity,)
 
 
+class OwnedTransport(Model, Protocol):
+    async def aclose(self) -> None: ...
+
+
 class ModelRuntime:
     """Owner of transports; borrowed purpose bindings do not close shared connections."""
 
-    def __init__(self, bindings: ModelBindings, owned: Sequence[OpenAIChatModel]) -> None:
+    def __init__(self, bindings: ModelBindings, owned: Sequence[OwnedTransport]) -> None:
         self.bindings = bindings
         self._owned = tuple(owned)
 
@@ -344,29 +350,43 @@ class ModelRuntime:
             if not key.strip():
                 raise ModelConfigurationError("missing_credential")
             credentials[reference] = key
-        transports: dict[tuple[str, str], OpenAIChatModel] = {}
+        transports: dict[tuple[str, str], OwnedTransport] = {}
 
         def transport_for(
             *,
             reference: str,
             fingerprint: str,
             base_url: str,
+            wire_api: WireAPI,
             profile: ModelProfile,
-        ) -> OpenAIChatModel:
+        ) -> OwnedTransport:
             transport_key = (reference, fingerprint)
             if transport_key not in transports:
-                transports[transport_key] = OpenAIChatModel(
-                    ChatModelConfig(
-                        api_key=credentials[reference],
-                        base_url=base_url,
-                        model=profile.model,
-                        timeout_seconds=profile.timeout_seconds,
-                        api_dialect=profile.api_dialect,
-                        thinking_mode=profile.thinking_mode,
-                        reasoning_effort=profile.reasoning_effort,
-                        only_provider=profile.only_provider,
+                if wire_api == "anthropic_messages":
+                    if profile.max_output_tokens is None:
+                        raise ModelConfigurationError("invalid_configuration")
+                    transports[transport_key] = AnthropicMessagesModel(
+                        AnthropicMessagesConfig(
+                            api_key=credentials[reference],
+                            base_url=base_url,
+                            model=profile.model,
+                            timeout_seconds=profile.timeout_seconds,
+                            max_output_tokens=profile.max_output_tokens,
+                        )
                     )
-                )
+                else:
+                    transports[transport_key] = OpenAIChatModel(
+                        ChatModelConfig(
+                            api_key=credentials[reference],
+                            base_url=base_url,
+                            model=profile.model,
+                            timeout_seconds=profile.timeout_seconds,
+                            api_dialect=profile.api_dialect,
+                            thinking_mode=profile.thinking_mode,
+                            reasoning_effort=profile.reasoning_effort,
+                            only_provider=profile.only_provider,
+                        )
+                    )
             return transports[transport_key]
 
         bound_profiles = {
@@ -395,6 +415,7 @@ class ModelRuntime:
                         reference=connection.api_key_env,
                         fingerprint=fingerprint,
                         base_url=connection.base_url,
+                        wire_api=connection.wire_api,
                         profile=profile,
                     ),
                 )
@@ -407,6 +428,7 @@ class ModelRuntime:
                     reference=binding.connection.api_key_env,
                     fingerprint=binding.configuration_fingerprint,
                     base_url=binding.connection.base_url,
+                    wire_api=binding.connection.wire_api,
                     profile=binding.profile,
                 )
                 models.append(

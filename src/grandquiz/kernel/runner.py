@@ -394,6 +394,7 @@ class Runner:
                     role="tool",
                     tool_call_id=tool_call.id,
                     content=f"tool error: {exc}",
+                    tool_error=True,
                 )
             # PROPAGATE：ERROR 一等信号 + 闭合 span 后冒泡（由 run_agent_turn 封口 AGENT_TURN）。
             self._emitter.emit(

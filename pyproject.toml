@@ -10,6 +10,7 @@ authors = [
 license = "MIT"
 license-files = ["LICENSE"]
 dependencies = [
+    "anthropic>=1.4.0",
     "fastapi>=0.115,<0.139",
     "httpx>=0.27",
     "openai>=2.44.0",
