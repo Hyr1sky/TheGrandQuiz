@@ -34,6 +34,7 @@ class EventType:
     MODEL_ATTEMPT_STARTED = "model_attempt.started"
     MODEL_ATTEMPT_ENDED = "model_attempt.ended"
     MODEL_RETRY_DECIDED = "model.retry_decided"
+    MODEL_FALLBACK_DECIDED = "model.fallback_decided"
     MODEL_RETRY_WAIT_STARTED = "model_retry_wait.started"
     MODEL_RETRY_WAIT_ENDED = "model_retry_wait.ended"
     MODEL_OUTPUT_DELTA = "model.output_delta"

@@ -2413,7 +2413,7 @@ export interface components {
              * Selection Source
              * @enum {string}
              */
-            selection_source: "default" | "purpose_override" | "legacy" | "explicit_profile" | "preset_fast" | "preset_quality";
+            selection_source: "default" | "purpose_override" | "legacy" | "explicit_profile" | "preset_fast" | "preset_quality" | "fallback";
         };
         /** ModelCapabilities */
         ModelCapabilities: {
@@ -2463,10 +2463,12 @@ export interface components {
              * Selection Source
              * @enum {string}
              */
-            selection_source: "default" | "purpose_override" | "legacy" | "explicit_profile" | "preset_fast" | "preset_quality";
+            selection_source: "default" | "purpose_override" | "legacy" | "explicit_profile" | "preset_fast" | "preset_quality" | "fallback";
         };
         /** ModelSelection */
         ModelSelection: {
+            /** Fallback Profile Ids */
+            fallback_profile_ids?: string[] | null;
             /** Preset */
             preset?: ("fast" | "quality") | null;
             /** Profile Id */
@@ -2703,7 +2705,7 @@ export interface components {
             /** Purpose */
             purpose?: string | null;
             /** Selection Source */
-            selection_source?: ("default" | "purpose_override" | "legacy" | "explicit_profile" | "preset_fast" | "preset_quality") | null;
+            selection_source?: ("default" | "purpose_override" | "legacy" | "explicit_profile" | "preset_fast" | "preset_quality" | "fallback") | null;
             /**
              * Status
              * @enum {string}
@@ -2733,6 +2735,25 @@ export interface components {
             retryable: boolean;
             /** Status Code */
             status_code?: number | null;
+        };
+        /** SafeProviderFallbackDecisionV1 */
+        SafeProviderFallbackDecisionV1: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "switch" | "stop";
+            /** Attempt */
+            attempt: number;
+            /** From Candidate */
+            from_candidate: number;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "fallback_disabled" | "failure_not_allowed" | "replay_unsafe" | "attempt_limit" | "deadline_exhausted" | "candidates_exhausted" | "candidate_ineligible" | "candidate_available";
+            /** To Candidate */
+            to_candidate?: number | null;
         };
         /** SafeProviderRetryDecisionV1 */
         SafeProviderRetryDecisionV1: {
@@ -2773,6 +2794,7 @@ export interface components {
              */
             phase: "started" | "attempt_rejected" | "ended" | "waiting_input" | "event";
             provider_failure?: components["schemas"]["SafeProviderFailureV1"] | null;
+            provider_fallback?: components["schemas"]["SafeProviderFallbackDecisionV1"] | null;
             provider_retry?: components["schemas"]["SafeProviderRetryDecisionV1"] | null;
             /** Quality Label */
             quality_label?: ("invalid" | "weak" | "reasonable") | null;
@@ -2838,6 +2860,8 @@ export interface components {
             completion_tokens: number | null;
             /** Error Count */
             error_count: number;
+            /** Fallbacks */
+            fallbacks: number;
             /** Headline */
             headline?: string | null;
             /** Latency Ms */

@@ -10,11 +10,12 @@ from grandquiz.evals.resources import MODEL_IDENTITY_EVAL_CASSETTE, eval_fixture
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.model_execution import complete_model_call
-from grandquiz.providers.base import Completion, Message, ToolSpec
+from grandquiz.providers.base import Completion, Message, Model, ToolSpec
 from grandquiz.providers.failure import ProviderFailure, ProviderFailureCategory
+from grandquiz.providers.fallback import ProviderFallbackPolicy
 from grandquiz.providers.model_replay import ModelCassette, RecordingModel, ReplayModel
-from grandquiz.providers.models import with_identity
-from grandquiz.providers.profiles import ModelIdentity
+from grandquiz.providers.models import ModelExecutionCandidate, ModelFallbackPlan, with_identity
+from grandquiz.providers.profiles import ModelCapabilities, ModelIdentity
 from grandquiz.providers.replay import ReplayMiss
 from grandquiz.providers.retry import ProviderRetryPolicy, RetryRuntime
 
@@ -191,6 +192,98 @@ async def test_v4_replays_failure_retry_success_with_identical_decisions(
         EventType.MODEL_RETRY_DECIDED,
         EventType.MODEL_RETRY_WAIT_STARTED,
         EventType.MODEL_RETRY_WAIT_ENDED,
+    }
+    assert [event.type for event in record_events if event.type in relevant] == [
+        event.type for event in replay_events if event.type in relevant
+    ]
+
+
+class _AlwaysUnavailableModel:
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        del messages, tools
+        raise ProviderFailure(
+            category=ProviderFailureCategory.SERVER_ERROR,
+            retryable=True,
+            status_code=503,
+        )
+
+
+def _fallback_bound_model(
+    primary: Model,
+    backup: Model,
+    runtime: RetryRuntime,
+) -> Model:
+    primary_identity = identity(fingerprint="4")
+    backup_identity = identity(fingerprint="5").model_copy(update={"selection_source": "fallback"})
+    capabilities = ModelCapabilities(tools="supported", native_streaming="supported")
+    plan = ModelFallbackPlan(
+        candidates=(
+            ModelExecutionCandidate(
+                model=primary,
+                identity=primary_identity,
+                capabilities=capabilities,
+            ),
+            ModelExecutionCandidate(
+                model=backup,
+                identity=backup_identity,
+                capabilities=capabilities,
+            ),
+        ),
+        policy=ProviderFallbackPolicy(enabled=True, max_attempts_per_candidate=1),
+    )
+    return with_identity(
+        primary,
+        primary_identity,
+        retry_runtime=runtime,
+        fallback_plan=plan,
+    )
+
+
+async def test_v4_replays_the_frozen_candidate_chain_and_fallback_decision(
+    tmp_path: Path,
+) -> None:
+    messages = [Message(role="user", content="same")]
+    record_runtime, _ = _retry_runtime()
+    checkpoint = tmp_path / "fallback.json"
+    recorder = RecordingModel(
+        _fallback_bound_model(_AlwaysUnavailableModel(), SequenceModel(), record_runtime),
+        ModelCassette(),
+        checkpoint_path=checkpoint,
+    )
+    record_emitter, record_events = _emitter("record-fallback")
+
+    recorded = await complete_model_call(
+        model=recorder,
+        messages=messages,
+        emitter=record_emitter,
+    )
+
+    cassette = ModelCassette.load(checkpoint)
+    replay_runtime, _ = _retry_runtime()
+    primary_identity = identity(fingerprint="4")
+    backup_identity = identity(fingerprint="5").model_copy(update={"selection_source": "fallback"})
+    replay = _fallback_bound_model(
+        ReplayModel(cassette, primary_identity),
+        ReplayModel(cassette, backup_identity),
+        replay_runtime,
+    )
+    replay_emitter, replay_events = _emitter("replay-fallback")
+    restored = await complete_model_call(
+        model=replay,
+        messages=messages,
+        emitter=replay_emitter,
+    )
+
+    assert recorded == restored == Completion(text="result-1")
+    relevant = {
+        EventType.MODEL_ATTEMPT_STARTED,
+        EventType.MODEL_ATTEMPT_ENDED,
+        EventType.MODEL_FALLBACK_DECIDED,
     }
     assert [event.type for event in record_events if event.type in relevant] == [
         event.type for event in replay_events if event.type in relevant

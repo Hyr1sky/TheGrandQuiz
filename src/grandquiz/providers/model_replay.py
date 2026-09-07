@@ -12,7 +12,14 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from grandquiz.providers.base import Completion, Message, Model, ToolSpec
 from grandquiz.providers.failure import ProviderFailure, ProviderFailureCategory
-from grandquiz.providers.models import identity_of, retry_runtime_of
+from grandquiz.providers.models import (
+    ModelExecutionCandidate,
+    ModelFallbackPlan,
+    fallback_plan_of,
+    identity_of,
+    retry_runtime_of,
+    with_identity,
+)
 from grandquiz.providers.profiles import ModelConfigurationError, ModelIdentity
 from grandquiz.providers.replay import ReplayMiss
 from grandquiz.providers.retry import RetryRuntime
@@ -199,6 +206,27 @@ class RecordingModel:
         self._inner = inner
         self._cassette = cassette
         self._checkpoint_path = checkpoint_path
+
+    @property
+    def fallback_plan(self) -> ModelFallbackPlan | None:
+        plan = fallback_plan_of(self._inner)
+        if plan is None:
+            return None
+        return ModelFallbackPlan(
+            candidates=tuple(
+                ModelExecutionCandidate(
+                    model=RecordingModel(
+                        with_identity(candidate.model, candidate.identity),
+                        self._cassette,
+                        checkpoint_path=self._checkpoint_path,
+                    ),
+                    identity=candidate.identity,
+                    capabilities=candidate.capabilities,
+                )
+                for candidate in plan.candidates
+            ),
+            policy=plan.policy,
+        )
 
     async def complete(
         self,

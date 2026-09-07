@@ -89,6 +89,10 @@ async def send_message(
             "unknown_preset": "model_preset_unknown",
             "capability_unsupported": "model_capability_unsupported",
             "capability_unknown": "model_capability_unknown",
+            "fallback_disabled": "model_fallback_disabled",
+            "context_window_insufficient": "model_context_window_insufficient",
+            "output_limit_insufficient": "model_output_limit_insufficient",
+            "identity_conflict": "model_identity_conflict",
         }[exc.code]
         raise ApiError(
             status_code=422,

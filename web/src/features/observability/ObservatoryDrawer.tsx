@@ -60,6 +60,7 @@ const OPERATION_LABELS: Record<SafeTraceEvent["operation"], string> = {
 };
 
 type ProviderRetryDecision = NonNullable<SafeTraceEvent["provider_retry"]>;
+type ProviderFallbackDecision = NonNullable<SafeTraceEvent["provider_fallback"]>;
 
 const PROVIDER_RETRY_ACTION_LABELS: Record<
   ProviderRetryDecision["action"],
@@ -81,6 +82,28 @@ const PROVIDER_RETRY_REASON_LABELS: Record<
   deadline_exhausted: "总期限不足",
   transient_failure: "临时故障",
   invalid_retry_after: "服务端等待值无效",
+};
+
+const PROVIDER_FALLBACK_ACTION_LABELS: Record<
+  ProviderFallbackDecision["action"],
+  string
+> = {
+  switch: "切换备用模型",
+  stop: "停止模型切换",
+};
+
+const PROVIDER_FALLBACK_REASON_LABELS: Record<
+  ProviderFallbackDecision["reason"],
+  string
+> = {
+  fallback_disabled: "策略未启用",
+  failure_not_allowed: "错误不允许跨模型恢复",
+  replay_unsafe: "请求不可安全重放",
+  attempt_limit: "总尝试预算已用尽",
+  deadline_exhausted: "总期限已用尽",
+  candidates_exhausted: "备用候选已用尽",
+  candidate_ineligible: "备用候选不满足请求能力",
+  candidate_available: "存在已授权备用候选",
 };
 
 const WORKFLOW_STATE_LABELS: Record<
@@ -522,6 +545,10 @@ export function ObservatoryDrawer({
               <strong>{currentSnapshot.summary.retries}</strong>
             </article>
             <article>
+              <span>模型切换</span>
+              <strong>{currentSnapshot.summary.fallbacks}</strong>
+            </article>
+            <article>
               <span>总 Token</span>
               <strong>{totalTokens(currentSnapshot.summary) ?? "未知"}</strong>
             </article>
@@ -623,6 +650,33 @@ export function ObservatoryDrawer({
                                   event.provider_retry.delay_seconds *
                                     1000,
                                 )}
+                              </span>
+                            )}
+                          </>
+                        )}
+                        {event.provider_fallback === null ||
+                        event.provider_fallback === undefined ? null : (
+                          <>
+                            <span>
+                              {
+                                PROVIDER_FALLBACK_ACTION_LABELS[
+                                  event.provider_fallback.action
+                                ]
+                              }
+                            </span>
+                            <span>
+                              {
+                                PROVIDER_FALLBACK_REASON_LABELS[
+                                  event.provider_fallback.reason
+                                ]
+                              }
+                            </span>
+                            {event.provider_fallback.to_candidate === null ||
+                            event.provider_fallback.to_candidate ===
+                              undefined ? null : (
+                              <span>
+                                候选 {event.provider_fallback.from_candidate} →{" "}
+                                {event.provider_fallback.to_candidate}
                               </span>
                             )}
                           </>

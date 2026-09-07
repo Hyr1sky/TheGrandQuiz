@@ -20,8 +20,10 @@ from grandquiz.providers.base import (
 )
 from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.models import (
+    ModelFallbackPlan,
     ModelSource,
     bind_model,
+    fallback_plan_of,
     identities_of,
     identity_of,
     retry_runtime_of,
@@ -68,6 +70,17 @@ class BudgetedModel:
     @property
     def retry_runtime(self) -> RetryRuntime | None:
         return retry_runtime_of(self.inner)
+
+    @property
+    def fallback_plan(self) -> ModelFallbackPlan | None:
+        plan = fallback_plan_of(self.inner)
+        return (
+            None
+            if plan is None
+            else plan.map_models(
+                lambda model: budget_model(model, counter=self.counter, ceiling=self.ceiling)
+            )
+        )
 
     async def complete(
         self,

@@ -92,6 +92,7 @@ class ProviderRetryPolicy(BaseModel):
         failure: ProviderFailure,
         *,
         attempt_index: int,
+        total_attempt_index: int | None = None,
         elapsed_seconds: float,
         total_wait_seconds: float,
         utc_timestamp: float,
@@ -104,7 +105,7 @@ class ProviderRetryPolicy(BaseModel):
             return ProviderRetryDecision(action="stop", reason="non_retryable")
         if output_delivered or failure.response_started or not failure.replay_safe:
             return ProviderRetryDecision(action="stop", reason="replay_unsafe")
-        if attempt_index >= self.max_attempts:
+        if (total_attempt_index or attempt_index) >= self.max_attempts:
             return ProviderRetryDecision(action="stop", reason="attempt_limit")
 
         local_delay = min(

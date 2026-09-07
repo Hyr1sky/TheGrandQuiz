@@ -1,6 +1,6 @@
 """Frozen purpose bindings and transport ownership, independent of business vocabulary."""
 
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -14,8 +14,10 @@ from grandquiz.providers.base import (
     TextDelta,
     ToolSpec,
 )
+from grandquiz.providers.fallback import ProviderFallbackPolicy
 from grandquiz.providers.llm import ChatModelConfig, OpenAIChatModel
 from grandquiz.providers.profiles import (
+    ModelCapabilities,
     ModelConfiguration,
     ModelConfigurationError,
     ModelIdentity,
@@ -30,10 +32,52 @@ from grandquiz.providers.retry import RetryRuntime
 
 
 @dataclass(frozen=True)
+class ModelExecutionCandidate:
+    """One already-authorized deployment in a frozen logical call plan."""
+
+    model: Model
+    identity: ModelIdentity
+    capabilities: ModelCapabilities
+
+
+@dataclass(frozen=True)
+class ModelFallbackPlan:
+    """Ordered candidates; profile labels and credentials never enter the plan."""
+
+    candidates: tuple[ModelExecutionCandidate, ...]
+    policy: ProviderFallbackPolicy
+
+    def __post_init__(self) -> None:
+        fingerprints = [
+            candidate.identity.configuration_fingerprint for candidate in self.candidates
+        ]
+        if (
+            len(self.candidates) < 2
+            or len(fingerprints) != len(set(fingerprints))
+            or not self.policy.enabled
+        ):
+            raise ModelConfigurationError("invalid_configuration")
+
+    def map_models(self, transform: Callable[[Model], Model]) -> "ModelFallbackPlan":
+        return ModelFallbackPlan(
+            candidates=tuple(
+                ModelExecutionCandidate(
+                    model=transform(candidate.model),
+                    identity=candidate.identity,
+                    capabilities=candidate.capabilities,
+                )
+                for candidate in self.candidates
+            ),
+            policy=self.policy,
+        )
+
+
+@dataclass(frozen=True)
 class BoundModel:
     inner: Model
     identity: ModelIdentity
     retry_runtime: RetryRuntime | None = None
+    fallback_plan: ModelFallbackPlan | None = None
 
     async def complete(
         self,
@@ -72,6 +116,11 @@ class CompletionAsStreamModel:
     def retry_runtime(self) -> RetryRuntime | None:
         return retry_runtime_of(self.inner)
 
+    @property
+    def fallback_plan(self) -> ModelFallbackPlan | None:
+        plan = fallback_plan_of(self.inner)
+        return None if plan is None else plan.map_models(as_streaming_model)
+
     async def complete(
         self,
         messages: Sequence[Message],
@@ -102,15 +151,18 @@ def with_identity(
     identity: ModelIdentity,
     *,
     retry_runtime: RetryRuntime | None = None,
+    fallback_plan: ModelFallbackPlan | None = None,
 ) -> BoundModel:
+    if fallback_plan is not None and retry_runtime is None:
+        raise ModelConfigurationError("invalid_configuration")
     if isinstance(model, StreamingModel):
-        return _BoundStreamingModel(model, identity, retry_runtime)
-    return BoundModel(model, identity, retry_runtime)
+        return _BoundStreamingModel(model, identity, retry_runtime, fallback_plan)
+    return BoundModel(model, identity, retry_runtime, fallback_plan)
 
 
 @dataclass(frozen=True)
 class ModelBindings:
-    """One fixed model per registered purpose; never discovers or switches suppliers."""
+    """Frozen purpose plans; candidates are explicit and never discovered from ambient state."""
 
     models: tuple[tuple[str, Model], ...]
     configuration: ModelConfiguration | None = None
@@ -143,24 +195,15 @@ class ModelBindings:
             raise ModelSelectionError(
                 "unknown_preset" if selection.preset is not None else "unknown_profile"
             )
-        resolved = configuration.resolve_selection(
+        resolved_candidates = configuration.resolve_selected_candidates(
             purpose,
             selection,
             requirements=requirements,
         )
-        model = next(
-            (
-                model
-                for profile_id, model in self.profile_models
-                if profile_id == resolved.profile_id
-            ),
-            None,
-        )
-        if model is None:
-            raise ModelSelectionError("unknown_profile")
-        return with_identity(
-            model,
-            configuration.identity_for_resolved(resolved),
+        return _bind_candidates(
+            configuration,
+            resolved_candidates,
+            profile_models=self.profile_models,
             retry_runtime=self.retry_runtime,
         )
 
@@ -255,6 +298,11 @@ def identity_of(model: Model) -> ModelIdentity | None:
 def retry_runtime_of(model: Model) -> RetryRuntime | None:
     runtime = getattr(model, "retry_runtime", None)
     return runtime if isinstance(runtime, RetryRuntime) else None
+
+
+def fallback_plan_of(model: Model) -> ModelFallbackPlan | None:
+    plan = getattr(model, "fallback_plan", None)
+    return plan if isinstance(plan, ModelFallbackPlan) else None
 
 
 def identities_of(source: ModelSource) -> tuple[ModelIdentity, ...]:
@@ -352,24 +400,34 @@ class ModelRuntime:
                 )
             )
 
-        model_by_profile = dict(profile_models)
         models: list[tuple[str, Model]] = []
         for binding in config.bindings:
-            reference = binding.connection.api_key_env
-            raw_model = model_by_profile.get(binding.profile_id or "")
-            if raw_model is None:
+            if not config.profile_catalog:
                 raw_model = transport_for(
-                    reference=reference,
+                    reference=binding.connection.api_key_env,
                     fingerprint=binding.configuration_fingerprint,
                     base_url=binding.connection.base_url,
                     profile=binding.profile,
                 )
+                models.append(
+                    (
+                        binding.purpose,
+                        with_identity(
+                            raw_model,
+                            config.identity_for(binding.purpose),
+                            retry_runtime=active_retry_runtime,
+                        ),
+                    )
+                )
+                continue
+            candidates = config.resolve_candidates(binding.purpose)
             models.append(
                 (
                     binding.purpose,
-                    with_identity(
-                        raw_model,
-                        config.identity_for(binding.purpose),
+                    _bind_candidates(
+                        config,
+                        candidates,
+                        profile_models=tuple(profile_models),
                         retry_runtime=active_retry_runtime,
                     ),
                 )
@@ -387,3 +445,41 @@ class ModelRuntime:
     async def aclose(self) -> None:
         for model in self._owned:
             await model.aclose()
+
+
+def _bind_candidates(
+    configuration: ModelConfiguration,
+    resolved_candidates: tuple[ResolvedProfile, ...],
+    *,
+    profile_models: tuple[tuple[str, Model], ...],
+    retry_runtime: RetryRuntime | None,
+) -> BoundModel:
+    identities = configuration.identities_for_candidates(resolved_candidates)
+    raw_by_profile = dict(profile_models)
+    execution_candidates: list[ModelExecutionCandidate] = []
+    for resolved, identity in zip(resolved_candidates, identities, strict=True):
+        raw_model = raw_by_profile.get(resolved.profile_id or "")
+        if raw_model is None:
+            raise ModelSelectionError("unknown_profile")
+        execution_candidates.append(
+            ModelExecutionCandidate(
+                model=raw_model,
+                identity=identity,
+                capabilities=resolved.profile.capabilities,
+            )
+        )
+    primary = execution_candidates[0]
+    plan = (
+        ModelFallbackPlan(
+            candidates=tuple(execution_candidates),
+            policy=configuration.fallback_policy,
+        )
+        if len(execution_candidates) > 1
+        else None
+    )
+    return with_identity(
+        primary.model,
+        primary.identity,
+        retry_runtime=retry_runtime,
+        fallback_plan=plan,
+    )

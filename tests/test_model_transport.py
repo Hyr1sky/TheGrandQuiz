@@ -8,11 +8,21 @@ import pytest
 from openai import AsyncOpenAI
 
 import grandquiz.providers.llm as llm_module
+from grandquiz.kernel.clock import ManualClock
+from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
+from grandquiz.kernel.model_execution import complete_model_call
 from grandquiz.providers.base import Message
 from grandquiz.providers.failure import ProviderFailure
 from grandquiz.providers.llm import ChatModelConfig, OpenAIChatModel
-from grandquiz.providers.models import ModelRuntime, identity_of, retry_runtime_of, select_model
+from grandquiz.providers.models import (
+    ModelRuntime,
+    fallback_plan_of,
+    identity_of,
+    retry_runtime_of,
+    select_model,
+)
 from grandquiz.providers.profiles import (
+    ModelConfiguration,
     ModelConfigurationError,
     ModelRequestRequirements,
     ModelSelection,
@@ -122,6 +132,23 @@ native_streaming = "supported"
 """
 )
 
+FALLBACK_PROFILE_CONFIG = (
+    SELECTABLE_PROFILE_CONFIG.replace(
+        "[profiles.shared]",
+        "[profiles.shared]\ncontext_window_tokens = 64000\nmax_output_tokens = 4096",
+    ).replace(
+        "[profiles.writer]",
+        "[profiles.writer]\ncontext_window_tokens = 128000\nmax_output_tokens = 8192",
+    )
+    + """
+[fallback]
+enabled = true
+max_attempts_per_candidate = 1
+[fallback_candidates]
+chat = ["writer"]
+"""
+)
+
 
 async def test_bound_purposes_send_their_selected_model_and_keep_configuration_frozen(
     wire: list[httpx.Request],
@@ -151,6 +178,29 @@ async def test_bound_purposes_send_their_selected_model_and_keep_configuration_f
             runtime.bindings.for_purpose("unknown")
     finally:
         await runtime.aclose()
+
+
+async def test_legacy_imported_binding_without_a_profile_catalog_still_allocates_transport(
+    wire: list[httpx.Request],
+) -> None:
+    parsed = parse_model_config(
+        PROFILE_CONFIG,
+        purposes={"answer_grading", "question_generation"},
+    )
+    legacy_shape = ModelConfiguration(bindings=(parsed.resolve("answer_grading"),))
+    runtime = ModelRuntime.from_configuration(
+        legacy_shape,
+        environment={"TEST_MODEL_KEY": "test-credential"},
+    )
+    try:
+        completion = await runtime.bindings.for_purpose("answer_grading").complete(
+            [Message(role="user", content="legacy")]
+        )
+    finally:
+        await runtime.aclose()
+
+    assert completion.text == "answer"
+    assert json.loads(wire[0].content)["model"] == "shared-model"
 
 
 async def test_runtime_selects_an_explicit_profile_without_changing_other_bindings(
@@ -189,6 +239,122 @@ async def test_runtime_selects_an_explicit_profile_without_changing_other_bindin
         )
     finally:
         await runtime.aclose()
+
+
+async def test_runtime_executes_only_the_explicit_fallback_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        model = json.loads(request.content)["model"]
+        if model == "shared-model":
+            return httpx.Response(
+                503,
+                request=request,
+                json={"error": {"message": "SECRET", "code": "server_error"}},
+            )
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "id": "response",
+                "created": 0,
+                "model": model,
+                "object": "chat.completion",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "backup"},
+                        "finish_reason": "stop",
+                    }
+                ],
+            },
+        )
+
+    def create(
+        *,
+        api_key: str,
+        base_url: str,
+        timeout: float,
+        max_retries: int,
+    ) -> AsyncOpenAI:
+        return AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+        )
+
+    monkeypatch.setattr(llm_module, "AsyncOpenAI", create)
+    config = parse_model_config(
+        FALLBACK_PROFILE_CONFIG,
+        purposes={"chat", "question_generation", "answer_grading"},
+    )
+    runtime = ModelRuntime.from_configuration(
+        config,
+        environment={"TEST_MODEL_KEY": "test-credential"},
+        retry_seed=0,
+    )
+    events: list[AgentEvent] = []
+    sink = EventSink()
+    sink.subscribe(events.append)
+    emitter = EventEmitter(sink, ManualClock(), trace_id="fallback-wire")
+    try:
+        model = runtime.bindings.for_purpose("chat")
+        plan = fallback_plan_of(model)
+        assert plan is not None
+        assert len(plan.candidates) == 2
+
+        completion = await complete_model_call(
+            model=model,
+            messages=[Message(role="user", content="hello")],
+            emitter=emitter,
+        )
+    finally:
+        await runtime.aclose()
+
+    assert completion.text == "backup"
+    assert [json.loads(request.content)["model"] for request in requests] == [
+        "shared-model",
+        "writer-model",
+    ]
+    assert any(
+        event.type == EventType.MODEL_FALLBACK_DECIDED and event.payload["action"] == "switch"
+        for event in events
+    )
+    serialized = json.dumps([dict(event.payload) for event in events])
+    assert "SECRET" not in serialized
+
+
+def test_explicit_pin_has_no_plan_until_fallback_candidates_are_opted_in() -> None:
+    config = parse_model_config(
+        FALLBACK_PROFILE_CONFIG,
+        purposes={"chat", "question_generation"},
+    )
+    runtime = ModelRuntime.from_configuration(
+        config,
+        environment={"TEST_MODEL_KEY": "test-credential"},
+    )
+    try:
+        pinned = select_model(
+            runtime.bindings,
+            "chat",
+            ModelSelection(profile_id="shared"),
+        )
+        opted_in = select_model(
+            runtime.bindings,
+            "chat",
+            ModelSelection(profile_id="shared", fallback_profile_ids=("writer",)),
+        )
+        assert fallback_plan_of(pinned) is None
+        assert fallback_plan_of(opted_in) is not None
+    finally:
+        import asyncio
+
+        asyncio.run(runtime.aclose())
 
 
 def test_selection_options_are_safe_and_do_not_expose_transport_configuration() -> None:

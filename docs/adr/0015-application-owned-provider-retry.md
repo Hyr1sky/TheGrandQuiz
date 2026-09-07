@@ -47,4 +47,5 @@ ADR-0013/0014 已把模型执行、用途绑定与显式选择拆开，ProviderF
 span 重复计算。代价是应用承担等待策略与 cassette 新版本，且没有服务端 usage 时仍无法给出精确费用。
 
 后续 fallback 必须复用同一 Logical Call 总 deadline、attempt 和 replay-safety 事实，不能为每个候选重置
-预算。若未来协议引入 continuation、服务端工具或其他副作用，必须先扩展 replay-safety 契约再允许重试。
+预算；该后续决策已由 [ADR-0016](0016-explicit-authorized-provider-fallback.md) 落实。若未来协议引入
+continuation、服务端工具或其他副作用，必须先扩展 replay-safety 契约再允许重试。

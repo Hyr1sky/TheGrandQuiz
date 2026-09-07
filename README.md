@@ -86,7 +86,7 @@ Plugin API。`domain.learning` 是第一个经过真实产品、Trace 与 Eval �
 | **学习记忆** | 记录暴露出的薄弱概念 | 下一轮选题优先复考，而非只存聊天记录 |
 | **可纠正学习事实** | 审查答题记录、分类和判决纠正 | append-only Journal/outbox，可重建投影 |
 | **本地 Eval 数据闭环** | 审核纠正/盲标候选并固定不可变数据集快照 | 隐私审核、来源身份和 release-eligible / exploratory 强制分层 |
-| **可信运行** | 浏览 trace、执行树、token、错误与恢复状态 | Record/Replay + 17 条离线 Eval |
+| **可信运行** | 浏览 trace、执行树、token、错误与恢复状态 | 有界 retry、显式授权 fallback、Record/Replay + 17 条离线 Eval |
 | **Local Web** | 可调三栏、连续文章、Chat `/status`、设置、Evidence 与考核 | 同源 SPA、安全 Markdown、稳定 SSE、可见上下文预算 |
 
 > [!NOTE]

@@ -477,6 +477,27 @@ def test_chat_rejects_unknown_required_capability_before_starting_turn(tmp_path:
     assert fast.calls == quality.calls == 0
 
 
+def test_chat_does_not_treat_a_profile_pin_as_fallback_authorization(tmp_path: Path) -> None:
+    app, fast, quality = _selectable_chat_app(tmp_path)
+    with TestClient(app) as client:
+        session = client.post("/api/v1/chat/sessions").json()
+        response = client.post(
+            f"/api/v1/chat/sessions/{session['session_id']}/messages",
+            json={
+                "text": "pin only",
+                "model_selection": {
+                    "profile_id": "fast_chat",
+                    "fallback_profile_ids": ["quality_chat"],
+                },
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "model_fallback_disabled"
+    assert response.json()["retryable"] is False
+    assert fast.calls == quality.calls == 0
+
+
 def test_blank_message_is_rejected(tmp_path: Path) -> None:
     with TestClient(_app(tmp_path)) as client:
         session = client.post("/api/v1/chat/sessions").json()

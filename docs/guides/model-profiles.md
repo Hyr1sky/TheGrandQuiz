@@ -40,7 +40,9 @@ grandquiz react --model-profile writer
 ```
 
 `--model-profile` 与 `--model-preset` 互斥。Web 每个 turn 冻结一次选择，CLI 整个 ReAct 会话冻结一次；
-运行期间不会因设置变化或失败而静默换模型。旧客户端不传选择仍走用途绑定的默认 Profile，以保持兼容。
+运行期间不会因设置变化而偷偷换模型。只传 `profile_id`／`preset` 是严格 pin；一次 Web/API 选择只有再
+显式提供有序 `fallback_profile_ids`，且本地 fallback policy 已启用，才允许在临时可用性故障后切换。
+旧客户端不传选择仍走用途绑定的默认 Profile，以保持兼容。
 
 ## 用途
 
@@ -60,8 +62,9 @@ grandquiz react --model-profile writer
 ## 配置规则
 
 配置文件固定为 `model-config.v1`，包含 `connections`、`profiles`、`default_profile` 和可选
-`purpose_overrides`、`presets`、`retry`。Connection 管网络协议和凭证引用，Profile 管模型、有效请求
-参数与显式能力声明；retry 是所有用途共享的传输恢复上限，不属于某个厂商。
+`purpose_overrides`、`presets`、`retry`、`fallback` 与 `fallback_candidates`。Connection 管网络协议和
+凭证引用，Profile 管模型、有效请求参数、容量与显式能力声明；retry 是所有用途共享的传输恢复上限，
+fallback 只管理已授权候选间的恢复，不属于某个厂商。
 
 - 本阶段只支持 `openai_chat_completions` wire API。
 - 凭证只写环境变量名，真实值仍放在 gitignored 的 `.env`。
@@ -69,13 +72,34 @@ grandquiz react --model-profile writer
 - 用途覆盖优先于默认 Profile；显式选择只影响被选择的对话运行，不连带覆盖出题、判卷或 Eval。
 - Chat 显式选择要求 `tools` 与 `native_streaming` 均为 supported；unsupported 与 unknown 分开报错，
   completion 模拟流不会冒充原生流。
-- 不存在隐式模型路由或自动 fallback。
+- 不存在隐式模型路由。fallback 默认关闭；`fallback_candidates` 按用途只列备用 Profile，主 Profile 仍由
+  default／purpose override 决定。列表有序、去重且不能回到主部署；它同时构成允许发送本次材料的范围，
+  系统不会因为环境里存在另一个 key 就自动加入候选。
+- 启用 fallback 的主备 Profile 必须声明 `context_window_tokens` 与 `max_output_tokens`，备用容量不得低于
+  主模型；请求要求的 tools/streaming/structured output/reasoning 和排除的部署身份也会在联网前检查。
+  不合格候选不会通过删 Evidence、截断材料或移除工具来迁就。
 - 生产 Model Runtime 由应用统一管理传输重试，OpenAI SDK 的隐藏重试固定关闭。默认一次逻辑调用总计
   最多 3 次请求（包含首次），总期限 90 秒、累计等待最多 30 秒；限流、连接、超时、冲突和 5xx 仅在
   可安全重放且预算充足时重试。鉴权、权限、坏请求、永久额度和未知错误不会默认重试。
 - 可选 `[retry]` 能配置 `enabled`、`max_attempts`、`deadline_seconds`、`base_delay_seconds`、
   `max_delay_seconds`、`max_total_wait_seconds` 和 `jitter_ratio`；未知或越界值会在联网前拒绝。
 - `Retry-After` 支持秒数与 HTTP 日期。流已收到任何输出或上游 chunk 时不自动重放；取消立即传播。
+- fallback 默认仅接受 rate limit、timeout、connection 与 server error。鉴权、权限、坏请求、not-found、
+  永久额度、拒绝/安全阻断和未知错误不会靠换厂商绕过。同一 Logical Call 的 retry 与 fallback 共用
+  `max_attempts` 和 deadline，例如两个候选也不会把 3 次上限扩大成 6 次。
+- fallback 只重发当前尚未完成的模型请求，不重跑 workflow、工具或审批。即使没有收到输出，本地也只能
+  证明请求满足 replay-safety 条件，不能证明远端没有处理、计费或其他不可见副作用。
+
+最小启用示例（完整字段见仓库根样例）：
+
+```toml
+[fallback]
+enabled = true
+max_attempts_per_candidate = 1
+
+[fallback_candidates]
+chat = ["writer"]
+```
 
 ## 执行身份与历史
 
@@ -88,5 +112,7 @@ grandquiz react --model-profile writer
 仍显示 A 的指纹；旧 Trace 没有身份时显示 `unknown`，不会用 B 倒填。
 
 新版 `model-cassette.v4` 把执行身份、messages 和工具契约共同计入回放键，并保存 typed
-failure/success attempt 序列。用途、配置或工具变化都会明确 miss；v3 成功录制继续只读兼容，旧 v1/v2
-cassette 只经 legacy reader 读取，新键 miss 不会偷偷回退旧键。
+failure/success attempt 序列。候选顺序、fallback policy 与共享 retry policy 进入策略身份；每个实际候选
+仍按自己的 ModelIdentity 分键，因此离线回放会复现已冻结的切换而不是重新发现模型。用途、配置或工具变化
+都会明确 miss；v3 成功录制继续只读兼容，旧 v1/v2 cassette 只经 legacy reader 读取，新键 miss 不会
+偷偷回退旧键。

@@ -69,7 +69,7 @@ src/grandquiz/
 ├── kernel/                  # 通用 Agent Runtime（禁止 import domain，import-linter 强制）
 │   ├── events.py            # AgentEvent 类型体系（整个系统的数据脊柱）
 │   ├── runner.py            # ReAct 循环（进入本仓库时完成事件化改造）
-│   ├── model_execution.py   # Logical Call / Attempt / retry 的统一执行边界
+│   ├── model_execution.py   # Logical Call / Attempt / retry / fallback 的统一执行边界
 │   ├── tools.py             # Tool / ToolRegistry
 │   ├── hooks.py             # HookManager：interceptor + observer 两类
 │   ├── context.py           # ContextBuilder：分区拼装 + token 预算
@@ -82,6 +82,7 @@ src/grandquiz/
 │   ├── models.py            # 用途绑定 Model Interface、执行身份与 Runtime 生命周期
 │   ├── profiles.py          # Connection/Profile 的纯配置解析、校验与冻结指纹
 │   ├── retry.py             # Provider-neutral 有界 retry 纯策略与注入运行依赖
+│   ├── fallback.py          # 显式候选间的可用性切换纯策略
 │   ├── llm.py               # OpenAI-compatible 单模型 Adapter；旧双槽 facade 仅兼容
 │   ├── model_replay.py      # 身份感知的 Model Record/Replay v4（只读兼容 v3）
 │   ├── legacy.py            # basic/enrich 与旧假件的显式兼容边界
@@ -118,13 +119,16 @@ wire API、方言参数、流式终结、连接生命周期与 `ProviderFailure`
 请求特性来迁就模型。每次 `model.started` 都把脱敏执行身份送上既有 AgentEvent 脊柱，因此 Trace、诊断、
 Replay v4 与 Eval Subject v2 使用同一项历史事实。设置页的当前绑定不能反向补写旧 Trace。
 
-应用的统一 Model Call Executor 拥有有界传输 retry；Adapter 只正规化 ProviderFailure 与 Retry-After，
-OpenAI SDK 的隐藏重试关闭。一个 `model` logical span 下展开真实 attempt、决定与等待子事件；流收到任何
-上游 chunk 后禁止自动重放，最终 token 只在 logical end 汇总。自动路由、跨 Profile fallback 与新协议
-Adapter 仍由后续独立验收门拉动。详见
+应用的统一 Model Call Executor 拥有有界传输 retry 与显式授权的串行 fallback；Adapter 只正规化
+ProviderFailure 与 Retry-After，OpenAI SDK 的隐藏重试关闭。一个 `model` logical span 下展开真实
+attempt、retry/fallback 决定与等待子事件；同一调用的主备候选共享总 attempt、deadline 和等待预算。
+只有配置或一次显式选择列出的 Profile 才可能接收请求，鉴权/配置/永久额度错误不跨厂商绕过；流收到任何
+上游 chunk 后禁止自动重放，最终 token 只在 logical end 汇总。智能路由与新协议 Adapter 仍由后续独立
+验收门拉动。详见
 [ADR-0013](adr/0013-purpose-bound-model-execution.md)、
 [ADR-0014](adr/0014-explicit-model-selection-and-capability-gating.md)、
-[ADR-0015](adr/0015-application-owned-provider-retry.md) 与
+[ADR-0015](adr/0015-application-owned-provider-retry.md)、
+[ADR-0016](adr/0016-explicit-authorized-provider-fallback.md) 与
 [配置指南](guides/model-profiles.md)。
 
 ## 五大基建模块设计要点

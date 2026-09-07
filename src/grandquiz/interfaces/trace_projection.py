@@ -111,6 +111,17 @@ SafeProviderRetryReason = Literal[
     "transient_failure",
     "invalid_retry_after",
 ]
+SafeProviderFallbackAction = Literal["switch", "stop"]
+SafeProviderFallbackReason = Literal[
+    "fallback_disabled",
+    "failure_not_allowed",
+    "replay_unsafe",
+    "attempt_limit",
+    "deadline_exhausted",
+    "candidates_exhausted",
+    "candidate_ineligible",
+    "candidate_available",
+]
 WorkflowNodeState = Literal["pending", "running", "waiting", "completed", "failed"]
 
 _MC_STARTED = "learning.multiple_choice_generation.started"
@@ -200,6 +211,14 @@ class SafeProviderRetryDecisionV1(BaseModel):
     delay_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
+class SafeProviderFallbackDecisionV1(BaseModel):
+    attempt: int = Field(ge=1)
+    action: SafeProviderFallbackAction
+    reason: SafeProviderFallbackReason
+    from_candidate: int = Field(ge=1)
+    to_candidate: int | None = Field(default=None, ge=1)
+
+
 class SafeModelExecutionIdentityV1(BaseModel):
     status: Literal["known", "unknown"]
     purpose: str | None = None
@@ -216,6 +235,7 @@ class TraceRejectionCountV1(BaseModel):
 class SafeTraceSummaryV1(BaseModel):
     model_calls: int
     retries: int
+    fallbacks: int
     rejection_counts: list[TraceRejectionCountV1]
     error_count: int
     prompt_tokens: int | None
@@ -242,6 +262,7 @@ class SafeTraceEventV1(BaseModel):
     node_id: WorkflowNodeId | None = None
     provider_failure: SafeProviderFailureV1 | None = None
     provider_retry: SafeProviderRetryDecisionV1 | None = None
+    provider_fallback: SafeProviderFallbackDecisionV1 | None = None
     execution_identity: SafeModelExecutionIdentityV1 | None = None
 
 
@@ -326,6 +347,11 @@ def project_trace(
             retries=(
                 sum(event.phase == "attempt_rejected" for event in projected)
                 + sum(event.type == EventType.MODEL_RETRY_WAIT_STARTED for event in events)
+            ),
+            fallbacks=sum(
+                event.type == EventType.MODEL_FALLBACK_DECIDED
+                and event.payload.get("action") == "switch"
+                for event in events
             ),
             rejection_counts=[
                 TraceRejectionCountV1(reason_code=reason, count=count)
@@ -755,6 +781,7 @@ def _project_events(
                 node_id=_node_id(event, descriptor=descriptor),
                 provider_failure=provider_failure,
                 provider_retry=_safe_provider_retry(event),
+                provider_fallback=_safe_provider_fallback(event),
                 execution_identity=_safe_execution_identity(event),
             )
         )
@@ -798,6 +825,7 @@ def _operation(
         in {
             EventType.MODEL_ATTEMPT_ENDED,
             EventType.MODEL_RETRY_DECIDED,
+            EventType.MODEL_FALLBACK_DECIDED,
             EventType.MODEL_RETRY_WAIT_ENDED,
         }
         and event.span_id is not None
@@ -827,9 +855,19 @@ def _operation(
 def _safe_execution_identity(
     event: AgentEvent,
 ) -> SafeModelExecutionIdentityV1 | None:
-    if event.type != EventType.MODEL_STARTED:
+    if event.type not in {
+        EventType.MODEL_STARTED,
+        EventType.MODEL_ENDED,
+        EventType.MODEL_ATTEMPT_STARTED,
+        EventType.MODEL_ATTEMPT_ENDED,
+        EventType.MODEL_FALLBACK_DECIDED,
+    }:
         return None
-    raw = event.payload.get("model_identity")
+    raw = event.payload.get(
+        "selected_model_identity" if event.type == EventType.MODEL_ENDED else "model_identity"
+    )
+    if raw is None and event.type != EventType.MODEL_STARTED:
+        return None
     try:
         identity = ModelIdentity.model_validate(raw)
     except (TypeError, ValueError):
@@ -980,6 +1018,35 @@ def _safe_provider_retry(event: AgentEvent) -> SafeProviderRetryDecisionV1 | Non
         action=cast("SafeProviderRetryAction", action),
         reason=cast("SafeProviderRetryReason", reason),
         delay_seconds=_safe_nonnegative_float(event.payload.get("delay_seconds")),
+    )
+
+
+def _safe_provider_fallback(event: AgentEvent) -> SafeProviderFallbackDecisionV1 | None:
+    if event.type != EventType.MODEL_FALLBACK_DECIDED:
+        return None
+    attempt = _safe_int(event.payload, "attempt_index")
+    from_candidate = _safe_int(event.payload, "from_candidate")
+    to_candidate = _safe_int(event.payload, "to_candidate")
+    action = event.payload.get("action")
+    reason = event.payload.get("reason")
+    if (
+        attempt is None
+        or attempt < 1
+        or from_candidate is None
+        or from_candidate < 1
+        or (to_candidate is not None and to_candidate < 1)
+        or not isinstance(action, str)
+        or action not in SafeProviderFallbackAction.__args__
+        or not isinstance(reason, str)
+        or reason not in SafeProviderFallbackReason.__args__
+    ):
+        return None
+    return SafeProviderFallbackDecisionV1(
+        attempt=attempt,
+        action=cast("SafeProviderFallbackAction", action),
+        reason=cast("SafeProviderFallbackReason", reason),
+        from_candidate=from_candidate,
+        to_candidate=to_candidate,
     )
 
 

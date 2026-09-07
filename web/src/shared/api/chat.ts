@@ -8,6 +8,7 @@ export type ModelCapabilityState = "supported" | "unsupported" | "unknown";
 export interface ModelSelection {
   profile_id?: string;
   preset?: ModelPreset;
+  fallback_profile_ids?: string[];
 }
 
 export interface ModelSelectionOption {

@@ -3659,7 +3659,8 @@
               "legacy",
               "explicit_profile",
               "preset_fast",
-              "preset_quality"
+              "preset_quality",
+              "fallback"
             ],
             "title": "Selection Source",
             "type": "string"
@@ -3753,7 +3754,8 @@
               "legacy",
               "explicit_profile",
               "preset_fast",
-              "preset_quality"
+              "preset_quality",
+              "fallback"
             ],
             "title": "Selection Source",
             "type": "string"
@@ -3771,6 +3773,21 @@
       "ModelSelection": {
         "additionalProperties": false,
         "properties": {
+          "fallback_profile_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Profile Ids"
+          },
           "preset": {
             "anyOf": [
               {
@@ -4398,7 +4415,8 @@
                   "legacy",
                   "explicit_profile",
                   "preset_fast",
-                  "preset_quality"
+                  "preset_quality",
+                  "fallback"
                 ],
                 "type": "string"
               },
@@ -4487,6 +4505,62 @@
           "retryable"
         ],
         "title": "SafeProviderFailureV1",
+        "type": "object"
+      },
+      "SafeProviderFallbackDecisionV1": {
+        "properties": {
+          "action": {
+            "enum": [
+              "switch",
+              "stop"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "attempt": {
+            "minimum": 1.0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "from_candidate": {
+            "minimum": 1.0,
+            "title": "From Candidate",
+            "type": "integer"
+          },
+          "reason": {
+            "enum": [
+              "fallback_disabled",
+              "failure_not_allowed",
+              "replay_unsafe",
+              "attempt_limit",
+              "deadline_exhausted",
+              "candidates_exhausted",
+              "candidate_ineligible",
+              "candidate_available"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "to_candidate": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Candidate"
+          }
+        },
+        "required": [
+          "attempt",
+          "action",
+          "reason",
+          "from_candidate"
+        ],
+        "title": "SafeProviderFallbackDecisionV1",
         "type": "object"
       },
       "SafeProviderRetryDecisionV1": {
@@ -4631,6 +4705,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/SafeProviderFailureV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider_fallback": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SafeProviderFallbackDecisionV1"
               },
               {
                 "type": "null"
@@ -4915,6 +4999,10 @@
             "title": "Error Count",
             "type": "integer"
           },
+          "fallbacks": {
+            "title": "Fallbacks",
+            "type": "integer"
+          },
           "headline": {
             "anyOf": [
               {
@@ -4978,6 +5066,7 @@
         "required": [
           "model_calls",
           "retries",
+          "fallbacks",
           "rejection_counts",
           "error_count",
           "prompt_tokens",

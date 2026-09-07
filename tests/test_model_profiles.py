@@ -146,6 +146,127 @@ jitter_ratio = 0.1
         )
 
 
+FALLBACK_CONFIG = (
+    SELECTABLE_CONFIG.replace(
+        "[profiles.shared]",
+        "[profiles.shared]\ncontext_window_tokens = 64000\nmax_output_tokens = 4096",
+    ).replace(
+        "[profiles.writer]",
+        "[profiles.writer]\ncontext_window_tokens = 128000\nmax_output_tokens = 8192",
+    )
+    + """
+[fallback]
+enabled = true
+max_attempts_per_candidate = 2
+[fallback_candidates]
+chat = ["writer"]
+"""
+)
+
+
+def test_configuration_freezes_an_ordered_authorized_fallback_chain() -> None:
+    config = parse_model_config(
+        FALLBACK_CONFIG,
+        purposes={"chat", "question_generation"},
+    )
+
+    candidates = config.resolve_candidates("chat")
+
+    assert [candidate.profile_id for candidate in candidates] == ["shared", "writer"]
+    assert candidates[0].selection_source == "default"
+    assert candidates[1].selection_source == "fallback"
+    assert config.fallback_policy.enabled is True
+    assert config.fallback_policy.max_attempts_per_candidate == 2
+    identities = config.identities_for_candidates(candidates)
+    assert identities[0] == config.identity_for("chat")
+    assert len({identity.configuration_fingerprint for identity in identities}) == 2
+    assert len({identity.policy_fingerprint for identity in identities}) == 1
+
+
+def test_explicit_pin_only_allows_fallback_when_alternatives_are_also_explicit() -> None:
+    config = parse_model_config(
+        FALLBACK_CONFIG,
+        purposes={"chat", "question_generation"},
+    )
+
+    pinned = config.resolve_selected_candidates(
+        "chat",
+        ModelSelection(profile_id="shared"),
+    )
+    opted_in = config.resolve_selected_candidates(
+        "chat",
+        ModelSelection(profile_id="shared", fallback_profile_ids=("writer",)),
+    )
+
+    assert [candidate.profile_id for candidate in pinned] == ["shared"]
+    assert [candidate.profile_id for candidate in opted_in] == ["shared", "writer"]
+
+
+def test_fallback_candidates_must_be_enabled_known_unique_and_acyclic() -> None:
+    cases = [
+        FALLBACK_CONFIG.replace("enabled = true", "enabled = false"),
+        FALLBACK_CONFIG.replace('["writer"]', '["missing"]'),
+        FALLBACK_CONFIG.replace('["writer"]', '["writer", "writer"]'),
+        FALLBACK_CONFIG.replace('["writer"]', '["shared"]'),
+    ]
+
+    for text in cases:
+        with pytest.raises(ModelConfigurationError):
+            parse_model_config(text, purposes={"chat", "question_generation"})
+
+    with pytest.raises(ModelConfigurationError):
+        parse_model_config(
+            FALLBACK_CONFIG.replace(
+                '[profiles.writer.capabilities]\ntools = "supported"',
+                '[profiles.writer.capabilities]\ntools = "unsupported"',
+            ),
+            purposes={"chat", "question_generation"},
+        )
+
+
+def test_fallback_eligibility_checks_capability_budget_and_identity_constraints() -> None:
+    config = parse_model_config(
+        FALLBACK_CONFIG,
+        purposes={"chat", "question_generation"},
+    )
+    writer = config.resolve_selected_candidates(
+        "chat",
+        ModelSelection(profile_id="writer"),
+    )[0]
+
+    eligible = config.resolve_selected_candidates(
+        "chat",
+        ModelSelection(profile_id="shared", fallback_profile_ids=("writer",)),
+        requirements=ModelRequestRequirements(
+            capabilities=("tools",),
+            minimum_context_tokens=32000,
+            minimum_output_tokens=2048,
+        ),
+    )
+    assert len(eligible) == 2
+
+    with pytest.raises(ModelSelectionError) as excluded:
+        config.resolve_selected_candidates(
+            "chat",
+            ModelSelection(profile_id="shared", fallback_profile_ids=("writer",)),
+            requirements=ModelRequestRequirements(
+                capabilities=("tools",),
+                minimum_context_tokens=32000,
+                minimum_output_tokens=2048,
+                excluded_configuration_fingerprints=(writer.configuration_fingerprint,),
+            ),
+        )
+    assert excluded.value.code == "identity_conflict"
+
+    with pytest.raises(ModelSelectionError) as too_large:
+        config.resolve_selected_candidates(
+            "chat",
+            ModelSelection(profile_id="shared", fallback_profile_ids=("writer",)),
+            requirements=ModelRequestRequirements(minimum_context_tokens=256000),
+        )
+    assert too_large.value.code == "context_window_insufficient"
+
+
 @pytest.mark.parametrize(
     "selection,expected_code",
     [

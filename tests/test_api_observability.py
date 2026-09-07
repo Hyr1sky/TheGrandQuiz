@@ -57,6 +57,7 @@ def test_chat_session_exposes_an_idle_observability_snapshot(tmp_path: Path) -> 
     assert snapshot["summary"] == {
         "model_calls": 0,
         "retries": 0,
+        "fallbacks": 0,
         "rejection_counts": [],
         "error_count": 0,
         "prompt_tokens": 0,
@@ -489,6 +490,7 @@ def test_observability_openapi_exposes_only_finite_semantic_event_fields(
         "node_id",
         "provider_failure",
         "provider_retry",
+        "provider_fallback",
         "execution_identity",
     }
     provider_failure = schema["components"]["schemas"]["SafeProviderFailureV1"]
@@ -520,6 +522,15 @@ def test_observability_openapi_exposes_only_finite_semantic_event_fields(
         "reason",
         "delay_seconds",
     }
+    provider_fallback = schema["components"]["schemas"]["SafeProviderFallbackDecisionV1"]
+    assert set(provider_fallback["properties"]) == {
+        "attempt",
+        "action",
+        "reason",
+        "from_candidate",
+        "to_candidate",
+    }
+    assert provider_fallback["properties"]["action"]["enum"] == ["switch", "stop"]
     execution_identity = schema["components"]["schemas"]["SafeModelExecutionIdentityV1"]
     assert set(execution_identity["properties"]) == {
         "status",

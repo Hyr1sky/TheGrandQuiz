@@ -13,6 +13,10 @@ model = "deepseek-chat"
 timeout_seconds = 60
 api_dialect = "deepseek"
 thinking_mode = "disabled"
+# Operator-declared conservative limits for eligibility checks. Verify these
+# against the exact deployment before enabling fallback.
+context_window_tokens = 32000
+max_output_tokens = 4096
 
 [profiles.shared.capabilities]
 tools = "supported"
@@ -32,6 +36,8 @@ model = "qwen-plus"
 timeout_seconds = 60
 api_dialect = "dashscope"
 thinking_mode = "disabled"
+context_window_tokens = 32000
+max_output_tokens = 4096
 
 [profiles.writer.capabilities]
 tools = "supported"
@@ -58,3 +64,15 @@ base_delay_seconds = 0.5
 max_delay_seconds = 8.0
 max_total_wait_seconds = 30.0
 jitter_ratio = 0.2
+
+# Optional serial availability fallback. It is disabled unless both the policy
+# and an ordered, purpose-specific candidate list are explicitly configured.
+# The listed profiles are also the data-transfer allowlist; configured keys are
+# never discovered as fallback candidates automatically.
+#
+# [fallback]
+# enabled = true
+# max_attempts_per_candidate = 1
+#
+# [fallback_candidates]
+# chat = ["writer"]

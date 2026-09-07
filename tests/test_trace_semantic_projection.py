@@ -767,6 +767,108 @@ def test_project_trace_exposes_safe_transport_attempts_without_double_counting_u
     assert "SECRET-UPSTREAM-BODY" not in run.model_dump_json()
 
 
+def test_project_trace_exposes_safe_fallback_and_actual_candidate_identity() -> None:
+    primary = {
+        "schema_version": "model-identity.v1",
+        "purpose": "chat",
+        "selection_source": "default",
+        "configuration_fingerprint": "1" * 64,
+        "policy_fingerprint": "9" * 64,
+    }
+    backup = {
+        **primary,
+        "selection_source": "fallback",
+        "configuration_fingerprint": "2" * 64,
+    }
+    run = project_trace(
+        [
+            _event("model.started", 0, span_id="model", payload={"model_identity": primary}),
+            _event(
+                "model_attempt.started",
+                1,
+                span_id="attempt-1",
+                parent_span_id="model",
+                payload={"attempt_index": 1, "candidate_index": 1, "model_identity": primary},
+            ),
+            _event(
+                "model_attempt.ended",
+                2,
+                span_id="attempt-1",
+                parent_span_id="model",
+                payload={
+                    "ok": False,
+                    "attempt_index": 1,
+                    "candidate_index": 1,
+                    "model_identity": primary,
+                    "provider_failure_category": "server_error",
+                    "provider_failure_code": "provider_unavailable",
+                    "provider_retryable": True,
+                    "error": "SECRET-UPSTREAM-BODY",
+                },
+            ),
+            _event(
+                "model.fallback_decided",
+                3,
+                span_id="attempt-1",
+                parent_span_id="model",
+                payload={
+                    "attempt_index": 1,
+                    "action": "switch",
+                    "reason": "candidate_available",
+                    "from_candidate": 1,
+                    "to_candidate": 2,
+                    "model_identity": primary,
+                    "selected_model_identity": backup,
+                    "secret_profile_id": "do-not-project",
+                },
+            ),
+            _event(
+                "model_attempt.started",
+                4,
+                span_id="attempt-2",
+                parent_span_id="model",
+                payload={"attempt_index": 2, "candidate_index": 2, "model_identity": backup},
+            ),
+            _event(
+                "model_attempt.ended",
+                5,
+                span_id="attempt-2",
+                parent_span_id="model",
+                payload={"ok": True, "attempt_index": 2, "model_identity": backup},
+            ),
+            _event(
+                "model.ended",
+                6,
+                span_id="model",
+                payload={
+                    "ok": True,
+                    "selected_model_identity": backup,
+                    "usage": {
+                        "prompt_tokens": 1,
+                        "completion_tokens": 1,
+                        "total_tokens": 2,
+                    },
+                },
+            ),
+        ],
+        trace_id="trace-safe",
+    )
+
+    fallback = run.events[3].provider_fallback
+    assert fallback is not None
+    assert fallback.action == "switch"
+    assert fallback.from_candidate == 1
+    assert fallback.to_candidate == 2
+    assert run.events[4].execution_identity is not None
+    assert run.events[4].execution_identity.selection_source == "fallback"
+    assert run.events[6].execution_identity == run.events[4].execution_identity
+    assert run.summary.fallbacks == 1
+    assert run.summary.retries == 0
+    serialized = run.model_dump_json()
+    assert "do-not-project" not in serialized
+    assert "SECRET-UPSTREAM-BODY" not in serialized
+
+
 def test_project_trace_completed_chat_uses_latest_turn_summary() -> None:
     run = project_trace(
         [

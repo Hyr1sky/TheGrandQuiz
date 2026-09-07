@@ -48,6 +48,7 @@ const snapshot = {
   summary: {
     model_calls: 1,
     retries: 1,
+    fallbacks: 0,
     rejection_counts: [
       { reason_code: "distractor_quality_unmet", count: 1 },
     ],
@@ -321,6 +322,51 @@ describe("ObservatoryDrawer", () => {
     expect(within(timeline).getByText("传输重试")).toBeInTheDocument();
     expect(within(timeline).getByText("临时故障")).toBeInTheDocument();
     expect(within(timeline).getByText("等待 2.00 s")).toBeInTheDocument();
+  });
+
+  it("explains an authorized fallback without exposing profile details", async () => {
+    const fallbackSnapshot = {
+      ...snapshot,
+      summary: { ...snapshot.summary, fallbacks: 1 },
+      events: [
+        {
+          ...snapshot.events[0],
+          phase: "event",
+          provider_fallback: {
+            attempt: 1,
+            action: "switch",
+            reason: "candidate_available",
+            from_candidate: 1,
+            to_candidate: 2,
+          },
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        observabilityResponse(input, fallbackSnapshot),
+      ),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+
+    render(
+      <ObservatoryDrawer
+        open
+        traceId="trace-1"
+        onClose={vi.fn()}
+        onSelectTrace={vi.fn()}
+      />,
+    );
+
+    const timeline = await screen.findByRole("region", {
+      name: "语义事件",
+    });
+    expect(within(timeline).getByText("切换备用模型")).toBeInTheDocument();
+    expect(within(timeline).getByText("存在已授权备用候选")).toBeInTheDocument();
+    expect(within(timeline).getByText("候选 1 → 2")).toBeInTheDocument();
+    expect(screen.getByText("模型切换").closest("article")).toHaveTextContent("1");
+    expect(document.body).not.toHaveTextContent("profile");
   });
 
   it("can be closed without affecting the running trace", async () => {

@@ -43,6 +43,7 @@ const SELECTION_SOURCE_LABELS = {
   explicit_profile: "显式 Profile",
   preset_fast: "快速预设",
   preset_quality: "质量预设",
+  fallback: "故障备用",
 } as const;
 
 const DATA_LOCATION_LABELS = {
