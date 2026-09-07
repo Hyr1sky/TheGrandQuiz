@@ -1,12 +1,12 @@
 """单题考核编排——考我 → 选题 → 出题 → 答 → 判卷的确定性 workflow（非自由 ReAct）。
 
 ADR-0004："LLM 判卷，代码记账"。这里的骨架是确定性代码：选题、判决落账（``weak_item_id``）、
-发事件全在代码里；LLM 只在"出题"（role=enrich）与"判卷"（role=basic）两个有界槽被调用。
+发事件全在代码里；LLM 只在 ``question_generation`` 与 ``answer_grading`` 两个有界用途被调用。
 每步都在**同一条事件脊柱**上发事件——trace 形状：
 
     assessment（根 span）
-    ├── model（出题的 model span[enrich]，挂 assessment 下）
-    └── model（判卷的 model span[basic]，挂 assessment 下；**仅开放 / 追问有**——选择题判卷是
+    ├── model（出题的 question_generation span，挂 assessment 下）
+    └── model（判卷的 answer_grading span，挂 assessment 下；**仅开放 / 追问有**——选择题判卷是
              确定性代码，无此 span）
     · assessment_refused / question_asked / answer_judged / concept_state_changed / followup_given
       皆 parent=assessment span 的点事件（无 span_id，不进树）
@@ -95,7 +95,7 @@ from grandquiz.domain.learning.state import LearningStateWriter
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.clock import Rng
 from grandquiz.kernel.events import EventEmitter
-from grandquiz.providers.base import Provider
+from grandquiz.providers.models import ModelSource
 
 # assessment 是 workflow span，用 kernel 级通用类型串（kernel 不认识 "assessment"，泛型建树即可）。
 _ASSESSMENT_STARTED = "assessment.started"
@@ -172,7 +172,7 @@ class AssessmentResult(BaseModel):
 async def assess_once(
     *,
     store: Store,
-    provider: Provider,
+    provider: ModelSource,
     responder: Responder,
     memory: Memory,
     emitter: EventEmitter,
@@ -327,7 +327,8 @@ async def assess_once(
         # 有效语言解析（确定性代码）：偏好 > 中文。下传出题 / 判卷的 {{LANGUAGE}} 槽。
         language = _resolve_language(preferences)
 
-        # e. 分型出题（role=enrich）+ 校验门（缝 3）。选择题走 MC 出题；追问用深挖 prompt 变体；
+        # e. 分型出题（question_generation）+ 校验门（缝 3）。选择题走 MC 出题；
+        #    追问用深挖 prompt 变体；
         #    开放走标准出题。三者都发 QUESTION_ASKED（带 question_type，锚定真实 item + 非空证据）。
         #    从会话内 + 跨会话"已问过"台账取被考 item 的已问列表下传做去重（都为 None = 不去重、
         #    向后兼容；只接一边也行——两条防线互补，见函数 docstring）。
@@ -449,7 +450,7 @@ async def assess_once(
         )
 
         # g. 分型判卷。选择题 → 确定性代码（**不调 LLM**，无判卷 model span）；开放 / 追问 → LLM
-        #    判卷（role=basic）+ 校验门（缝 3）。两路统一得到 VerdictLabel + cited_evidence。
+        #    判卷（answer_grading）+ 校验门（缝 3）。两路统一得到 VerdictLabel + cited_evidence。
         # verdict_reason：判官一句话诊断，只在开放 / 追问的 LLM 判卷槽产出（MC 判卷是代码、无判官
         # → 空串）。additive 进 ANSWER_JUDGED 供 printer 展示；**不参与记账**（weak_item_id 仍按
         # verdict 算）。

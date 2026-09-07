@@ -1,13 +1,12 @@
-"""OpenAICompatProvider——OpenAI 兼容的真实 LLM provider。
+"""OpenAI-compatible 模型传输，以及旧双槽 Provider 的兼容 facade。
 
-默认配置由 ``LLM_*`` 读取；可选完整 ``ENRICH_LLM_*`` 覆盖 enrich 兼容槽，否则整组继承。
-DeepSeek 与 Qwen 都提供 OpenAI 兼容端点，但 thinking 扩展字段不同，故共用
-``AsyncOpenAI`` 客户端、在本边界按方言组装请求。密钥只经环境变量注入，绝不进代码 / git
-（见 AGENTS.md 密钥纪律）。
+``OpenAIChatModel`` 接收一个已解析的 ``ChatModelConfig``，只执行 completion/stream 并在本边界
+正规化错误；它不知道用途或学习领域。DeepSeek 与 DashScope 都提供 OpenAI-compatible endpoint，
+但 thinking 扩展字段不同，故共用 ``AsyncOpenAI`` 客户端并在本边界按方言组装请求。
 
-实现 ``providers/base.py`` 的 ``Provider`` 协议——因此在 ingest / Reader 里可与 DemoEcho /
-Record / Replay 互换：测试传假件、录制传 ``RecordingProvider(OpenAICompatProvider.from_env())``、
-CI 回放传 ``ReplayProvider(cassette)``，调用方不变。
+``OpenAICompatProvider`` 仅保留旧 ``basic/enrich`` 配置、录制与测试资产的显式入口；新的生产装配经
+``interfaces/model_config.py`` 创建用途绑定的 ``ModelRuntime``。密钥只由环境引用解析，绝不进入代码、
+git、执行身份或公共诊断。
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ from __future__ import annotations
 import json
 import math
 import os
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal, cast
 from urllib.parse import urlparse
@@ -56,6 +55,7 @@ from grandquiz.providers.failure import (
     ProviderFailureCategory,
     safe_provider_code,
 )
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 _TRUTHY = {"1", "true", "yes", "on"}
 ProviderDialect = Literal["deepseek", "dashscope", "generic"]
@@ -248,7 +248,7 @@ def _parse_tool_calls(message: Any) -> list[ToolCall] | None:
 
 
 @dataclass(frozen=True)
-class RoleConfig:
+class ChatModelConfig:
     """一个命名角色的 LLM 配置（对应 .env 的一组 ``<PREFIX>*`` 变量）。"""
 
     api_key: str = field(repr=False)
@@ -261,6 +261,10 @@ class RoleConfig:
     thinking_mode: ThinkingMode = "provider_default"
     reasoning_effort: ReasoningEffort | None = None
     env_prefix: RoleEnvPrefix | None = None
+
+
+# Explicit legacy configuration name; new transports accept ChatModelConfig.
+RoleConfig = ChatModelConfig
 
 
 @dataclass(frozen=True)
@@ -297,15 +301,21 @@ class _PreparedChatRequest:
     tools: list[ChatCompletionToolParam] | Omit
 
 
-def _read_role(prefix: RoleEnvPrefix) -> RoleConfig:
+def _read_role(
+    prefix: RoleEnvPrefix,
+    *,
+    environment: Mapping[str, str] | None = None,
+) -> RoleConfig:
+    env = os.environ if environment is None else environment
+
     def required(name: str) -> str:
-        value = os.environ.get(name)
+        value = env.get(name)
         if not value or not value.strip():
             raise RuntimeError(f"缺少环境变量 {name}（见 .env.example）")
         return value
 
     base_url = required(f"{prefix}BASE_URL")
-    dialect_value = os.environ.get(f"{prefix}API_DIALECT", "").strip().casefold()
+    dialect_value = env.get(f"{prefix}API_DIALECT", "").strip().casefold()
     if dialect_value:
         if dialect_value not in {"deepseek", "dashscope", "generic"}:
             raise ValueError(f"{prefix}API_DIALECT 必须是 deepseek/dashscope/generic")
@@ -319,19 +329,19 @@ def _read_role(prefix: RoleEnvPrefix) -> RoleConfig:
             if host == "dashscope.aliyuncs.com"
             else "generic"
         )
-    thinking_value = os.environ.get(f"{prefix}THINKING_MODE", "").strip().casefold()
+    thinking_value = env.get(f"{prefix}THINKING_MODE", "").strip().casefold()
     if thinking_value:
         if thinking_value not in {"provider_default", "enabled", "disabled"}:
             raise ValueError(f"{prefix}THINKING_MODE 必须是 provider_default/enabled/disabled")
         thinking_mode = cast("ThinkingMode", thinking_value)
     else:
-        legacy_disabled = os.environ.get(f"{prefix}DISABLE_THINKING", "").strip().lower() in _TRUTHY
+        legacy_disabled = env.get(f"{prefix}DISABLE_THINKING", "").strip().lower() in _TRUTHY
         thinking_mode = "disabled" if legacy_disabled else "provider_default"
-    effort_value = os.environ.get(f"{prefix}REASONING_EFFORT", "").strip().casefold()
+    effort_value = env.get(f"{prefix}REASONING_EFFORT", "").strip().casefold()
     if effort_value and effort_value not in {"high", "max"}:
         raise ValueError(f"{prefix}REASONING_EFFORT 必须是 high/max")
     try:
-        timeout_seconds = float(os.environ.get(f"{prefix}TIMEOUT_SECONDS", "60"))
+        timeout_seconds = float(env.get(f"{prefix}TIMEOUT_SECONDS", "60"))
     except ValueError:
         raise ValueError(f"{prefix}TIMEOUT_SECONDS 必须是有限正数") from None
     if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
@@ -341,7 +351,7 @@ def _read_role(prefix: RoleEnvPrefix) -> RoleConfig:
         base_url=base_url,
         model=required(f"{prefix}MODEL"),
         timeout_seconds=timeout_seconds,
-        only_provider=os.environ.get(f"{prefix}ONLY_PROVIDER", "").strip() or None,
+        only_provider=env.get(f"{prefix}ONLY_PROVIDER", "").strip() or None,
         api_dialect=dialect,
         thinking_mode=thinking_mode,
         reasoning_effort=cast("ReasoningEffort | None", effort_value or None),
@@ -349,18 +359,25 @@ def _read_role(prefix: RoleEnvPrefix) -> RoleConfig:
     )
 
 
-class OpenAICompatProvider:
+def read_legacy_role_configs(environment: Mapping[str, str]) -> dict[Role, RoleConfig]:
+    """Explicit legacy importer, sharing PCP-01 validation without allocating SDK clients."""
+    default = _read_role("LLM_", environment=environment)
+    has_enrich = any(
+        environment.get(f"ENRICH_LLM_{suffix}", "").strip() for suffix in _ROLE_ENV_SUFFIXES
+    )
+    return {
+        "basic": default,
+        "enrich": _read_role("ENRICH_LLM_", environment=environment) if has_enrich else default,
+    }
+
+
+class OpenAICompatProvider(LegacyPurposeProvider):
     """OpenAI 兼容 provider：按角色路由到各自的 base_url / model。"""
 
     def __init__(self, role_configs: dict[Role, RoleConfig]) -> None:
-        # 每个槽独立拥有 SDK client，统一由 aclose 关闭；共享不可变配置不共享连接池。
+        # Legacy façade owns its two single-model transports.
         self._configs = role_configs
-        self._clients: dict[Role, AsyncOpenAI] = {
-            role: AsyncOpenAI(
-                api_key=cfg.api_key, base_url=cfg.base_url, timeout=cfg.timeout_seconds
-            )
-            for role, cfg in role_configs.items()
-        }
+        self._models = {role: OpenAIChatModel(cfg) for role, cfg in role_configs.items()}
 
     @classmethod
     def from_env(
@@ -374,14 +391,7 @@ class OpenAICompatProvider:
         所有环境配置先解析完毕，再创建客户端；此处继承不代表失败后自动 fallback。
         """
 
-        default = _read_role("LLM_")
-        has_enrich_config = any(
-            os.environ.get(f"ENRICH_LLM_{suffix}", "").strip() for suffix in _ROLE_ENV_SUFFIXES
-        )
-        configs: dict[Role, RoleConfig] = {
-            "basic": default,
-            "enrich": _read_role("ENRICH_LLM_") if has_enrich_config else default,
-        }
+        configs = read_legacy_role_configs(os.environ)
         for role, override in (role_overrides or {}).items():
             current = configs[role]
             configs[role] = replace(
@@ -424,14 +434,49 @@ class OpenAICompatProvider:
             for role, cfg in self._configs.items()
         }
 
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        return await self._models[role].complete(messages, tools=tools)
+
+    async def stream_complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        role: Role = "basic",
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        async for event in self._models[role].stream_complete(messages, tools=tools):
+            yield event
+
+    async def aclose(self) -> None:
+        for model in self._models.values():
+            await model.aclose()
+
+
+class OpenAIChatModel:
+    """One resolved OpenAI-compatible model; no role or business selection."""
+
+    def __init__(self, config: ChatModelConfig) -> None:
+        self._config = config
+        self._client = AsyncOpenAI(
+            api_key=config.api_key,
+            base_url=config.base_url,
+            timeout=config.timeout_seconds,
+            max_retries=0,
+        )
+
     def _prepare_request(
         self,
         messages: Sequence[Message],
         *,
-        role: Role,
         tools: Sequence[ToolSpec] | None,
     ) -> _PreparedChatRequest:
-        config = self._configs[role]
+        config = self._config
         extra_body: dict[str, object] = {}
         if config.api_dialect == "deepseek":
             if config.thinking_mode != "provider_default":
@@ -453,7 +498,7 @@ class OpenAICompatProvider:
                 "allow_fallbacks": False,
             }
         return _PreparedChatRequest(
-            client=self._clients[role],
+            client=self._client,
             model=config.model,
             messages=_to_oai_messages(messages),
             extra_body=extra_body or None,
@@ -464,17 +509,16 @@ class OpenAICompatProvider:
         self,
         messages: Sequence[Message],
         *,
-        role: Role = "basic",
         tools: Sequence[ToolSpec] | None = None,
     ) -> Completion:
-        request = self._prepare_request(messages, role=role, tools=tools)
+        request = self._prepare_request(messages, tools=tools)
         # tools 走 omit 哨兵：无工具 → 与"不传该参数"等价（线上请求逐字节不变），既有纯文本
         # completion 路径与 golden cassette 完全不受影响（replay_key 也不含 tools）。
         try:
             response = await request.client.chat.completions.create(
                 model=request.model,
                 messages=request.messages,
-                # temperature=0：出题（enrich）必须贪心解码。温度采样会让同一 message
+                # temperature=0：结构化生成必须贪心解码。温度采样会让同一 message
                 # 每次录出不同题，毁掉 record/replay 可复现性；判卷 / ReAct 同样取 0。
                 temperature=0,
                 extra_body=request.extra_body,
@@ -495,11 +539,10 @@ class OpenAICompatProvider:
         self,
         messages: Sequence[Message],
         *,
-        role: Role = "basic",
         tools: Sequence[ToolSpec] | None = None,
     ) -> AsyncIterator[ProviderStreamEvent]:
         """把 OpenAI chunk 归一成文本增量，并在边界内组装完整 tool calls。"""
-        request = self._prepare_request(messages, role=role, tools=tools)
+        request = self._prepare_request(messages, tools=tools)
         try:
             raw_stream = await request.client.chat.completions.create(
                 model=request.model,
@@ -519,6 +562,7 @@ class OpenAICompatProvider:
         prompt_tokens = 0
         completion_tokens = 0
 
+        primary_error: BaseException | None = None
         try:
             async for chunk in stream:
                 chunk_usage = getattr(chunk, "usage", None)
@@ -559,7 +603,19 @@ class OpenAICompatProvider:
                     if arguments:
                         fragment["arguments"] += str(arguments)
         except APIError as exc:
+            primary_error = exc
             raise _normalize_openai_failure(exc) from exc
+        except BaseException as exc:
+            primary_error = exc
+            raise
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                try:
+                    await cast("Callable[[], Awaitable[object]]", close)()
+                except Exception:
+                    if primary_error is None:
+                        raise
 
         tool_calls: list[ToolCall] | None = None
         if tool_fragments:
@@ -592,5 +648,4 @@ class OpenAICompatProvider:
 
     async def aclose(self) -> None:
         """关闭底层 HTTP 客户端（长生命周期 provider 退出时调用）。"""
-        for client in self._clients.values():
-            await client.close()
+        await self._client.close()

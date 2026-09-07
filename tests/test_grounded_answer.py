@@ -15,9 +15,10 @@ from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Completion, Message, Role, ToolSpec, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 
-class _GroundedAnswerProvider:
+class _GroundedAnswerProvider(LegacyPurposeProvider):
     def __init__(self) -> None:
         self.calls = 0
 
@@ -50,7 +51,7 @@ class _GroundedAnswerProvider:
         )
 
 
-class _NoEvidenceProvider:
+class _NoEvidenceProvider(LegacyPurposeProvider):
     def __init__(self) -> None:
         self.calls = 0
 
@@ -71,7 +72,7 @@ class _NoEvidenceProvider:
         )
 
 
-class _LatentMemoryProvider:
+class _LatentMemoryProvider(LegacyPurposeProvider):
     def __init__(self, quote: str) -> None:
         self._quote = quote
         self.calls = 0
@@ -99,7 +100,7 @@ class _LatentMemoryProvider:
         )
 
 
-class _AmbiguousQuoteProvider:
+class _AmbiguousQuoteProvider(LegacyPurposeProvider):
     def __init__(self) -> None:
         self.calls = 0
 

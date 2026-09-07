@@ -18,7 +18,7 @@ from grandquiz.domain.learning.store import Store
 from grandquiz.domain.learning.tools._scoped_emitter import ScopedEmitter
 from grandquiz.kernel.events import EventEmitter
 from grandquiz.kernel.tools import Tool, ToolContext
-from grandquiz.providers.base import Provider
+from grandquiz.providers.models import ModelSource
 
 
 class IngestToolResult(BaseModel):
@@ -41,7 +41,7 @@ class _IngestParams(BaseModel):
 def make_ingest_tool(
     *,
     source: FetchSource,
-    provider: Provider,
+    provider: ModelSource,
     store: Store,
     approval: ApprovalGate,
     max_bytes: int,

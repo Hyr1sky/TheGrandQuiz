@@ -1,0 +1,25 @@
+{
+  "schema_version": "model-cassette.v3",
+  "calls": {
+    "488f464a9344713ca838ba903e7b4187bca5d115044bcb8b92497ea59d9c8b1e": {
+      "identity": {
+        "schema_version": "model-identity.v1",
+        "purpose": "eval_quality",
+        "selection_source": "default",
+        "configuration_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+        "policy_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "completions": [
+        {
+          "text": "{\"rubric_id\": \"grounded_answer\", \"criteria\": [{\"criterion_id\": \"semantic_support\", \"score\": 4, \"rationale\": \"候选回答由参考材料支持。\", \"candidate_evidence\": \"AgentEvent\", \"reference_evidence\": \"AgentEvent\"}, {\"criterion_id\": \"question_coverage\", \"score\": 4, \"rationale\": \"候选回答由参考材料支持。\", \"candidate_evidence\": \"AgentEvent\", \"reference_evidence\": \"AgentEvent\"}, {\"criterion_id\": \"learning_usefulness\", \"score\": 4, \"rationale\": \"候选回答由参考材料支持。\", \"candidate_evidence\": \"AgentEvent\", \"reference_evidence\": \"AgentEvent\"}], \"overall_rationale\": \"回答准确且有材料依据。\"}",
+          "tool_calls": null,
+          "usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 20,
+            "total_tokens": 30
+          }
+        }
+      ]
+    }
+  }
+}

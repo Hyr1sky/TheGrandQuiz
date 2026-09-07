@@ -9,9 +9,10 @@ from pathlib import Path
 
 from grandquiz.interfaces.api.app import ApiSettings, create_app
 from grandquiz.providers.base import Completion, Message, Role, ToolSpec
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 
-class _ContractProvider:
+class _ContractProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],

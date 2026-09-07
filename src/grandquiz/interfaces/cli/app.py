@@ -7,7 +7,8 @@ memory / TraceStore / EventEmitter / Runner / ContextBuilder 接线）剥到 ``c
 ``_file_source`` 仍可从 ``grandquiz.interfaces.cli.app`` 导入。
 
 CLI 是事件脊柱的消费者：``quiz`` / ``react`` 把 ``QuizEventPrinter`` 订阅到考核事件流做 Rich 呈现、
-不另起渲染逻辑（呼应架构卖点）。子命令都用真 ``OpenAICompatProvider.from_env()`` + 持久化 SQLite
+不另起渲染逻辑（呼应架构卖点）。需要模型的子命令都经 ``create_model_runtime`` 加载用途绑定；
+同时使用持久化 SQLite
 （``--db`` 默认 ``~/.grandquiz/learning.db``，自动建父目录；store / memory 同一 db 文件，薄弱点跨
 会话留存）。真机交互试跑（``grandquiz quiz`` / ``react`` 的 tty 逐题）留给 human。无子命令 → 帮助。
 """
@@ -232,7 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=10,
         help="打开质量门所需的最少盲标样本数（默认 10）",
     )
-    p_calibration.add_argument("--model", default=None, help="本次实验覆盖 basic 角色模型")
+    p_calibration.add_argument("--model", default=None, help="本次实验覆盖 answer_grading 用途模型")
     p_calibration.add_argument(
         "--thinking-mode",
         choices=("provider_default", "enabled", "disabled"),

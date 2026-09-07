@@ -7,6 +7,7 @@ from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventTy
 from grandquiz.kernel.runner import Runner
 from grandquiz.providers.base import Completion, Message, Role
 from grandquiz.providers.echo import DemoEchoProvider
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 
 def _make_runner() -> tuple[Runner, list[AgentEvent]]:
@@ -55,14 +56,14 @@ async def test_history_accumulates_across_turns() -> None:
     assert roles == ["user", "assistant", "user"]
 
 
-class _RaisingProvider:
+class _RaisingProvider(LegacyPurposeProvider):
     async def complete(
         self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
     ) -> Completion:
         raise RuntimeError("boom")
 
 
-class _FlakyProvider:
+class _FlakyProvider(LegacyPurposeProvider):
     """Raises on the first call, echoes on subsequent calls."""
 
     def __init__(self) -> None:

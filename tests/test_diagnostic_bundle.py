@@ -8,13 +8,17 @@ from typing import ClassVar
 from fastapi.testclient import TestClient
 
 from grandquiz.interfaces.api.app import ApiSettings, create_app
-from grandquiz.interfaces.api.diagnostics import DiagnosticBundleExporter
+from grandquiz.interfaces.api.diagnostics import (
+    DiagnosticBundleExporter,
+    DiagnosticConfigIdentityV1,
+)
 from grandquiz.interfaces.api.observability import TraceObservatory
-from grandquiz.interfaces.api.settings import ProviderSettingView
+from grandquiz.interfaces.api.settings import ModelBindingSettingView, ProviderSettingView
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Role, ToolSpec
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 _SENTINELS = (
     "PROMPT_SENTINEL_DO_NOT_EXPORT",
@@ -24,7 +28,7 @@ _SENTINELS = (
 )
 
 
-class _Provider:
+class _Provider(LegacyPurposeProvider):
     model_for_role: ClassVar[dict[str, str]] = {
         "basic": "safe-basic",
         "enrich": "safe-enrich",
@@ -72,6 +76,14 @@ def _providers() -> list[ProviderSettingView]:
     ]
 
 
+def test_v1_config_identity_reads_a_bundle_created_before_model_bindings() -> None:
+    legacy = DiagnosticConfigIdentityV1.model_validate(
+        {"application_version": "0.5.0", "providers": []}
+    )
+
+    assert legacy.model_bindings == []
+
+
 def test_bundle_is_allowlisted_and_repeatable_except_for_manifest_time(tmp_path: Path) -> None:
     store = TraceStore(tmp_path / "trace.db")
     trace_id = "trace-diagnostic-golden"
@@ -100,6 +112,7 @@ def test_bundle_is_allowlisted_and_repeatable_except_for_manifest_time(tmp_path:
                 "endpoint_host": "api.example.test",
             }
         ],
+        "model_bindings": [],
     }
     assert first["summary"]["retries"] == 1
     assert first["events"][0]["reason_code"] == "invalid_json"
@@ -124,6 +137,101 @@ def test_bundle_is_allowlisted_and_repeatable_except_for_manifest_time(tmp_path:
     for sentinel in _SENTINELS:
         assert sentinel not in serialized
     assert "required_env_vars" not in serialized
+
+
+def test_bundle_reads_execution_identity_from_history_not_current_settings(
+    tmp_path: Path,
+) -> None:
+    store = TraceStore(tmp_path / "trace.db")
+    trace_id = "trace-model-identity"
+    store.record(
+        AgentEvent(
+            type="model.started",
+            seq=0,
+            ts=3.0,
+            trace_id=trace_id,
+            span_id="model",
+            payload={
+                "model_identity": {
+                    "schema_version": "model-identity.v1",
+                    "purpose": "question_generation",
+                    "selection_source": "purpose_override",
+                    "configuration_fingerprint": "1" * 64,
+                    "policy_fingerprint": "2" * 64,
+                },
+                "messages": [{"role": "user", "content": _SENTINELS[0]}],
+                "api_key": _SENTINELS[3],
+            },
+        )
+    )
+    exporter = DiagnosticBundleExporter(
+        observatory=TraceObservatory(store),
+        provider_views=_providers,
+        model_binding_views=lambda: [
+            ModelBindingSettingView(
+                purpose="question_generation",
+                selection_source="default",
+                configuration_fingerprint="a" * 64,
+                policy_fingerprint="b" * 64,
+            )
+        ],
+        clock=ManualClock(start=100.0),
+        application_version="test-version",
+    )
+
+    bundle = exporter.export(trace_id).model_dump(mode="json")
+    store.close()
+
+    assert bundle["events"][0]["execution_identity"] == {
+        "status": "known",
+        "purpose": "question_generation",
+        "selection_source": "purpose_override",
+        "configuration_fingerprint": "1" * 64,
+        "policy_fingerprint": "2" * 64,
+    }
+    assert bundle["config_identity"]["providers"][0]["model"] == "safe-basic"
+    assert bundle["config_identity"]["model_bindings"] == [
+        {
+            "purpose": "question_generation",
+            "selection_source": "default",
+            "configuration_fingerprint": "a" * 64,
+            "policy_fingerprint": "b" * 64,
+        }
+    ]
+    serialized = json.dumps(bundle, ensure_ascii=False)
+    for sentinel in _SENTINELS:
+        assert sentinel not in serialized
+
+
+def test_bundle_marks_legacy_model_event_identity_unknown(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path / "trace.db")
+    trace_id = "trace-legacy-model"
+    store.record(
+        AgentEvent(
+            type="model.started",
+            seq=0,
+            ts=3.0,
+            trace_id=trace_id,
+            span_id="model",
+            payload={"role": "basic"},
+        )
+    )
+    exporter = DiagnosticBundleExporter(
+        observatory=TraceObservatory(store),
+        provider_views=_providers,
+        clock=ManualClock(start=100.0),
+    )
+
+    bundle = exporter.export(trace_id).model_dump(mode="json")
+    store.close()
+
+    assert bundle["events"][0]["execution_identity"] == {
+        "status": "unknown",
+        "purpose": None,
+        "selection_source": None,
+        "configuration_fingerprint": None,
+        "policy_fingerprint": None,
+    }
 
 
 def test_bundle_explains_provider_quota_failure_without_exporting_vendor_details(

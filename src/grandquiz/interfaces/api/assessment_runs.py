@@ -51,7 +51,7 @@ from grandquiz.kernel.clock import Clock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.recovery import Decision, RecoveryPolicy
 from grandquiz.kernel.trace import TraceStore
-from grandquiz.providers.base import Provider
+from grandquiz.providers.models import ModelSource
 
 AssessmentStatus = Literal[
     "preparing",
@@ -319,7 +319,7 @@ class AssessmentManager:
         self,
         *,
         persistence: LearningPersistence,
-        provider: Provider,
+        provider: ModelSource,
         trace_store: TraceStore,
         clock: Clock,
         trace_observatory: TraceObservatory | None = None,

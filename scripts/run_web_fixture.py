@@ -22,6 +22,7 @@ from grandquiz.domain.learning.ingest.web_search import SearchResult
 from grandquiz.domain.learning.models import Evidence, KnowledgeItem, LearningResource
 from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.interfaces.api.app import ApiSettings, create_app
+from grandquiz.interfaces.model_config import PRODUCT_MODEL_PURPOSES
 from grandquiz.providers.base import (
     Completion,
     CompletionFinished,
@@ -33,6 +34,9 @@ from grandquiz.providers.base import (
     ToolSpec,
     Usage,
 )
+from grandquiz.providers.legacy import LegacyPurposeProvider
+from grandquiz.providers.models import ModelBindings, with_identity
+from grandquiz.providers.profiles import ModelIdentity
 from grandquiz.providers.speech import TranscriptionRequest, TranscriptionResult
 
 REMOTE_IMAGE_URL = f"https://attacker.invalid/should-not-load.png?fixture_process={os.getpid()}"
@@ -126,7 +130,7 @@ class _FixtureHttpSource:
         )
 
 
-class _FixtureProvider:
+class _FixtureProvider(LegacyPurposeProvider):
     def __init__(self, resource_id: str) -> None:
         self._question_calls = 0
         self._resource_id = resource_id
@@ -431,12 +435,34 @@ def main() -> None:
     (artifact_root / "runtime-location.txt").write_text(str(root), encoding="utf-8")
     learning_db = root / "learning.db"
     resource_id = _seed(learning_db)
+    fixture_provider = _FixtureProvider(resource_id)
+    model_bindings = ModelBindings(
+        tuple(
+            (
+                purpose,
+                with_identity(
+                    fixture_provider.for_purpose(purpose),
+                    ModelIdentity(
+                        purpose=purpose,
+                        selection_source="legacy",
+                        configuration_fingerprint=hashlib.sha256(
+                            f"fixture-config:{purpose}".encode()
+                        ).hexdigest(),
+                        policy_fingerprint=hashlib.sha256(
+                            f"fixture-policy:{purpose}".encode()
+                        ).hexdigest(),
+                    ),
+                ),
+            )
+            for purpose in sorted(PRODUCT_MODEL_PURPOSES)
+        )
+    )
     app = create_app(
         settings=ApiSettings(
             learning_db_path=learning_db,
             trace_db_path=root / "trace.db",
         ),
-        provider=_FixtureProvider(resource_id),
+        provider=model_bindings,
         search_provider=_FixtureSearchProvider(),
         acquisition_http_source=_FixtureHttpSource(),
         speech_provider=_FixtureSpeechProvider(),

@@ -2,18 +2,17 @@
 
 from collections.abc import Sequence
 
-from grandquiz.providers.base import Completion, Message, Role, ToolSpec, Usage
+from grandquiz.providers.base import Completion, Message, ToolSpec, Usage
 
 
 class DemoEchoProvider:
-    """回声最近一条 user 消息。给定输入即确定，无需 record/replay。``role`` / ``tools`` 接收但忽略
+    """回声最近一条 user 消息。给定输入即确定，无需 record/replay。``tools`` 接收但忽略
     （不做 function-calling）。"""
 
     async def complete(
         self,
         messages: Sequence[Message],
         *,
-        role: Role = "basic",
         tools: Sequence[ToolSpec] | None = None,
     ) -> Completion:
         last_user = next((m.content for m in reversed(messages) if m.role == "user"), "")

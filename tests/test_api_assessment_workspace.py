@@ -23,6 +23,7 @@ from grandquiz.interfaces.api.assessment_runs import project_assessment_diagnosi
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, ToolSpec, Usage
 from grandquiz.providers.failure import ProviderFailure, ProviderFailureCategory
+from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.speech import (
     SpeechRecognitionProvider,
     TranscriptionRequest,
@@ -57,7 +58,7 @@ def _open_question_payload(question: str) -> dict[str, object]:
     }
 
 
-class _AssessmentProvider:
+class _AssessmentProvider(LegacyPurposeProvider):
     def __init__(self) -> None:
         self.calls = 0
 
@@ -86,7 +87,7 @@ class _AssessmentProvider:
         )
 
 
-class _OpenAssessmentProvider:
+class _OpenAssessmentProvider(LegacyPurposeProvider):
     def __init__(self, *, accept_appeal: bool = False) -> None:
         self.question_calls = 0
         self.grading_calls = 0
@@ -197,7 +198,7 @@ class _FailOnceAppealProvider(_OpenAssessmentProvider):
         return await super().complete(messages, role=role, tools=tools)
 
 
-class _MixedPlanAssessmentProvider:
+class _MixedPlanAssessmentProvider(LegacyPurposeProvider):
     def __init__(self) -> None:
         self.multiple_choice_calls = 0
 
@@ -253,7 +254,7 @@ class _MixedPlanAssessmentProvider:
         )
 
 
-class _FailingAssessmentProvider:
+class _FailingAssessmentProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],
@@ -265,7 +266,7 @@ class _FailingAssessmentProvider:
         raise RuntimeError("assessment provider failed")
 
 
-class _TypedFailingAssessmentProvider:
+class _TypedFailingAssessmentProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],
@@ -282,7 +283,7 @@ class _TypedFailingAssessmentProvider:
         )
 
 
-class _InvalidQuestionProvider:
+class _InvalidQuestionProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],
@@ -314,7 +315,7 @@ class _InvalidGradingProvider(_OpenAssessmentProvider):
         )
 
 
-class _BlockingAssessmentProvider:
+class _BlockingAssessmentProvider(LegacyPurposeProvider):
     def __init__(self) -> None:
         self.started = threading.Event()
 

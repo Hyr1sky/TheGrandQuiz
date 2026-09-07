@@ -17,7 +17,7 @@ from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.clock import new_rng
 from grandquiz.kernel.events import EventEmitter
-from grandquiz.providers.base import Provider
+from grandquiz.providers.models import ModelSource
 
 
 class AssessmentSession:
@@ -27,7 +27,7 @@ class AssessmentSession:
         self,
         *,
         store: Store,
-        provider: Provider,
+        provider: ModelSource,
         responder: Responder,
         memory: Memory,
         seed: int = 0,

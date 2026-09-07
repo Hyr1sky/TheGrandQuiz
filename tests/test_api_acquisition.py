@@ -21,9 +21,10 @@ from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import EventEmitter, EventSink
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, ToolSpec, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 
-class _ReaderProvider:
+class _ReaderProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],
@@ -67,7 +68,7 @@ class _ReaderProvider:
         )
 
 
-class _BlockingReaderProvider:
+class _BlockingReaderProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],
@@ -79,7 +80,7 @@ class _BlockingReaderProvider:
         raise AssertionError("取消后不应自然返回")
 
 
-class _FailingReaderProvider:
+class _FailingReaderProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],
@@ -90,7 +91,7 @@ class _FailingReaderProvider:
         raise RuntimeError("provider secret")
 
 
-class _InvalidEvidenceReaderProvider:
+class _InvalidEvidenceReaderProvider(LegacyPurposeProvider):
     """返回结构合法但无法定位的 Evidence，复现被泛化的领域失败。"""
 
     async def complete(

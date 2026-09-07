@@ -15,11 +15,15 @@ from grandquiz.providers.base import (
     Message,
     ProviderStreamEvent,
     Role,
+    StreamingModel,
     TextDelta,
     ToolCall,
     ToolSpec,
 )
 from grandquiz.providers.budget import BudgetedProvider, ProviderRequestBudgetExceeded
+from grandquiz.providers.legacy import LegacyPurposeProvider
+from grandquiz.providers.models import ModelBindings, bind_model, identity_of, with_identity
+from grandquiz.providers.profiles import ModelIdentity
 
 
 class _CharCounter:
@@ -27,7 +31,104 @@ class _CharCounter:
         return len(text)
 
 
-class _CountingProvider:
+class _CountingModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        del messages, tools
+        self.calls += 1
+        return Completion(text="ok")
+
+
+class _StreamingCountingModel(_CountingModel):
+    def stream_complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        del messages, tools
+
+        async def stream() -> AsyncIterator[ProviderStreamEvent]:
+            self.calls += 1
+            yield TextDelta(text="o")
+            yield CompletionFinished(completion=Completion(text="ok"))
+
+        return stream()
+
+
+async def test_budgeted_model_rejects_before_call_and_preserves_bound_identity() -> None:
+    from grandquiz.providers.budget import budget_model
+
+    inner = _CountingModel()
+    identity = ModelIdentity(
+        purpose="chat",
+        selection_source="default",
+        configuration_fingerprint="1" * 64,
+        policy_fingerprint="2" * 64,
+    )
+    model = budget_model(
+        with_identity(inner, identity),
+        counter=_CharCounter(),
+        ceiling=40,
+    )
+
+    with pytest.raises(ProviderRequestBudgetExceeded):
+        await model.complete([Message(role="user", content="x" * 100)])
+
+    assert inner.calls == 0
+    assert identity_of(model) == identity
+
+
+async def test_budgeted_model_preserves_native_streaming_capability() -> None:
+    from grandquiz.providers.budget import budget_model
+
+    inner = _StreamingCountingModel()
+    model = budget_model(inner, counter=_CharCounter(), ceiling=1_000)
+
+    assert isinstance(model, StreamingModel)
+    events = [event async for event in model.stream_complete([Message(role="user", content="hi")])]
+
+    assert events == [
+        TextDelta(text="o"),
+        CompletionFinished(completion=Completion(text="ok")),
+    ]
+    assert inner.calls == 1
+    assert not isinstance(
+        budget_model(_CountingModel(), counter=_CharCounter(), ceiling=1_000),
+        StreamingModel,
+    )
+
+
+async def test_budgeted_models_bind_each_registered_purpose_without_losing_identity() -> None:
+    from grandquiz.providers.budget import budget_models
+
+    chat_identity = ModelIdentity(
+        purpose="chat",
+        selection_source="default",
+        configuration_fingerprint="1" * 64,
+        policy_fingerprint="2" * 64,
+    )
+    reading_identity = chat_identity.model_copy(update={"purpose": "material_reading"})
+    source = ModelBindings(
+        (
+            ("chat", with_identity(_CountingModel(), chat_identity)),
+            ("material_reading", with_identity(_CountingModel(), reading_identity)),
+        )
+    )
+    budgeted = budget_models(source, counter=_CharCounter(), ceiling=1_000)
+
+    assert identity_of(bind_model(budgeted, "chat")) == chat_identity
+    assert identity_of(bind_model(budgeted, "material_reading")) == reading_identity
+
+
+class _CountingProvider(LegacyPurposeProvider):
     def __init__(self) -> None:
         self.calls = 0
 
@@ -99,7 +200,7 @@ class _NoParams(BaseModel):
     pass
 
 
-class _FirstCallUsesTool:
+class _FirstCallUsesTool(LegacyPurposeProvider):
     def __init__(self) -> None:
         self.calls = 0
 

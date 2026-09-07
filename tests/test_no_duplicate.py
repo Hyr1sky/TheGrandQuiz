@@ -35,6 +35,7 @@ from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 _QUOTE = "闭包捕获的是变量而非值"
 _SEED = 42
@@ -93,7 +94,7 @@ def _emitter() -> tuple[EventEmitter, list[AgentEvent]]:
     return EventEmitter(sink, ManualClock(), trace_id="t"), events
 
 
-class _SeqProvider:
+class _SeqProvider(LegacyPurposeProvider):
     """按调用序返回不同文本——模拟"首调重复（被门挡）、二调换角度（救回）"。计被调次数。"""
 
     def __init__(self, texts: Sequence[str]) -> None:
@@ -200,7 +201,7 @@ async def test_mc_duplicate_question_retries_then_recovers() -> None:
 # --- 缝 1：多轮会话内零逐字重复（同一薄弱 item 复考两轮） ------------------------------
 
 
-class _DupProvider:
+class _DupProvider(LegacyPurposeProvider):
     """出题假 provider：未被"已问过"约束时**默认重复**同一道题；见约束则换角度。判卷恒判对。
 
     体现修复的价值：不注入台账约束时它会逐字重复（红），注入后换题（绿）；即便它无视约束，

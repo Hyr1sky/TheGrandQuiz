@@ -30,6 +30,7 @@ from grandquiz.interfaces.cli.app import run_ingest, run_quiz
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
 from grandquiz.kernel.events import AgentEvent
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.replay import ReplayMiss
 
 _QUOTE = "闭包捕获变量而非值"
@@ -52,7 +53,7 @@ _READER_JSON = json.dumps(
 )
 
 
-class _ReaderProvider:
+class _ReaderProvider(LegacyPurposeProvider):
     """ingest 用假 provider：恒返回固定候选 JSON（供 run_ingest 的 Reader 槽）。"""
 
     async def complete(
@@ -79,7 +80,7 @@ class _ReaderProvider:
         )
 
 
-class _InvalidEvidenceReaderProvider:
+class _InvalidEvidenceReaderProvider(LegacyPurposeProvider):
     async def complete(
         self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
     ) -> Completion:
@@ -114,7 +115,7 @@ class _InvalidEvidenceReaderProvider:
         )
 
 
-class _McProvider:
+class _McProvider(LegacyPurposeProvider):
     """quiz 用假 provider：enrich 出选择题（正确项恒在下标 0），basic 判卷（本测用不到）。"""
 
     def __init__(self) -> None:
@@ -140,7 +141,7 @@ class _McProvider:
         )
 
 
-class _BrokenProvider:
+class _BrokenProvider(LegacyPurposeProvider):
     """恒返回非法输出：出题槽 3 次重试用尽 → QuestionError（触发 CLI 本轮跳过分支）。"""
 
     def __init__(self) -> None:
@@ -153,7 +154,7 @@ class _BrokenProvider:
         return Completion(text="这不是 JSON", usage=Usage(prompt_tokens=1, completion_tokens=1))
 
 
-class _ReplayMissProvider:
+class _ReplayMissProvider(LegacyPurposeProvider):
     """出题槽即抛 ReplayMiss（FATAL）：模拟 cassette 缺录 / harness bug，必须冒泡不被跳过。"""
 
     async def complete(

@@ -7,10 +7,11 @@ from typing import Any, cast
 from grandquiz.evals.harness import load_cases, run_all, run_case
 from grandquiz.evals.quality_calibration import CalibratedQualitySuite
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.replay import Cassette, ReplayProvider
 
 
-class _CalibrationAwareProvider:
+class _CalibrationAwareProvider(LegacyPurposeProvider):
     """只模拟外部 LLM 边界；按公开 QualityRequest 生成结构化判定。"""
 
     def __init__(self) -> None:

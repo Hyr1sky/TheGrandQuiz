@@ -1,5 +1,6 @@
 """``grandquiz quiz``——对**全局 KB** 逐题交互考核；空库提示先 ingest，会话结束打印薄弱点小结。"""
 
+import os
 import time
 import uuid
 from pathlib import Path
@@ -17,17 +18,17 @@ from grandquiz.interfaces.cli.commands import _print_trace_location
 from grandquiz.interfaces.cli.composition import (
     _ensure_parent,
     _resolve_trace_db,
-    budget_provider,
+    budget_model_source,
     build_event_backbone,
     build_learning_persistence,
 )
 from grandquiz.interfaces.cli.interactive import InteractiveResponder
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
 from grandquiz.interfaces.learning_outbox import publish_pending_learning_facts
+from grandquiz.interfaces.model_config import create_model_runtime
 from grandquiz.kernel.recovery import Decision, RecoveryPolicy
 from grandquiz.kernel.trace import TraceStore
-from grandquiz.providers.base import Provider
-from grandquiz.providers.llm import OpenAICompatProvider
+from grandquiz.providers.models import ModelSource
 
 __all__ = ["_run_quiz_cli", "run_quiz"]
 
@@ -37,7 +38,7 @@ async def run_quiz(
     title: str | None = None,
     rounds: int,
     db_path: Path,
-    provider: Provider,
+    provider: ModelSource,
     responder: Responder,
     console: Console,
     seed: int,
@@ -67,7 +68,7 @@ async def run_quiz(
     是脊柱投影、非业务耦合）。会话结束打印 ``trace_id`` + 库位置。
     """
     _ensure_parent(db_path)
-    provider = budget_provider(provider)
+    provider = budget_model_source(provider)
     persistence = build_learning_persistence(db_path)
     store = persistence.store
     memory = persistence.memory
@@ -179,17 +180,17 @@ async def _run_quiz_cli(
         _print_needs_ingest(console, title)
         return
 
-    provider = OpenAICompatProvider.from_env()
+    model_runtime = create_model_runtime(environment=dict(os.environ))
     try:
         await run_quiz(
             title=title,
             rounds=rounds,
             db_path=db_path,
-            provider=provider,
+            provider=model_runtime.bindings,
             responder=InteractiveResponder(),
             console=console,
             seed=int(time.time()),  # CLI 非 replay：可变种子（每次会话不同选题次序）
             prefer_lang=prefer_lang,
         )
     finally:
-        await provider.aclose()
+        await model_runtime.aclose()

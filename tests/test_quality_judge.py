@@ -9,9 +9,10 @@ from grandquiz.evals.quality import QualityJudge, QualityJudgeError, QualityRequ
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 
-class _FixedProvider:
+class _FixedProvider(LegacyPurposeProvider):
     def __init__(self, payload: dict[str, object]) -> None:
         self._text = json.dumps(payload, ensure_ascii=False)
         self.calls = 0
@@ -30,7 +31,7 @@ class _FixedProvider:
         )
 
 
-class _SequenceProvider:
+class _SequenceProvider(LegacyPurposeProvider):
     def __init__(self, payloads: list[dict[str, object]]) -> None:
         self._texts = [json.dumps(payload, ensure_ascii=False) for payload in payloads]
         self.calls = 0
@@ -47,7 +48,7 @@ class _SequenceProvider:
         return Completion(text=text, usage=Usage(prompt_tokens=10, completion_tokens=5))
 
 
-class _RawProvider:
+class _RawProvider(LegacyPurposeProvider):
     def __init__(self, text: str) -> None:
         self._text = text
 
@@ -61,7 +62,7 @@ class _RawProvider:
         return Completion(text=self._text, usage=Usage(prompt_tokens=10, completion_tokens=5))
 
 
-class _RaisingProvider:
+class _RaisingProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],

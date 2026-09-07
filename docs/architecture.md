@@ -78,8 +78,13 @@ src/grandquiz/
 │   ├── subagent.py          # Subagent 执行器（隔离上下文 + 并发控制 + 结构化输出契约）
 │   └── approval.py          # 人工审批门（计划：暂停 / 恢复 turn 的通用原语）
 ├── providers/
-│   ├── llm.py               # OpenAICompatProvider + DemoEchoProvider
-│   ├── replay.py            # Record/Replay Provider（eval 确定性的基石）
+│   ├── models.py            # 用途绑定 Model Interface、执行身份与 Runtime 生命周期
+│   ├── profiles.py          # Connection/Profile 的纯配置解析、校验与冻结指纹
+│   ├── llm.py               # OpenAI-compatible 单模型 Adapter；旧双槽 facade 仅兼容
+│   ├── model_replay.py      # 身份感知的 Model Record/Replay v3
+│   ├── legacy.py            # basic/enrich 与旧假件的显式兼容边界
+│   ├── replay.py            # 旧 Provider cassette v1/v2 reader
+│   ├── echo.py              # 确定性、无网络的 Model 测试实现
 │   ├── speech.py            # 语音识别 Provider 中立 Interface
 │   ├── dashscope_speech.py  # 百炼完整录音转写 Adapter（v0.5）
 │   ├── speech_replay.py     # 语音识别 Record/Replay Adapter（v0.5）
@@ -96,6 +101,20 @@ src/grandquiz/
     ├── reporting.py         # 文本与自包含 HTML 投影
     └── harness.py           # 稳定兼容 facade
 ```
+
+### 模型执行边界
+
+模型调用按“用途 → 启动时绑定 → Adapter 执行 → 事件记录”分层。领域代码只声明有限用途，例如出题、
+判卷或材料深读；composition 从一个默认 Profile 和可选用途覆盖中选出已经确定的 `Model`。Model 的调用
+接口不再携带 basic/enrich，也不接收厂商 URL、鉴权或任意 SDK 参数。OpenAI-compatible Adapter 只负责
+wire API、方言参数、流式终结、连接生命周期与 `ProviderFailure` 正规化，不参与学习业务选择。
+
+配置在进程启动时解析并冻结；无新配置文件时，旧环境变量经显式 importer 映射到用途，以保留原双配置
+分工。每次 `model.started` 都把脱敏执行身份送上既有 AgentEvent 脊柱，因此 Trace、诊断、Replay v3 与
+Eval Subject v2 使用同一项历史事实。设置页的当前绑定不能反向补写旧 Trace。自动路由、fallback、应用
+重试与新协议 Adapter 不属于这一基础契约，必须由后续真实消费者和独立验收门拉动。详见
+[ADR-0013](adr/0013-purpose-bound-model-execution.md)与
+[配置指南](guides/model-profiles.md)。
 
 ## 五大基建模块设计要点
 
@@ -168,7 +187,7 @@ schema v11；受 prompt/tool schema 影响的真实 cassette 已重录，生产�
 
 1. **先定 trace schema 再写功能**：`turn_id / span_id / parent_span / type / input / output / tokens / latency / error`，span 成树（turn → model_call → tool_call → subagent）。Schema 就是 eval 的数据契约。
    - **事件是信封，领域事件上同一条脊柱**：`AgentEvent` = `type`（字符串）+ 元数据 + 不透明 payload。kernel 泛型地分发 / 持久化，不认识具体类型；domain 在自己那层定义领域事件（ResourceApproved / ItemCreated / AnswerJudged / ConceptStateChanged）与 payload schema，经 kernel 的 `emit()` 发射。kernel 保持领域无关（分层守卫不破），eval 又能在 trace 上断言领域行为（case 4/5/6 断言的都是领域事件）。
-2. **回放是事件流回放，不只是 LLM 回放**：所有外部 I/O（LLM / fetch / 时钟 / 随机）都是非确定性边界，统一走工具、结果作为事件落在脊柱上——回放 = 重放事件流，LLM Record/Replay Provider 只是其中一个特例。录制按 messages 哈希落盘，回放直接命中，eval 不烧 token、完全确定。
+2. **回放是事件流回放，不只是 LLM 回放**：所有外部 I/O（LLM / fetch / 时钟 / 随机）都是非确定性边界，统一走工具、结果作为事件落在脊柱上——回放 = 重放事件流，LLM Record/Replay 只是其中一个特例。Model cassette v3 按执行身份、messages 与工具契约共同取 key；旧 v1/v2 仅由显式 legacy reader 读取，eval 不烧 token、完全确定。
 3. Grader 两层：**Tier-1 规则断言**（工具调用顺序、审批门、引用存在性）跑在 trace 上；**Tier-2 Quality Judge**（grounding、语言与回答质量）跑在最终输出上。两层均已实现；默认测试和报告只走离线 Replay，真实录制与质量校准必须显式执行。
 4. **部分 eval 断言同时是运行时不变量**：如"出题必须锚定存在的 KnowledgeItem 且 evidence 非空"（case 3），应在出题工具产出后有一道确定性校验门挡住幽灵题再展示，而非只在 eval 里查。
 

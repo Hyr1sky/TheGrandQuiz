@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 from typing import Literal
 
 from grandquiz.providers.base import Role
+from grandquiz.providers.profiles import ModelIdentity
 
 _SECRET_NAME_FRAGMENTS = (
     "api_key",
@@ -49,6 +50,19 @@ class EvalSubjectSnapshot:
     subject_id: str
     prompts: tuple[tuple[str, str], ...]
     providers: tuple[ProviderIdentity, ...]
+    tool_schemas: tuple[tuple[str, str], ...]
+    policies: tuple[tuple[str, str], ...]
+    replay_evidence: tuple[ReplayEvidence, ...]
+
+
+@dataclass(frozen=True)
+class EvalSubjectSnapshotV2:
+    """Complete evaluated subject using frozen purpose-bound model identities."""
+
+    schema_version: Literal["eval-subject.v2"]
+    subject_id: str
+    prompts: tuple[tuple[str, str], ...]
+    model_identities: tuple[ModelIdentity, ...]
     tool_schemas: tuple[tuple[str, str], ...]
     policies: tuple[tuple[str, str], ...]
     replay_evidence: tuple[ReplayEvidence, ...]
@@ -122,6 +136,65 @@ def snapshot_subject(
         subject_id=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
         prompts=prompt_items,
         providers=provider_items,
+        tool_schemas=tool_items,
+        policies=policy_items,
+        replay_evidence=tuple(
+            sorted(
+                replay_evidence,
+                key=lambda item: (item.owner, item.cassette, item.sha256),
+            )
+        ),
+    )
+
+
+def snapshot_subject_v2(
+    *,
+    prompts: Mapping[str, str],
+    model_identities: Sequence[ModelIdentity],
+    tool_schemas: Mapping[str, str],
+    policies: Mapping[str, str],
+    replay_evidence: Sequence[ReplayEvidence] = (),
+) -> EvalSubjectSnapshotV2:
+    """Canonicalize the new execution identity without changing v1 readers or ids."""
+
+    for group in (prompts, tool_schemas, policies):
+        for name, value in group.items():
+            _reject_secret(name, value)
+    for evidence in replay_evidence:
+        _reject_secret("replay_owner", evidence.owner)
+        _reject_secret("cassette", evidence.cassette)
+
+    prompt_items = _sorted_items(prompts)
+    identity_items = tuple(
+        sorted(
+            model_identities,
+            key=lambda item: (
+                item.purpose,
+                item.selection_source,
+                item.configuration_fingerprint,
+                item.policy_fingerprint,
+            ),
+        )
+    )
+    tool_items = _sorted_items(tool_schemas)
+    policy_items = _sorted_items(policies)
+    canonical = json.dumps(
+        {
+            "schema_version": "eval-subject.v2",
+            "prompts": prompt_items,
+            "model_identities": [identity.model_dump(mode="json") for identity in identity_items],
+            "tool_schemas": tool_items,
+            "policies": policy_items,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return EvalSubjectSnapshotV2(
+        schema_version="eval-subject.v2",
+        subject_id=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        prompts=prompt_items,
+        model_identities=identity_items,
         tool_schemas=tool_items,
         policies=policy_items,
         replay_evidence=tuple(

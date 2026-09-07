@@ -26,7 +26,7 @@ from grandquiz.interfaces.cli.composition import (
     _MEMORY_PARTITION_BUDGET,
     _SYSTEM_PARTITION_BUDGET,
     _TOTAL_BUDGET,
-    budget_provider,
+    budget_model_source,
 )
 from grandquiz.kernel.clock import SystemClock
 from grandquiz.kernel.context import (
@@ -41,7 +41,7 @@ from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventTy
 from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import ToolRegistry
 from grandquiz.kernel.trace import TraceStore, summarize_token_usage
-from grandquiz.providers.base import Provider
+from grandquiz.providers.models import ModelSource, as_streaming_model, bind_model
 
 ChatSessionStatus = Literal["idle", "running", "closed"]
 
@@ -158,7 +158,7 @@ class ChatManager:
         self,
         *,
         persistence: LearningPersistence,
-        provider: Provider,
+        provider: ModelSource,
         trace_store: TraceStore,
         trace_observatory: TraceObservatory | None = None,
     ) -> None:
@@ -183,7 +183,7 @@ class ChatManager:
             sink.register(self._trace_observatory)
         emitter = EventEmitter(sink, SystemClock(), trace_id=trace_id)
 
-        provider = budget_provider(self._provider)
+        provider = budget_model_source(self._provider)
         registry = ToolRegistry()
         source = create_http_source()
         register_learning_tools(
@@ -233,7 +233,7 @@ class ChatManager:
         )
 
         runner = Runner(
-            provider=provider,
+            provider=as_streaming_model(bind_model(provider, "chat")),
             emitter=emitter,
             prompt_version=prompt.version,
             tools=registry,

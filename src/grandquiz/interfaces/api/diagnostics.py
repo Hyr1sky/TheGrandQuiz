@@ -3,11 +3,11 @@
 from collections.abc import Callable, Sequence
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from grandquiz import __version__
 from grandquiz.interfaces.api.observability import TraceObservatory
-from grandquiz.interfaces.api.settings import ProviderSettingView
+from grandquiz.interfaces.api.settings import ModelBindingSettingView, ProviderSettingView
 from grandquiz.interfaces.trace_projection import SafeTraceEventV1, SafeTraceSummaryV1
 from grandquiz.kernel.clock import Clock
 
@@ -23,6 +23,9 @@ class DiagnosticConfigIdentityV1(BaseModel):
     application_version: str
     settings_schema_version: Literal["settings.v1"] = "settings.v1"
     providers: list[DiagnosticProviderIdentityV1]
+    model_bindings: list[ModelBindingSettingView] = Field(
+        default_factory=list[ModelBindingSettingView]
+    )
 
 
 class DiagnosticManifestV1(BaseModel):
@@ -46,11 +49,13 @@ class DiagnosticBundleExporter:
         *,
         observatory: TraceObservatory,
         provider_views: Callable[[], Sequence[ProviderSettingView]],
+        model_binding_views: Callable[[], Sequence[ModelBindingSettingView]] | None = None,
         clock: Clock,
         application_version: str = __version__,
     ) -> None:
         self._observatory = observatory
         self._provider_views = provider_views
+        self._model_binding_views = model_binding_views or (lambda: ())
         self._clock = clock
         self._application_version = application_version
 
@@ -69,6 +74,7 @@ class DiagnosticBundleExporter:
                     )
                     for provider in self._provider_views()
                 ],
+                model_bindings=list(self._model_binding_views()),
             ),
             summary=snapshot.summary,
             events=snapshot.events,

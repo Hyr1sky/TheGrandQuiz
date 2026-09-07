@@ -58,7 +58,8 @@ from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import ToolRegistry
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Provider
-from grandquiz.providers.budget import BudgetedProvider
+from grandquiz.providers.budget import BudgetedModels, BudgetedProvider, budget_models
+from grandquiz.providers.models import ModelSource, as_streaming_model, bind_model
 
 # 供 CLI 命令模块 / 未来 Web 通道复用的装配面（列入 __all__ = 视为包内公开，尽管带下划线前缀）。
 __all__ = [
@@ -74,6 +75,7 @@ __all__ = [
     "_ensure_parent",
     "_file_source",
     "_resolve_trace_db",
+    "budget_model_source",
     "budget_provider",
     "build_event_backbone",
     "build_learning_persistence",
@@ -132,6 +134,17 @@ def budget_provider(provider: Provider) -> Provider:
         return provider
     return BudgetedProvider(
         inner=provider,
+        counter=HeuristicTokenCounter(),
+        ceiling=_PROVIDER_REQUEST_BUDGET,
+    )
+
+
+def budget_model_source(models: ModelSource) -> BudgetedModels:
+    """Apply the production request ceiling after explicit purpose resolution."""
+    if isinstance(models, BudgetedModels):
+        return models
+    return budget_models(
+        models,
         counter=HeuristicTokenCounter(),
         ceiling=_PROVIDER_REQUEST_BUDGET,
     )
@@ -223,7 +236,7 @@ def build_event_backbone(
 
 def build_react_runner(
     *,
-    provider: Provider,
+    provider: ModelSource,
     emitter: EventEmitter,
     store: SqliteLearningStore,
     memory: SqliteLearningMemory,
@@ -255,17 +268,18 @@ def build_react_runner(
     Context compression：分区各带 ``budget``，经 ``BudgetCompressionPolicy`` 头截断（C-wire 增量
     1）；``counter`` + ``total_budget`` 给总硬上限（超限抛 ``ContextBudgetExceeded``，大声失败）；
     ``history_compressor`` 用 ``SummarizingHistoryCompressor``（保最近 ``_HISTORY_MAX_TURNS`` 轮
-    原样，被挤出的老轮经 ``LLMSummarizer``（真 LLM，role=basic）折进滚动摘要，C-wire 增量 3——
+    原样，被挤出的老轮经 ``LLMSummarizer``（真 LLM，summarization 用途）折进滚动摘要，
+    C-wire 增量 3——
     ``Runner`` 每轮成功后台排折叠任务、下一轮开头收口、失败隔离，见 ``kernel/runner.py``）。现有
     短会话（远低于 ``_HISTORY_MAX_TURNS`` 轮）不触发折叠，``build()`` 逐字节等价此前（cassette /
     既有测试不受影响）。
     """
-    provider = budget_provider(provider)
+    models = budget_model_source(provider)
     registry = ToolRegistry()
     register_learning_tools(
         registry,
         source=_web_and_file_source(materials_dir),
-        provider=provider,
+        provider=models,
         store=store,
         approval=approval,
         memory=memory,
@@ -303,11 +317,11 @@ def build_react_runner(
         counter=counter,
         total_budget=_TOTAL_BUDGET,
         history_compressor=SummarizingHistoryCompressor(
-            LLMSummarizer(provider, emitter), max_turns=_HISTORY_MAX_TURNS
+            LLMSummarizer(models, emitter), max_turns=_HISTORY_MAX_TURNS
         ),
     )
     return Runner(
-        provider=provider,
+        provider=as_streaming_model(bind_model(models, "chat")),
         emitter=emitter,
         prompt_version=prompt.version,  # prompt 版本号进 trace（架构约束）
         tools=registry,

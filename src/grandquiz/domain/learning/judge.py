@@ -20,9 +20,10 @@ from grandquiz.domain.learning.assessment.workflow import JUDGE_DISTRACTORS
 from grandquiz.domain.learning.models import KnowledgeItem
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.events import EventEmitter, EventType
-from grandquiz.kernel.model_events import model_failure_event_payload
+from grandquiz.kernel.model_events import model_failure_event_payload, model_identity_event_payload
 from grandquiz.kernel.recovery import ErrorClass
-from grandquiz.providers.base import Completion, Message, Provider
+from grandquiz.providers.base import Completion, Message
+from grandquiz.providers.models import ModelSource, bind_model
 
 DistractorLabel = Literal["合理干扰", "较弱干扰", "无效干扰"]
 
@@ -59,15 +60,15 @@ async def judge_distractor(
     correct_answer: str,
     distractor: str,
     *,
-    provider: Provider,
+    provider: ModelSource,
     emitter: EventEmitter,
     parent_span_id: str | None = None,
     max_attempts: int = 3,
 ) -> DistractorVerdict:
     """评一个选择题干扰项的 plausibility；持续失败 → ``JudgeError``。
 
-    ``max_attempts``：1 次初始调用 + 最多 ``max_attempts - 1`` 次重试（默认 3，同判卷槽）。走
-    role=basic（同判卷槽，这是"判断"而非"生成"的角色分工，enrich 只管出题）。
+    ``max_attempts``：1 次初始调用 + 最多 ``max_attempts - 1`` 次输出修复（默认 3）。模型调用绑定
+    ``distractor_review``，不与生产判卷或 Eval Judge 合并用途。
     """
     if max_attempts < 1:
         raise ValueError("max_attempts 至少为 1")
@@ -112,12 +113,14 @@ async def judge_distractor(
 async def _call_model(
     messages: list[Message],
     *,
-    provider: Provider,
+    provider: ModelSource,
     emitter: EventEmitter,
     parent_span_id: str | None,
     prompt_version: str,
 ) -> Completion:
-    # 照 grading._call_model：一对 MODEL_STARTED/MODEL_ENDED 共享 span_id；评审走 role=basic。
+    # 照 grading._call_model：一对 MODEL_STARTED/MODEL_ENDED 共享 span_id；
+    # 用途是 distractor_review。
+    model = bind_model(provider, "distractor_review")
     span_id = emitter.new_span_id()
     emitter.emit(
         EventType.MODEL_STARTED,
@@ -126,12 +129,12 @@ async def _call_model(
         payload={
             "messages": [m.model_dump() for m in messages],
             "prompt_version": prompt_version,
-            "role": "basic",
+            **model_identity_event_payload(model),
             "node_id": JUDGE_DISTRACTORS,
         },
     )
     try:
-        completion = await provider.complete(messages, role="basic")
+        completion = await model.complete(messages)
     except Exception as exc:
         emitter.emit(
             EventType.MODEL_ENDED,

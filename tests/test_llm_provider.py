@@ -44,7 +44,10 @@ from grandquiz.providers.failure import (
     ProviderFailureCategory,
     provider_failure_payload,
 )
+from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.llm import OpenAICompatProvider, RoleConfig, RoleOverrides
+from grandquiz.providers.models import with_identity
+from grandquiz.providers.profiles import ModelIdentity
 
 
 class _FakeFunction:
@@ -131,10 +134,14 @@ class _FakeClient:
 class _FakeStream:
     def __init__(self, chunks: list[object]) -> None:
         self._chunks = chunks
+        self.closed = False
 
     async def __aiter__(self) -> AsyncIterator[object]:
         for chunk in self._chunks:
             yield chunk
+
+    async def close(self) -> None:
+        self.closed = True
 
 
 class _FakeDelta:
@@ -198,12 +205,12 @@ class _FakeChunk:
 
 class _FakeStreamingCompletions:
     def __init__(self, chunks: list[object]) -> None:
-        self._stream = _FakeStream(chunks)
+        self.stream = _FakeStream(chunks)
         self.calls: list[dict[str, object]] = []
 
     async def create(self, **kwargs: object) -> object:
         self.calls.append(kwargs)
-        return self._stream
+        return self.stream
 
 
 class _FakeStreamingClient:
@@ -677,6 +684,8 @@ async def test_stream_complete_yields_text_deltas_and_authoritative_completion(
     call = captured["client"].chat.completions.calls[0]
     assert call["stream"] is True
     assert call["stream_options"] == {"include_usage": True}
+    streaming = cast("_FakeStreamingCompletions", captured["client"].chat.completions)
+    assert streaming.stream.closed is True
 
 
 async def test_stream_complete_assembles_tool_argument_fragments_inside_provider(
@@ -1023,7 +1032,7 @@ def test_tool_specs_empty_registry_is_empty_list() -> None:
 # --------------------------------------------------------------------------- #
 
 
-class _CapturingProvider:
+class _CapturingProvider(LegacyPurposeProvider):
     """记下最后一次 complete 收到的 tools / role；给回 final 文本（无 tool_calls → 终止）。"""
 
     def __init__(self) -> None:
@@ -1042,7 +1051,7 @@ class _CapturingProvider:
         return Completion(text="done")
 
 
-class _TypedFailureProvider:
+class _TypedFailureProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],
@@ -1080,17 +1089,27 @@ async def test_run_agent_turn_forwards_tool_specs_to_provider() -> None:
     assert names == ["echo"]
 
 
-async def test_run_agent_turn_records_role_in_model_started_payload() -> None:
+async def test_run_agent_turn_records_bound_identity_in_model_started_payload() -> None:
     provider = _CapturingProvider()
+    identity = ModelIdentity(
+        purpose="chat",
+        selection_source="legacy",
+        configuration_fingerprint="1" * 64,
+        policy_fingerprint="2" * 64,
+    )
     emitter, events = _events_emitter()
-    runner = Runner(provider=provider, emitter=emitter)
+    runner = Runner(
+        provider=with_identity(provider.for_purpose("chat"), identity),
+        emitter=emitter,
+    )
 
     await runner.run_agent_turn("q")
 
     started = [e for e in events if e.type == EventType.MODEL_STARTED]
     assert len(started) == 1
-    # 修 dogfood trace 里 role 为空：ReAct 生成显式 role="basic" 且落进 model.started payload。
-    assert started[0].payload["role"] == "basic"
+    assert started[0].payload["model_identity"] == identity.model_dump()
+    assert "role" not in started[0].payload
+    # Legacy adapter 内部仍把 chat 明确翻译到原 basic 槽；Runner 不再知道该角色。
     assert provider.role_seen == "basic"
 
 

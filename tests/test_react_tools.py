@@ -33,6 +33,7 @@ from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import ToolContext, ToolRegistry
 from grandquiz.kernel.trace import Span, TraceStore
 from grandquiz.providers.base import Completion, Message, Role, ToolCall, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.replay import Cassette, RecordingProvider, ReplayProvider
 
 _URL = "file://local/material.txt"
@@ -179,7 +180,7 @@ async def test_query_weak_concepts_empty_when_no_weak() -> None:
 # --------------------------------------------------------------------------- #
 
 
-class _ScriptedReactIngestProvider:
+class _ScriptedReactIngestProvider(LegacyPurposeProvider):
     """确定性：无 tool 结果 → 出 ingest tool_call；见 tool 结果 → final；Reader 消息 → 结构化 JSON。
 
     ReAct 的选工具调用与 ingest 内部的 Reader 调用都走 role="basic"，靠 messages 内容分流：

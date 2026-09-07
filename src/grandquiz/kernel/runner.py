@@ -14,24 +14,21 @@ import asyncio
 from grandquiz.kernel.context import ContextBudgetStatus, ContextBuilder
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.kernel.hooks import HookManager, HookVeto
-from grandquiz.kernel.model_events import model_failure_event_payload
+from grandquiz.kernel.model_events import model_failure_event_payload, model_identity_event_payload
 from grandquiz.kernel.recovery import Decision, RecoveryPolicy
 from grandquiz.kernel.tools import ToolContext, ToolRegistry
 from grandquiz.providers.base import (
     Completion,
     Message,
-    Provider,
+    Model,
     ProviderStreamProtocolError,
-    Role,
-    StreamingProvider,
+    StreamingModel,
     TextDelta,
     ToolCall,
 )
 from grandquiz.providers.failure import provider_failure_payload
 
 _TOOL_CALL_HOOK = "tool_call"
-# ReAct 编排固定走 basic 角色（已确认 deepseek 支持 function-calling）；显式常量避免散落字面量。
-_REACT_ROLE: Role = "basic"
 _STREAM_DELTA_BATCH_CHARS = 48
 
 
@@ -50,7 +47,7 @@ class MaxIterationsExceeded(RuntimeError):
 class Runner:
     def __init__(
         self,
-        provider: Provider,
+        provider: Model,
         emitter: EventEmitter,
         *,
         system_prompt: str | None = None,
@@ -123,10 +120,11 @@ class Runner:
             payload={
                 "messages": [m.model_dump() for m in call_messages],
                 "prompt_version": self._prompt_version,
+                **model_identity_event_payload(self._provider),
             },
         )
         try:
-            completion: Completion = await self._provider.complete(call_messages, role="basic")
+            completion: Completion = await self._provider.complete(call_messages)
         except Exception as exc:
             # 错误也要闭合 model span（started/ended 成对不变量）：ERROR 是一等信号，
             # MODEL_ENDED(ok=False) 封口，否则 TraceStore 会拿到永远开着的 span。
@@ -288,10 +286,10 @@ class Runner:
     async def _generate(self, call_messages: list[Message], *, parent_span_id: str) -> Completion:
         """发一次 MODEL span 并调 provider；错误闭合 span（ok=False）后原样冒泡。
 
-        ReAct 生成走 ``role="basic"``（已确认 deepseek 支持 function-calling），并把注册表的
-        ``tool_specs()`` 一并传给 ``provider.complete(tools=...)``——否则真 provider 从不发 tools、
-        模型只能用文本"扮演"调工具（dogfood 的 11 agent_turn / 0 tool_call 根因）。``role`` 显式记进
-        MODEL_STARTED payload，修 trace 里 role 为空。
+        ReAct 编排接收装配层已经绑定为 ``chat`` 用途的 Model，并把注册表的
+        ``tool_specs()`` 一并传给 ``model.complete(tools=...)``——否则真 model 从不发 tools、
+        模型只能用文本"扮演"调工具（dogfood 的 11 agent_turn / 0 tool_call 根因）。Runner 不选择
+        Profile 或厂商；若 Model 携带执行身份，则随 MODEL_STARTED 记录。
         """
         model_span = self._emitter.new_span_id()
         self._emitter.emit(
@@ -299,14 +297,14 @@ class Runner:
             span_id=model_span,
             parent_span_id=parent_span_id,
             payload={
-                "role": _REACT_ROLE,
                 "messages": [m.model_dump() for m in call_messages],
                 "prompt_version": self._prompt_version,
+                **model_identity_event_payload(self._provider),
             },
         )
         try:
             tools = self._tools.tool_specs()
-            if isinstance(self._provider, StreamingProvider):
+            if isinstance(self._provider, StreamingModel):
                 text_parts: list[str] = []
                 pending_delta_parts: list[str] = []
                 pending_delta_chars = 0
@@ -323,7 +321,6 @@ class Runner:
 
                 async for stream_event in self._provider.stream_complete(
                     call_messages,
-                    role=_REACT_ROLE,
                     tools=tools,
                 ):
                     if isinstance(stream_event, TextDelta):
@@ -358,7 +355,6 @@ class Runner:
             else:
                 completion = await self._provider.complete(
                     call_messages,
-                    role=_REACT_ROLE,
                     tools=tools,
                 )
         except asyncio.CancelledError:

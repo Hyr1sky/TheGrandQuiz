@@ -1,6 +1,6 @@
 """出题工具——照 Reader 的 LLM 槽模式，为一个 KnowledgeItem 产出 grounded 题（缝 3）。
 
-ADR-0004 的两个 LLM 槽之一（另一个是判卷）：出题走 **role=enrich**（qwen），只产
+ADR-0004 的两个 LLM 用途之一（另一个是判卷）：出题绑定 ``question_generation``，只产
 ``{question, cited_evidence}``——它不碰记账（``weak_item_id`` 由判卷后的代码算，见 grading）。
 
 三条设计约束（与 reader 同源）：
@@ -44,9 +44,10 @@ from grandquiz.domain.learning.models import (
 )
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.events import EventEmitter, EventType
-from grandquiz.kernel.model_events import model_failure_event_payload
+from grandquiz.kernel.model_events import model_failure_event_payload, model_identity_event_payload
 from grandquiz.kernel.recovery import ErrorClass
-from grandquiz.providers.base import Completion, Message, Provider
+from grandquiz.providers.base import Completion, Message
+from grandquiz.providers.models import ModelSource, bind_model
 
 
 def _stable_error_summary(exc: ValidationError) -> str:
@@ -251,7 +252,7 @@ class MultipleChoiceQuestion(BaseModel):
 async def generate_question(
     item: KnowledgeItem,
     *,
-    provider: Provider,
+    provider: ModelSource,
     emitter: EventEmitter,
     parent_span_id: str | None,
     max_attempts: int = 3,
@@ -362,12 +363,14 @@ def _append_difficulty_hint(messages: list[Message], difficulty_hint: str | None
 async def _call_model(
     messages: list[Message],
     *,
-    provider: Provider,
+    provider: ModelSource,
     emitter: EventEmitter,
     parent_span_id: str | None,
     prompt_version: str,
 ) -> Completion:
-    # 照 reader._call_model：一对 MODEL_STARTED / MODEL_ENDED 共享 span_id；出题走 role=enrich。
+    # 照 reader._call_model：一对 MODEL_STARTED / MODEL_ENDED 共享 span_id；
+    # 用途是 question_generation。
+    model = bind_model(provider, "question_generation")
     span_id = emitter.new_span_id()
     emitter.emit(
         EventType.MODEL_STARTED,
@@ -376,12 +379,12 @@ async def _call_model(
         payload={
             "messages": [m.model_dump() for m in messages],
             "prompt_version": prompt_version,
-            "role": "enrich",
+            **model_identity_event_payload(model),
             "node_id": GENERATE_QUESTION,
         },
     )
     try:
-        completion = await provider.complete(messages, role="enrich")
+        completion = await model.complete(messages)
     except Exception as exc:
         # provider 传输异常 / ReplayMiss：先闭合 span（started/ended 配对不变量），再原样冒泡。
         emitter.emit(
@@ -446,7 +449,7 @@ def _parse(text: str, valid_quotes: set[str], asked_before: Sequence[str] = ()) 
 async def generate_multiple_choice(
     item: KnowledgeItem,
     *,
-    provider: Provider,
+    provider: ModelSource,
     emitter: EventEmitter,
     parent_span_id: str | None,
     max_attempts: int = 3,
@@ -457,8 +460,8 @@ async def generate_multiple_choice(
 ) -> MultipleChoiceQuestion:
     """为 ``item`` 产一道锚定的选择题（首次接触概念的热身题型）；持续失败 → ``QuestionError``。
 
-    与 ``generate_question`` 同源（role=enrich、结构化输出契约、事件上脊柱、有界重试），仅多两条
-    MC 专属校验门（缝 3）：
+    与 ``generate_question`` 同源（question_generation、结构化输出契约、事件上脊柱、
+    有界重试），仅多两条 MC 专属校验门（缝 3）：
 
     - **可判卷门**：``options`` 至少 2 项、``answer_index`` 是 ``options`` 的合法下标——否则确定性
       判卷（``grade_multiple_choice``）无从比对，出题即不合格。
@@ -651,7 +654,7 @@ async def _assess_distractor_policy(
     policy: DistractorQualityPolicy,
     *,
     verdict_cache: dict[str, DistractorLabel],
-    provider: Provider,
+    provider: ModelSource,
     emitter: EventEmitter,
     parent_span_id: str | None,
 ) -> tuple[str, ...]:

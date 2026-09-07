@@ -1,5 +1,6 @@
 """``grandquiz ingest``——读本地材料 → 真 Reader 深读 → 人工审批 → 入 SQLite。"""
 
+import os
 import uuid
 from pathlib import Path
 from urllib.parse import quote
@@ -17,12 +18,12 @@ from grandquiz.interfaces.cli.composition import (
     _LOCAL_HOST,
     _ensure_parent,
     _resolve_trace_db,
-    budget_provider,
+    budget_model_source,
     build_event_backbone,
 )
+from grandquiz.interfaces.model_config import create_model_runtime
 from grandquiz.kernel.trace import TraceStore
-from grandquiz.providers.base import Provider
-from grandquiz.providers.llm import OpenAICompatProvider
+from grandquiz.providers.models import ModelSource
 
 __all__ = ["_run_ingest_cli", "run_ingest"]
 
@@ -38,7 +39,7 @@ async def run_ingest(
     title: str,
     material_path: Path,
     db_path: Path,
-    provider: Provider,
+    provider: ModelSource,
     approval: ApprovalGate,
     console: Console,
     trace_db_path: Path | None = None,
@@ -55,7 +56,7 @@ async def run_ingest(
     会话结束打印 ``trace_id`` + 库位置。
     """
     content = material_path.read_text(encoding="utf-8")
-    provider = budget_provider(provider)
+    provider = budget_model_source(provider)
     _ensure_parent(db_path)
     resolved_trace_db = _resolve_trace_db(db_path, trace_db_path)
     _ensure_parent(resolved_trace_db)
@@ -109,18 +110,18 @@ def _print_ingest_result(console: Console, title: str, result: IngestResult) -> 
 
 async def _run_ingest_cli(*, title: str, material_path: Path, db_path: Path) -> None:
     console = Console()
-    provider = OpenAICompatProvider.from_env()
+    model_runtime = create_model_runtime(environment=dict(os.environ))
     try:
         try:
             await run_ingest(
                 title=title,
                 material_path=material_path,
                 db_path=db_path,
-                provider=provider,
+                provider=model_runtime.bindings,
                 approval=CliApprovalGate(console=console),
                 console=console,
             )
         except ApprovalCancelled:
             console.print("[yellow]审批已取消，知识快照未变更。[/]")
     finally:
-        await provider.aclose()
+        await model_runtime.aclose()

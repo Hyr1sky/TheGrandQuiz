@@ -15,6 +15,7 @@ from grandquiz.kernel.events import EventEmitter, EventSink
 from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.trace import Span, TraceStore
 from grandquiz.providers.base import Completion, Message, Role, ToolSpec, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.replay import (
     Cassette,
     RecordingProvider,
@@ -26,7 +27,7 @@ from grandquiz.providers.replay import (
 _MODELS: dict[Role, str] = {"basic": "deepseek-x", "enrich": "qwen-x"}
 
 
-class _CountingProvider:
+class _CountingProvider(LegacyPurposeProvider):
     """确定性 inner provider：固定 text+usage，计自身被调次数（用于证明回放不触 inner）。"""
 
     def __init__(self) -> None:
@@ -43,7 +44,7 @@ class _CountingProvider:
         )
 
 
-class _SequenceProvider:
+class _SequenceProvider(LegacyPurposeProvider):
     """同一公开请求每次返回不同结果，模拟随机模型在 retry 中的真实漂移。"""
 
     def __init__(self) -> None:

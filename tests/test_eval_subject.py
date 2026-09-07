@@ -2,7 +2,13 @@
 
 import pytest
 
-from grandquiz.evals.subject import ProviderIdentity, ReplayEvidence, snapshot_subject
+from grandquiz.evals.subject import (
+    ProviderIdentity,
+    ReplayEvidence,
+    snapshot_subject,
+    snapshot_subject_v2,
+)
+from grandquiz.providers.profiles import ModelIdentity
 
 
 def test_subject_identity_is_canonical_and_replay_evidence_is_distinct() -> None:
@@ -79,3 +85,55 @@ def test_subject_snapshot_rejects_secret_shaped_facts() -> None:
             tool_schemas={},
             policies={},
         )
+
+
+def test_subject_v2_adds_bound_model_identity_without_rewriting_v1() -> None:
+    generation = ModelIdentity(
+        purpose="question_generation",
+        selection_source="purpose_override",
+        configuration_fingerprint="1" * 64,
+        policy_fingerprint="2" * 64,
+    )
+    grading = generation.model_copy(
+        update={
+            "purpose": "answer_grading",
+            "selection_source": "default",
+            "configuration_fingerprint": "3" * 64,
+        }
+    )
+    first = snapshot_subject_v2(
+        prompts={"question_mc": "question-mc-v2"},
+        model_identities=(generation, grading),
+        tool_schemas={"start_quiz": "sha256:tool-a"},
+        policies={"workflow": "assessment-v5"},
+        replay_evidence=(
+            ReplayEvidence(owner="new:v3", cassette="new.cassette.json", sha256="a" * 64),
+        ),
+    )
+    reordered = snapshot_subject_v2(
+        prompts={"question_mc": "question-mc-v2"},
+        model_identities=(grading, generation),
+        tool_schemas={"start_quiz": "sha256:tool-a"},
+        policies={"workflow": "assessment-v5"},
+        replay_evidence=(
+            ReplayEvidence(owner="new:v3", cassette="refreshed.json", sha256="b" * 64),
+        ),
+    )
+    changed = snapshot_subject_v2(
+        prompts={"question_mc": "question-mc-v2"},
+        model_identities=(
+            generation.model_copy(update={"configuration_fingerprint": "4" * 64}),
+            grading,
+        ),
+        tool_schemas={"start_quiz": "sha256:tool-a"},
+        policies={"workflow": "assessment-v5"},
+    )
+
+    assert first.schema_version == "eval-subject.v2"
+    assert first.subject_id == reordered.subject_id
+    assert first.replay_evidence != reordered.replay_evidence
+    assert changed.subject_id != first.subject_id
+    assert [identity.purpose for identity in first.model_identities] == [
+        "answer_grading",
+        "question_generation",
+    ]

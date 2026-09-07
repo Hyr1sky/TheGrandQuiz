@@ -119,8 +119,29 @@ class ProviderStreamProtocolError(RuntimeError):
     """上游流违反归一化契约，不能安全组装成一次 Completion。"""
 
 
+class Model(Protocol):
+    """A resolved callable model; selection and credentials belong to its owner."""
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion: ...
+
+
+@runtime_checkable
+class StreamingModel(Model, Protocol):
+    def stream_complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> AsyncIterator[ProviderStreamEvent]: ...
+
+
 class Provider(Protocol):
-    """basic / enrich 为迁移期兼容槽，可共享默认配置；不表达厂商或模型能力等级。
+    """Legacy role interface, only for old configuration and cassette compatibility.
 
     ``tools`` 默认 ``None`` → 向后兼容：既有调用方（纯文本 completion）不传即无工具。传非空则
     provider 把它作为可调工具集告知 LLM（OpenAI 兼容 provider 译成原生 ``tools`` 字段）。

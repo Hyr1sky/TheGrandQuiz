@@ -6,7 +6,7 @@ from collections import Counter
 from collections.abc import Sequence
 from typing import Literal, Protocol, cast
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.domain.learning.preference import (
@@ -19,7 +19,7 @@ from grandquiz.domain.learning.preference import (
     resolve_difficulty_mode,
     resolve_question_language,
 )
-from grandquiz.providers.base import Provider
+from grandquiz.providers.models import ModelSource, identities_of
 from grandquiz.providers.speech import SpeechRecognitionProvider
 
 
@@ -35,6 +35,13 @@ class ProviderSettingView(BaseModel):
     credential_source: Literal["environment"] = "environment"
     editable_in_web: Literal[False] = False
     required_env_vars: list[str]
+
+
+class ModelBindingSettingView(BaseModel):
+    purpose: str
+    selection_source: Literal["default", "purpose_override", "legacy"]
+    configuration_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    policy_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class PreferenceSettingView(BaseModel):
@@ -62,6 +69,9 @@ class SettingsView(BaseModel):
     preferences: PreferenceSettingView
     difficulty: DifficultySettingView
     providers: list[ProviderSettingView]
+    model_bindings: list[ModelBindingSettingView] = Field(
+        default_factory=list[ModelBindingSettingView]
+    )
     data_locations: list[DataLocationView] | None = None
 
 
@@ -80,7 +90,7 @@ class LocalSettings:
         self,
         *,
         persistence: LearningPersistence,
-        provider: Provider,
+        provider: ModelSource,
         speech_provider: SpeechRecognitionProvider | None,
         voice_hint_policy: VoiceHintPolicy | None,
         asr_hints_default: bool,
@@ -110,6 +120,7 @@ class LocalSettings:
             ),
             difficulty=self._difficulty_view(),
             providers=self.provider_views(),
+            model_bindings=self.model_binding_views(),
             data_locations=list(self._data_locations) if include_data_locations else None,
         )
 
@@ -147,10 +158,10 @@ class LocalSettings:
         )
 
     def provider_views(self) -> list[ProviderSettingView]:
-        """Return the existing allowlisted provider identity projection."""
-        models_object = getattr(self._provider, "model_for_role", {})
+        """Return legacy LLM rows only for a legacy provider, plus the speech adapter."""
+        models_object = getattr(self._provider, "model_for_role", None)
         models = cast("dict[str, str]", models_object) if isinstance(models_object, dict) else {}
-        execution_object = getattr(self._provider, "execution_config_for_role", {})
+        execution_object = getattr(self._provider, "execution_config_for_role", None)
         execution = (
             cast("dict[str, object]", execution_object)
             if isinstance(execution_object, dict)
@@ -179,14 +190,25 @@ class LocalSettings:
         speech = self._speech_provider
         speech_model = None if speech is None else getattr(speech, "model", None)
         speech_region = None if speech is None else getattr(speech, "region", None)
+        speech_view = ProviderSettingView(
+            role="speech",
+            configured=speech is not None,
+            model=speech_model if isinstance(speech_model, str) else None,
+            endpoint_host=speech_region if isinstance(speech_region, str) else None,
+            required_env_vars=["DASHSCOPE_API_KEY", "DASHSCOPE_WORKSPACE_ID"],
+        )
+        if not isinstance(models_object, dict) or not isinstance(execution_object, dict):
+            return [speech_view]
+        return [llm("basic"), llm("enrich"), speech_view]
+
+    def model_binding_views(self) -> list[ModelBindingSettingView]:
+        """Project frozen current settings; execution history comes from trace events."""
         return [
-            llm("basic"),
-            llm("enrich"),
-            ProviderSettingView(
-                role="speech",
-                configured=speech is not None,
-                model=speech_model if isinstance(speech_model, str) else None,
-                endpoint_host=speech_region if isinstance(speech_region, str) else None,
-                required_env_vars=["DASHSCOPE_API_KEY", "DASHSCOPE_WORKSPACE_ID"],
-            ),
+            ModelBindingSettingView(
+                purpose=identity.purpose,
+                selection_source=identity.selection_source,
+                configuration_fingerprint=identity.configuration_fingerprint,
+                policy_fingerprint=identity.policy_fingerprint,
+            )
+            for identity in sorted(identities_of(self._provider), key=lambda item: item.purpose)
         ]

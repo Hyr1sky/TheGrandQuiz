@@ -22,11 +22,11 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 - [CONTEXT.md](CONTEXT.md) — 领域语言权威表（先读这个统一术语）
 - [docs/architecture.md](docs/architecture.md) — 目标架构、两条核心设计判断、搭建顺序
 - [docs/roadmap.md](docs/roadmap.md) — 当前工作焦点、候选产品竖切与进入条件
-- [docs/adr/](docs/adr/) — 十二个不可逆决策（0001 提取式迁移 / 0002 概念同一性 / 0003 记忆四收二 /
+- [docs/adr/](docs/adr/) — 十三个不可逆决策（0001 提取式迁移 / 0002 概念同一性 / 0003 记忆四收二 /
   0004 循环是 workflow / 0005 全局 KB·消解 LearningTask / 0006 用户显式题型覆盖 / 0007 稳定资源修订与
   item 身份 / 0008 修订化文档树·精确溯源·分层知识图 / 0009 Local-first Web Interface /
   0010 长期学习事实与完整运行 Trace 分离 / 0011 受限 Required Claims 判卷契约 /
-  0012 语音转写是可审查输入而非正式答案）
+  0012 语音转写是可审查输入而非正式答案 / 0013 用途绑定的模型执行接口）
 
 ## 常用命令
 

@@ -39,7 +39,7 @@ from grandquiz.interfaces.learning_outbox import publish_pending_learning_facts
 from grandquiz.interfaces.trace_projection import resolve_assessment_workflow_descriptor
 from grandquiz.kernel.clock import Clock, SystemClock
 from grandquiz.kernel.trace import TraceStore
-from grandquiz.providers.base import Provider
+from grandquiz.providers.models import ModelSource
 from grandquiz.providers.speech import SpeechRecognitionProvider
 
 
@@ -76,7 +76,7 @@ async def health() -> HealthResponse:
 def create_app(
     *,
     settings: ApiSettings,
-    provider: Provider,
+    provider: ModelSource,
     provider_close: Callable[[], Awaitable[None]] | None = None,
     clock: Clock | None = None,
     search_provider: SearchProvider | None = None,
@@ -153,6 +153,7 @@ def create_app(
         diagnostic_exporter = DiagnosticBundleExporter(
             observatory=trace_observatory,
             provider_views=local_settings.provider_views,
+            model_binding_views=local_settings.model_binding_views,
             clock=app_clock,
         )
         chat_manager = ChatManager(

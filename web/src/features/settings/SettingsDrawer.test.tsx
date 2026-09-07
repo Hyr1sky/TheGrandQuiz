@@ -51,6 +51,20 @@ const settings = {
       required_env_vars: ["DASHSCOPE_API_KEY", "DASHSCOPE_WORKSPACE_ID"],
     },
   ],
+  model_bindings: [
+    {
+      purpose: "chat",
+      selection_source: "default" as const,
+      configuration_fingerprint: "1".repeat(64),
+      policy_fingerprint: "2".repeat(64),
+    },
+    {
+      purpose: "question_generation",
+      selection_source: "purpose_override" as const,
+      configuration_fingerprint: "3".repeat(64),
+      policy_fingerprint: "4".repeat(64),
+    },
+  ],
   data_locations: [
     {
       kind: "learning" as const,
@@ -98,6 +112,10 @@ it("edits hot preferences while keeping provider secrets read-only", async () =>
     "12 个知识点 · 平均 3.25 档",
   );
   expect(screen.getByText("deepseek-v4-pro")).toBeInTheDocument();
+  expect(screen.getByText("开放对话")).toBeInTheDocument();
+  expect(screen.getByText("出题")).toBeInTheDocument();
+  expect(screen.getByText("用途覆盖")).toBeInTheDocument();
+  expect(screen.getByText("333333333333…")).toBeInTheDocument();
   expect(screen.getAllByText("由 .env 管理")).toHaveLength(3);
   expect(screen.queryByLabelText(/API Key/i)).not.toBeInTheDocument();
   expect(screen.getByText("/Users/test/.grandquiz/learning.db")).toBeInTheDocument();

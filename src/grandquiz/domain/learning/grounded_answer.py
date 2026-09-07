@@ -25,8 +25,10 @@ from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.context import HeuristicTokenCounter, TokenCounter
 from grandquiz.kernel.events import EventEmitter, EventType
-from grandquiz.kernel.model_events import model_failure_event_payload
-from grandquiz.providers.base import Completion, Message, Provider
+from grandquiz.kernel.model_events import model_failure_event_payload, model_identity_event_payload
+from grandquiz.providers.base import Completion, Message
+from grandquiz.providers.models import ModelSource as Provider
+from grandquiz.providers.models import bind_model
 
 GroundedAnswerStatus = Literal[
     "answered",
@@ -197,7 +199,7 @@ class GroundedDocumentAnswer:
         token_counter: TokenCounter | None = None,
     ) -> None:
         self._store = store
-        self._provider = provider
+        self._provider = bind_model(provider, "grounded_answer")
         self._token_counter = token_counter or HeuristicTokenCounter()
         self._prompt = load_prompt("grounded_document_answer")
 
@@ -504,11 +506,11 @@ class GroundedDocumentAnswer:
             payload={
                 "messages": [message.model_dump() for message in messages],
                 "prompt_version": self._prompt.version,
-                "role": "basic",
+                **model_identity_event_payload(self._provider),
             },
         )
         try:
-            completion = await self._provider.complete(messages, role="basic")
+            completion = await self._provider.complete(messages)
         except Exception as exc:
             emitter.emit(
                 EventType.MODEL_ENDED,

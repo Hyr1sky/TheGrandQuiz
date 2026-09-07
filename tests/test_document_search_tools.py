@@ -24,6 +24,7 @@ from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventTy
 from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import ToolContext, ToolRegistry
 from grandquiz.providers.base import Completion, Message, Role, ToolCall
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 
 def _stock(store: SqliteLearningStore) -> tuple[LearningResource, KnowledgeItem]:
@@ -381,7 +382,7 @@ async def test_node_citation_rejects_ambiguous_exact_quote_in_read_range(tmp_pat
     store.close()
 
 
-class _WrongThenCorrectNodeCitationProvider:
+class _WrongThenCorrectNodeCitationProvider(LegacyPurposeProvider):
     """复现真机：首次 citation quote/span 不一致，收到工具错误后改参重试。"""
 
     def __init__(self, *, resource_id: str, node_id: str, start: int) -> None:

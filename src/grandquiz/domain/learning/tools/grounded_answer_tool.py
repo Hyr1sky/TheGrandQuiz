@@ -6,10 +6,10 @@ from grandquiz.domain.learning.grounded_answer import (
 )
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.tools import Tool, ToolContext
-from grandquiz.providers.base import Provider
+from grandquiz.providers.models import ModelSource
 
 
-def make_grounded_answer_tool(*, store: Store, provider: Provider) -> Tool:
+def make_grounded_answer_tool(*, store: Store, provider: ModelSource) -> Tool:
     workflow = GroundedDocumentAnswer(store=store, provider=provider)
 
     async def handler(params: GroundedAnswerRequest, ctx: ToolContext) -> str:

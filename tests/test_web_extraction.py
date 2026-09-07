@@ -15,6 +15,7 @@ from grandquiz.domain.learning.store import LearningStore
 from grandquiz.evals.harness import build_event_harness
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.providers.base import Completion, Message, Role, ToolSpec
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "web"
 _PUBLIC_IP = "93.184.216.34"
@@ -28,7 +29,7 @@ def _public_dns() -> Callable[..., list[_AddrInfo]]:
     return fake
 
 
-class _NeverProvider:
+class _NeverProvider(LegacyPurposeProvider):
     def __init__(self) -> None:
         self.calls = 0
 

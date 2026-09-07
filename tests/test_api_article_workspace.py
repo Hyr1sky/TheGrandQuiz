@@ -20,9 +20,10 @@ from grandquiz.interfaces.api.app import ApiSettings, create_app
 from grandquiz.kernel.events import EventType
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, ToolSpec, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 
-class _UnusedProvider:
+class _UnusedProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],
@@ -33,7 +34,7 @@ class _UnusedProvider:
         raise AssertionError("health check 不应调用 provider")
 
 
-class _GroundedProvider:
+class _GroundedProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],
@@ -53,7 +54,7 @@ class _GroundedProvider:
         )
 
 
-class _BlockingProvider:
+class _BlockingProvider(LegacyPurposeProvider):
     def __init__(self) -> None:
         self.started = Event()
 
@@ -69,7 +70,7 @@ class _BlockingProvider:
         raise AssertionError("cancelled provider 不应自然返回")
 
 
-class _NoEvidenceProvider:
+class _NoEvidenceProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],
@@ -83,7 +84,7 @@ class _NoEvidenceProvider:
         )
 
 
-class _FailingProvider:
+class _FailingProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],

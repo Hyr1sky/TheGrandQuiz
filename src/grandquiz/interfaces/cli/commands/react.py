@@ -10,6 +10,7 @@ workflow（LLM 不进逐题循环、不复述题目、不自己判卷）。
 
 import contextlib
 import importlib
+import os
 import time
 import uuid
 from collections.abc import Iterable, Iterator
@@ -38,10 +39,10 @@ from grandquiz.interfaces.cli.composition import (
 from grandquiz.interfaces.cli.interactive import InteractiveResponder
 from grandquiz.interfaces.cli.printer import QuizEventPrinter
 from grandquiz.interfaces.learning_outbox import publish_pending_learning_facts
+from grandquiz.interfaces.model_config import create_model_runtime
 from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.trace import TraceStore
-from grandquiz.providers.base import Provider
-from grandquiz.providers.llm import OpenAICompatProvider
+from grandquiz.providers.models import ModelSource
 
 __all__ = ["_run_react_cli", "run_react"]
 
@@ -57,7 +58,7 @@ async def run_react(
     title: str | None = None,
     db_path: Path,
     materials_dir: Path,
-    provider: Provider,
+    provider: ModelSource,
     responder: Responder,
     approval: ApprovalGate,
     console: Console,
@@ -194,13 +195,13 @@ def _stdin_messages() -> Iterator[str]:
 
 async def _run_react_cli(*, title: str | None, db_path: Path, materials_dir: Path) -> None:
     console = Console()
-    provider = OpenAICompatProvider.from_env()
+    model_runtime = create_model_runtime(environment=dict(os.environ))
     try:
         await run_react(
             title=title,
             db_path=db_path,
             materials_dir=materials_dir,
-            provider=provider,
+            provider=model_runtime.bindings,
             responder=InteractiveResponder(),  # start_quiz 逐题作答：questionary 选择器 / 文本输入
             approval=CliApprovalGate(console=console),
             console=console,
@@ -208,4 +209,4 @@ async def _run_react_cli(*, title: str | None, db_path: Path, materials_dir: Pat
             seed=int(time.time()),  # CLI 非 replay：可变种子（每次会话不同选题次序）
         )
     finally:
-        await provider.aclose()
+        await model_runtime.aclose()

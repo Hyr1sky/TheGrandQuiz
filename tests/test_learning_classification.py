@@ -14,9 +14,10 @@ from grandquiz.domain.learning.vocabulary import load_vocabulary
 from grandquiz.interfaces.api.app import ApiSettings, create_app
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.providers.base import Completion, Message, Role
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 
-class _UnusedProvider:
+class _UnusedProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],

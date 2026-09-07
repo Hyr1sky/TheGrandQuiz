@@ -22,6 +22,7 @@ from grandquiz.providers.base import (
     ToolSpec,
     Usage,
 )
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 
 class ReplayMiss(Exception):
@@ -187,7 +188,7 @@ class Cassette:
             self._entries[key] = [existing, entry]
 
 
-class RecordingProvider:
+class RecordingProvider(LegacyPurposeProvider):
     """包裹真实 provider：每次付费响应都追加到该请求 key 的有序 cassette 序列。"""
 
     def __init__(
@@ -226,7 +227,7 @@ class RecordingProvider:
         return completion
 
 
-class ReplayProvider:
+class ReplayProvider(LegacyPurposeProvider):
     """纯回放：同 key 序列逐次消费；旧单条响应保持可重复，未命中大声失败。"""
 
     def __init__(self, cassette: Cassette, model_for_role: Mapping[Role, str]) -> None:

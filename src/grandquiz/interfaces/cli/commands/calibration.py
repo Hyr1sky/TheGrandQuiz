@@ -1,8 +1,10 @@
 """CLI adapter for human-labelled production-grader calibration."""
 
 import json
+import os
+from dataclasses import replace
 from pathlib import Path
-from typing import Literal
+from urllib.parse import urlparse
 
 import yaml
 
@@ -24,14 +26,15 @@ from grandquiz.evals.grading_experiment import (
     GradingExperimentComparison,
     compare_grading_reports,
 )
-from grandquiz.providers.base import Provider, Role
+from grandquiz.interfaces.model_config import PRODUCT_MODEL_PURPOSES, load_model_configuration
+from grandquiz.providers.base import Model
 from grandquiz.providers.llm import (
-    OpenAICompatProvider,
     ReasoningEffort,
-    RoleOverrides,
     ThinkingMode,
 )
-from grandquiz.providers.replay import Cassette, RecordingProvider
+from grandquiz.providers.model_replay import ModelCassette, RecordingModel
+from grandquiz.providers.models import ModelRuntime, ModelSource, bind_model
+from grandquiz.providers.profiles import ModelConfiguration, ModelProfile
 
 
 async def run_grading_calibration_cli(
@@ -39,7 +42,7 @@ async def run_grading_calibration_cli(
     samples_path: Path,
     out_path: Path,
     min_samples: int,
-    provider: Provider,
+    provider: ModelSource,
     run_manifest: CalibrationRunManifest | None = None,
 ) -> GradingCalibrationReport:
     report = await run_grading_calibration(
@@ -129,7 +132,7 @@ async def run_snapshot_grading_calibration_cli(
     db_path: Path,
     out_path: Path,
     min_samples: int,
-    provider: Provider,
+    provider: ModelSource,
     run_manifest: CalibrationRunManifest | None = None,
     sample_ids: list[str] | None = None,
 ) -> GradingCalibrationReport:
@@ -219,39 +222,47 @@ def _live_calibration_provider(
     thinking_mode: ThinkingMode | None,
     reasoning_effort: ReasoningEffort | None,
     cassette_path: Path | None,
-) -> tuple[OpenAICompatProvider, Provider, CalibrationRunManifest]:
-    override_effort: ReasoningEffort | Literal["none"] | None = reasoning_effort
-    if thinking_mode == "disabled" and override_effort is None:
-        override_effort = "none"
-    provider = OpenAICompatProvider.from_env(
-        role_overrides={
-            "basic": RoleOverrides(
-                model=model,
-                thinking_mode=thinking_mode,
-                reasoning_effort=override_effort,
-            )
-        }
+) -> tuple[ModelRuntime, Model, CalibrationRunManifest]:
+    environment = dict(os.environ)
+    configuration = load_model_configuration(
+        environment=environment,
+        purposes=PRODUCT_MODEL_PURPOSES,
     )
-    execution = provider.execution_config_for_role["basic"]
-    effective_provider: Provider = provider
+    resolved = configuration.resolve("answer_grading")
+    profile = resolved.profile
+    updates: dict[str, object] = {}
+    if model is not None:
+        updates["model"] = model
+    if thinking_mode is not None:
+        updates["thinking_mode"] = thinking_mode
+    if reasoning_effort is not None:
+        updates["reasoning_effort"] = reasoning_effort
+    elif thinking_mode == "disabled":
+        updates["reasoning_effort"] = None
+    if updates:
+        resolved = replace(
+            resolved,
+            profile=ModelProfile.model_validate(profile.model_dump() | updates),
+            selection_source="purpose_override",
+        )
+        profile = resolved.profile
+    runtime = ModelRuntime.from_configuration(
+        ModelConfiguration((resolved,)),
+        environment=environment,
+    )
+    effective_provider: Model = bind_model(runtime.bindings, "answer_grading")
     if cassette_path is not None:
-        cassette = Cassette.load(cassette_path) if cassette_path.is_file() else Cassette()
-        identities: dict[Role, str] = {
-            role: config.replay_identity
-            for role, config in provider.execution_config_for_role.items()
-        }
-        effective_provider = RecordingProvider(
-            provider,
+        cassette = ModelCassette.load(cassette_path) if cassette_path.is_file() else ModelCassette()
+        effective_provider = RecordingModel(
+            effective_provider,
             cassette,
-            identities,
             checkpoint_path=cassette_path,
-            reuse_existing=True,
         )
     manifest = CalibrationRunManifest(
-        provider=execution.provider,
-        endpoint_host=execution.endpoint_host,
-        model=execution.model,
-        thinking_mode=execution.thinking_mode,
-        reasoning_effort=execution.reasoning_effort,
+        provider=profile.api_dialect,
+        endpoint_host=urlparse(resolved.connection.base_url).hostname or "unknown",
+        model=profile.model,
+        thinking_mode=profile.thinking_mode,
+        reasoning_effort=profile.reasoning_effort,
     )
-    return provider, effective_provider, manifest
+    return runtime, effective_provider, manifest

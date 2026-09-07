@@ -23,6 +23,7 @@ from grandquiz.domain.learning.assessment.workflow import (
     describe_assessment_workflow,
 )
 from grandquiz.kernel.events import AgentEvent, EventType
+from grandquiz.providers.profiles import ModelIdentity
 
 TraceRunStatus = Literal[
     "idle",
@@ -177,6 +178,14 @@ class SafeProviderFailureV1(BaseModel):
     retryable: bool
 
 
+class SafeModelExecutionIdentityV1(BaseModel):
+    status: Literal["known", "unknown"]
+    purpose: str | None = None
+    selection_source: Literal["default", "purpose_override", "legacy"] | None = None
+    configuration_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    policy_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+
 class TraceRejectionCountV1(BaseModel):
     reason_code: TraceReasonCode
     count: int
@@ -210,6 +219,7 @@ class SafeTraceEventV1(BaseModel):
     latency_ms: float | None = None
     node_id: WorkflowNodeId | None = None
     provider_failure: SafeProviderFailureV1 | None = None
+    execution_identity: SafeModelExecutionIdentityV1 | None = None
 
 
 class SafeWorkflowNodeV1(BaseModel):
@@ -712,6 +722,7 @@ def _project_events(
                 ),
                 node_id=_node_id(event, descriptor=descriptor),
                 provider_failure=provider_failure,
+                execution_identity=_safe_execution_identity(event),
             )
         )
     return projected
@@ -752,6 +763,9 @@ def _operation(
     if event_type == EventType.MODEL_STARTED:
         parent_operation = span_operations.get(event.parent_span_id or "")
         if parent_operation == "multiple_choice_generation":
+            execution_identity = _safe_execution_identity(event)
+            if execution_identity is not None and execution_identity.purpose == "distractor_review":
+                return "distractor_judgement"
             return (
                 "distractor_judgement"
                 if event.payload.get("role") == "basic"
@@ -760,6 +774,25 @@ def _operation(
         if parent_operation == "assessment_run" and event.parent_span_id in question_asked_spans:
             return "grading"
     return "other"
+
+
+def _safe_execution_identity(
+    event: AgentEvent,
+) -> SafeModelExecutionIdentityV1 | None:
+    if event.type != EventType.MODEL_STARTED:
+        return None
+    raw = event.payload.get("model_identity")
+    try:
+        identity = ModelIdentity.model_validate(raw)
+    except (TypeError, ValueError):
+        return SafeModelExecutionIdentityV1(status="unknown")
+    return SafeModelExecutionIdentityV1(
+        status="known",
+        purpose=identity.purpose,
+        selection_source=identity.selection_source,
+        configuration_fingerprint=identity.configuration_fingerprint,
+        policy_fingerprint=identity.policy_fingerprint,
+    )
 
 
 def _summary_usage(events: Sequence[AgentEvent]) -> tuple[int | None, int | None]:

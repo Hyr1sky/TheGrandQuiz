@@ -15,9 +15,10 @@ from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventTy
 from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import ToolContext, ToolRegistry
 from grandquiz.providers.base import Completion, Message, Role, ToolCall, ToolSpec, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 
-class _Provider:
+class _Provider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],
@@ -37,7 +38,7 @@ class _Provider:
         )
 
 
-class _NaturalQuestionProvider:
+class _NaturalQuestionProvider(LegacyPurposeProvider):
     def __init__(self, resource_id: str) -> None:
         self.resource_id = resource_id
         self.calls = 0

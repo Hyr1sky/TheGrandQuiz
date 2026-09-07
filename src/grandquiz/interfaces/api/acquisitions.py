@@ -43,7 +43,7 @@ from grandquiz.interfaces.learning_outbox import publish_pending_learning_facts
 from grandquiz.kernel.clock import Clock, SystemClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.trace import TraceStore
-from grandquiz.providers.base import Provider
+from grandquiz.providers.models import ModelSource
 
 _MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 _MAX_FETCH_BYTES = 4 * 1024 * 1024
@@ -138,7 +138,7 @@ class AcquisitionManager:
         self,
         *,
         persistence: LearningPersistence,
-        provider: Provider,
+        provider: ModelSource,
         trace_store: TraceStore,
         clock: Clock | None = None,
         http_source: FetchSource | None = None,

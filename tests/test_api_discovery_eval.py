@@ -11,9 +11,10 @@ from grandquiz.evals.grading_calibration import GradingCalibrationSample
 from grandquiz.interfaces.api.app import ApiSettings, create_app
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.providers.base import Completion, Message, Role, ToolSpec, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 
-class _Provider:
+class _Provider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],

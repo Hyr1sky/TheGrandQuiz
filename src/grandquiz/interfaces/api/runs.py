@@ -20,7 +20,7 @@ from grandquiz.interfaces.api.observability import TraceObservatory
 from grandquiz.kernel.clock import SystemClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.trace import TraceStore
-from grandquiz.providers.base import Provider
+from grandquiz.providers.models import ModelSource
 
 RunStatus = Literal["queued", "running", "needs_input", "succeeded", "failed", "cancelled"]
 
@@ -91,7 +91,7 @@ class RunManager:
         self,
         *,
         store: Store,
-        provider: Provider,
+        provider: ModelSource,
         trace_store: TraceStore,
         trace_observatory: TraceObservatory | None = None,
     ) -> None:

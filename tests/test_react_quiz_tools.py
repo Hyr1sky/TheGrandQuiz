@@ -41,6 +41,7 @@ from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
 from grandquiz.kernel.tools import ModelRetry, ToolContext, ToolRegistry
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.replay import Cassette, RecordingProvider, ReplayProvider
 
 _MODELS: dict[Role, str] = {"basic": "deepseek-x", "enrich": "qwen-x"}
@@ -147,7 +148,7 @@ async def _dispatch_quiz(
     return await registry.dispatch("start_quiz", {"scope": {"mode": "all"}, **arguments}, ctx=ctx)
 
 
-class _McProvider:
+class _McProvider(LegacyPurposeProvider):
     """enrich 出选择题（正确项恒在下标 0，题干按调用序变化以避免会话内去重门误伤）。
 
     ``basic`` 判卷本路径用不到（MC 判卷走确定性代码）。计自身调用次数（验证 MC 判卷不打 LLM）。
@@ -175,7 +176,7 @@ class _McProvider:
         )
 
 
-class _OpenProvider:
+class _OpenProvider(LegacyPurposeProvider):
     """enrich 出开放题；basic 判卷（可注入 verdict）。计自身调用次数。"""
 
     def __init__(self, *, verdict: str) -> None:
@@ -204,7 +205,7 @@ class _OpenProvider:
         )
 
 
-class _LanguageCapturingProvider:
+class _LanguageCapturingProvider(LegacyPurposeProvider):
     """出选择题并记录每次 enrich 出题的 system 提示（供断言语言偏好确已透传进出题槽）。"""
 
     def __init__(self) -> None:
@@ -768,7 +769,7 @@ async def test_start_quiz_record_then_replay_is_identical(tmp_path: Path) -> Non
 # --------------------------------------------------------------------------- #
 
 
-class _SegmentProvider:
+class _SegmentProvider(LegacyPurposeProvider):
     """按出题提示词分型响应：MC 提示（含"单项选择题"）→ MC JSON；否则 → 开放题 JSON。
 
     据此可在一次 start_quiz 里既出选择题又出开放题（供分段调度断言逐题题型序列）；basic 判卷官

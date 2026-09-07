@@ -28,7 +28,7 @@ from grandquiz.domain.learning.grading_samples import (
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
-from grandquiz.providers.base import Provider
+from grandquiz.providers.models import ModelSource
 
 CalibrationStatus = Literal["passed", "failed", "insufficient_evidence"]
 ThinkingMode = Literal["enabled", "disabled", "provider_default", "unknown"]
@@ -154,7 +154,7 @@ def _model_usage(events: list[AgentEvent]) -> tuple[int, int, int, int]:
 async def run_grading_calibration(
     samples: list[GradingCalibrationSample],
     *,
-    provider: Provider,
+    provider: ModelSource,
     policy: GradingCalibrationPolicy | None = None,
     max_attempts: int = 3,
     run_manifest: CalibrationRunManifest | None = None,
@@ -326,7 +326,7 @@ async def run_grading_calibration(
 async def run_snapshot_grading_calibration(
     snapshot: DatasetSnapshotV1,
     *,
-    provider: Provider,
+    provider: ModelSource,
     policy: GradingCalibrationPolicy | None = None,
     max_attempts: int = 3,
     run_manifest: CalibrationRunManifest | None = None,

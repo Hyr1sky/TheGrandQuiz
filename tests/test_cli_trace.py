@@ -28,6 +28,7 @@ from grandquiz.interfaces.cli.app import run_ingest, run_quiz
 from grandquiz.kernel.events import DurableProcessorError, EventType
 from grandquiz.kernel.trace import TraceStore, build_span_tree
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 _QUOTE = "闭包捕获变量而非值"
 _MC_CORRECT = "正确选项"
@@ -49,7 +50,7 @@ _READER_JSON = json.dumps(
 )
 
 
-class _ReaderProvider:
+class _ReaderProvider(LegacyPurposeProvider):
     """ingest 用假 provider：恒返回固定候选 JSON（供 run_ingest 的 Reader 槽）。"""
 
     async def complete(
@@ -75,7 +76,7 @@ class _ReaderProvider:
         )
 
 
-class _McProvider:
+class _McProvider(LegacyPurposeProvider):
     """quiz 用假 provider：enrich 出选择题（正确项恒在下标 0），basic 判卷（本测用不到）。
 
     每次 enrich 换一个题干（带自增序号）——绕开会话内"已问过"去重（同一 item 复考时逐字重复会被

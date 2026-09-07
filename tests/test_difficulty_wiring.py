@@ -44,6 +44,7 @@ from grandquiz.interfaces.cli.printer import QuizEventPrinter
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 _SEED = 42
 
@@ -317,7 +318,7 @@ def test_printer_escapes_difficulty_reason_markup() -> None:
 # --------------------------------------------------------------------------- #
 
 
-class _NumOptionsEchoProvider:
+class _NumOptionsEchoProvider(LegacyPurposeProvider):
     """出题按注入的选项数约束回产对应数量的 MC 选项（验证 assess_once 把难度档 → 选项数注入出题）。
 
     从组装好的 messages 正则读出"恰好给出 N 个选项"的 N，回产 N 个平衡选项（正确项恒在下标 0）；
@@ -414,7 +415,7 @@ async def test_default_none_difficulty_requests_baseline_options() -> None:
 # --------------------------------------------------------------------------- #
 
 
-class _JudgingEchoProvider:
+class _JudgingEchoProvider(LegacyPurposeProvider):
     """enrich 按注入选项数约束回产 MC；basic 评每个干扰项（返回可注入 ``DistractorLabel``）。
 
     MC 判卷走确定性代码、不打 basic 槽，故 assess_once 的 MC 路径下 basic **只可能**是 SE-S5b 的
@@ -574,7 +575,7 @@ _HARD_HINT_MARK = "高难度考核"
 _EASY_HINT_MARK = "入门考核"
 
 
-class _HintCapturingProvider:
+class _HintCapturingProvider(LegacyPurposeProvider):
     """开放 / 追问出题（enrich）留存收到的 messages 文本；判卷（basic）按注入 verdict 判。
 
     断言 assess_once 把难度档 → 难度提示注入开放 / 追问出题请求：高档（4/5）→ enrich 文本含逼深

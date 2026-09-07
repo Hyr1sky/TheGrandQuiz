@@ -27,10 +27,11 @@ from grandquiz.evals.resources import (
     eval_fixture_path,
 )
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.replay import Cassette, ReplayProvider
 
 
-class _FixedProvider:
+class _FixedProvider(LegacyPurposeProvider):
     def __init__(self, payload: dict[str, object]) -> None:
         self._text = json.dumps(payload, ensure_ascii=False)
 
@@ -47,7 +48,7 @@ class _FixedProvider:
         )
 
 
-class _SequenceProvider:
+class _SequenceProvider(LegacyPurposeProvider):
     def __init__(self, payloads: Sequence[dict[str, object]]) -> None:
         self._payloads = deque(payloads)
 

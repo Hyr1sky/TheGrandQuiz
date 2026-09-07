@@ -43,6 +43,7 @@ from grandquiz.kernel.context import HeuristicTokenCounter
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Role, ToolCall, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.replay import Cassette, RecordingProvider, ReplayProvider
 
 _QUOTE = "闭包捕获变量而非值"
@@ -67,7 +68,7 @@ _READER_JSON = json.dumps(
 )
 
 
-class _ReactScriptProvider:
+class _ReactScriptProvider(LegacyPurposeProvider):
     """脚本化 provider：按 role + 系统提示分流，驱动整条 react 会话（不触真网 / 真 key）。
 
     真机里 role=basic 同槽承担三件事，本假件按系统提示区分：ReAct 决策（react 系统提示）、Reader
@@ -140,7 +141,7 @@ class _ReactScriptProvider:
         )
 
 
-class _EightToolsThenFinalProvider:
+class _EightToolsThenFinalProvider(LegacyPurposeProvider):
     """复现 DS-S4 真机深链：8 轮工具后，第 9 次模型调用才产出 final。"""
 
     def __init__(self) -> None:
@@ -471,7 +472,7 @@ async def test_react_session_zero_token_replay(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-class _ScopeTypeScriptProvider:
+class _ScopeTypeScriptProvider(LegacyPurposeProvider):
     """脚本化 provider：模拟用户"考<某份材料>的简答题"——ReAct 决策槽发一次
     ``start_quiz(resource_ids=[该材料 id], question_type='简答')``；enrich 出开放题、basic 判卷。
 
@@ -642,7 +643,7 @@ async def test_react_scope_and_question_type_honored_end_to_end(tmp_path: Path) 
 # --------------------------------------------------------------------------- #
 
 
-class _CrashFirstTurnProvider:
+class _CrashFirstTurnProvider(LegacyPurposeProvider):
     """首轮（user 含"崩"）model 调用直接抛未预期异常；其余轮正常收敛 final。计调用次数。
 
     模拟 run_agent_turn 里冒出的未预期异常（模型层炸 / MaxIterations 等）——会话循环须兜住这一轮、
@@ -694,7 +695,7 @@ async def test_react_session_survives_crashing_turn(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-class _CaptureReactProvider:
+class _CaptureReactProvider(LegacyPurposeProvider):
     """记录 ReAct 决策槽（role=basic + react 系统提示）收到的 messages，恒收敛 final、不调工具。"""
 
     def __init__(self) -> None:

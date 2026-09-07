@@ -24,6 +24,7 @@ from grandquiz.domain.learning.models import Evidence, KnowledgeItem
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 _QUOTE = "闭包捕获的是变量而非值"
 _POINT_ID = "capture-semantics"
@@ -119,7 +120,7 @@ def test_question_spec_rejects_mixed_legacy_and_claim_points() -> None:
         )
 
 
-class _FixedProvider:
+class _FixedProvider(LegacyPurposeProvider):
     """返回固定文本、计被调次数、记录每次 role。``role`` 接收后用于断言两槽角色。"""
 
     def __init__(self, text: str) -> None:
@@ -327,7 +328,7 @@ async def test_malformed_json_retries_then_raises() -> None:
     assert provider.calls == 2
 
 
-class _RaisingProvider:
+class _RaisingProvider(LegacyPurposeProvider):
     """complete 抛传输类异常（模拟网络 / 超时 / 5xx，或 ReplayMiss）。计被调次数。"""
 
     def __init__(self) -> None:
@@ -520,7 +521,7 @@ async def test_probe_prompt_variant_reflected_in_trace_prompt_version() -> None:
 _HINT_SENTINEL = "【SE-S6 难度提示占位·请问边界与反例】"
 
 
-class _MessageCapturingProvider:
+class _MessageCapturingProvider(LegacyPurposeProvider):
     """返回固定文本、留存最后一次收到的 messages（断言难度提示被 / 未被追加）。"""
 
     def __init__(self, text: str) -> None:

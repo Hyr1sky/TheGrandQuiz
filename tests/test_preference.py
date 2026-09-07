@@ -37,6 +37,7 @@ from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 # --- Preference 模型 + 显式 set/get ------------------------------------------------
 
@@ -141,7 +142,7 @@ _ENGLISH_OPTIONS = ["a value snapshot", "the variable itself"]
 _CORRECT = "变量本身"
 
 
-class _LanguageEchoProvider:
+class _LanguageEchoProvider(LegacyPurposeProvider):
     """从 system prompt 里被替换后的 ``请用 <语言>`` 指令判定语言，返回对应语言的 MC JSON。"""
 
     async def complete(

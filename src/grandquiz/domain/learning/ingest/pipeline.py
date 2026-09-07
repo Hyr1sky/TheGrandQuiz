@@ -40,7 +40,7 @@ from grandquiz.domain.learning.persistence import LearningDatabase
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.events import EventEmitter
 from grandquiz.kernel.hooks import HookManager
-from grandquiz.providers.base import Provider
+from grandquiz.providers.models import ModelSource
 
 # ingest 是 workflow span，用 kernel 级通用类型串（kernel 不认识 "ingest"，泛型建树即可）。
 _INGEST_STARTED = "ingest.started"
@@ -182,7 +182,7 @@ async def prepare_ingest(
     url: str,
     *,
     source: FetchSource,
-    provider: Provider,
+    provider: ModelSource,
     store: Store,
     emitter: EventEmitter,
     max_bytes: int,
@@ -541,7 +541,7 @@ async def ingest_resource(
     url: str,
     *,
     source: FetchSource,
-    provider: Provider,
+    provider: ModelSource,
     store: Store,
     approval: ApprovalGate,
     emitter: EventEmitter,

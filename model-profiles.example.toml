@@ -1,0 +1,31 @@
+# Copy this file outside the repository, then set GRANDQUIZ_MODEL_CONFIG to its absolute path.
+schema_version = "model-config.v1"
+default_profile = "shared"
+
+[connections.primary]
+base_url = "https://api.deepseek.com/v1"
+api_key_env = "LLM_API_KEY"
+wire_api = "openai_chat_completions"
+
+[profiles.shared]
+connection = "primary"
+model = "deepseek-chat"
+timeout_seconds = 60
+api_dialect = "deepseek"
+thinking_mode = "disabled"
+
+# Optional independent question-generation model.
+[connections.writer]
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+api_key_env = "DASHSCOPE_MODEL_KEY"
+wire_api = "openai_chat_completions"
+
+[profiles.writer]
+connection = "writer"
+model = "qwen-plus"
+timeout_seconds = 60
+api_dialect = "dashscope"
+thinking_mode = "disabled"
+
+[purpose_overrides]
+question_generation = "writer"

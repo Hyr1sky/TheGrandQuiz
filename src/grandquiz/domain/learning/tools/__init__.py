@@ -52,7 +52,7 @@ from grandquiz.domain.learning.tools.query_weak_tool import make_query_weak_conc
 from grandquiz.domain.learning.tools.start_quiz_tool import make_start_quiz_tool
 from grandquiz.domain.learning.tools.web_search_tool import make_web_search_tool
 from grandquiz.kernel.tools import ToolRegistry
-from grandquiz.providers.base import Provider
+from grandquiz.providers.models import ModelSource
 
 __all__ = ["register_learning_tools"]
 
@@ -61,7 +61,7 @@ def register_learning_tools(
     registry: ToolRegistry,
     *,
     source: FetchSource,
-    provider: Provider,
+    provider: ModelSource,
     store: Store,
     approval: ApprovalGate,
     memory: Memory,

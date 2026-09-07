@@ -20,9 +20,10 @@ from grandquiz.evals.grading_calibration import (
     run_snapshot_grading_calibration,
 )
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 
-class _SequenceProvider:
+class _SequenceProvider(LegacyPurposeProvider):
     def __init__(self, payloads: list[object]) -> None:
         self._payloads = list(payloads)
 

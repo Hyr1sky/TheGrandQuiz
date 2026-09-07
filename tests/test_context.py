@@ -45,6 +45,7 @@ from grandquiz.kernel.context import (
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.runner import Runner
 from grandquiz.providers.base import Completion, Message, Role, ToolSpec, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 # --------------------------------------------------------------------------- #
 # kernel ContextBuilder：分区装配（领域无关机制，只认名字 + 字符串 provider）
@@ -301,7 +302,7 @@ def test_provider_closure_reflects_memory_mutation() -> None:
 # --------------------------------------------------------------------------- #
 
 
-class _CaptureProvider:
+class _CaptureProvider(LegacyPurposeProvider):
     """记录每次 complete 收到的 messages，恒返回 final 文本（无 tool_calls，单趟收敛）。"""
 
     def __init__(self) -> None:

@@ -12,11 +12,12 @@ from grandquiz.interfaces.api.app import ApiSettings, create_app
 from grandquiz.interfaces.api.navigation_tools import register_navigation_tools
 from grandquiz.kernel.tools import ToolRegistry
 from grandquiz.providers.base import Completion, Message, Role, ToolCall, ToolSpec, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 # ---- Fake providers ---- #
 
 
-class _NavigationProvider:
+class _NavigationProvider(LegacyPurposeProvider):
     """第一次调用返回 start_assessment tool_call，第二次返回 final 文本。"""
 
     def __init__(self) -> None:
@@ -52,7 +53,7 @@ class _NavigationProvider:
         )
 
 
-class _OpenArticleProvider:
+class _OpenArticleProvider(LegacyPurposeProvider):
     """第一次调用返回 open_article tool_call，第二次返回 final 文本。"""
 
     def __init__(self) -> None:
@@ -84,7 +85,7 @@ class _OpenArticleProvider:
         )
 
 
-class _MixedAssessmentProvider:
+class _MixedAssessmentProvider(LegacyPurposeProvider):
     """复现实机请求：两道选择题后接一道简答题。"""
 
     def __init__(self) -> None:

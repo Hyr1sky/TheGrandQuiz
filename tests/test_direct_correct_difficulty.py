@@ -30,6 +30,7 @@ from grandquiz.domain.learning.store import LearningStore, SqliteLearningStore
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 _ITEM_ID = "item-1"
 _QUOTE = "闭包捕获词法环境"
@@ -117,7 +118,7 @@ def test_learning_state_writer_resets_streak_after_weak_verdict(
     )
 
 
-class _OpenCorrectProvider:
+class _OpenCorrectProvider(LegacyPurposeProvider):
     async def complete(
         self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
     ) -> Completion:

@@ -11,12 +11,14 @@ from collections.abc import Sequence
 
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.events import EventEmitter, EventType
-from grandquiz.kernel.model_events import model_failure_event_payload
-from grandquiz.providers.base import Completion, Message, Provider
+from grandquiz.kernel.model_events import model_failure_event_payload, model_identity_event_payload
+from grandquiz.providers.base import Completion, Message
+from grandquiz.providers.models import ModelSource as Provider
+from grandquiz.providers.models import bind_model
 
 
 class LLMSummarizer:
-    """真 LLM 折叠老轮进滚动摘要（kernel ``Summarizer`` 协议，role=basic）。
+    """真 LLM 折叠老轮进滚动摘要（kernel ``Summarizer`` 协议，``summarization`` 用途）。
 
     每次 ``summarize`` 调用自成一个根 span（``parent_span_id=None``）：调用发生在
     ``Runner._drain_pending_prune`` 里，跨越"上一轮"与"这一轮"之间，不天然从属于任何单个
@@ -25,7 +27,7 @@ class LLMSummarizer:
     """
 
     def __init__(self, provider: Provider, emitter: EventEmitter) -> None:
-        self._provider = provider
+        self._provider = bind_model(provider, "summarization")
         self._emitter = emitter
 
     async def summarize(self, prior_summary: str, messages: Sequence[Message]) -> str:
@@ -51,11 +53,11 @@ class LLMSummarizer:
             payload={
                 "messages": [m.model_dump() for m in messages],
                 "prompt_version": prompt_version,
-                "role": "basic",
+                **model_identity_event_payload(self._provider),
             },
         )
         try:
-            completion = await self._provider.complete(messages, role="basic")
+            completion = await self._provider.complete(messages)
         except Exception as exc:
             self._emitter.emit(
                 EventType.MODEL_ENDED,

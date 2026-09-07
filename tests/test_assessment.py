@@ -50,6 +50,7 @@ from grandquiz.evals.harness import summarize_spans as _summ
 from grandquiz.kernel.clock import new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventType
 from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.replay import Cassette, RecordingProvider, ReplayProvider
 
 _ASSESSMENT_STARTED = "assessment.started"
@@ -72,7 +73,7 @@ _ITEM_DATA = [
 _QUOTES = {quote for _concept, quote in _ITEM_DATA}
 
 
-class _AssessProvider:
+class _AssessProvider(LegacyPurposeProvider):
     """确定性假 provider：按 role 分槽——enrich 出题、basic 判卷；从 messages 回抽真实证据引用。
 
     enrich 出题再按 system prompt 分型：MC prompt（含 ``answer_index`` 字样）→ 产选择题 JSON，

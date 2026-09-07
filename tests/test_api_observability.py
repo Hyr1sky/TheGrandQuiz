@@ -14,9 +14,10 @@ from grandquiz.interfaces.api.observability import TraceObservatory
 from grandquiz.kernel.events import AgentEvent
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Role, ToolSpec, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 
-class _EchoProvider:
+class _EchoProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],
@@ -487,6 +488,7 @@ def test_observability_openapi_exposes_only_finite_semantic_event_fields(
         "latency_ms",
         "node_id",
         "provider_failure",
+        "execution_identity",
     }
     provider_failure = schema["components"]["schemas"]["SafeProviderFailureV1"]
     assert set(provider_failure["properties"]) == {
@@ -507,6 +509,18 @@ def test_observability_openapi_exposes_only_finite_semantic_event_fields(
         "server_error",
         "unknown",
     ]
+    execution_identity = schema["components"]["schemas"]["SafeModelExecutionIdentityV1"]
+    assert set(execution_identity["properties"]) == {
+        "status",
+        "purpose",
+        "selection_source",
+        "configuration_fingerprint",
+        "policy_fingerprint",
+    }
+    settings_schema = schema["components"]["schemas"]["SettingsView"]
+    diagnostic_config = schema["components"]["schemas"]["DiagnosticConfigIdentityV1"]
+    assert "model_bindings" not in settings_schema["required"]
+    assert "model_bindings" not in diagnostic_config["required"]
     assert properties["node_id"]["anyOf"][0]["enum"] == [
         "select_target",
         "generate_question",

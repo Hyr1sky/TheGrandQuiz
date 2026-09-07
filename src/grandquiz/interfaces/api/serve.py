@@ -12,9 +12,9 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
 
 from grandquiz.interfaces.api.app import ApiSettings, create_app
+from grandquiz.interfaces.model_config import PRODUCT_MODEL_PURPOSES, create_model_runtime
 from grandquiz.interfaces.search_config import search_provider_from_env
 from grandquiz.providers.dashscope_speech import DashScopeSpeechRecognitionAdapter
-from grandquiz.providers.llm import OpenAICompatProvider
 
 _HOST = "127.0.0.1"
 _PORT = 8000
@@ -57,7 +57,11 @@ def mount_web_static(app: FastAPI, directory: Path = _STATIC_DIR) -> bool:
 def create_default_app() -> FastAPI:
     """由 uvicorn factory 调用；读取 `.env`，但 DB 仍延迟到 lifespan 打开。"""
     load_dotenv()
-    provider = OpenAICompatProvider.from_env()
+    environment = dict(os.environ)
+    model_runtime = create_model_runtime(
+        environment=environment,
+        purposes=PRODUCT_MODEL_PURPOSES,
+    )
     speech_provider = (
         DashScopeSpeechRecognitionAdapter.from_env()
         if os.environ.get("DASHSCOPE_API_KEY") and os.environ.get("DASHSCOPE_WORKSPACE_ID")
@@ -65,8 +69,8 @@ def create_default_app() -> FastAPI:
     )
     app = create_app(
         settings=ApiSettings.default(),
-        provider=provider,
-        provider_close=provider.aclose,
+        provider=model_runtime.bindings,
+        provider_close=model_runtime.aclose,
         search_provider=search_provider_from_env(),
         speech_provider=speech_provider,
         asr_hints_default=_env_flag("ASR_ENABLE_HINTS"),

@@ -31,6 +31,7 @@ from grandquiz.evals.harness import build_event_harness as _harness
 from grandquiz.evals.harness import summarize_spans as _summ
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventType
 from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.replay import Cassette, RecordingProvider, ReplayMiss, ReplayProvider
 
 _ALLOWED = {"example.com"}
@@ -80,7 +81,7 @@ _READER_JSON = json.dumps(
 )
 
 
-class _FixedProvider:
+class _FixedProvider(LegacyPurposeProvider):
     """返回固定 JSON、计被调次数。``role`` 接收但忽略。"""
 
     def __init__(self, text: str) -> None:

@@ -1705,6 +1705,8 @@ export interface components {
         DiagnosticConfigIdentityV1: {
             /** Application Version */
             application_version: string;
+            /** Model Bindings */
+            model_bindings?: components["schemas"]["ModelBindingSettingView"][];
             /** Providers */
             providers: components["schemas"]["DiagnosticProviderIdentityV1"][];
             /**
@@ -2397,6 +2399,20 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** ModelBindingSettingView */
+        ModelBindingSettingView: {
+            /** Configuration Fingerprint */
+            configuration_fingerprint: string;
+            /** Policy Fingerprint */
+            policy_fingerprint: string;
+            /** Purpose */
+            purpose: string;
+            /**
+             * Selection Source
+             * @enum {string}
+             */
+            selection_source: "default" | "purpose_override" | "legacy";
+        };
         /** NextRoundRequest */
         NextRoundRequest: {
             /** Request Id */
@@ -2605,6 +2621,22 @@ export interface components {
             /** Trace Id */
             trace_id: string;
         };
+        /** SafeModelExecutionIdentityV1 */
+        SafeModelExecutionIdentityV1: {
+            /** Configuration Fingerprint */
+            configuration_fingerprint?: string | null;
+            /** Policy Fingerprint */
+            policy_fingerprint?: string | null;
+            /** Purpose */
+            purpose?: string | null;
+            /** Selection Source */
+            selection_source?: ("default" | "purpose_override" | "legacy") | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "known" | "unknown";
+        };
         /** SafeProviderFailureV1 */
         SafeProviderFailureV1: {
             /**
@@ -2621,6 +2653,7 @@ export interface components {
         SafeTraceEventV1: {
             /** Attempt */
             attempt?: number | null;
+            execution_identity?: components["schemas"]["SafeModelExecutionIdentityV1"] | null;
             /** Latency Ms */
             latency_ms?: number | null;
             /** Node Id */
@@ -2795,6 +2828,8 @@ export interface components {
             /** Data Locations */
             data_locations?: components["schemas"]["DataLocationView"][] | null;
             difficulty: components["schemas"]["DifficultySettingView"];
+            /** Model Bindings */
+            model_bindings?: components["schemas"]["ModelBindingSettingView"][];
             preferences: components["schemas"]["PreferenceSettingView"];
             /** Providers */
             providers: components["schemas"]["ProviderSettingView"][];

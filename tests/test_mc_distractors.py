@@ -26,11 +26,12 @@ from grandquiz.domain.learning.models import Evidence, KnowledgeItem
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 _QUOTE = "闭包捕获的是变量而非值"
 
 
-class _FixedProvider:
+class _FixedProvider(LegacyPurposeProvider):
     """返回固定文本、计被调次数（同 test_question 的假 provider 模式，本文件自包含地复制）。"""
 
     def __init__(self, text: str) -> None:
@@ -46,7 +47,7 @@ class _FixedProvider:
         return Completion(text=self.text, usage=Usage(prompt_tokens=5, completion_tokens=2))
 
 
-class _ExplodingProvider:
+class _ExplodingProvider(LegacyPurposeProvider):
     async def complete(
         self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
     ) -> Completion:
@@ -290,7 +291,7 @@ _SIX_OPTIONS = ["变量本身", "值的快照", "外层作用域", "定义时环
 _THREE_OPTIONS = ["变量本身", "值的快照", "外层作用域"]
 
 
-class _MessageCapturingProvider:
+class _MessageCapturingProvider(LegacyPurposeProvider):
     """返回固定文本、并留存最后一次收到的 messages（用于断言选项数约束被注入）。"""
 
     def __init__(self, text: str) -> None:
@@ -396,7 +397,7 @@ async def test_correct_answer_claims_must_be_directly_supported_by_evidence() ->
 # --- SE-S5b：集合质量策略（传入才生效；None 时 judge 零调用）----
 
 
-class _JudgingProvider:
+class _JudgingProvider(LegacyPurposeProvider):
     """按 role 分流：``enrich`` 出固定 MC、``basic`` 评干扰项（返回可注入的 ``DistractorLabel``）。
 
     judge_distractor 走 role=basic（同判卷官），MC 出题走 role=enrich——本文件 generate_multiple_
@@ -476,11 +477,13 @@ async def test_quality_policy_reasonable_distractors_pass_first_try() -> None:
     generation = next(
         event for event in events if event.type == "learning.multiple_choice_generation.started"
     )
-    basic_starts = [
-        e for e in events if e.type == EventType.MODEL_STARTED and e.payload.get("role") == "basic"
+    judge_starts = [
+        e
+        for e in events
+        if e.type == EventType.MODEL_STARTED and e.payload.get("node_id") == "judge_distractors"
     ]
-    assert len(basic_starts) == 2
-    assert all(e.parent_span_id == generation.span_id for e in basic_starts)
+    assert len(judge_starts) == 2
+    assert all(e.parent_span_id == generation.span_id for e in judge_starts)
 
 
 async def test_quality_policy_none_never_calls_judge() -> None:
@@ -505,7 +508,7 @@ async def test_quality_policy_none_never_calls_judge() -> None:
     assert all(e.payload.get("role") != "basic" for e in events)  # 无 judge（basic）span
 
 
-class _RepairingDistractorProvider:
+class _RepairingDistractorProvider(LegacyPurposeProvider):
     """首版含一个无效干扰项；修复版保留已通过选项，只替换坏项。"""
 
     def __init__(self) -> None:

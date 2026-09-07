@@ -75,6 +75,7 @@ from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import ToolContext, ToolRegistry
 from grandquiz.kernel.trace import Span, TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.replay import Cassette, ReplayProvider
 
 # --- 规范确定性装配（test_assessment / test_ingest 的 _harness / _summ 权威版本）-------------
@@ -140,7 +141,7 @@ QUOTES = {quote for _concept, quote in ITEM_DATA}
 # --- 假 provider（canned JSON，镜像两测试文件）------------------------------------------------
 
 
-class AssessFakeProvider:
+class AssessFakeProvider(LegacyPurposeProvider):
     """确定性假 provider（镜像 ``test_assessment._AssessProvider``）：enrich 出题、basic 判卷。
 
     enrich 出题按 system prompt 分型：MC prompt（含 ``answer_index`` 字样）→ 产选择题 JSON，否则
@@ -228,7 +229,7 @@ class AssessFakeProvider:
         )
 
 
-class IngestFakeProvider:
+class IngestFakeProvider(LegacyPurposeProvider):
     """返回固定 Reader JSON、计调用次数与 role（镜像 ``test_ingest._FixedProvider``）。"""
 
     def __init__(self, text: str) -> None:
@@ -270,7 +271,7 @@ _LANG_ANSWER_INDEX = 1
 LANG_MC_CORRECT = _LANG_EN_OPTIONS[_LANG_ANSWER_INDEX]
 
 
-class LanguageEchoAssessProvider:
+class LanguageEchoAssessProvider(LegacyPurposeProvider):
     """出题按 system prompt 里**被替换后**的 ``{{LANGUAGE}}`` 指令决定语言（镜像语言回声测试）。
 
     这是 01（语言可配置）的回归探针：若删掉语言注入，system prompt 里不会出现"请用 英文"，本 fake
@@ -345,7 +346,7 @@ _DEDUP_DEFAULT_Q = "什么是闭包？"
 _DEDUP_ALT_Q = "闭包如何捕获它引用的变量？"
 
 
-class DedupAssessProvider:
+class DedupAssessProvider(LegacyPurposeProvider):
     """出题默认**重复**同一道题，仅在 user message 里见到"已问过"约束时才换角度；判卷恒判对。
 
     这是 02（无重复出题）的回归探针：若删掉去重注入 / 去重门，复考同一薄弱 item 时第二轮拿不到"已问

@@ -18,11 +18,12 @@ from grandquiz.domain.learning.models import Evidence, KnowledgeItem
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 _QUOTE = "闭包捕获变量而非值"
 
 
-class _FixedProvider:
+class _FixedProvider(LegacyPurposeProvider):
     def __init__(self, text: str) -> None:
         self.text = text
         self.calls = 0
@@ -106,7 +107,7 @@ async def test_malformed_json_retries_then_raises() -> None:
     assert provider.calls == 2
 
 
-class _RaisingProvider:
+class _RaisingProvider(LegacyPurposeProvider):
     """provider.complete 抛传输类异常（模拟网络 / 超时 / 5xx，或 ReplayMiss）。计被调次数。"""
 
     def __init__(self) -> None:

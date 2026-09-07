@@ -16,9 +16,10 @@ from grandquiz.interfaces.api.app import ApiSettings, create_app
 from grandquiz.kernel.events import EventType
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, ToolCall, ToolSpec, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 
-class _EchoProvider:
+class _EchoProvider(LegacyPurposeProvider):
     """直接回显用户消息的 fake provider；不触发工具调用。"""
 
     async def complete(
@@ -39,7 +40,7 @@ class _EchoProvider:
         )
 
 
-class _ToolCallingProvider:
+class _ToolCallingProvider(LegacyPurposeProvider):
     """第一次调用返回带参导航 tool_call，第二次返回 final 文本。"""
 
     def __init__(self) -> None:
@@ -71,7 +72,7 @@ class _ToolCallingProvider:
         )
 
 
-class _HistoryAwareProvider:
+class _HistoryAwareProvider(LegacyPurposeProvider):
     """回显消息数量和最后一条 user 消息，用于验证多轮上下文承接。"""
 
     async def complete(
@@ -92,7 +93,7 @@ class _HistoryAwareProvider:
         )
 
 
-class _FailingProvider:
+class _FailingProvider(LegacyPurposeProvider):
     """所有调用都抛异常。"""
 
     async def complete(
@@ -105,7 +106,7 @@ class _FailingProvider:
         raise RuntimeError("provider boom")
 
 
-class _ActiveResourceAwareProvider:
+class _ActiveResourceAwareProvider(LegacyPurposeProvider):
     """只通过公开 messages 判断 Web 当前材料是否进入受信 system context。"""
 
     async def complete(
@@ -128,7 +129,7 @@ class _ActiveResourceAwareProvider:
         )
 
 
-class _BlockingActiveResourceProvider:
+class _BlockingActiveResourceProvider(LegacyPurposeProvider):
     """让第一轮保持 running，以验证并发请求不能覆盖 exact scope。"""
 
     def __init__(self) -> None:
@@ -162,7 +163,7 @@ class _BlockingActiveResourceProvider:
         )
 
 
-class _CancellableThenEchoProvider:
+class _CancellableThenEchoProvider(LegacyPurposeProvider):
     """第一轮等待取消，第二轮正常返回，用于验证取消后的 session 仍可复用。"""
 
     def __init__(self) -> None:
@@ -192,7 +193,7 @@ class _CancellableThenEchoProvider:
         )
 
 
-class _EchoThenCancellableProvider:
+class _EchoThenCancellableProvider(LegacyPurposeProvider):
     """第一轮完成、第二轮等待取消，用于锁住 stale turn 的取消边界。"""
 
     def __init__(self) -> None:

@@ -25,11 +25,12 @@ from grandquiz.kernel.events import EventEmitter, EventSink
 from grandquiz.kernel.tools import ToolContext, ToolRegistry
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Role, ToolSpec, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 _QUOTE = "事件是信封，trace 复用同一事件流。"
 
 
-class _ReaderProvider:
+class _ReaderProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],

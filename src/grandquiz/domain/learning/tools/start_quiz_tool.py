@@ -29,7 +29,7 @@ from grandquiz.domain.learning.tools._scoped_emitter import ScopedEmitter
 from grandquiz.domain.learning.tools.query_weak_tool import WeakConcept
 from grandquiz.kernel.events import EventEmitter
 from grandquiz.kernel.tools import Tool, ToolContext
-from grandquiz.providers.base import Provider
+from grandquiz.providers.models import ModelSource
 
 
 class QuizRoundResult(BaseModel):
@@ -87,7 +87,7 @@ def _weak_concepts(store: Store, memory: Memory) -> list[WeakConcept]:
 
 def make_start_quiz_tool(
     *,
-    provider: Provider,
+    provider: ModelSource,
     store: Store,
     memory: Memory,
     responder: Responder,
@@ -99,8 +99,9 @@ def make_start_quiz_tool(
 ) -> Tool:
     """建 ``start_quiz(count)`` 工具：受控一问一答子流程，内部跑 ``assess_once × count``。
 
-    **只组合** ``assess_once``（一行不改）：逐题选题 / 出题（role=enrich）/ 判卷（MC 走确定性代码、
-    开放走 role=basic）/ 记账全在 ``assess_once`` 的确定性骨架里，本工具只做 **N 题编排 + 收小结**。
+    **只组合** ``assess_once``（一行不改）：逐题选题 / 出题（question_generation）/ 判卷
+    （MC 走确定性代码、开放走 answer_grading）/ 记账全在 ``assess_once`` 的确定性骨架里，本工具只做
+    **N 题编排 + 收小结**。
     每题作答走**注入的 Responder**（真机 ``InteractiveResponder`` 的 ``questionary.select`` 逐字
     返回所选项文本 → ``grade_multiple_choice`` 逐字比对，从根杜绝 "B. " 前缀污染判卷）。
 

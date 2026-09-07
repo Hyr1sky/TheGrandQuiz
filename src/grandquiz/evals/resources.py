@@ -11,6 +11,7 @@ from grandquiz.evals.case import Case, IngestCase, ReactCase
 
 EVAL_FIXTURES_DIR = Path(__file__).parent / "fixtures"
 QUALITY_EVAL_CASSETTE = "eval_quality_grounded_answer.cassette.json"
+MODEL_IDENTITY_EVAL_CASSETTE = "eval_quality_model_identity_v3.cassette.json"
 QUESTION_QUALITY_CALIBRATION_CASSETTE = "eval_quality_question_development_gold.cassette.json"
 READER_FIDELITY_CALIBRATION_CASSETTE = "eval_quality_reader_fidelity_development_gold.cassette.json"
 GROUNDED_ANSWER_SLICES_CALIBRATION_CASSETTE = (
@@ -19,6 +20,7 @@ GROUNDED_ANSWER_SLICES_CALIBRATION_CASSETTE = (
 SUITE_EVAL_FIXTURES = frozenset(
     {
         QUALITY_EVAL_CASSETTE,
+        MODEL_IDENTITY_EVAL_CASSETTE,
         QUESTION_QUALITY_CALIBRATION_CASSETTE,
         READER_FIDELITY_CALIBRATION_CASSETTE,
         GROUNDED_ANSWER_SLICES_CALIBRATION_CASSETTE,

@@ -100,7 +100,9 @@ test("changes local runtime preferences from the unified settings drawer", async
   await page.getByRole("button", { name: "打开应用设置" }).click();
   const drawer = page.getByRole("dialog", { name: "应用设置" });
   await expect(drawer).toBeVisible();
-  await expect(drawer.getByText("Provider 与密钥")).toBeVisible();
+  await expect(drawer.getByText("模型绑定与 Provider")).toBeVisible();
+  await expect(drawer.getByText("开放对话")).toBeVisible();
+  await expect(drawer.getByText("旧配置导入").first()).toBeVisible();
   await expect(drawer.getByText("本机数据位置")).toBeVisible();
   await expect(drawer.getByText(/learning\.db$/)).toBeVisible();
   await expect(drawer.getByText(/trace\.db$/)).toBeVisible();

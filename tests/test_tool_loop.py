@@ -30,6 +30,7 @@ from grandquiz.providers.base import (
     Usage,
     mark_malformed_arguments,
 )
+from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.replay import Cassette, RecordingProvider, ReplayProvider
 
 # --------------------------------------------------------------------------- #
@@ -61,7 +62,7 @@ def _registry_with_echo() -> tuple[ToolRegistry, list[str]]:
 # --------------------------------------------------------------------------- #
 
 
-class _ScriptedProvider:
+class _ScriptedProvider(LegacyPurposeProvider):
     """确定性：首轮出 echo tool_call，回灌 tool 结果后出 final。计自身被调次数。"""
 
     def __init__(self) -> None:
@@ -84,7 +85,7 @@ class _ScriptedProvider:
         )
 
 
-class _AlwaysToolProvider:
+class _AlwaysToolProvider(LegacyPurposeProvider):
     """永不收敛：每次都要求调 echo——用于逼出 max_iterations 大声失败。"""
 
     def __init__(self) -> None:
@@ -100,7 +101,7 @@ class _AlwaysToolProvider:
         )
 
 
-class _FinalOnlyProvider:
+class _FinalOnlyProvider(LegacyPurposeProvider):
     """从不出 tool_call，直接给 final 文本（无工具路径）。"""
 
     async def complete(
@@ -109,7 +110,7 @@ class _FinalOnlyProvider:
         return Completion(text="just an answer", usage=Usage(prompt_tokens=2, completion_tokens=2))
 
 
-class _StreamingFinalProvider:
+class _StreamingFinalProvider(LegacyPurposeProvider):
     async def complete(
         self,
         messages: Sequence[Message],
@@ -331,7 +332,7 @@ def _failing_then_ok_registry(fail_times: list[int]) -> ToolRegistry:
     return registry
 
 
-class _RetryProvider:
+class _RetryProvider(LegacyPurposeProvider):
     """出 echo tool_call；见到含 'error' 的 tool 结果就重试同样的 tool_call；见到正常结果收敛。"""
 
     def __init__(self) -> None:
@@ -361,7 +362,7 @@ async def test_degraded_tool_error_is_fed_back_and_recovers() -> None:
     assert len(decided) == 1 and decided[0].payload["decision"] == "skip"
 
 
-class _MalformedThenFinalProvider:
+class _MalformedThenFinalProvider(LegacyPurposeProvider):
     """首轮出一个 arguments 畸形的 echo tool_call（provider 边界已标记"参数非法"）；见到回灌的
     错误 tool 结果后收敛 final。复现 dogfood "神了"：坏 tool_call 不该崩会话，应降级回灌后自愈。"""
 
@@ -400,7 +401,7 @@ async def test_malformed_tool_call_recovers_via_degraded_feedback() -> None:
     assert len(ended) == 1 and ended[0].payload["ok"] is True  # 会话正常收敛、非崩溃
 
 
-class _FatalProvider:
+class _FatalProvider(LegacyPurposeProvider):
     async def complete(
         self, messages: Sequence[Message], *, role: Role = "basic", tools: object = None
     ) -> Completion:

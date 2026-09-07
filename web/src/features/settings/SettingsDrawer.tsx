@@ -25,6 +25,23 @@ const ROLE_LABELS = {
   speech: "语音识别",
 } as const;
 
+const PURPOSE_LABELS: Record<string, string> = {
+  chat: "开放对话",
+  question_generation: "出题",
+  answer_grading: "判卷",
+  distractor_review: "干扰项评审",
+  material_reading: "材料深读",
+  grounded_answer: "材料问答",
+  summarization: "历史摘要",
+  eval_quality: "Eval 质量评审",
+};
+
+const SELECTION_SOURCE_LABELS = {
+  default: "默认绑定",
+  purpose_override: "用途覆盖",
+  legacy: "旧配置导入",
+} as const;
+
 const DATA_LOCATION_LABELS = {
   learning: "学习数据",
   trace: "运行轨迹",
@@ -223,8 +240,30 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
               <section className="settings-section" aria-labelledby="settings-providers">
                 <div className="settings-section__heading">
                   <KeyIcon aria-hidden size={21} weight="duotone" />
-                  <div><h3 id="settings-providers">Provider 与密钥</h3><p>这里只展示安全状态，密钥值永远不进入浏览器。</p></div>
+                  <div><h3 id="settings-providers">模型绑定与 Provider</h3><p>这里只展示安全状态，密钥值永远不进入浏览器。</p></div>
                 </div>
+                {settings.model_bindings?.length ? (
+                  <>
+                    <p className="settings-note">模型在服务启动时按用途冻结；指纹用于核对 Trace，不含模型名、地址或密钥。</p>
+                    <div className="settings-providers">
+                      {settings.model_bindings.map((binding) => (
+                        <article key={binding.purpose}>
+                          <div>
+                            <strong>{PURPOSE_LABELS[binding.purpose] ?? binding.purpose}</strong>
+                            <span>{binding.purpose}</span>
+                          </div>
+                          <div className="settings-provider__status">
+                            <CheckCircleIcon aria-hidden size={16} />
+                            <span>{SELECTION_SOURCE_LABELS[binding.selection_source]}</span>
+                          </div>
+                          <code title={binding.configuration_fingerprint}>
+                            {binding.configuration_fingerprint.slice(0, 12)}…
+                          </code>
+                        </article>
+                      ))}
+                    </div>
+                  </>
+                ) : null}
                 <div className="settings-providers">
                   {settings.providers.map((provider) => (
                     <article key={provider.role}>
@@ -238,7 +277,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
                     </article>
                   ))}
                 </div>
-                <p className="settings-note">需要更换 Key 或模型时编辑项目根目录 `.env` 后重启服务；页面不会读取或保存密钥原文。</p>
+                <p className="settings-note">需要更换 Key 或模型时编辑 `.env` 或其指定的 Profile 文件后重启服务；页面不会读取或保存密钥原文。</p>
               </section>
 
               {settings.data_locations === null || settings.data_locations === undefined ? null : (

@@ -35,6 +35,7 @@ from grandquiz.evals.harness import (
 from grandquiz.evals.resources import eval_fixture_path
 from grandquiz.kernel.events import AgentEvent, EventType
 from grandquiz.providers.base import Completion, Message, Role, ToolCall, ToolSpec, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 from grandquiz.providers.replay import Cassette, ReplayMiss, ReplayProvider
 
 _MODELS: dict[Role, str] = {"basic": "deepseek-x", "enrich": "qwen-x"}
@@ -161,7 +162,7 @@ def test_unknown_per_kind_enum_fails_closed(
         )
 
 
-class _WebAcquisitionDecisionProvider:
+class _WebAcquisitionDecisionProvider(LegacyPurposeProvider):
     """只替代外部 LLM；Runner、工具、Reader、审批与 store 都走真实公开路径。"""
 
     async def complete(

@@ -9,10 +9,13 @@ from fastapi.testclient import TestClient
 
 from grandquiz.interfaces.api.app import ApiSettings, create_app
 from grandquiz.providers.base import Completion, Message, Role, ToolSpec
+from grandquiz.providers.legacy import LegacyPurposeProvider
+from grandquiz.providers.models import ModelBindings, with_identity
+from grandquiz.providers.profiles import ModelIdentity
 from grandquiz.providers.speech import TranscriptionRequest, TranscriptionResult
 
 
-class _ConfiguredProvider:
+class _ConfiguredProvider(LegacyPurposeProvider):
     secret_token = "llm-secret-must-never-cross-http"
     model_for_role: ClassVar[dict[str, str]] = {
         "basic": "deepseek-v4-pro",
@@ -54,6 +57,70 @@ def _app(tmp_path: Path, *, asr_hints_default: bool = False):
         speech_provider=_ConfiguredSpeechProvider(),
         asr_hints_default=asr_hints_default,
     )
+
+
+def _model_bindings_app(tmp_path: Path):
+    chat_identity = ModelIdentity(
+        purpose="chat",
+        selection_source="default",
+        configuration_fingerprint="1" * 64,
+        policy_fingerprint="2" * 64,
+    )
+    grading_identity = chat_identity.model_copy(
+        update={"purpose": "answer_grading", "selection_source": "purpose_override"}
+    )
+    model = _ConfiguredProvider().for_purpose("chat")
+    bindings = ModelBindings(
+        (
+            ("chat", with_identity(model, chat_identity)),
+            ("answer_grading", with_identity(model, grading_identity)),
+        )
+    )
+    return create_app(
+        settings=ApiSettings(
+            learning_db_path=tmp_path / "learning.db",
+            trace_db_path=tmp_path / "trace.db",
+        ),
+        provider=bindings,
+    )
+
+
+def test_settings_project_current_purpose_bindings_without_private_configuration(
+    tmp_path: Path,
+) -> None:
+    with TestClient(_model_bindings_app(tmp_path)) as client:
+        response = client.get("/api/v1/settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["model_bindings"] == [
+        {
+            "purpose": "answer_grading",
+            "selection_source": "purpose_override",
+            "configuration_fingerprint": "1" * 64,
+            "policy_fingerprint": "2" * 64,
+        },
+        {
+            "purpose": "chat",
+            "selection_source": "default",
+            "configuration_fingerprint": "1" * 64,
+            "policy_fingerprint": "2" * 64,
+        },
+    ]
+    assert payload["providers"] == [
+        {
+            "role": "speech",
+            "configured": False,
+            "model": None,
+            "endpoint_host": None,
+            "credential_source": "environment",
+            "editable_in_web": False,
+            "required_env_vars": ["DASHSCOPE_API_KEY", "DASHSCOPE_WORKSPACE_ID"],
+        }
+    ]
+    serialized = response.text
+    assert "safe-basic" not in serialized
+    assert "api.deepseek.com" not in serialized
 
 
 def test_settings_expose_safe_provider_status_without_secret_values(tmp_path: Path) -> None:

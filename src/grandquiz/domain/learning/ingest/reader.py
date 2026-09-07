@@ -37,9 +37,11 @@ from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.context import HeuristicTokenCounter, TokenCounter
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.kernel.hooks import HookManager
-from grandquiz.kernel.model_events import model_failure_event_payload
+from grandquiz.kernel.model_events import model_failure_event_payload, model_identity_event_payload
 from grandquiz.kernel.recovery import ErrorClass
-from grandquiz.providers.base import Completion, Message, Provider
+from grandquiz.providers.base import Completion, Message
+from grandquiz.providers.models import ModelSource as Provider
+from grandquiz.providers.models import bind_model
 
 # 注入防护挂在这个 interceptor 挂点上（``before_*`` 语义）：深读前经 HookManager 中和不可信内容。
 UNTRUSTED_READ_HOOK = "untrusted_read"
@@ -552,6 +554,7 @@ class Reader:
         parent_span_id: str | None,
     ) -> Completion:
         # 照 runner.run_turn 的 model span 模式：一对 MODEL_STARTED / MODEL_ENDED 共享 span_id。
+        model = bind_model(provider, "material_reading")
         span_id = emitter.new_span_id()
         emitter.emit(
             EventType.MODEL_STARTED,
@@ -560,11 +563,11 @@ class Reader:
             payload={
                 "messages": [m.model_dump() for m in messages],
                 "prompt_version": self._prompt.version,
-                "role": "basic",
+                **model_identity_event_payload(model),
             },
         )
         try:
-            completion = await provider.complete(messages, role="basic")
+            completion = await model.complete(messages)
         except Exception as exc:
             # provider 传输异常（网络/超时/5xx，或 ReplayMiss）：先发 MODEL_ENDED(ok=False)
             # 闭合 span（started/ended 配对不变量，见 M1 runner 同款修复），再原样 re-raise。

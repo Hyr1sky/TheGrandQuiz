@@ -1,6 +1,6 @@
 """判卷工具——照 Reader 的 LLM 槽模式，对一次作答产出结构化判决（缝 3）。
 
-ADR-0004 的两个 LLM 槽之二：判卷走 **role=basic**（deepseek），对每个原子
+ADR-0004 的两个 LLM 用途之二：判卷绑定 ``answer_grading``，对每个原子
 评分点产出语义命中标签、学习者答案 Evidence 单元 ID 与理由。**LLM 判卷，代码记账**：
 LLM 负责逐点语义判断；代码把答案确定性切成唯一单元、校验模型选择，并按 critical point
 确定性聚合三值判决。``weak_item_id`` 仍由调用方（``assess_once``）按聚合后的
@@ -22,9 +22,10 @@ from grandquiz.domain.learning.assessment.workflow import GRADE_ANSWER
 from grandquiz.domain.learning.models import CitedEvidence, ungrounded_citations
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.events import EventEmitter, EventType
-from grandquiz.kernel.model_events import model_failure_event_payload
+from grandquiz.kernel.model_events import model_failure_event_payload, model_identity_event_payload
 from grandquiz.kernel.recovery import ErrorClass
-from grandquiz.providers.base import Completion, Message, Provider
+from grandquiz.providers.base import Completion, Message
+from grandquiz.providers.models import ModelSource, bind_model
 
 # 判决三值——出题 / 判卷 / 记账全链路共用的枚举（assessment 的 AssessmentResult 亦复用之）。
 VerdictLabel = Literal["对", "勉强", "错"]
@@ -237,7 +238,7 @@ async def grade_answer(
     question: QuestionSpec,
     answer: str,
     *,
-    provider: Provider,
+    provider: ModelSource,
     emitter: EventEmitter,
     parent_span_id: str | None,
     max_attempts: int = 3,
@@ -353,12 +354,13 @@ async def grade_answer(
 async def _call_model(
     messages: list[Message],
     *,
-    provider: Provider,
+    provider: ModelSource,
     emitter: EventEmitter,
     parent_span_id: str | None,
     prompt_version: str,
 ) -> Completion:
-    # 照 reader._call_model：一对 MODEL_STARTED / MODEL_ENDED 共享 span_id；判卷走 role=basic。
+    # 照 reader._call_model：一对 MODEL_STARTED / MODEL_ENDED 共享 span_id；用途是 answer_grading。
+    model = bind_model(provider, "answer_grading")
     span_id = emitter.new_span_id()
     emitter.emit(
         EventType.MODEL_STARTED,
@@ -367,12 +369,12 @@ async def _call_model(
         payload={
             "messages": [m.model_dump() for m in messages],
             "prompt_version": prompt_version,
-            "role": "basic",
+            **model_identity_event_payload(model),
             "node_id": GRADE_ANSWER,
         },
     )
     try:
-        completion = await provider.complete(messages, role="basic")
+        completion = await model.complete(messages)
     except Exception as exc:
         emitter.emit(
             EventType.MODEL_ENDED,

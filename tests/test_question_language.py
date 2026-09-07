@@ -33,6 +33,7 @@ from grandquiz.domain.learning.store import LearningStore
 from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 _QUOTE = "闭包捕获的是变量而非值"
 _CORRECT_OPTION = "变量本身"
@@ -46,7 +47,7 @@ _CHINESE_OPTIONS = ["值的快照", _CORRECT_OPTION]
 _ENGLISH_OPTIONS = ["a value snapshot", "the variable itself"]
 
 
-class _LanguageEchoProvider:
+class _LanguageEchoProvider(LegacyPurposeProvider):
     """脚本化假 provider：从 system prompt 里被替换后的语言指令判定语言，返回对应语言的 MC JSON。
 
     出题走 role=enrich；判卷（本测试恒 MC，走确定性代码）不打此 provider。``cited_evidence`` 恒引

@@ -20,6 +20,7 @@ from grandquiz.kernel.clock import ManualClock, new_rng
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Role, Usage
+from grandquiz.providers.legacy import LegacyPurposeProvider
 
 _ALLOWED = {"example.com"}
 _URL = "https://example.com/react-hooks"
@@ -44,7 +45,7 @@ _READER_JSON = json.dumps(
 )
 
 
-class _ReaderProvider:
+class _ReaderProvider(LegacyPurposeProvider):
     """Reader 槽用：恒返回固定候选 JSON。"""
 
     async def complete(
@@ -70,7 +71,7 @@ class _ReaderProvider:
         )
 
 
-class _AssessProvider:
+class _AssessProvider(LegacyPurposeProvider):
     """出题 / 判卷槽：enrich 出题（MC → 选择题 JSON），basic 判卷；从 prompt 回抽真实证据。"""
 
     async def complete(
