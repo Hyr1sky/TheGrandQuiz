@@ -10,6 +10,7 @@ from grandquiz.providers.profiles import (
     ModelConfigurationError,
     ModelConnection,
     ModelProfile,
+    ModelRequestRequirements,
     ResolvedProfile,
     parse_model_config,
 )
@@ -26,6 +27,11 @@ PRODUCT_MODEL_PURPOSES = frozenset(
     }
 )
 EVAL_MODEL_PURPOSES = frozenset({"eval_quality"})
+
+# Interactive ReAct callers expose tools and native token streaming. An explicit
+# choice must prove both capabilities before a turn starts; the legacy/default
+# path remains backward compatible until every existing profile declares facts.
+CHAT_MODEL_REQUIREMENTS = ModelRequestRequirements(capabilities=("tools", "native_streaming"))
 
 
 def load_model_configuration(

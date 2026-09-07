@@ -2389,6 +2389,7 @@ export interface components {
         };
         /** MessageAccepted */
         MessageAccepted: {
+            model_identity?: components["schemas"]["ModelIdentity"] | null;
             /** Turn Id */
             turn_id: string;
         };
@@ -2396,6 +2397,7 @@ export interface components {
         MessageRequest: {
             /** Active Resource Id */
             active_resource_id?: string | null;
+            model_selection?: components["schemas"]["ModelSelection"] | null;
             /** Text */
             text: string;
         };
@@ -2411,7 +2413,78 @@ export interface components {
              * Selection Source
              * @enum {string}
              */
-            selection_source: "default" | "purpose_override" | "legacy";
+            selection_source: "default" | "purpose_override" | "legacy" | "explicit_profile" | "preset_fast" | "preset_quality";
+        };
+        /** ModelCapabilities */
+        ModelCapabilities: {
+            /**
+             * Native Streaming
+             * @default unknown
+             * @enum {string}
+             */
+            native_streaming: "supported" | "unsupported" | "unknown";
+            /**
+             * Reasoning
+             * @default unknown
+             * @enum {string}
+             */
+            reasoning: "supported" | "unsupported" | "unknown";
+            /**
+             * Structured Output
+             * @default unknown
+             * @enum {string}
+             */
+            structured_output: "supported" | "unsupported" | "unknown";
+            /**
+             * Tools
+             * @default unknown
+             * @enum {string}
+             */
+            tools: "supported" | "unsupported" | "unknown";
+        };
+        /**
+         * ModelIdentity
+         * @description Safe execution facts; intentionally excludes private labels and connection details.
+         */
+        ModelIdentity: {
+            /** Configuration Fingerprint */
+            configuration_fingerprint: string;
+            /** Policy Fingerprint */
+            policy_fingerprint: string;
+            /** Purpose */
+            purpose: string;
+            /**
+             * Schema Version
+             * @default model-identity.v1
+             * @constant
+             */
+            schema_version: "model-identity.v1";
+            /**
+             * Selection Source
+             * @enum {string}
+             */
+            selection_source: "default" | "purpose_override" | "legacy" | "explicit_profile" | "preset_fast" | "preset_quality";
+        };
+        /** ModelSelection */
+        ModelSelection: {
+            /** Preset */
+            preset?: ("fast" | "quality") | null;
+            /** Profile Id */
+            profile_id?: string | null;
+        };
+        /**
+         * ModelSelectionOption
+         * @description Safe local control-plane option; excludes model, endpoint, and credentials.
+         */
+        ModelSelectionOption: {
+            capabilities: components["schemas"]["ModelCapabilities"];
+            /**
+             * Presets
+             * @default []
+             */
+            presets: ("fast" | "quality")[];
+            /** Profile Id */
+            profile_id: string;
         };
         /** NextRoundRequest */
         NextRoundRequest: {
@@ -2630,7 +2703,7 @@ export interface components {
             /** Purpose */
             purpose?: string | null;
             /** Selection Source */
-            selection_source?: ("default" | "purpose_override" | "legacy") | null;
+            selection_source?: ("default" | "purpose_override" | "legacy" | "explicit_profile" | "preset_fast" | "preset_quality") | null;
             /**
              * Status
              * @enum {string}
@@ -2809,6 +2882,8 @@ export interface components {
         };
         /** SessionView */
         SessionView: {
+            /** Model Options */
+            model_options?: components["schemas"]["ModelSelectionOption"][];
             /** Session Id */
             session_id: string;
             /** Trace Id */

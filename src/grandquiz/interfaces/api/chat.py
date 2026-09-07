@@ -28,6 +28,7 @@ from grandquiz.interfaces.cli.composition import (
     _TOTAL_BUDGET,
     budget_model_source,
 )
+from grandquiz.interfaces.model_config import CHAT_MODEL_REQUIREMENTS
 from grandquiz.kernel.clock import SystemClock
 from grandquiz.kernel.context import (
     BudgetCompressionPolicy,
@@ -41,7 +42,20 @@ from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventTy
 from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.tools import ToolRegistry
 from grandquiz.kernel.trace import TraceStore, summarize_token_usage
-from grandquiz.providers.models import ModelSource, as_streaming_model, bind_model
+from grandquiz.providers.base import Model
+from grandquiz.providers.models import (
+    ModelSource,
+    as_streaming_model,
+    bind_model,
+    identity_of,
+    select_model,
+    selection_options_of,
+)
+from grandquiz.providers.profiles import (
+    ModelIdentity,
+    ModelSelection,
+    ModelSelectionOption,
+)
 
 ChatSessionStatus = Literal["idle", "running", "closed"]
 
@@ -65,6 +79,7 @@ class ChatTurnNotFoundError(LookupError):
 class MessageRequest(BaseModel):
     text: str = Field(min_length=1)
     active_resource_id: str | None = None
+    model_selection: ModelSelection | None = None
 
     @field_validator("text")
     @classmethod
@@ -78,10 +93,12 @@ class MessageRequest(BaseModel):
 class SessionView(BaseModel):
     session_id: str
     trace_id: str
+    model_options: list[ModelSelectionOption] = Field(default_factory=list[ModelSelectionOption])
 
 
 class MessageAccepted(BaseModel):
     turn_id: str
+    model_identity: ModelIdentity | None = None
 
 
 class TurnCancelled(BaseModel):
@@ -143,6 +160,7 @@ class _ChatSession:
     emitter: EventEmitter
     sink: EventSink
     active_resource_context: _ActiveResourceContext
+    models: ModelSource
     status: ChatSessionStatus = "idle"
     events: list[ChatUiEvent] = field(default_factory=_empty_chat_events)
     changed: asyncio.Event = field(default_factory=asyncio.Event)
@@ -247,10 +265,15 @@ class ChatManager:
             emitter=emitter,
             sink=sink,
             active_resource_context=active_resource_context,
+            models=provider,
         )
         sink.subscribe(lambda event: self._project_event(session, event))
         self._session = session
-        return SessionView(session_id=session_id, trace_id=trace_id)
+        return SessionView(
+            session_id=session_id,
+            trace_id=trace_id,
+            model_options=list(selection_options_of(provider, "chat")),
+        )
 
     def get_session(self, session_id: str) -> _ChatSession | None:
         session = self._session
@@ -281,6 +304,7 @@ class ChatManager:
         text: str,
         *,
         active_resource_id: str | None = None,
+        model_selection: ModelSelection | None = None,
     ) -> MessageAccepted:
         session = self.get_session(session_id)
         if session is None:
@@ -294,15 +318,26 @@ class ChatManager:
             and self._persistence.store.get_resource(active_resource_id) is None
         ):
             raise ActiveResourceNotFoundError(active_resource_id)
+        turn_model = as_streaming_model(
+            select_model(
+                session.models,
+                "chat",
+                model_selection,
+                requirements=CHAT_MODEL_REQUIREMENTS if model_selection is not None else None,
+            )
+        )
         session.active_resource_context.resource_id = active_resource_id
         turn_id = uuid.uuid4().hex
         session.current_turn_id = turn_id
         session.status = "running"
         session.current_task = asyncio.create_task(
-            self._run_turn(session, text, turn_id),
+            self._run_turn(session, text, turn_id, turn_model),
             name=f"grandquiz-chat-turn:{session_id}:{turn_id}",
         )
-        return MessageAccepted(turn_id=turn_id)
+        return MessageAccepted(
+            turn_id=turn_id,
+            model_identity=identity_of(turn_model),
+        )
 
     async def cancel_turn(self, session_id: str, turn_id: str) -> TurnCancelled:
         session = self.get_session(session_id)
@@ -338,9 +373,15 @@ class ChatManager:
                 continue
             await session.changed.wait()
 
-    async def _run_turn(self, session: _ChatSession, text: str, turn_id: str) -> None:
+    async def _run_turn(
+        self,
+        session: _ChatSession,
+        text: str,
+        turn_id: str,
+        model: Model,
+    ) -> None:
         try:
-            await session.runner.run_agent_turn(text)
+            await session.runner.run_agent_turn(text, model=model)
         except asyncio.CancelledError:
             raise
         except Exception:

@@ -15,7 +15,17 @@ from grandquiz.providers.base import (
     ToolSpec,
 )
 from grandquiz.providers.llm import ChatModelConfig, OpenAIChatModel
-from grandquiz.providers.profiles import ModelConfiguration, ModelConfigurationError, ModelIdentity
+from grandquiz.providers.profiles import (
+    ModelConfiguration,
+    ModelConfigurationError,
+    ModelIdentity,
+    ModelProfile,
+    ModelRequestRequirements,
+    ModelSelection,
+    ModelSelectionError,
+    ModelSelectionOption,
+    ResolvedProfile,
+)
 
 
 @dataclass(frozen=True)
@@ -92,6 +102,8 @@ class ModelBindings:
     """One fixed model per registered purpose; never discovers or switches suppliers."""
 
     models: tuple[tuple[str, Model], ...]
+    configuration: ModelConfiguration | None = None
+    profile_models: tuple[tuple[str, Model], ...] = ()
 
     def for_purpose(self, purpose: str) -> Model:
         for name, model in self.models:
@@ -107,6 +119,51 @@ class ModelBindings:
             identity for _, model in self.models if (identity := identity_of(model)) is not None
         )
 
+    def select_for_purpose(
+        self,
+        purpose: str,
+        selection: ModelSelection,
+        *,
+        requirements: ModelRequestRequirements | None = None,
+    ) -> Model:
+        configuration = self.configuration
+        if configuration is None:
+            raise ModelSelectionError(
+                "unknown_preset" if selection.preset is not None else "unknown_profile"
+            )
+        resolved = configuration.resolve_selection(
+            purpose,
+            selection,
+            requirements=requirements,
+        )
+        model = next(
+            (
+                model
+                for profile_id, model in self.profile_models
+                if profile_id == resolved.profile_id
+            ),
+            None,
+        )
+        if model is None:
+            raise ModelSelectionError("unknown_profile")
+        return with_identity(model, configuration.identity_for_resolved(resolved))
+
+    def selection_options(self, purpose: str) -> tuple[ModelSelectionOption, ...]:
+        configuration = self.configuration
+        if configuration is None:
+            return ()
+        configuration.resolve(purpose)
+        return tuple(
+            ModelSelectionOption(
+                profile_id=profile_id,
+                presets=tuple(
+                    name for name, target in configuration.presets if target == profile_id
+                ),
+                capabilities=profile.capabilities,
+            )
+            for profile_id, profile, _connection in configuration.profile_catalog
+        )
+
 
 @runtime_checkable
 class PurposeModels(Protocol):
@@ -114,6 +171,19 @@ class PurposeModels(Protocol):
 
 
 type ModelSource = Model | PurposeModels
+
+
+@runtime_checkable
+class SelectableModels(Protocol):
+    def select_for_purpose(
+        self,
+        purpose: str,
+        selection: ModelSelection,
+        *,
+        requirements: ModelRequestRequirements | None = None,
+    ) -> Model: ...
+
+    def selection_options(self, purpose: str) -> tuple[ModelSelectionOption, ...]: ...
 
 
 @runtime_checkable
@@ -129,6 +199,36 @@ def bind_model(source: ModelSource, purpose: str) -> Model:
     if identity is not None and identity.purpose != purpose:
         raise ModelConfigurationError("invalid_configuration")
     return source
+
+
+def select_model(
+    source: ModelSource,
+    purpose: str,
+    selection: ModelSelection | None,
+    *,
+    requirements: ModelRequestRequirements | None = None,
+) -> Model:
+    """Resolve and freeze one model without exposing catalog or capability logic to callers."""
+    if selection is None:
+        return bind_model(source, purpose)
+    if not isinstance(source, SelectableModels):
+        raise ModelSelectionError(
+            "unknown_preset" if selection.preset is not None else "unknown_profile"
+        )
+    return source.select_for_purpose(
+        purpose,
+        selection,
+        requirements=requirements,
+    )
+
+
+def selection_options_of(
+    source: ModelSource,
+    purpose: str,
+) -> tuple[ModelSelectionOption, ...]:
+    if not isinstance(source, SelectableModels):
+        return ()
+    return source.selection_options(purpose)
 
 
 def identity_of(model: Model) -> ModelIdentity | None:
@@ -160,23 +260,30 @@ class ModelRuntime:
         environment: Mapping[str, str],
     ) -> "ModelRuntime":
         credentials: dict[str, str] = {}
-        for binding in config.bindings:
-            reference = binding.connection.api_key_env
+        configured_profiles = tuple(
+            (profile, connection) for _, profile, connection in config.profile_catalog
+        ) or tuple((binding.profile, binding.connection) for binding in config.bindings)
+        for _profile, connection in configured_profiles:
+            reference = connection.api_key_env
             key = environment.get(reference, "")
             if not key.strip():
                 raise ModelConfigurationError("missing_credential")
             credentials[reference] = key
         transports: dict[tuple[str, str], OpenAIChatModel] = {}
-        models: list[tuple[str, Model]] = []
-        for binding in config.bindings:
-            reference = binding.connection.api_key_env
-            transport_key = (reference, binding.configuration_fingerprint)
+
+        def transport_for(
+            *,
+            reference: str,
+            fingerprint: str,
+            base_url: str,
+            profile: ModelProfile,
+        ) -> OpenAIChatModel:
+            transport_key = (reference, fingerprint)
             if transport_key not in transports:
-                profile = binding.profile
                 transports[transport_key] = OpenAIChatModel(
                     ChatModelConfig(
                         api_key=credentials[reference],
-                        base_url=binding.connection.base_url,
+                        base_url=base_url,
                         model=profile.model,
                         timeout_seconds=profile.timeout_seconds,
                         api_dialect=profile.api_dialect,
@@ -185,16 +292,68 @@ class ModelRuntime:
                         only_provider=profile.only_provider,
                     )
                 )
+            return transports[transport_key]
+
+        bound_profiles = {
+            binding.profile_id: binding
+            for binding in config.bindings
+            if binding.profile_id is not None
+        }
+        profile_models: list[tuple[str, Model]] = []
+        for profile_id, profile, connection in config.profile_catalog:
+            resolved = bound_profiles.get(profile_id)
+            fingerprint = (
+                resolved.configuration_fingerprint
+                if resolved is not None
+                else ResolvedProfile(
+                    purpose="catalog",
+                    profile=profile,
+                    connection=connection,
+                    selection_source="default",
+                    profile_id=profile_id,
+                ).configuration_fingerprint
+            )
+            profile_models.append(
+                (
+                    profile_id,
+                    transport_for(
+                        reference=connection.api_key_env,
+                        fingerprint=fingerprint,
+                        base_url=connection.base_url,
+                        profile=profile,
+                    ),
+                )
+            )
+
+        model_by_profile = dict(profile_models)
+        models: list[tuple[str, Model]] = []
+        for binding in config.bindings:
+            reference = binding.connection.api_key_env
+            raw_model = model_by_profile.get(binding.profile_id or "")
+            if raw_model is None:
+                raw_model = transport_for(
+                    reference=reference,
+                    fingerprint=binding.configuration_fingerprint,
+                    base_url=binding.connection.base_url,
+                    profile=binding.profile,
+                )
             models.append(
                 (
                     binding.purpose,
                     with_identity(
-                        transports[transport_key],
+                        raw_model,
                         config.identity_for(binding.purpose),
                     ),
                 )
             )
-        return cls(ModelBindings(tuple(models)), tuple(transports.values()))
+        return cls(
+            ModelBindings(
+                tuple(models),
+                configuration=config if config.profile_catalog else None,
+                profile_models=tuple(profile_models),
+            ),
+            tuple(transports.values()),
+        )
 
     async def aclose(self) -> None:
         for model in self._owned:

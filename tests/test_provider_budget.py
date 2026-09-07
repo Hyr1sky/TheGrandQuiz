@@ -22,8 +22,21 @@ from grandquiz.providers.base import (
 )
 from grandquiz.providers.budget import BudgetedProvider, ProviderRequestBudgetExceeded
 from grandquiz.providers.legacy import LegacyPurposeProvider
-from grandquiz.providers.models import ModelBindings, bind_model, identity_of, with_identity
-from grandquiz.providers.profiles import ModelIdentity
+from grandquiz.providers.models import (
+    ModelBindings,
+    bind_model,
+    identity_of,
+    select_model,
+    selection_options_of,
+    with_identity,
+)
+from grandquiz.providers.profiles import (
+    ModelCapabilities,
+    ModelIdentity,
+    ModelRequestRequirements,
+    ModelSelection,
+    ModelSelectionOption,
+)
 
 
 class _CharCounter:
@@ -126,6 +139,58 @@ async def test_budgeted_models_bind_each_registered_purpose_without_losing_ident
 
     assert identity_of(bind_model(budgeted, "chat")) == chat_identity
     assert identity_of(bind_model(budgeted, "material_reading")) == reading_identity
+
+
+class _SelectableModels:
+    def __init__(self) -> None:
+        self.model = _CountingModel()
+        self.selection: ModelSelection | None = None
+
+    def for_purpose(self, purpose: str) -> _CountingModel:
+        assert purpose == "chat"
+        return self.model
+
+    def select_for_purpose(
+        self,
+        purpose: str,
+        selection: ModelSelection,
+        *,
+        requirements: ModelRequestRequirements | None = None,
+    ) -> _CountingModel:
+        assert purpose == "chat"
+        assert requirements == ModelRequestRequirements(capabilities=("tools",))
+        self.selection = selection
+        return self.model
+
+    def selection_options(self, purpose: str) -> tuple[ModelSelectionOption, ...]:
+        assert purpose == "chat"
+        return (
+            ModelSelectionOption(
+                profile_id="fast",
+                presets=("fast",),
+                capabilities=ModelCapabilities(tools="supported"),
+            ),
+        )
+
+
+async def test_budget_wrapper_preserves_selection_and_safe_option_interfaces() -> None:
+    from grandquiz.providers.budget import budget_models
+
+    source = _SelectableModels()
+    budgeted = budget_models(source, counter=_CharCounter(), ceiling=1_000)
+    selection = ModelSelection(preset="fast")
+    selected = select_model(
+        budgeted,
+        "chat",
+        selection,
+        requirements=ModelRequestRequirements(capabilities=("tools",)),
+    )
+
+    await selected.complete([Message(role="user", content="hi")])
+
+    assert source.selection == selection
+    assert source.model.calls == 1
+    assert selection_options_of(budgeted, "chat")[0].profile_id == "fast"
 
 
 class _CountingProvider(LegacyPurposeProvider):

@@ -3580,6 +3580,16 @@
       },
       "MessageAccepted": {
         "properties": {
+          "model_identity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "turn_id": {
             "title": "Turn Id",
             "type": "string"
@@ -3603,6 +3613,16 @@
               }
             ],
             "title": "Active Resource Id"
+          },
+          "model_selection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "text": {
             "minLength": 1,
@@ -3636,7 +3656,10 @@
             "enum": [
               "default",
               "purpose_override",
-              "legacy"
+              "legacy",
+              "explicit_profile",
+              "preset_fast",
+              "preset_quality"
             ],
             "title": "Selection Source",
             "type": "string"
@@ -3649,6 +3672,166 @@
           "policy_fingerprint"
         ],
         "title": "ModelBindingSettingView",
+        "type": "object"
+      },
+      "ModelCapabilities": {
+        "additionalProperties": false,
+        "properties": {
+          "native_streaming": {
+            "default": "unknown",
+            "enum": [
+              "supported",
+              "unsupported",
+              "unknown"
+            ],
+            "title": "Native Streaming",
+            "type": "string"
+          },
+          "reasoning": {
+            "default": "unknown",
+            "enum": [
+              "supported",
+              "unsupported",
+              "unknown"
+            ],
+            "title": "Reasoning",
+            "type": "string"
+          },
+          "structured_output": {
+            "default": "unknown",
+            "enum": [
+              "supported",
+              "unsupported",
+              "unknown"
+            ],
+            "title": "Structured Output",
+            "type": "string"
+          },
+          "tools": {
+            "default": "unknown",
+            "enum": [
+              "supported",
+              "unsupported",
+              "unknown"
+            ],
+            "title": "Tools",
+            "type": "string"
+          }
+        },
+        "title": "ModelCapabilities",
+        "type": "object"
+      },
+      "ModelIdentity": {
+        "additionalProperties": false,
+        "description": "Safe execution facts; intentionally excludes private labels and connection details.",
+        "properties": {
+          "configuration_fingerprint": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Configuration Fingerprint",
+            "type": "string"
+          },
+          "policy_fingerprint": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Policy Fingerprint",
+            "type": "string"
+          },
+          "purpose": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "model-identity.v1",
+            "default": "model-identity.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "selection_source": {
+            "enum": [
+              "default",
+              "purpose_override",
+              "legacy",
+              "explicit_profile",
+              "preset_fast",
+              "preset_quality"
+            ],
+            "title": "Selection Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "purpose",
+          "selection_source",
+          "configuration_fingerprint",
+          "policy_fingerprint"
+        ],
+        "title": "ModelIdentity",
+        "type": "object"
+      },
+      "ModelSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "preset": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fast",
+                  "quality"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset"
+          },
+          "profile_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Id"
+          }
+        },
+        "title": "ModelSelection",
+        "type": "object"
+      },
+      "ModelSelectionOption": {
+        "additionalProperties": false,
+        "description": "Safe local control-plane option; excludes model, endpoint, and credentials.",
+        "properties": {
+          "capabilities": {
+            "$ref": "#/components/schemas/ModelCapabilities"
+          },
+          "presets": {
+            "default": [],
+            "items": {
+              "enum": [
+                "fast",
+                "quality"
+              ],
+              "type": "string"
+            },
+            "title": "Presets",
+            "type": "array"
+          },
+          "profile_id": {
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "title": "Profile Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profile_id",
+          "capabilities"
+        ],
+        "title": "ModelSelectionOption",
         "type": "object"
       },
       "NextRoundRequest": {
@@ -4212,7 +4395,10 @@
                 "enum": [
                   "default",
                   "purpose_override",
-                  "legacy"
+                  "legacy",
+                  "explicit_profile",
+                  "preset_fast",
+                  "preset_quality"
                 ],
                 "type": "string"
               },
@@ -4873,6 +5059,13 @@
       },
       "SessionView": {
         "properties": {
+          "model_options": {
+            "items": {
+              "$ref": "#/components/schemas/ModelSelectionOption"
+            },
+            "title": "Model Options",
+            "type": "array"
+          },
           "session_id": {
             "title": "Session Id",
             "type": "string"

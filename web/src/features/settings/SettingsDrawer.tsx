@@ -40,6 +40,9 @@ const SELECTION_SOURCE_LABELS = {
   default: "默认绑定",
   purpose_override: "用途覆盖",
   legacy: "旧配置导入",
+  explicit_profile: "显式 Profile",
+  preset_fast: "快速预设",
+  preset_quality: "质量预设",
 } as const;
 
 const DATA_LOCATION_LABELS = {

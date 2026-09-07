@@ -20,6 +20,7 @@ from grandquiz.domain.learning.preference import (
     resolve_question_language,
 )
 from grandquiz.providers.models import ModelSource, identities_of
+from grandquiz.providers.profiles import SelectionSource
 from grandquiz.providers.speech import SpeechRecognitionProvider
 
 
@@ -39,7 +40,7 @@ class ProviderSettingView(BaseModel):
 
 class ModelBindingSettingView(BaseModel):
     purpose: str
-    selection_source: Literal["default", "purpose_override", "legacy"]
+    selection_source: SelectionSource
     configuration_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     policy_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 

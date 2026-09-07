@@ -44,6 +44,7 @@ from grandquiz.domain.learning.responder import Responder
 from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.domain.learning.summarizer import LLMSummarizer
 from grandquiz.domain.learning.tools import register_learning_tools
+from grandquiz.interfaces.model_config import CHAT_MODEL_REQUIREMENTS
 from grandquiz.interfaces.search_config import search_provider_from_env
 from grandquiz.kernel.clock import SystemClock
 from grandquiz.kernel.context import (
@@ -59,7 +60,8 @@ from grandquiz.kernel.tools import ToolRegistry
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Provider
 from grandquiz.providers.budget import BudgetedModels, BudgetedProvider, budget_models
-from grandquiz.providers.models import ModelSource, as_streaming_model, bind_model
+from grandquiz.providers.models import ModelSource, as_streaming_model, select_model
+from grandquiz.providers.profiles import ModelSelection
 
 # 供 CLI 命令模块 / 未来 Web 通道复用的装配面（列入 __all__ = 视为包内公开，尽管带下划线前缀）。
 __all__ = [
@@ -248,6 +250,7 @@ def build_react_runner(
     responder: Responder,
     seed: int,
     max_iterations: int,
+    model_selection: ModelSelection | None = None,
     search_provider: SearchProvider | None = None,
     learning_facts: LearningFactJournal | None = None,
     classifications: IngestClassificationRepository | None = None,
@@ -320,8 +323,14 @@ def build_react_runner(
             LLMSummarizer(models, emitter), max_turns=_HISTORY_MAX_TURNS
         ),
     )
+    chat_model = select_model(
+        models,
+        "chat",
+        model_selection,
+        requirements=CHAT_MODEL_REQUIREMENTS if model_selection is not None else None,
+    )
     return Runner(
-        provider=as_streaming_model(bind_model(models, "chat")),
+        provider=as_streaming_model(chat_model),
         emitter=emitter,
         prompt_version=prompt.version,  # prompt 版本号进 trace（架构约束）
         tools=registry,

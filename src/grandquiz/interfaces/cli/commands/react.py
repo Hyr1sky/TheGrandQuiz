@@ -43,6 +43,7 @@ from grandquiz.interfaces.model_config import create_model_runtime
 from grandquiz.kernel.runner import Runner
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.models import ModelSource
+from grandquiz.providers.profiles import ModelPreset, ModelSelection
 
 __all__ = ["_run_react_cli", "run_react"]
 
@@ -66,6 +67,7 @@ async def run_react(
     seed: int,
     trace_db_path: Path | None = None,
     max_iterations: int = _DEFAULT_REACT_MAX_ITERATIONS,
+    model_selection: ModelSelection | None = None,
 ) -> str:
     """真机 ReAct 会话循环：逐条用户消息跑一次 ``run_agent_turn``，多回合共享同一 agent / 会话态。
 
@@ -119,6 +121,7 @@ async def run_react(
             responder=responder,
             seed=seed,
             max_iterations=max_iterations,
+            model_selection=model_selection,
             search_provider=search_provider_from_env(),
             learning_facts=persistence.learning_facts,
             classifications=persistence.classifications,
@@ -193,7 +196,14 @@ def _stdin_messages() -> Iterator[str]:
         yield message
 
 
-async def _run_react_cli(*, title: str | None, db_path: Path, materials_dir: Path) -> None:
+async def _run_react_cli(
+    *,
+    title: str | None,
+    db_path: Path,
+    materials_dir: Path,
+    model_profile: str | None = None,
+    model_preset: ModelPreset | None = None,
+) -> None:
     console = Console()
     model_runtime = create_model_runtime(environment=dict(os.environ))
     try:
@@ -207,6 +217,11 @@ async def _run_react_cli(*, title: str | None, db_path: Path, materials_dir: Pat
             console=console,
             user_messages=_stdin_messages(),
             seed=int(time.time()),  # CLI 非 replay：可变种子（每次会话不同选题次序）
+            model_selection=(
+                ModelSelection(profile_id=model_profile, preset=model_preset)
+                if model_profile is not None or model_preset is not None
+                else None
+            ),
         )
     finally:
         await model_runtime.aclose()

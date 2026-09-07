@@ -25,7 +25,10 @@ import {
   sendMessage,
   type ChatStatusView,
   type ChatUiEvent,
+  type ModelSelection,
+  type ModelSelectionOption,
 } from "../../shared/api/chat";
+import { ApiRequestError } from "../../shared/api/client";
 import { ActivityIndicator } from "../../shared/components/ActivityIndicator";
 import { useDismissibleLayer } from "../../shared/hooks/useDismissibleLayer";
 import { streamChatEvents } from "./chatEvents";
@@ -69,6 +72,11 @@ interface ToolCallInfo {
   label: string;
 }
 
+interface ModelChoice {
+  value: string;
+  label: string;
+}
+
 const TOOL_LABELS: Record<string, string> = {
   ingest_resource: "正在收录材料...",
   search_nodes: "正在搜索材料...",
@@ -92,6 +100,40 @@ function toolCallLabel(name: string): string {
   return TOOL_LABELS[name] ?? `正在调用 ${name}...`;
 }
 
+function modelChoices(options: ModelSelectionOption[]): ModelChoice[] {
+  const choices: ModelChoice[] = [{ value: "default", label: "默认路由" }];
+  const seen = new Set<string>(["default"]);
+  for (const option of options) {
+    for (const preset of option.presets) {
+      const value = `preset:${preset}`;
+      if (!seen.has(value)) {
+        seen.add(value);
+        choices.push({
+          value,
+          label: `${preset === "fast" ? "快速" : "高质量"} · ${option.profile_id}`,
+        });
+      }
+    }
+  }
+  for (const option of options) {
+    const value = `profile:${option.profile_id}`;
+    if (!seen.has(value)) {
+      seen.add(value);
+      choices.push({ value, label: option.profile_id });
+    }
+  }
+  return choices;
+}
+
+function selectionFromChoice(choice: string): ModelSelection | null {
+  if (choice === "preset:fast") return { preset: "fast" };
+  if (choice === "preset:quality") return { preset: "quality" };
+  if (choice.startsWith("profile:")) {
+    return { profile_id: choice.slice("profile:".length) };
+  }
+  return null;
+}
+
 export function ChatPanel({
   onNavigation,
   onTraceChange,
@@ -112,6 +154,8 @@ export function ChatPanel({
     "connected" | "disconnected"
   >("connected");
   const [runtimeStatus, setRuntimeStatus] = useState<ChatStatusView | null>(null);
+  const [availableModels, setAvailableModels] = useState<ModelChoice[]>([]);
+  const [modelChoice, setModelChoice] = useState("default");
   const [statusExpanded, setStatusExpanded] = useState(false);
   const statusDisclosureRef = useDismissibleLayer<HTMLDivElement>({
     open: statusExpanded,
@@ -152,6 +196,7 @@ export function ChatPanel({
         if (active) {
           lastSequence.current = 0;
           setSessionId(view.session_id);
+          setAvailableModels(modelChoices(view.model_options ?? []));
           onTraceChange?.(view.trace_id);
           void getChatStatus(view.session_id)
             .then((status) => {
@@ -358,6 +403,7 @@ export function ChatPanel({
         sessionId,
         text,
         activeResourceId,
+        selectionFromChoice(modelChoice),
       );
       setActiveTurnId(accepted.turn_id);
       stopStream.current?.();
@@ -367,8 +413,10 @@ export function ChatPanel({
         onChatEvent,
         setConnection,
       );
-    } catch {
-      setError("无法发送消息");
+    } catch (reason) {
+      setError(
+        reason instanceof ApiRequestError ? reason.message : "无法发送消息",
+      );
       setLoading(false);
       setActiveTurnId(null);
     }
@@ -532,34 +580,51 @@ export function ChatPanel({
           disabled={sessionId === null}
         />
         <div className="chat-composer__footer">
-          <div
-            className="chat-composer__status-disclosure"
-            ref={statusDisclosureRef}
-          >
-            <button
-              className="chat-composer__meta"
-              type="button"
-              aria-label="查看会话状态详情"
-              aria-expanded={statusExpanded}
-              aria-controls="chat-runtime-status-details"
-              onClick={() => setStatusExpanded((value) => !value)}
+          <div className="chat-composer__controls">
+            <div
+              className="chat-composer__status-disclosure"
+              ref={statusDisclosureRef}
             >
-              <span>
-                <PaperclipIcon aria-hidden size={14} />
-                {activeResourceLabel ?? "无材料"}
-              </span>
-              {runtimeStatus?.context ? (
+              <button
+                className="chat-composer__meta"
+                type="button"
+                aria-label="查看会话状态详情"
+                aria-expanded={statusExpanded}
+                aria-controls="chat-runtime-status-details"
+                onClick={() => setStatusExpanded((value) => !value)}
+              >
                 <span>
-                  <ChartDonutIcon aria-hidden size={14} />
-                  {formatCompact(runtimeStatus.context.estimated_tokens)} / {formatCompact(runtimeStatus.context.budget_tokens)}
+                  <PaperclipIcon aria-hidden size={14} />
+                  {activeResourceLabel ?? "无材料"}
                 </span>
+                {runtimeStatus?.context ? (
+                  <span>
+                    <ChartDonutIcon aria-hidden size={14} />
+                    {formatCompact(runtimeStatus.context.estimated_tokens)} / {formatCompact(runtimeStatus.context.budget_tokens)}
+                  </span>
+                ) : null}
+                {statusExpanded ? <CaretDownIcon aria-hidden size={11} /> : <CaretUpIcon aria-hidden size={11} />}
+              </button>
+              {statusExpanded && runtimeStatus !== null ? (
+                <div className="chat-composer__status-popover" id="chat-runtime-status-details">
+                  <RuntimeStatusCard status={runtimeStatus} />
+                </div>
               ) : null}
-              {statusExpanded ? <CaretDownIcon aria-hidden size={11} /> : <CaretUpIcon aria-hidden size={11} />}
-            </button>
-            {statusExpanded && runtimeStatus !== null ? (
-              <div className="chat-composer__status-popover" id="chat-runtime-status-details">
-                <RuntimeStatusCard status={runtimeStatus} />
-              </div>
+            </div>
+            {availableModels.length > 1 ? (
+              <select
+                className="chat-composer__model"
+                aria-label="本轮模型"
+                value={modelChoice}
+                disabled={loading}
+                onChange={(event) => setModelChoice(event.target.value)}
+              >
+                {availableModels.map((choice) => (
+                  <option key={choice.value} value={choice.value}>
+                    {choice.label}
+                  </option>
+                ))}
+              </select>
             ) : null}
           </div>
           {loading ? (

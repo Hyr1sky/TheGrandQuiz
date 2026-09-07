@@ -39,3 +39,6 @@ ProviderFailure 已统一外部错误，但“为什么选这个模型、实际�
 
 代价是启动装配需要注册全部用途，新 cassette/Subject 需要版本化，旧数据只能显示不完整身份。用户级
 选模、能力预检、retry 与 fallback 仍是后续工作，不能从 Profile 存在推断为已经支持。
+
+用户显式选模与能力预检已由 [ADR-0014](0014-explicit-model-selection-and-capability-gating.md) 后续补充；
+retry 与 fallback 仍不由本决策定义。

@@ -23,7 +23,7 @@ from grandquiz.domain.learning.assessment.workflow import (
     describe_assessment_workflow,
 )
 from grandquiz.kernel.events import AgentEvent, EventType
-from grandquiz.providers.profiles import ModelIdentity
+from grandquiz.providers.profiles import ModelIdentity, SelectionSource
 
 TraceRunStatus = Literal[
     "idle",
@@ -181,7 +181,7 @@ class SafeProviderFailureV1(BaseModel):
 class SafeModelExecutionIdentityV1(BaseModel):
     status: Literal["known", "unknown"]
     purpose: str | None = None
-    selection_source: Literal["default", "purpose_override", "legacy"] | None = None
+    selection_source: SelectionSource | None = None
     configuration_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     policy_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 

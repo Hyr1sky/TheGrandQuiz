@@ -32,6 +32,7 @@ from grandquiz.domain.learning.store import SqliteLearningStore
 from grandquiz.domain.learning.tools._scoped_emitter import ScopedEmitter
 from grandquiz.interfaces.cli.app import (
     _file_source,  # pyright: ignore[reportPrivateUsage]
+    build_parser,
     run_react,
 )
 from grandquiz.interfaces.cli.composition import (
@@ -42,8 +43,10 @@ from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.context import HeuristicTokenCounter
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.trace import TraceStore
-from grandquiz.providers.base import Completion, Message, Role, ToolCall, Usage
+from grandquiz.providers.base import Completion, Message, Role, ToolCall, ToolSpec, Usage
 from grandquiz.providers.legacy import LegacyPurposeProvider
+from grandquiz.providers.models import ModelBindings, with_identity
+from grandquiz.providers.profiles import ModelSelection, parse_model_config
 from grandquiz.providers.replay import Cassette, RecordingProvider, ReplayProvider
 
 _QUOTE = "闭包捕获变量而非值"
@@ -815,6 +818,111 @@ def test_react_system_prompt_fits_under_system_partition_budget() -> None:
     # 防未来提示膨胀被 BudgetCompressionPolicy 静默头截断（钉死 gap-review 的具体数字选择）。
     tokens = HeuristicTokenCounter().count(load_prompt("react_system").text)
     assert tokens < _SYSTEM_PARTITION_BUDGET
+
+
+class _FinalModel:
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.calls = 0
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        del messages, tools
+        self.calls += 1
+        return Completion(text=self.text)
+
+
+_CLI_SELECTABLE_CONFIG = """
+schema_version = "model-config.v1"
+default_profile = "fast"
+[connections.primary]
+base_url = "https://models.example.test/v1"
+api_key_env = "TEST_MODEL_KEY"
+[profiles.fast]
+connection = "primary"
+model = "private-fast-model"
+[profiles.fast.capabilities]
+tools = "supported"
+native_streaming = "supported"
+[profiles.quality]
+connection = "primary"
+model = "private-quality-model"
+[profiles.quality.capabilities]
+tools = "supported"
+native_streaming = "supported"
+[presets]
+fast = "fast"
+quality = "quality"
+"""
+
+
+def test_react_cli_profile_and_preset_flags_are_mutually_exclusive() -> None:
+    parser = build_parser()
+    preset = parser.parse_args(["react", "--model-preset", "quality"])
+    profile = parser.parse_args(["react", "--model-profile", "quality"])
+
+    assert preset.model_preset == "quality"
+    assert preset.model_profile is None
+    assert profile.model_profile == "quality"
+    assert profile.model_preset is None
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "react",
+                "--model-profile",
+                "quality",
+                "--model-preset",
+                "fast",
+            ]
+        )
+
+
+async def test_react_cli_session_freezes_the_same_explicit_selection_identity(
+    tmp_path: Path,
+) -> None:
+    from grandquiz.interfaces.model_config import PRODUCT_MODEL_PURPOSES
+
+    config = parse_model_config(_CLI_SELECTABLE_CONFIG, purposes=PRODUCT_MODEL_PURPOSES)
+    default = _FinalModel("default answer")
+    selected = _FinalModel("selected answer")
+    bindings = ModelBindings(
+        tuple(
+            (purpose, with_identity(default, config.identity_for(purpose)))
+            for purpose in sorted(PRODUCT_MODEL_PURPOSES)
+        ),
+        configuration=config,
+        profile_models=(("fast", default), ("quality", selected)),
+    )
+    trace_db = tmp_path / "trace.db"
+
+    trace_id = await run_react(
+        db_path=tmp_path / "learning.db",
+        materials_dir=tmp_path,
+        provider=bindings,
+        responder=ScriptedResponder(answer=_MC_WRONG),
+        approval=ScriptedApprovalGate(keep=lambda _item: True),
+        console=Console(record=True, width=100),
+        user_messages=["hello"],
+        seed=42,
+        trace_db_path=trace_db,
+        model_selection=ModelSelection(preset="quality"),
+    )
+
+    store = TraceStore(trace_db)
+    try:
+        started = [
+            event for event in store.events(trace_id) if event.type == EventType.MODEL_STARTED
+        ]
+    finally:
+        store.close()
+
+    assert selected.calls == 1
+    assert default.calls == 0
+    assert started[0].payload["model_identity"]["selection_source"] == "preset_quality"
 
 
 # --------------------------------------------------------------------------- #

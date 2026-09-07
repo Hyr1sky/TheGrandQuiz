@@ -2,7 +2,14 @@
 
 import pytest
 
-from grandquiz.providers.profiles import ModelConfigurationError, parse_model_config
+from grandquiz.providers.profiles import (
+    ModelCapability,
+    ModelConfigurationError,
+    ModelRequestRequirements,
+    ModelSelection,
+    ModelSelectionError,
+    parse_model_config,
+)
 
 CONFIG = """
 schema_version = "model-config.v1"
@@ -20,6 +27,114 @@ model = "test-writer"
 [purpose_overrides]
 question_generation = "writer"
 """
+
+SELECTABLE_CONFIG = (
+    CONFIG
+    + """
+[presets]
+fast = "shared"
+quality = "writer"
+[profiles.shared.capabilities]
+tools = "supported"
+native_streaming = "unsupported"
+structured_output = "unknown"
+reasoning = "unknown"
+[profiles.writer.capabilities]
+tools = "supported"
+native_streaming = "supported"
+structured_output = "unsupported"
+reasoning = "supported"
+"""
+)
+
+
+def test_explicit_profile_and_preset_resolve_from_the_frozen_catalog() -> None:
+    config = parse_model_config(
+        SELECTABLE_CONFIG,
+        purposes={"chat", "answer_grading", "question_generation"},
+    )
+    requirements = ModelRequestRequirements(capabilities=("tools", "native_streaming"))
+
+    explicit = config.resolve_selection(
+        "chat",
+        ModelSelection(profile_id="writer"),
+        requirements=requirements,
+    )
+    quality = config.resolve_selection(
+        "chat",
+        ModelSelection(preset="quality"),
+        requirements=requirements,
+    )
+
+    assert explicit.profile.model == quality.profile.model == "test-writer"
+    assert explicit.selection_source == "explicit_profile"
+    assert quality.selection_source == "preset_quality"
+    assert config.identity_for_resolved(explicit).purpose == "chat"
+    assert config.identity_for_resolved(explicit).selection_source == "explicit_profile"
+
+
+def test_concrete_profile_and_preset_are_mutually_exclusive() -> None:
+    with pytest.raises(ValueError):
+        ModelSelection(profile_id="writer", preset="quality")
+    with pytest.raises(ValueError):
+        ModelSelection()
+
+
+@pytest.mark.parametrize(
+    "selection,expected_code,expected_capability",
+    [
+        (
+            ModelSelection(preset="fast"),
+            "capability_unsupported",
+            "native_streaming",
+        ),
+        (
+            ModelSelection(profile_id="shared"),
+            "capability_unknown",
+            "structured_output",
+        ),
+    ],
+)
+def test_explicit_selection_distinguishes_unsupported_from_unknown_capability(
+    selection: ModelSelection,
+    expected_code: str,
+    expected_capability: ModelCapability,
+) -> None:
+    config = parse_model_config(
+        SELECTABLE_CONFIG,
+        purposes={"chat", "question_generation"},
+    )
+    requirements = ModelRequestRequirements(capabilities=(expected_capability,))
+
+    with pytest.raises(ModelSelectionError) as caught:
+        config.resolve_selection("chat", selection, requirements=requirements)
+
+    assert caught.value.code == expected_code
+    assert caught.value.capability == expected_capability
+    assert "test-model" not in str(caught.value)
+
+
+def test_default_binding_keeps_legacy_unknown_capabilities_compatible() -> None:
+    config = parse_model_config(CONFIG, purposes={"chat", "question_generation"})
+    assert config.resolve("chat").profile.model == "test-model"
+
+
+@pytest.mark.parametrize(
+    "selection,expected_code",
+    [
+        (ModelSelection(profile_id="missing"), "unknown_profile"),
+        (ModelSelection(preset="quality"), "unknown_preset"),
+    ],
+)
+def test_unknown_explicit_selection_fails_without_falling_back_to_default(
+    selection: ModelSelection,
+    expected_code: str,
+) -> None:
+    config = parse_model_config(CONFIG, purposes={"chat", "question_generation"})
+    with pytest.raises(ModelSelectionError) as caught:
+        config.resolve_selection("chat", selection)
+    assert caught.value.code == expected_code
+    assert "missing" not in str(caught.value)
 
 
 def test_configuration_selects_default_and_only_the_explicit_purpose_override() -> None:

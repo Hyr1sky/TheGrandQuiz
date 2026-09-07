@@ -11,8 +11,13 @@ import grandquiz.providers.llm as llm_module
 from grandquiz.providers.base import Message
 from grandquiz.providers.failure import ProviderFailure
 from grandquiz.providers.llm import ChatModelConfig, OpenAIChatModel
-from grandquiz.providers.models import ModelRuntime
-from grandquiz.providers.profiles import ModelConfigurationError, parse_model_config
+from grandquiz.providers.models import ModelRuntime, identity_of, select_model
+from grandquiz.providers.profiles import (
+    ModelConfigurationError,
+    ModelRequestRequirements,
+    ModelSelection,
+    parse_model_config,
+)
 
 
 @pytest.fixture
@@ -102,6 +107,21 @@ model = "writer-model"
 question_generation = "writer"
 """
 
+SELECTABLE_PROFILE_CONFIG = (
+    PROFILE_CONFIG
+    + """
+[presets]
+fast = "shared"
+quality = "writer"
+[profiles.shared.capabilities]
+tools = "supported"
+native_streaming = "supported"
+[profiles.writer.capabilities]
+tools = "supported"
+native_streaming = "supported"
+"""
+)
+
 
 async def test_bound_purposes_send_their_selected_model_and_keep_configuration_frozen(
     wire: list[httpx.Request],
@@ -127,6 +147,77 @@ async def test_bound_purposes_send_their_selected_model_and_keep_configuration_f
             runtime.bindings.for_purpose("unknown")
     finally:
         await runtime.aclose()
+
+
+async def test_runtime_selects_an_explicit_profile_without_changing_other_bindings(
+    wire: list[httpx.Request],
+) -> None:
+    config = parse_model_config(
+        SELECTABLE_PROFILE_CONFIG,
+        purposes={"chat", "question_generation", "answer_grading"},
+    )
+    runtime = ModelRuntime.from_configuration(
+        config,
+        environment={"TEST_MODEL_KEY": "test-credential"},
+    )
+    try:
+        selected = select_model(
+            runtime.bindings,
+            "chat",
+            ModelSelection(preset="quality"),
+            requirements=ModelRequestRequirements(capabilities=("tools", "native_streaming")),
+        )
+        await selected.complete([Message(role="user", content="selected")])
+        await runtime.bindings.for_purpose("answer_grading").complete(
+            [Message(role="user", content="default")]
+        )
+
+        assert [json.loads(request.content)["model"] for request in wire] == [
+            "writer-model",
+            "shared-model",
+        ]
+        identity = identity_of(selected)
+        assert identity is not None
+        assert identity.selection_source == "preset_quality"
+        assert identity.purpose == "chat"
+        assert runtime.bindings.identity_for("answer_grading") == config.identity_for(
+            "answer_grading"
+        )
+    finally:
+        await runtime.aclose()
+
+
+def test_selection_options_are_safe_and_do_not_expose_transport_configuration() -> None:
+    config = parse_model_config(
+        SELECTABLE_PROFILE_CONFIG,
+        purposes={"chat", "question_generation"},
+    )
+    runtime = ModelRuntime.from_configuration(
+        config,
+        environment={"TEST_MODEL_KEY": "test-private-credential"},
+    )
+    try:
+        serialized = json.dumps(
+            [option.model_dump() for option in runtime.bindings.selection_options("chat")],
+            sort_keys=True,
+        )
+    finally:
+        import asyncio
+
+        asyncio.run(runtime.aclose())
+
+    assert "shared" in serialized
+    assert "writer" in serialized
+    assert "fast" in serialized
+    assert "quality" in serialized
+    for private_value in (
+        "shared-model",
+        "writer-model",
+        "api.example.test",
+        "TEST_MODEL_KEY",
+        "test-private-credential",
+    ):
+        assert private_value not in serialized
 
 
 def test_missing_credentials_fail_before_any_transport_is_allocated(

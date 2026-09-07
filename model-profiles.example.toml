@@ -14,6 +14,12 @@ timeout_seconds = 60
 api_dialect = "deepseek"
 thinking_mode = "disabled"
 
+[profiles.shared.capabilities]
+tools = "supported"
+native_streaming = "supported"
+structured_output = "unknown"
+reasoning = "unsupported"
+
 # Optional independent question-generation model.
 [connections.writer]
 base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -27,5 +33,17 @@ timeout_seconds = 60
 api_dialect = "dashscope"
 thinking_mode = "disabled"
 
+[profiles.writer.capabilities]
+tools = "supported"
+native_streaming = "supported"
+structured_output = "unknown"
+reasoning = "unknown"
+
 [purpose_overrides]
 question_generation = "writer"
+
+# Optional deterministic aliases for an explicit Chat/CLI choice. These labels
+# do not benchmark or automatically route a model.
+[presets]
+fast = "shared"
+quality = "writer"

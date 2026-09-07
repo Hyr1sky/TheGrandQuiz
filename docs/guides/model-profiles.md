@@ -3,7 +3,7 @@
 TheGrandQuiz 的模型调用分成四步：
 
 ```text
-业务声明用途 → 启动时解析 Profile → Adapter 翻译厂商协议 → AgentEvent 记录实际身份
+业务声明用途 → 控制面选定 Profile → Adapter 翻译厂商协议 → AgentEvent 记录实际身份
 ```
 
 业务代码只说“这是出题”或“这是判卷”，不选择 DeepSeek、Qwen 或具体 URL。配置模块把用途绑定到
@@ -25,6 +25,23 @@ DASHSCOPE_MODEL_KEY=...
 一旦指定文件，文件就是唯一配置来源，不会与 `LLM_*` 或 `ENRICH_LLM_*` 拼接。修改文件后需重启
 进程；本阶段不支持热更新。
 
+## 显式选择与预设
+
+Profile 可以额外声明 `tools`、`native_streaming`、`structured_output`、`reasoning` 四项能力，
+每项取值为 `supported`、`unsupported` 或 `unknown`。这是本地配置事实，不是系统根据模型名猜测；
+当用户显式选择模型时，真实消费者会在联网前校验自己需要的能力。
+
+`fast`、`quality` 是可选的确定性别名，只把名称映射到一个 Profile，不代表系统已测得该模型更快或
+更优，也不会触发黑盒路由。Web 对话可在每轮发送前选择；CLI ReAct 可在会话开始时固定：
+
+```bash
+grandquiz react --model-preset quality
+grandquiz react --model-profile writer
+```
+
+`--model-profile` 与 `--model-preset` 互斥。Web 每个 turn 冻结一次选择，CLI 整个 ReAct 会话冻结一次；
+运行期间不会因设置变化或失败而静默换模型。旧客户端不传选择仍走用途绑定的默认 Profile，以保持兼容。
+
 ## 用途
 
 产品运行注册七个用途：
@@ -43,17 +60,22 @@ DASHSCOPE_MODEL_KEY=...
 ## 配置规则
 
 配置文件固定为 `model-config.v1`，包含 `connections`、`profiles`、`default_profile` 和可选
-`purpose_overrides`。Connection 管网络协议和凭证引用，Profile 管模型及有效请求参数。
+`purpose_overrides`、`presets`。Connection 管网络协议和凭证引用，Profile 管模型、有效请求参数与
+显式能力声明。
 
 - 本阶段只支持 `openai_chat_completions` wire API。
 - 凭证只写环境变量名，真实值仍放在 gitignored 的 `.env`。
 - 未知字段、未知用途、缺失引用、非法 URL、URL 鉴权/query、缺失凭证和不支持的参数组合都会在请求前失败。
-- 用途覆盖优先于默认 Profile；不存在隐式模型路由、自动 fallback 或应用重试。
+- 用途覆盖优先于默认 Profile；显式选择只影响被选择的对话运行，不连带覆盖出题、判卷或 Eval。
+- Chat 显式选择要求 `tools` 与 `native_streaming` 均为 supported；unsupported 与 unknown 分开报错，
+  completion 模拟流不会冒充原生流。
+- 不存在隐式模型路由、自动 fallback 或应用重试。
 - OpenAI SDK 的隐藏重试已关闭；重试策略要等后续 PCP-04 明确 owner、次数、等待和观测契约。
 
 ## 执行身份与历史
 
-每次 `model.started` 事件记录安全的 `model-identity.v1`：用途、选择来源、配置指纹和策略指纹。
+每次 `model.started` 事件记录安全的 `model-identity.v1`：用途、选择来源（默认、用途覆盖、具体 Profile
+或预设）、配置指纹和策略指纹。
 指纹能区分 endpoint path、wire API、模型和有效参数，但不含 Profile 名、URL、模型原文或凭证引用。
 密钥轮换不会改变语义身份。
 

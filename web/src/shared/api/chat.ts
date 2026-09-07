@@ -1,8 +1,30 @@
 /** Chat session API: create sessions, send messages, and type definitions for SSE events. */
 
+import { ApiRequestError, toApiRequestError } from "./client";
+
+export type ModelPreset = "fast" | "quality";
+export type ModelCapabilityState = "supported" | "unsupported" | "unknown";
+
+export interface ModelSelection {
+  profile_id?: string;
+  preset?: ModelPreset;
+}
+
+export interface ModelSelectionOption {
+  profile_id: string;
+  presets: ModelPreset[];
+  capabilities: {
+    tools: ModelCapabilityState;
+    native_streaming: ModelCapabilityState;
+    structured_output: ModelCapabilityState;
+    reasoning: ModelCapabilityState;
+  };
+}
+
 export interface SessionView {
   session_id: string;
   trace_id: string;
+  model_options?: ModelSelectionOption[];
 }
 
 export interface MessageAccepted {
@@ -68,6 +90,7 @@ export async function sendMessage(
   sessionId: string,
   text: string,
   activeResourceId: string | null = null,
+  modelSelection: ModelSelection | null = null,
 ): Promise<MessageAccepted> {
   const response = await globalThis.fetch(
     new Request(
@@ -78,12 +101,20 @@ export async function sendMessage(
         body: JSON.stringify({
           text,
           active_resource_id: activeResourceId,
+          ...(modelSelection === null
+            ? {}
+            : { model_selection: modelSelection }),
         }),
       },
     ),
   );
   if (!response.ok) {
-    throw new Error("无法发送消息");
+    try {
+      throw toApiRequestError(await response.json());
+    } catch (error) {
+      if (error instanceof ApiRequestError) throw error;
+      throw new ApiRequestError("无法发送消息");
+    }
   }
   return (await response.json()) as MessageAccepted;
 }

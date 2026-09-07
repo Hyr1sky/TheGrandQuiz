@@ -104,16 +104,20 @@ src/grandquiz/
 
 ### 模型执行边界
 
-模型调用按“用途 → 启动时绑定 → Adapter 执行 → 事件记录”分层。领域代码只声明有限用途，例如出题、
-判卷或材料深读；composition 从一个默认 Profile 和可选用途覆盖中选出已经确定的 `Model`。Model 的调用
+模型调用按“用途 → 控制面选择 → Adapter 执行 → 事件记录”分层。领域代码只声明有限用途，例如出题、
+判卷或材料深读；composition 从默认 Profile、可选用途覆盖或用户对当前运行的显式选择中冻结一个
+`Model`。Model 的调用
 接口不再携带 basic/enrich，也不接收厂商 URL、鉴权或任意 SDK 参数。OpenAI-compatible Adapter 只负责
 wire API、方言参数、流式终结、连接生命周期与 `ProviderFailure` 正规化，不参与学习业务选择。
 
-配置在进程启动时解析并冻结；无新配置文件时，旧环境变量经显式 importer 映射到用途，以保留原双配置
-分工。每次 `model.started` 都把脱敏执行身份送上既有 AgentEvent 脊柱，因此 Trace、诊断、Replay v3 与
-Eval Subject v2 使用同一项历史事实。设置页的当前绑定不能反向补写旧 Trace。自动路由、fallback、应用
-重试与新协议 Adapter 不属于这一基础契约，必须由后续真实消费者和独立验收门拉动。详见
-[ADR-0013](adr/0013-purpose-bound-model-execution.md)与
+配置在进程启动时解析；无新配置文件时，旧环境变量经显式 importer 映射到用途，以保留原双配置分工。
+显式 Profile 或 fast/quality 预设在 Chat turn／CLI ReAct 会话边界冻结，真实消费者按声明的 tools、
+原生 streaming、structured output 与 reasoning 能力在联网前预检；未知能力不等同于支持，也不通过移除
+请求特性来迁就模型。每次 `model.started` 都把脱敏执行身份送上既有 AgentEvent 脊柱，因此 Trace、诊断、
+Replay v3 与 Eval Subject v2 使用同一项历史事实。设置页的当前绑定不能反向补写旧 Trace。自动路由、
+fallback、应用重试与新协议 Adapter 仍由后续独立验收门拉动。详见
+[ADR-0013](adr/0013-purpose-bound-model-execution.md)、
+[ADR-0014](adr/0014-explicit-model-selection-and-capability-gating.md) 与
 [配置指南](guides/model-profiles.md)。
 
 ## 五大基建模块设计要点

@@ -8,15 +8,19 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from grandquiz.domain.learning.models import LearningResource
 from grandquiz.domain.learning.persistence import LearningPersistence
 from grandquiz.interfaces.api.app import ApiSettings, create_app
+from grandquiz.interfaces.model_config import PRODUCT_MODEL_PURPOSES
 from grandquiz.kernel.events import EventType
 from grandquiz.kernel.trace import TraceStore
 from grandquiz.providers.base import Completion, Message, Provider, Role, ToolCall, ToolSpec, Usage
 from grandquiz.providers.legacy import LegacyPurposeProvider
+from grandquiz.providers.models import ModelBindings, with_identity
+from grandquiz.providers.profiles import parse_model_config
 
 
 class _EchoProvider(LegacyPurposeProvider):
@@ -231,6 +235,75 @@ def _app(tmp_path: Path, provider: Provider | None = None):
     )
 
 
+class _RoleFreeEchoModel:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.calls = 0
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        del messages, tools
+        self.calls += 1
+        return Completion(text=self.name)
+
+
+_SELECTABLE_CHAT_CONFIG = """
+schema_version = "model-config.v1"
+default_profile = "fast_chat"
+[connections.primary]
+base_url = "https://models.example.test/v1"
+api_key_env = "TEST_MODEL_KEY"
+[profiles.fast_chat]
+connection = "primary"
+model = "private-fast-model"
+[profiles.fast_chat.capabilities]
+tools = "supported"
+native_streaming = "supported"
+[profiles.quality_chat]
+connection = "primary"
+model = "private-quality-model"
+[profiles.quality_chat.capabilities]
+tools = "supported"
+native_streaming = "supported"
+[presets]
+fast = "fast_chat"
+quality = "quality_chat"
+"""
+
+
+def _selectable_chat_app(
+    tmp_path: Path,
+    *,
+    config_text: str = _SELECTABLE_CHAT_CONFIG,
+) -> tuple[FastAPI, _RoleFreeEchoModel, _RoleFreeEchoModel]:
+    config = parse_model_config(config_text, purposes=PRODUCT_MODEL_PURPOSES)
+    fast = _RoleFreeEchoModel("fast answer")
+    quality = _RoleFreeEchoModel("quality answer")
+    bindings = ModelBindings(
+        tuple(
+            (purpose, with_identity(fast, config.identity_for(purpose)))
+            for purpose in sorted(PRODUCT_MODEL_PURPOSES)
+        ),
+        configuration=config,
+        profile_models=(("fast_chat", fast), ("quality_chat", quality)),
+    )
+    return (
+        create_app(
+            settings=ApiSettings(
+                learning_db_path=tmp_path / "learning.db",
+                trace_db_path=tmp_path / "trace.db",
+            ),
+            provider=bindings,
+        ),
+        fast,
+        quality,
+    )
+
+
 def _wait_for_events(
     client: TestClient,
     session_id: str,
@@ -325,6 +398,83 @@ def test_send_message_returns_202_with_turn_id(tmp_path: Path) -> None:
     payload = response.json()
     assert "turn_id" in payload
     assert isinstance(payload["turn_id"], str)
+
+
+def test_chat_turn_freezes_explicit_preset_and_returns_safe_execution_identity(
+    tmp_path: Path,
+) -> None:
+    app, fast, quality = _selectable_chat_app(tmp_path)
+    with TestClient(app) as client:
+        session_response = client.post("/api/v1/chat/sessions")
+        session = session_response.json()
+        response = client.post(
+            f"/api/v1/chat/sessions/{session['session_id']}/messages",
+            json={
+                "text": "use quality",
+                "model_selection": {"preset": "quality"},
+            },
+        )
+        events = _wait_for_events(client, session["session_id"])
+
+    assert session_response.status_code == 201
+    assert session["model_options"] == [
+        {
+            "profile_id": "fast_chat",
+            "presets": ["fast"],
+            "capabilities": {
+                "tools": "supported",
+                "native_streaming": "supported",
+                "structured_output": "unknown",
+                "reasoning": "unknown",
+            },
+        },
+        {
+            "profile_id": "quality_chat",
+            "presets": ["quality"],
+            "capabilities": {
+                "tools": "supported",
+                "native_streaming": "supported",
+                "structured_output": "unknown",
+                "reasoning": "unknown",
+            },
+        },
+    ]
+    assert response.status_code == 202
+    identity = response.json()["model_identity"]
+    assert identity["purpose"] == "chat"
+    assert identity["selection_source"] == "preset_quality"
+    serialized = json.dumps(response.json(), sort_keys=True)
+    assert "private-quality-model" not in serialized
+    assert "models.example.test" not in serialized
+    assert fast.calls == 0
+    assert quality.calls == 1
+    ended = next(event for event in events if event["type"] == "chat.turn_ended")
+    assert ended["data"]["output"] == "quality answer"
+
+
+def test_chat_rejects_unknown_required_capability_before_starting_turn(tmp_path: Path) -> None:
+    app, fast, quality = _selectable_chat_app(
+        tmp_path,
+        config_text=_SELECTABLE_CHAT_CONFIG.replace(
+            'native_streaming = "supported"',
+            'native_streaming = "unknown"',
+            1,
+        ),
+    )
+    with TestClient(app) as client:
+        session = client.post("/api/v1/chat/sessions").json()
+        response = client.post(
+            f"/api/v1/chat/sessions/{session['session_id']}/messages",
+            json={
+                "text": "use fast",
+                "model_selection": {"profile_id": "fast_chat"},
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "model_capability_unknown"
+    assert response.json()["retryable"] is False
+    assert fast.calls == quality.calls == 0
 
 
 def test_blank_message_is_rejected(tmp_path: Path) -> None:

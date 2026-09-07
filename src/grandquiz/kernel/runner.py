@@ -159,7 +159,7 @@ class Runner:
         self._emitter.emit(EventType.TURN_ENDED, span_id=turn_span, payload={"ok": True})
         return completion.text
 
-    async def run_agent_turn(self, user_message: str) -> str:
+    async def run_agent_turn(self, user_message: str, *, model: Model | None = None) -> str:
         """有界 tool-calling 循环：LLM ⇄ 工具往返直到 final 文本，或触顶大声失败。
 
         ``AGENT_TURN`` 是根 span；每轮 ``provider.complete`` 是其下 MODEL span；每次工具执行是其下
@@ -172,6 +172,7 @@ class Runner:
         结束时 ``aclose()`` 收口）。
         """
         await self._drain_pending_prune()
+        turn_model = self._provider if model is None else model
         recovery = self._recovery if self._recovery is not None else RecoveryPolicy(self._emitter)
         turn_span = self._emitter.new_span_id()
         self._emitter.emit(
@@ -192,7 +193,11 @@ class Runner:
                 )
         try:
             for _ in range(self._max_iterations):
-                completion = await self._generate(call_messages, parent_span_id=turn_span)
+                completion = await self._generate(
+                    call_messages,
+                    parent_span_id=turn_span,
+                    model=turn_model,
+                )
                 if not completion.tool_calls:
                     # final 文本 → 终止。裁剪：只留 user + final assistant。
                     self._history.append(Message(role="user", content=user_message))
@@ -283,7 +288,13 @@ class Runner:
         """
         await self._drain_pending_prune()
 
-    async def _generate(self, call_messages: list[Message], *, parent_span_id: str) -> Completion:
+    async def _generate(
+        self,
+        call_messages: list[Message],
+        *,
+        parent_span_id: str,
+        model: Model,
+    ) -> Completion:
         """发一次 MODEL span 并调 provider；错误闭合 span（ok=False）后原样冒泡。
 
         ReAct 编排接收装配层已经绑定为 ``chat`` 用途的 Model，并把注册表的
@@ -299,12 +310,12 @@ class Runner:
             payload={
                 "messages": [m.model_dump() for m in call_messages],
                 "prompt_version": self._prompt_version,
-                **model_identity_event_payload(self._provider),
+                **model_identity_event_payload(model),
             },
         )
         try:
             tools = self._tools.tool_specs()
-            if isinstance(self._provider, StreamingModel):
+            if isinstance(model, StreamingModel):
                 text_parts: list[str] = []
                 pending_delta_parts: list[str] = []
                 pending_delta_chars = 0
@@ -319,7 +330,7 @@ class Runner:
                         payload={"text": text},
                     )
 
-                async for stream_event in self._provider.stream_complete(
+                async for stream_event in model.stream_complete(
                     call_messages,
                     tools=tools,
                 ):
@@ -353,7 +364,7 @@ class Runner:
                 if "".join(text_parts) != completion.text:
                     raise ProviderStreamProtocolError("文本增量与最终 Completion.text 不一致")
             else:
-                completion = await self._provider.complete(
+                completion = await model.complete(
                     call_messages,
                     tools=tools,
                 )

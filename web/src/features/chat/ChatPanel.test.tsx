@@ -248,6 +248,142 @@ describe("ChatPanel", () => {
     });
   });
 
+  it("selects a visible model preset for one explicit turn", async () => {
+    let messageBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request =
+          input instanceof Request ? input : new Request(String(input));
+        if (
+          request.url.endsWith("/api/v1/chat/sessions") &&
+          request.method === "POST"
+        ) {
+          return Response.json(
+            {
+              session_id: "session-model",
+              trace_id: "trace-model",
+              model_options: [
+                {
+                  profile_id: "quick",
+                  presets: ["fast"],
+                  capabilities: {
+                    tools: "supported",
+                    native_streaming: "supported",
+                    structured_output: "unknown",
+                    reasoning: "unknown",
+                  },
+                },
+                {
+                  profile_id: "careful",
+                  presets: ["quality"],
+                  capabilities: {
+                    tools: "supported",
+                    native_streaming: "supported",
+                    structured_output: "unknown",
+                    reasoning: "supported",
+                  },
+                },
+              ],
+            },
+            { status: 201 },
+          );
+        }
+        if (request.url.includes("/messages") && request.method === "POST") {
+          messageBody = (await request.json()) as Record<string, unknown>;
+          return Response.json({ turn_id: "turn-model" }, { status: 202 });
+        }
+        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+      }),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const user = userEvent.setup();
+
+    render(<ChatPanel />);
+    const selector = await screen.findByRole("combobox", {
+      name: "本轮模型",
+    });
+    await user.selectOptions(selector, "preset:quality");
+    await user.type(
+      screen.getByRole("textbox", { name: "发送消息" }),
+      "请深入解释",
+    );
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(messageBody).toEqual({
+        text: "请深入解释",
+        active_resource_id: null,
+        model_selection: { preset: "quality" },
+      });
+    });
+    expect(selector).toBeDisabled();
+  });
+
+  it("shows a safe capability error without opening a stream", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request =
+          input instanceof Request ? input : new Request(String(input));
+        if (
+          request.url.endsWith("/api/v1/chat/sessions") &&
+          request.method === "POST"
+        ) {
+          return Response.json(
+            {
+              session_id: "session-model-error",
+              trace_id: "trace-model-error",
+              model_options: [
+                {
+                  profile_id: "unverified",
+                  presets: ["quality"],
+                  capabilities: {
+                    tools: "supported",
+                    native_streaming: "unknown",
+                    structured_output: "unknown",
+                    reasoning: "unknown",
+                  },
+                },
+              ],
+            },
+            { status: 201 },
+          );
+        }
+        if (request.url.includes("/messages") && request.method === "POST") {
+          return Response.json(
+            {
+              code: "model_capability_unknown",
+              message: "所选模型能力尚未确认",
+              retryable: false,
+              trace_id: null,
+            },
+            { status: 422 },
+          );
+        }
+        throw new Error(`Unexpected request: ${request.method} ${request.url}`);
+      }),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const user = userEvent.setup();
+
+    render(<ChatPanel />);
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "本轮模型" }),
+      "preset:quality",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "发送消息" }),
+      "请解释",
+    );
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "所选模型能力尚未确认",
+    );
+    expect(FakeEventSource.instances).toHaveLength(0);
+  });
+
   it("creates a session on mount and renders an input area", async () => {
     vi.stubGlobal(
       "fetch",

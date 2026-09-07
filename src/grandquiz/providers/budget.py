@@ -19,8 +19,20 @@ from grandquiz.providers.base import (
     ToolSpec,
 )
 from grandquiz.providers.legacy import LegacyPurposeProvider
-from grandquiz.providers.models import ModelSource, bind_model, identities_of, identity_of
-from grandquiz.providers.profiles import ModelIdentity
+from grandquiz.providers.models import (
+    ModelSource,
+    bind_model,
+    identities_of,
+    identity_of,
+    select_model,
+    selection_options_of,
+)
+from grandquiz.providers.profiles import (
+    ModelIdentity,
+    ModelRequestRequirements,
+    ModelSelection,
+    ModelSelectionOption,
+)
 
 
 class TokenEstimator(Protocol):
@@ -139,6 +151,27 @@ class BudgetedModels:
 
     def model_identities(self) -> tuple[ModelIdentity, ...]:
         return identities_of(self.inner)
+
+    def select_for_purpose(
+        self,
+        purpose: str,
+        selection: ModelSelection,
+        *,
+        requirements: ModelRequestRequirements | None = None,
+    ) -> Model:
+        return budget_model(
+            select_model(
+                self.inner,
+                purpose,
+                selection,
+                requirements=requirements,
+            ),
+            counter=self.counter,
+            ceiling=self.ceiling,
+        )
+
+    def selection_options(self, purpose: str) -> tuple[ModelSelectionOption, ...]:
+        return selection_options_of(self.inner, purpose)
 
 
 def budget_models(

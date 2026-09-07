@@ -139,7 +139,8 @@ ENRICH 字段全部缺失或空白时继承整组默认参数；任一字段非�
 需要按“对话、出题、判卷、材料深读”等用途显式覆盖模型时，使用
 [Model Profile 配置指南](docs/guides/model-profiles.md)和
 [TOML 样例](model-profiles.example.toml)。业务代码只声明用途；启动装配负责选定并冻结模型，
-Provider Adapter 只处理协议、流和统一错误。目前没有自动路由、fallback 或应用重试。
+Provider Adapter 只处理协议、流和统一错误。配置可把 fast／quality 预设映射到明确 Profile；Web 按本轮、
+CLI ReAct 按会话显式选择，并在联网前核验工具与原生流能力。目前没有自动路由、fallback 或应用重试。
 
 语音答题是可选能力：配置 `DASHSCOPE_API_KEY` 后，桌面 Chromium 的开放题会出现录音入口。机器转写只会
 生成可编辑草稿，不会自动提交；材料词表可在 Web 设置中开关。

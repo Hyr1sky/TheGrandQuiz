@@ -86,6 +86,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path.cwd(),
         help="本地材料目录（ingest 的 file://local/<文件名> 相对此目录解析，默认当前目录）",
     )
+    react_model = p_react.add_mutually_exclusive_group()
+    react_model.add_argument(
+        "--model-profile",
+        default=None,
+        help="本次会话固定使用的模型 profile",
+    )
+    react_model.add_argument(
+        "--model-preset",
+        choices=("fast", "quality"),
+        default=None,
+        help="本次会话固定使用的模型预设",
+    )
 
     p_search = sub.add_parser(
         "search",
@@ -303,7 +315,13 @@ def main(argv: Sequence[str] | None = None) -> None:
     elif args.command == "react":
         with contextlib.suppress(KeyboardInterrupt):
             asyncio.run(
-                _run_react_cli(title=args.title, db_path=args.db, materials_dir=args.materials_dir)
+                _run_react_cli(
+                    title=args.title,
+                    db_path=args.db,
+                    materials_dir=args.materials_dir,
+                    model_profile=args.model_profile,
+                    model_preset=args.model_preset,
+                )
             )
     elif args.command == "search":
         _run_search_cli(

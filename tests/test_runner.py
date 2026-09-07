@@ -5,9 +5,11 @@ import pytest
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.kernel.runner import Runner
-from grandquiz.providers.base import Completion, Message, Role
+from grandquiz.providers.base import Completion, Message, Role, ToolSpec
 from grandquiz.providers.echo import DemoEchoProvider
 from grandquiz.providers.legacy import LegacyPurposeProvider
+from grandquiz.providers.models import with_identity
+from grandquiz.providers.profiles import ModelIdentity
 
 
 def _make_runner() -> tuple[Runner, list[AgentEvent]]:
@@ -118,3 +120,50 @@ async def test_failed_turn_leaves_no_orphan_user_message() -> None:
     model_starts = [e for e in events if e.type == EventType.MODEL_STARTED]
     roles = [m["role"] for m in model_starts[-1].payload["messages"]]
     assert roles == ["user"]
+
+
+class _NamedModel:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.messages: list[list[Message]] = []
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> Completion:
+        del tools
+        self.messages.append(list(messages))
+        return Completion(text=self.name)
+
+
+async def test_agent_turn_can_use_one_frozen_model_without_changing_runner_history() -> None:
+    events: list[AgentEvent] = []
+    sink = EventSink()
+    sink.subscribe(events.append)
+    emitter = EventEmitter(sink, ManualClock(), trace_id="selection")
+    default = _NamedModel("default")
+    explicit = _NamedModel("explicit")
+    identity = ModelIdentity(
+        purpose="chat",
+        selection_source="explicit_profile",
+        configuration_fingerprint="1" * 64,
+        policy_fingerprint="2" * 64,
+    )
+    runner = Runner(provider=default, emitter=emitter)
+
+    first = await runner.run_agent_turn("first", model=with_identity(explicit, identity))
+    second = await runner.run_agent_turn("second")
+
+    assert first == "explicit"
+    assert second == "default"
+    assert len(explicit.messages) == len(default.messages) == 1
+    assert [message.content for message in default.messages[0]] == [
+        "first",
+        "explicit",
+        "second",
+    ]
+    started = [event for event in events if event.type == EventType.MODEL_STARTED]
+    assert started[0].payload["model_identity"] == identity.model_dump()
+    assert "model_identity" not in started[1].payload

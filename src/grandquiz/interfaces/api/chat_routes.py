@@ -20,6 +20,7 @@ from grandquiz.interfaces.api.chat import (
     TurnCancelled,
 )
 from grandquiz.interfaces.api.errors import ApiError
+from grandquiz.providers.profiles import ModelSelectionError
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
@@ -67,6 +68,7 @@ async def send_message(
             session_id,
             body.text,
             active_resource_id=body.active_resource_id,
+            model_selection=body.model_selection,
         )
     except ChatTurnInProgressError as exc:
         raise ApiError(
@@ -80,6 +82,18 @@ async def send_message(
             status_code=404,
             code="resource_not_found",
             message=f"当前材料不存在：{body.active_resource_id}",
+        ) from exc
+    except ModelSelectionError as exc:
+        code = {
+            "unknown_profile": "model_profile_unknown",
+            "unknown_preset": "model_preset_unknown",
+            "capability_unsupported": "model_capability_unsupported",
+            "capability_unknown": "model_capability_unknown",
+        }[exc.code]
+        raise ApiError(
+            status_code=422,
+            code=code,
+            message=str(exc),
         ) from exc
 
 
