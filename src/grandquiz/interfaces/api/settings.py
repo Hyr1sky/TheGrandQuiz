@@ -161,6 +161,9 @@ class LocalSettings:
             config = execution.get(role)
             endpoint = getattr(config, "endpoint_host", None)
             prefix = "LLM_" if role == "basic" else "ENRICH_LLM_"
+            source_prefix = getattr(config, "env_prefix", None)
+            if source_prefix in ("LLM_", "ENRICH_LLM_"):
+                prefix = source_prefix
             return ProviderSettingView(
                 role=role,
                 configured=True,

@@ -129,8 +129,12 @@ uv sync
 cp .env.example .env
 ```
 
-编辑 `.env`。`LLM_*` 是 basic 角色（判卷、基础判断），`ENRICH_LLM_*` 是 enrich 角色（Reader、出题）。
-两个角色可以指向同一个 provider/model，但仍需分别填写两组变量，避免隐藏 fallback。
+编辑 `.env`，只需填写 `LLM_API_KEY / LLM_BASE_URL / LLM_MODEL`；其他默认参数见样板。
+默认模型可承担所有调用，现有 basic/enrich 只是兼容槽，不要求两个厂商。
+需要独立的出题模型时，可完整填写可选 `ENRICH_LLM_*` 配置；判卷、Reader 等仍使用默认配置。
+ENRICH 字段全部缺失或空白时继承整组默认参数；任一字段非空就必须填写该组的 key、地址和模型，
+不会跨组拼接凭证，也不会在调用失败后自动换模型。两组可使用同厂商或同模型；跨厂商本身不保证评审
+独立性或准确性，仍需 Eval 校准。
 
 语音答题是可选能力：配置 `DASHSCOPE_API_KEY` 后，桌面 Chromium 的开放题会出现录音入口。机器转写只会
 生成可编辑草稿，不会自动提交；材料词表可在 Web 设置中开关。

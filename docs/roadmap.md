@@ -114,16 +114,26 @@ KnowledgeItem 并参与正式复考。
 第一阶段不引入连续掌握度分数、提醒日历或复杂 spaced repetition。进入条件：当前 LearningFact、
 LearnerProjection 和资源查询可以有界投影，无需新建第二套学习状态。
 
-### P5：Provider Profiles 与能力注册
+### P5：Provider 控制面、Profiles 与能力注册
 
-在现有 basic/enrich 角色、OpenAI-compatible Provider、dialect、thinking 与 Replay identity 之上，增加：
+Provider 是路线图内、与命题业务解耦的独立支撑轨。它可以与业务产品轨在独立工作区并行推进，
+不以完成 P1 为启动前提，也不改变 composite/exploratory 的产品优先级。FIE-06 已交付的 typed
+ProviderFailure 与安全投影是共同基座；后续控制面改造不再纳入 FIE 收口计划。
 
-- 显式 ModelProfile；
-- tools、streaming、structured output、reasoning 等 ProviderCapabilities；
-- 用户选择角色 profile，安全配置版本进入 Trace；
-- 密钥继续只由环境变量管理。
+逐步退役 MVP 的 basic/enrich 角色，将调用用途、用户偏好、具体模型配置与厂商协议分开：
 
-自动模型路由与 fallback 必须后置到 routing eval、成本预算和失败策略明确之后；不能先做黑盒自动选模型。
+- 先支持一个默认 LLM；旧双配置保留原模型分配，按明确规则迁移；
+- 引入显式 ModelProfile 与用途覆盖，生产判卷、干扰项评审和 Eval Judge 分别绑定；
+- 用户可选择具体模型或快速／质量预设，tools、原生 streaming、structured output、reasoning 等能力
+  按真实请求预检；明确选择的模型不被自动策略静默替换；
+- 运行冻结有效配置，实际选择身份贯通 AgentEvent、历史诊断、Replay 与 Eval Subject；旧数据缺失
+  身份时保持未知，不能用当前设置补写历史；
+- 密钥继续由环境变量管理，Profile 仅保存凭证引用，公共投影不泄漏连接秘密。
+
+后续分别起草并按进入门实现：唯一 owner 的有界 retry（含 Retry-After、取消和流式重放安全）、
+显式允许的 fallback 候选链、真实消费者拉动的新协议 Adapter。智能路由先与固定模型／确定性规则
+进行配对 Eval，质量、费用、延迟与失败策略明确后才考虑人工晋升；不默认接入黑盒自动选模。
+具体 PRD、tickets 与两轨协作状态从 `.scratch/CURRENT.md` 进入。
 
 ### P6：Voice Interview 的 TTS 阶段
 

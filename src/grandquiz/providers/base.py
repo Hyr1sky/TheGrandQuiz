@@ -120,7 +120,7 @@ class ProviderStreamProtocolError(RuntimeError):
 
 
 class Provider(Protocol):
-    """两个命名角色（basic / enrich）对应 .env 的两套 LLM 配置；角色间路由后续再加。
+    """basic / enrich 为迁移期兼容槽，可共享默认配置；不表达厂商或模型能力等级。
 
     ``tools`` 默认 ``None`` → 向后兼容：既有调用方（纯文本 completion）不传即无工具。传非空则
     provider 把它作为可调工具集告知 LLM（OpenAI 兼容 provider 译成原生 ``tools`` 字段）。

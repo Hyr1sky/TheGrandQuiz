@@ -32,7 +32,7 @@ RC 测试不是收集“喜欢/不喜欢”，而是回答三个问题：
 1. 从 RC wheel 建立干净 Python 3.12 环境；
 2. 运行 `grandquiz --help`；
 3. 运行离线 `grandquiz report`，确认 17/17；
-4. 复制 `.env.example` 并配置 basic/enrich 两个角色；
+4. 复制 `.env.example` 并填写默认 `LLM_*`；需要独立出题模型时再完整填写可选 `ENRICH_LLM_*`；
 5. ingest 一份本地 Markdown/Text，人工剔除至少一个候选 KnowledgeItem；
 6. 在 Web 选择材料，提出一个要求引用原文的问题；
 7. 点击 citation，确认 quote 与 section_path 可理解。

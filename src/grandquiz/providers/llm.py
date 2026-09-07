@@ -1,7 +1,7 @@
-"""OpenAICompatProvider——OpenAI 兼容的真实 LLM provider（basic=deepseek / enrich=qwen）。
+"""OpenAICompatProvider——OpenAI 兼容的真实 LLM provider。
 
-两个命名角色各自从 ``.env`` 读 base_url / api_key / model / timeout / dialect / thinking
-mode；DeepSeek 与 Qwen 都提供 OpenAI 兼容端点，但 thinking 扩展字段不同，故共用
+默认配置由 ``LLM_*`` 读取；可选完整 ``ENRICH_LLM_*`` 覆盖 enrich 兼容槽，否则整组继承。
+DeepSeek 与 Qwen 都提供 OpenAI 兼容端点，但 thinking 扩展字段不同，故共用
 ``AsyncOpenAI`` 客户端、在本边界按方言组装请求。密钥只经环境变量注入，绝不进代码 / git
 （见 AGENTS.md 密钥纪律）。
 
@@ -13,9 +13,10 @@ CI 回放传 ``ReplayProvider(cassette)``，调用方不变。
 from __future__ import annotations
 
 import json
+import math
 import os
 from collections.abc import AsyncIterator, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal, cast
 from urllib.parse import urlparse
 
@@ -60,8 +61,21 @@ _TRUTHY = {"1", "true", "yes", "on"}
 ProviderDialect = Literal["deepseek", "dashscope", "generic"]
 ThinkingMode = Literal["provider_default", "enabled", "disabled"]
 ReasoningEffort = Literal["high", "max"]
+RoleEnvPrefix = Literal["LLM_", "ENRICH_LLM_"]
 
 _NON_RETRYABLE_QUOTA_CODES = frozenset({"allocationquota.freetieronly"})
+
+_ROLE_ENV_SUFFIXES = (
+    "API_KEY",
+    "BASE_URL",
+    "MODEL",
+    "TIMEOUT_SECONDS",
+    "ONLY_PROVIDER",
+    "API_DIALECT",
+    "THINKING_MODE",
+    "REASONING_EFFORT",
+    "DISABLE_THINKING",
+)
 
 
 def _provider_code(exc: APIError) -> str | None:
@@ -237,7 +251,7 @@ def _parse_tool_calls(message: Any) -> list[ToolCall] | None:
 class RoleConfig:
     """一个命名角色的 LLM 配置（对应 .env 的一组 ``<PREFIX>*`` 变量）。"""
 
-    api_key: str
+    api_key: str = field(repr=False)
     base_url: str
     model: str
     timeout_seconds: float = 60.0
@@ -246,6 +260,7 @@ class RoleConfig:
     api_dialect: ProviderDialect = "generic"
     thinking_mode: ThinkingMode = "provider_default"
     reasoning_effort: ReasoningEffort | None = None
+    env_prefix: RoleEnvPrefix | None = None
 
 
 @dataclass(frozen=True)
@@ -268,6 +283,7 @@ class ProviderExecutionConfig:
     thinking_mode: ThinkingMode
     reasoning_effort: ReasoningEffort | None
     replay_identity: str
+    env_prefix: RoleEnvPrefix | None = None
 
 
 @dataclass(frozen=True)
@@ -281,10 +297,10 @@ class _PreparedChatRequest:
     tools: list[ChatCompletionToolParam] | Omit
 
 
-def _read_role(prefix: str) -> RoleConfig:
+def _read_role(prefix: RoleEnvPrefix) -> RoleConfig:
     def required(name: str) -> str:
         value = os.environ.get(name)
-        if not value:
+        if not value or not value.strip():
             raise RuntimeError(f"缺少环境变量 {name}（见 .env.example）")
         return value
 
@@ -314,15 +330,22 @@ def _read_role(prefix: str) -> RoleConfig:
     effort_value = os.environ.get(f"{prefix}REASONING_EFFORT", "").strip().casefold()
     if effort_value and effort_value not in {"high", "max"}:
         raise ValueError(f"{prefix}REASONING_EFFORT 必须是 high/max")
+    try:
+        timeout_seconds = float(os.environ.get(f"{prefix}TIMEOUT_SECONDS", "60"))
+    except ValueError:
+        raise ValueError(f"{prefix}TIMEOUT_SECONDS 必须是有限正数") from None
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise ValueError(f"{prefix}TIMEOUT_SECONDS 必须是有限正数")
     return RoleConfig(
         api_key=required(f"{prefix}API_KEY"),
         base_url=base_url,
         model=required(f"{prefix}MODEL"),
-        timeout_seconds=float(os.environ.get(f"{prefix}TIMEOUT_SECONDS", "60")),
+        timeout_seconds=timeout_seconds,
         only_provider=os.environ.get(f"{prefix}ONLY_PROVIDER", "").strip() or None,
         api_dialect=dialect,
         thinking_mode=thinking_mode,
         reasoning_effort=cast("ReasoningEffort | None", effort_value or None),
+        env_prefix=prefix,
     )
 
 
@@ -330,6 +353,7 @@ class OpenAICompatProvider:
     """OpenAI 兼容 provider：按角色路由到各自的 base_url / model。"""
 
     def __init__(self, role_configs: dict[Role, RoleConfig]) -> None:
+        # 每个槽独立拥有 SDK client，统一由 aclose 关闭；共享不可变配置不共享连接池。
         self._configs = role_configs
         self._clients: dict[Role, AsyncOpenAI] = {
             role: AsyncOpenAI(
@@ -344,11 +368,19 @@ class OpenAICompatProvider:
         *,
         role_overrides: Mapping[Role, RoleOverrides] | None = None,
     ) -> OpenAICompatProvider:
-        """从 .env 读两角色：``LLM_*`` → basic（deepseek）、``ENRICH_LLM_*`` → enrich（qwen）。"""
+        """读取默认配置与可选完整 enrich 配置，再独立应用各槽的非密钥覆盖参数。
 
+        ENRICH 全空才继承；任何已支持字段非空都要求该组完整凭证，绝不跨组拼接。
+        所有环境配置先解析完毕，再创建客户端；此处继承不代表失败后自动 fallback。
+        """
+
+        default = _read_role("LLM_")
+        has_enrich_config = any(
+            os.environ.get(f"ENRICH_LLM_{suffix}", "").strip() for suffix in _ROLE_ENV_SUFFIXES
+        )
         configs: dict[Role, RoleConfig] = {
-            "basic": _read_role("LLM_"),
-            "enrich": _read_role("ENRICH_LLM_"),
+            "basic": default,
+            "enrich": _read_role("ENRICH_LLM_") if has_enrich_config else default,
         }
         for role, override in (role_overrides or {}).items():
             current = configs[role]
@@ -383,6 +415,7 @@ class OpenAICompatProvider:
                 model=cfg.model,
                 thinking_mode=cfg.thinking_mode,
                 reasoning_effort=cfg.reasoning_effort,
+                env_prefix=cfg.env_prefix,
                 replay_identity=(
                     f"{cfg.model}|provider={cfg.api_dialect}|thinking={cfg.thinking_mode}|"
                     f"effort={cfg.reasoning_effort or 'none'}"
