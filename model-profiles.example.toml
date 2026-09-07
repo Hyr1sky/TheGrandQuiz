@@ -47,3 +47,14 @@ question_generation = "writer"
 [presets]
 fast = "shared"
 quality = "writer"
+
+# Optional application-owned transport retry policy. max_attempts includes the
+# initial request. The OpenAI SDK's hidden retry loop remains disabled.
+[retry]
+enabled = true
+max_attempts = 3
+deadline_seconds = 90.0
+base_delay_seconds = 0.5
+max_delay_seconds = 8.0
+max_total_wait_seconds = 30.0
+jitter_ratio = 0.2

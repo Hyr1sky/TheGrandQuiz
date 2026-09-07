@@ -13,9 +13,9 @@ ADR-0004 的两个 LLM 用途之一（另一个是判卷）：出题绑定 ``que
   不满足 → ``ModelRetry``。这是运行时的门，不只是 eval 断言。
 - **事件上同一条脊柱**：照 ``runner.run_turn`` / ``Reader`` 的模式，每次调用 provider 发
   ``MODEL_STARTED`` →（``payload`` 含 messages 与 prompt_version）→ ``await provider.complete`` →
-  ``MODEL_ENDED``。多次重试 = 多个 model span，都挂在 assessment span 下。provider 传输异常
-  照 reader 模式：先发 ``MODEL_ENDED(ok=False)`` 闭合 span，再原样冒泡（不吞成 ``QuestionError``，
-  以免把 ``ReplayMiss`` 等 harness 错误静默掩盖）。
+  ``MODEL_ENDED``。业务输出修复形成多个 model span；同一调用的传输 retry 形成 attempt 子 span，二者
+  分列并挂在 assessment span 下。Provider 传输策略用尽后先发 ``MODEL_ENDED(ok=False)`` 闭合 span，
+  再原样冒泡（不吞成 ``QuestionError``，以免把 ``ReplayMiss`` 等 harness 错误静默掩盖）。
 """
 
 import json
@@ -43,8 +43,8 @@ from grandquiz.domain.learning.models import (
     ungrounded_citations,
 )
 from grandquiz.domain.learning.prompts import load_prompt
-from grandquiz.kernel.events import EventEmitter, EventType
-from grandquiz.kernel.model_events import model_failure_event_payload, model_identity_event_payload
+from grandquiz.kernel.events import EventEmitter
+from grandquiz.kernel.model_execution import complete_model_call
 from grandquiz.kernel.recovery import ErrorClass
 from grandquiz.providers.base import Completion, Message
 from grandquiz.providers.models import ModelSource, bind_model
@@ -371,41 +371,14 @@ async def _call_model(
     # 照 reader._call_model：一对 MODEL_STARTED / MODEL_ENDED 共享 span_id；
     # 用途是 question_generation。
     model = bind_model(provider, "question_generation")
-    span_id = emitter.new_span_id()
-    emitter.emit(
-        EventType.MODEL_STARTED,
-        span_id=span_id,
+    return await complete_model_call(
+        model=model,
+        messages=messages,
+        emitter=emitter,
         parent_span_id=parent_span_id,
-        payload={
-            "messages": [m.model_dump() for m in messages],
-            "prompt_version": prompt_version,
-            **model_identity_event_payload(model),
-            "node_id": GENERATE_QUESTION,
-        },
+        prompt_version=prompt_version,
+        context={"node_id": GENERATE_QUESTION},
     )
-    try:
-        completion = await model.complete(messages)
-    except Exception as exc:
-        # provider 传输异常 / ReplayMiss：先闭合 span（started/ended 配对不变量），再原样冒泡。
-        emitter.emit(
-            EventType.MODEL_ENDED,
-            span_id=span_id,
-            parent_span_id=parent_span_id,
-            payload=model_failure_event_payload(exc, node_id=GENERATE_QUESTION),
-        )
-        raise
-    emitter.emit(
-        EventType.MODEL_ENDED,
-        span_id=span_id,
-        parent_span_id=parent_span_id,
-        payload={
-            "ok": True,
-            "output": completion.text,
-            "usage": completion.usage.model_dump(),
-            "node_id": GENERATE_QUESTION,
-        },
-    )
-    return completion
 
 
 def _parse(text: str, valid_quotes: set[str], asked_before: Sequence[str] = ()) -> QuestionSpec:

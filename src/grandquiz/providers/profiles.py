@@ -5,7 +5,7 @@ import json
 import re
 import tomllib
 from collections.abc import Collection
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, cast
 
 import httpx
@@ -17,6 +17,8 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+from grandquiz.providers.retry import ProviderRetryPolicy
 
 ConfigurationErrorCode = Literal["invalid_configuration", "unknown_purpose", "missing_credential"]
 ModelCapability = Literal["tools", "native_streaming", "structured_output", "reasoning"]
@@ -149,6 +151,7 @@ class _Document(_ConfigRecord):
     profiles: dict[str, ModelProfile]
     purpose_overrides: dict[str, str] = Field(default_factory=dict)
     presets: dict[ModelPreset, str] = Field(default_factory=_empty_presets)
+    retry: ProviderRetryPolicy = Field(default_factory=ProviderRetryPolicy)
 
 
 class ModelSelection(_ConfigRecord):
@@ -229,6 +232,7 @@ class ModelConfiguration:
     bindings: tuple[ResolvedProfile, ...]
     profile_catalog: tuple[tuple[str, ModelProfile, ModelConnection], ...] = ()
     presets: tuple[tuple[ModelPreset, str], ...] = ()
+    retry_policy: ProviderRetryPolicy = field(default_factory=ProviderRetryPolicy)
 
     def resolve(self, purpose: str) -> ResolvedProfile:
         for binding in self.bindings:
@@ -350,4 +354,5 @@ def parse_model_config(text: str, *, purposes: Collection[str]) -> ModelConfigur
             for profile_id, profile in sorted(document.profiles.items())
         ),
         presets=tuple(sorted(document.presets.items())),
+        retry_policy=document.retry,
     )

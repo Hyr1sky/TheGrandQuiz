@@ -2717,10 +2717,39 @@ export interface components {
              * @enum {string}
              */
             category: "invalid_request" | "authentication" | "permission_denied" | "not_found" | "conflict" | "quota_exhausted" | "rate_limited" | "timeout" | "connection" | "server_error" | "unknown";
+            /**
+             * Replay Safe
+             * @default true
+             */
+            replay_safe: boolean;
+            /**
+             * Response Started
+             * @default false
+             */
+            response_started: boolean;
+            /** Retry After Seconds */
+            retry_after_seconds?: number | null;
             /** Retryable */
             retryable: boolean;
             /** Status Code */
             status_code?: number | null;
+        };
+        /** SafeProviderRetryDecisionV1 */
+        SafeProviderRetryDecisionV1: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "retry" | "stop";
+            /** Attempt */
+            attempt: number;
+            /** Delay Seconds */
+            delay_seconds?: number | null;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "retry_disabled" | "non_retryable" | "replay_unsafe" | "attempt_limit" | "wait_budget_exhausted" | "deadline_exhausted" | "transient_failure" | "invalid_retry_after";
         };
         /** SafeTraceEventV1 */
         SafeTraceEventV1: {
@@ -2744,6 +2773,7 @@ export interface components {
              */
             phase: "started" | "attempt_rejected" | "ended" | "waiting_input" | "event";
             provider_failure?: components["schemas"]["SafeProviderFailureV1"] | null;
+            provider_retry?: components["schemas"]["SafeProviderRetryDecisionV1"] | null;
             /** Quality Label */
             quality_label?: ("invalid" | "weak" | "reasonable") | null;
             /** Reason Code */

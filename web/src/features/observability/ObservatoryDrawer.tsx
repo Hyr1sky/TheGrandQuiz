@@ -59,6 +59,30 @@ const OPERATION_LABELS: Record<SafeTraceEvent["operation"], string> = {
   other: "其他运行事件",
 };
 
+type ProviderRetryDecision = NonNullable<SafeTraceEvent["provider_retry"]>;
+
+const PROVIDER_RETRY_ACTION_LABELS: Record<
+  ProviderRetryDecision["action"],
+  string
+> = {
+  retry: "传输重试",
+  stop: "停止重试",
+};
+
+const PROVIDER_RETRY_REASON_LABELS: Record<
+  ProviderRetryDecision["reason"],
+  string
+> = {
+  retry_disabled: "策略已关闭",
+  non_retryable: "永久错误",
+  replay_unsafe: "不可安全重放",
+  attempt_limit: "达到尝试上限",
+  wait_budget_exhausted: "等待预算不足",
+  deadline_exhausted: "总期限不足",
+  transient_failure: "临时故障",
+  invalid_retry_after: "服务端等待值无效",
+};
+
 const WORKFLOW_STATE_LABELS: Record<
   SafeWorkflowRun["nodes"][number]["state"],
   string
@@ -572,6 +596,36 @@ export function ObservatoryDrawer({
                         )}
                         {event.reason_code === null ? null : (
                           <span>{event.reason_code}</span>
+                        )}
+                        {event.provider_retry === null ||
+                        event.provider_retry === undefined ? null : (
+                          <>
+                            <span>
+                              {
+                                PROVIDER_RETRY_ACTION_LABELS[
+                                  event.provider_retry.action
+                                ]
+                              }
+                            </span>
+                            <span>
+                              {
+                                PROVIDER_RETRY_REASON_LABELS[
+                                  event.provider_retry.reason
+                                ]
+                              }
+                            </span>
+                            {event.provider_retry.delay_seconds === null ||
+                            event.provider_retry.delay_seconds ===
+                              undefined ? null : (
+                              <span>
+                                等待{" "}
+                                {formatDuration(
+                                  event.provider_retry.delay_seconds *
+                                    1000,
+                                )}
+                              </span>
+                            )}
+                          </>
                         )}
                         {event.tokens === null ? null : (
                           <span>{event.tokens} tokens</span>

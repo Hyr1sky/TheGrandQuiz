@@ -12,8 +12,9 @@
   挡下——幽灵 item 在到达存储 / 用户前被拒（决策 3）。
 - **事件上同一条脊柱**：照 ``runner.run_turn`` 的模式，每次调用 provider 发 ``MODEL_STARTED``
   →（``payload`` 含 messages 与 prompt_version）→ ``await provider.complete`` → ``MODEL_ENDED``
-  （output / usage）。长文档只按持久化 DocumentNode 自然边界确定性组批，每批调用与重试形成
-  model span，挂在 reader_batch span 下；Reader 内不再维护第二套任意 token chunker。
+  （output / usage）。长文档只按持久化 DocumentNode 自然边界确定性组批；每批业务修复形成 model
+  span，同一调用的传输 retry 形成 attempt 子 span，统一挂在 reader_batch 下。Reader 内不再维护
+  第二套任意 token chunker。
 """
 
 import hashlib
@@ -35,9 +36,9 @@ from grandquiz.domain.learning.models import (
 )
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.kernel.context import HeuristicTokenCounter, TokenCounter
-from grandquiz.kernel.events import EventEmitter, EventType
+from grandquiz.kernel.events import EventEmitter
 from grandquiz.kernel.hooks import HookManager
-from grandquiz.kernel.model_events import model_failure_event_payload, model_identity_event_payload
+from grandquiz.kernel.model_execution import complete_model_call
 from grandquiz.kernel.recovery import ErrorClass
 from grandquiz.providers.base import Completion, Message
 from grandquiz.providers.models import ModelSource as Provider
@@ -555,39 +556,10 @@ class Reader:
     ) -> Completion:
         # 照 runner.run_turn 的 model span 模式：一对 MODEL_STARTED / MODEL_ENDED 共享 span_id。
         model = bind_model(provider, "material_reading")
-        span_id = emitter.new_span_id()
-        emitter.emit(
-            EventType.MODEL_STARTED,
-            span_id=span_id,
+        return await complete_model_call(
+            model=model,
+            messages=messages,
+            emitter=emitter,
             parent_span_id=parent_span_id,
-            payload={
-                "messages": [m.model_dump() for m in messages],
-                "prompt_version": self._prompt.version,
-                **model_identity_event_payload(model),
-            },
+            prompt_version=self._prompt.version,
         )
-        try:
-            completion = await model.complete(messages)
-        except Exception as exc:
-            # provider 传输异常（网络/超时/5xx，或 ReplayMiss）：先发 MODEL_ENDED(ok=False)
-            # 闭合 span（started/ended 配对不变量，见 M1 runner 同款修复），再原样 re-raise。
-            # 不归一成 ReaderError——否则会把 ReplayMiss（cassette 缺录=harness bug）静默吞成
-            # "深读失败"，掩盖 eval 配置错误；基础设施错误的优雅降级属 M6 RecoveryPolicy。
-            emitter.emit(
-                EventType.MODEL_ENDED,
-                span_id=span_id,
-                parent_span_id=parent_span_id,
-                payload=model_failure_event_payload(exc),
-            )
-            raise
-        emitter.emit(
-            EventType.MODEL_ENDED,
-            span_id=span_id,
-            parent_span_id=parent_span_id,
-            payload={
-                "ok": True,
-                "output": completion.text,
-                "usage": completion.usage.model_dump(),
-            },
-        )
-        return completion

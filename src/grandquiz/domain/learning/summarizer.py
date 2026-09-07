@@ -2,7 +2,8 @@
 
 与 ``grading.py``/``question.py`` 的判卷/出题槽同源（同一套"LLM 只产内容、代码决定何时调用"
 纪律），但**没有结构化输出契约与校验门**：摘要是自由文本、非机器解析的 JSON，PRD 定性为
-"轻量 LLM 槽"——不值得上重试 + pydantic 校验那一整套。调用失败原样冒泡：
+"轻量 LLM 槽"——不值得上结构化输出修复 + pydantic 校验那一整套。统一执行器仍会按 Provider
+传输策略作有界 retry；用尽后失败原样冒泡：
 ``kernel.context.SummarizingHistoryCompressor.prune`` 的调用方（``Runner._drain_pending_prune``）
 已把这类失败当"非关键后台维护"隔离（发 ``ERROR`` 事件、不炸 turn），本模块无需重复兜底。
 """
@@ -10,8 +11,8 @@
 from collections.abc import Sequence
 
 from grandquiz.domain.learning.prompts import load_prompt
-from grandquiz.kernel.events import EventEmitter, EventType
-from grandquiz.kernel.model_events import model_failure_event_payload, model_identity_event_payload
+from grandquiz.kernel.events import EventEmitter
+from grandquiz.kernel.model_execution import complete_model_call
 from grandquiz.providers.base import Completion, Message
 from grandquiz.providers.models import ModelSource as Provider
 from grandquiz.providers.models import bind_model
@@ -46,28 +47,9 @@ class LLMSummarizer:
     async def _call_model(self, messages: list[Message], *, prompt_version: str) -> Completion:
         # 照 grading._call_model 的一对 MODEL_STARTED/MODEL_ENDED 共享 span_id 模式，
         # 只是这里 parent_span_id 恒为 None（见类 docstring）。
-        span_id = self._emitter.new_span_id()
-        self._emitter.emit(
-            EventType.MODEL_STARTED,
-            span_id=span_id,
-            payload={
-                "messages": [m.model_dump() for m in messages],
-                "prompt_version": prompt_version,
-                **model_identity_event_payload(self._provider),
-            },
+        return await complete_model_call(
+            model=self._provider,
+            messages=messages,
+            emitter=self._emitter,
+            prompt_version=prompt_version,
         )
-        try:
-            completion = await self._provider.complete(messages)
-        except Exception as exc:
-            self._emitter.emit(
-                EventType.MODEL_ENDED,
-                span_id=span_id,
-                payload=model_failure_event_payload(exc),
-            )
-            raise
-        self._emitter.emit(
-            EventType.MODEL_ENDED,
-            span_id=span_id,
-            payload={"ok": True, "output": completion.text, "usage": completion.usage.model_dump()},
-        )
-        return completion

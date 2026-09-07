@@ -1180,6 +1180,9 @@ def test_assessment_http_trace_projects_typed_provider_failure(tmp_path: Path) -
         "category": "rate_limited",
         "status_code": 429,
         "retryable": True,
+        "retry_after_seconds": None,
+        "response_started": False,
+        "replay_safe": True,
     }
 
 

@@ -10,8 +10,8 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from grandquiz.evals.rubrics import Rubric, get_rubric
-from grandquiz.kernel.events import EventEmitter, EventType
-from grandquiz.kernel.model_events import model_failure_event_payload, model_identity_event_payload
+from grandquiz.kernel.events import EventEmitter
+from grandquiz.kernel.model_execution import complete_model_call
 from grandquiz.providers.base import Message, Usage
 from grandquiz.providers.models import ModelSource as Provider
 from grandquiz.providers.models import bind_model
@@ -124,26 +124,15 @@ class QualityJudge:
             messages = list(base_messages)
             if retry_note is not None:
                 messages.append(Message(role="user", content=retry_note))
-            model_span = emitter.new_span_id()
-            emitter.emit(
-                EventType.MODEL_STARTED,
-                span_id=model_span,
-                parent_span_id=workflow_span,
-                payload={
-                    "messages": [message.model_dump() for message in messages],
-                    "prompt_version": self._prompt.version,
-                    **model_identity_event_payload(self._provider),
-                },
-            )
             try:
-                completion = await self._provider.complete(messages)
-            except Exception as exc:
-                emitter.emit(
-                    EventType.MODEL_ENDED,
-                    span_id=model_span,
+                completion = await complete_model_call(
+                    model=self._provider,
+                    messages=messages,
+                    emitter=emitter,
                     parent_span_id=workflow_span,
-                    payload=model_failure_event_payload(exc),
+                    prompt_version=self._prompt.version,
                 )
+            except Exception:
                 emitter.emit(
                     QUALITY_JUDGE_ENDED,
                     span_id=workflow_span,
@@ -159,16 +148,6 @@ class QualityJudge:
                 raise
             prompt_tokens += completion.usage.prompt_tokens
             completion_tokens += completion.usage.completion_tokens
-            emitter.emit(
-                EventType.MODEL_ENDED,
-                span_id=model_span,
-                parent_span_id=workflow_span,
-                payload={
-                    "ok": True,
-                    "output": completion.text,
-                    "usage": completion.usage.model_dump(),
-                },
-            )
             try:
                 candidate = _ModelVerdict.model_validate_json(
                     _normalize_single_json_fence(completion.text)

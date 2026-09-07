@@ -24,8 +24,8 @@ from grandquiz.domain.learning.events import LearningEvent
 from grandquiz.domain.learning.prompts import load_prompt
 from grandquiz.domain.learning.store import Store
 from grandquiz.kernel.context import HeuristicTokenCounter, TokenCounter
-from grandquiz.kernel.events import EventEmitter, EventType
-from grandquiz.kernel.model_events import model_failure_event_payload, model_identity_event_payload
+from grandquiz.kernel.events import EventEmitter
+from grandquiz.kernel.model_execution import complete_model_call
 from grandquiz.providers.base import Completion, Message
 from grandquiz.providers.models import ModelSource as Provider
 from grandquiz.providers.models import bind_model
@@ -498,38 +498,13 @@ class GroundedDocumentAnswer:
         emitter: EventEmitter,
         parent_span_id: str,
     ) -> Completion:
-        span_id = emitter.new_span_id()
-        emitter.emit(
-            EventType.MODEL_STARTED,
-            span_id=span_id,
+        return await complete_model_call(
+            model=self._provider,
+            messages=messages,
+            emitter=emitter,
             parent_span_id=parent_span_id,
-            payload={
-                "messages": [message.model_dump() for message in messages],
-                "prompt_version": self._prompt.version,
-                **model_identity_event_payload(self._provider),
-            },
+            prompt_version=self._prompt.version,
         )
-        try:
-            completion = await self._provider.complete(messages)
-        except Exception as exc:
-            emitter.emit(
-                EventType.MODEL_ENDED,
-                span_id=span_id,
-                parent_span_id=parent_span_id,
-                payload=model_failure_event_payload(exc),
-            )
-            raise
-        emitter.emit(
-            EventType.MODEL_ENDED,
-            span_id=span_id,
-            parent_span_id=parent_span_id,
-            payload={
-                "ok": True,
-                "output": completion.text,
-                "usage": completion.usage.model_dump(),
-            },
-        )
-        return completion
 
     @staticmethod
     def _parse(text: str) -> _AnswerCandidate:

@@ -322,6 +322,9 @@ def test_bundle_explains_provider_quota_failure_without_exporting_vendor_details
         "category": "quota_exhausted",
         "status_code": 403,
         "retryable": False,
+        "retry_after_seconds": None,
+        "response_started": False,
+        "replay_safe": True,
     }
     serialized = json.dumps(bundle, ensure_ascii=False)
     assert "Free quota exhausted" not in serialized

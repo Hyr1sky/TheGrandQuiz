@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal, TypeGuard, cast
@@ -99,6 +100,17 @@ SafeProviderFailureCategory = Literal[
     "server_error",
     "unknown",
 ]
+SafeProviderRetryAction = Literal["retry", "stop"]
+SafeProviderRetryReason = Literal[
+    "retry_disabled",
+    "non_retryable",
+    "replay_unsafe",
+    "attempt_limit",
+    "wait_budget_exhausted",
+    "deadline_exhausted",
+    "transient_failure",
+    "invalid_retry_after",
+]
 WorkflowNodeState = Literal["pending", "running", "waiting", "completed", "failed"]
 
 _MC_STARTED = "learning.multiple_choice_generation.started"
@@ -176,6 +188,16 @@ class SafeProviderFailureV1(BaseModel):
     category: SafeProviderFailureCategory
     status_code: int | None = Field(default=None, ge=100, le=599)
     retryable: bool
+    retry_after_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    response_started: bool = False
+    replay_safe: bool = True
+
+
+class SafeProviderRetryDecisionV1(BaseModel):
+    attempt: int = Field(ge=1)
+    action: SafeProviderRetryAction
+    reason: SafeProviderRetryReason
+    delay_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class SafeModelExecutionIdentityV1(BaseModel):
@@ -219,6 +241,7 @@ class SafeTraceEventV1(BaseModel):
     latency_ms: float | None = None
     node_id: WorkflowNodeId | None = None
     provider_failure: SafeProviderFailureV1 | None = None
+    provider_retry: SafeProviderRetryDecisionV1 | None = None
     execution_identity: SafeModelExecutionIdentityV1 | None = None
 
 
@@ -300,7 +323,10 @@ def project_trace(
         ),
         summary=SafeTraceSummaryV1(
             model_calls=model_calls,
-            retries=sum(event.phase == "attempt_rejected" for event in projected),
+            retries=(
+                sum(event.phase == "attempt_rejected" for event in projected)
+                + sum(event.type == EventType.MODEL_RETRY_WAIT_STARTED for event in events)
+            ),
             rejection_counts=[
                 TraceRejectionCountV1(reason_code=reason, count=count)
                 for reason, count in sorted(reason_counts.items())
@@ -528,10 +554,16 @@ def _summary_explanation(
     error_count: int,
 ) -> tuple[str | None, str | None]:
     """只从安全枚举与计数生成文案，不读取 raw payload 或异常正文。"""
+    completed_spans = {
+        event.span_id
+        for event in events
+        if event.span_id is not None and event.phase == "ended" and event.status == "completed"
+    }
     provider_failure_events = [
         event
         for event in reversed(events)
-        if event.provider_failure is not None or event.reason_code == "provider_quota_exhausted"
+        if (event.provider_failure is not None or event.reason_code == "provider_quota_exhausted")
+        and event.parent_span_id not in completed_spans
     ]
     provider_failure_event = next(
         (event for event in provider_failure_events if event.operation != "other"),
@@ -722,6 +754,7 @@ def _project_events(
                 ),
                 node_id=_node_id(event, descriptor=descriptor),
                 provider_failure=provider_failure,
+                provider_retry=_safe_provider_retry(event),
                 execution_identity=_safe_execution_identity(event),
             )
         )
@@ -760,6 +793,21 @@ def _operation(
         return "learning_commit"
     if event_type == EventType.MODEL_ENDED and event.span_id is not None:
         return span_operations.get(event.span_id, "other")
+    if (
+        event_type
+        in {
+            EventType.MODEL_ATTEMPT_ENDED,
+            EventType.MODEL_RETRY_DECIDED,
+            EventType.MODEL_RETRY_WAIT_ENDED,
+        }
+        and event.span_id is not None
+    ):
+        return span_operations.get(event.span_id, "other")
+    if event_type in {
+        EventType.MODEL_ATTEMPT_STARTED,
+        EventType.MODEL_RETRY_WAIT_STARTED,
+    }:
+        return span_operations.get(event.parent_span_id or "", "other")
     if event_type == EventType.MODEL_STARTED:
         parent_operation = span_operations.get(event.parent_span_id or "")
         if parent_operation == "multiple_choice_generation":
@@ -906,7 +954,40 @@ def _safe_provider_failure(payload: Mapping[str, Any]) -> SafeProviderFailureV1 
         category=cast("SafeProviderFailureCategory", category),
         status_code=status_code,
         retryable=retryable,
+        retry_after_seconds=_safe_nonnegative_float(payload.get("provider_retry_after_seconds")),
+        response_started=payload.get("provider_response_started") is True,
+        replay_safe=payload.get("provider_replay_safe") is not False,
     )
+
+
+def _safe_provider_retry(event: AgentEvent) -> SafeProviderRetryDecisionV1 | None:
+    if event.type != EventType.MODEL_RETRY_DECIDED:
+        return None
+    attempt = _safe_int(event.payload, "attempt_index")
+    action = event.payload.get("action")
+    reason = event.payload.get("reason")
+    if (
+        attempt is None
+        or attempt < 1
+        or not isinstance(action, str)
+        or action not in SafeProviderRetryAction.__args__
+        or not isinstance(reason, str)
+        or reason not in SafeProviderRetryReason.__args__
+    ):
+        return None
+    return SafeProviderRetryDecisionV1(
+        attempt=attempt,
+        action=cast("SafeProviderRetryAction", action),
+        reason=cast("SafeProviderRetryReason", reason),
+        delay_seconds=_safe_nonnegative_float(event.payload.get("delay_seconds")),
+    )
+
+
+def _safe_nonnegative_float(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    normalized = float(value)
+    return normalized if math.isfinite(normalized) and normalized >= 0 else None
 
 
 def _safe_int(payload: Mapping[str, Any], key: str) -> int | None:
@@ -916,7 +997,10 @@ def _safe_int(payload: Mapping[str, Any], key: str) -> int | None:
 
 def _safe_attempt(payload: Mapping[str, Any]) -> int | None:
     attempt = _safe_int(payload, "attempt")
-    return attempt if attempt is not None else _safe_int(payload, "attempts")
+    if attempt is not None:
+        return attempt
+    attempt = _safe_int(payload, "attempts")
+    return attempt if attempt is not None else _safe_int(payload, "attempt_index")
 
 
 def _usage_total(payload: Mapping[str, Any]) -> int | None:

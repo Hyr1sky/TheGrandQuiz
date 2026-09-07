@@ -643,6 +643,130 @@ def test_project_trace_exposes_typed_provider_failure_without_vendor_code() -> N
     assert "SECRET-UPSTREAM-BODY" not in serialized
 
 
+def test_project_trace_exposes_safe_transport_attempts_without_double_counting_usage() -> None:
+    run = project_trace(
+        [
+            _event(
+                "learning.multiple_choice_generation.started",
+                0,
+                span_id="generation",
+                parent_span_id="assessment",
+            ),
+            _event(
+                "model.started",
+                1,
+                span_id="model",
+                parent_span_id="generation",
+                payload={"role": "enrich"},
+            ),
+            _event(
+                "model_attempt.started",
+                2,
+                span_id="attempt-1",
+                parent_span_id="model",
+                payload={"attempt_index": 1},
+            ),
+            _event(
+                "model_attempt.ended",
+                3,
+                span_id="attempt-1",
+                parent_span_id="model",
+                payload={
+                    "ok": False,
+                    "attempt_index": 1,
+                    "error": "SECRET-UPSTREAM-BODY",
+                    "provider_failure_category": "rate_limited",
+                    "provider_failure_code": "provider_rate_limited",
+                    "provider_status_code": 429,
+                    "provider_retryable": True,
+                    "provider_retry_after_seconds": 2.0,
+                },
+            ),
+            _event(
+                "model.retry_decided",
+                4,
+                span_id="attempt-1",
+                parent_span_id="model",
+                payload={
+                    "attempt_index": 1,
+                    "action": "retry",
+                    "reason": "transient_failure",
+                    "delay_seconds": 2.0,
+                },
+            ),
+            _event(
+                "model_retry_wait.started",
+                5,
+                span_id="wait-1",
+                parent_span_id="model",
+                payload={"after_attempt": 1, "delay_seconds": 2.0},
+            ),
+            _event(
+                "model_retry_wait.ended",
+                6,
+                span_id="wait-1",
+                parent_span_id="model",
+                payload={"ok": True, "after_attempt": 1},
+            ),
+            _event(
+                "model_attempt.started",
+                7,
+                span_id="attempt-2",
+                parent_span_id="model",
+                payload={"attempt_index": 2},
+            ),
+            _event(
+                "model_attempt.ended",
+                8,
+                span_id="attempt-2",
+                parent_span_id="model",
+                payload={
+                    "ok": True,
+                    "attempt_index": 2,
+                    "usage": {"prompt_tokens": 7, "completion_tokens": 3},
+                },
+            ),
+            _event(
+                "model.ended",
+                9,
+                span_id="model",
+                parent_span_id="generation",
+                payload={
+                    "ok": True,
+                    "usage": {
+                        "prompt_tokens": 7,
+                        "completion_tokens": 3,
+                        "total_tokens": 10,
+                    },
+                },
+            ),
+            _event(
+                "learning.multiple_choice_generation.ended",
+                10,
+                span_id="generation",
+                parent_span_id="assessment",
+                payload={"ok": True},
+            ),
+        ],
+        trace_id="trace-safe",
+    )
+
+    assert all(event.operation == "multiple_choice_generation" for event in run.events)
+    assert run.events[2].attempt == 1
+    assert run.events[3].provider_failure is not None
+    assert run.events[3].provider_failure.retry_after_seconds == 2.0
+    assert run.events[4].provider_retry is not None
+    assert run.events[4].provider_retry.action == "retry"
+    assert run.events[4].provider_retry.delay_seconds == 2.0
+    assert run.summary.model_calls == 1
+    assert run.summary.retries == 1
+    assert run.summary.prompt_tokens == 7
+    assert run.summary.completion_tokens == 3
+    assert run.summary.headline == "运行正在进行"
+    assert run.summary.recommended_action is None
+    assert "SECRET-UPSTREAM-BODY" not in run.model_dump_json()
+
+
 def test_project_trace_completed_chat_uses_latest_turn_summary() -> None:
     run = project_trace(
         [

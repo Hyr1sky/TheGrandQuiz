@@ -282,6 +282,47 @@ describe("ObservatoryDrawer", () => {
     expect(screen.getByRole("region", { name: "语义事件" })).toBeInTheDocument();
   });
 
+  it("explains provider retry decisions without exposing transport details", async () => {
+    const retrySnapshot = {
+      ...snapshot,
+      events: [
+        {
+          ...snapshot.events[0],
+          phase: "event",
+          provider_retry: {
+            attempt: 1,
+            action: "retry",
+            reason: "transient_failure",
+            delay_seconds: 2,
+          },
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        observabilityResponse(input, retrySnapshot),
+      ),
+    );
+    vi.stubGlobal("EventSource", FakeEventSource);
+
+    render(
+      <ObservatoryDrawer
+        open
+        traceId="trace-1"
+        onClose={vi.fn()}
+        onSelectTrace={vi.fn()}
+      />,
+    );
+
+    const timeline = await screen.findByRole("region", {
+      name: "语义事件",
+    });
+    expect(within(timeline).getByText("传输重试")).toBeInTheDocument();
+    expect(within(timeline).getByText("临时故障")).toBeInTheDocument();
+    expect(within(timeline).getByText("等待 2.00 s")).toBeInTheDocument();
+  });
+
   it("can be closed without affecting the running trace", async () => {
     vi.stubGlobal(
       "fetch",

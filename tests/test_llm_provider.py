@@ -138,6 +138,8 @@ class _FakeStream:
 
     async def __aiter__(self) -> AsyncIterator[object]:
         for chunk in self._chunks:
+            if isinstance(chunk, BaseException):
+                raise chunk
             yield chunk
 
     async def close(self) -> None:
@@ -277,6 +279,27 @@ def test_from_env_raises_on_missing_required_var(monkeypatch: pytest.MonkeyPatch
         monkeypatch.delenv(key, raising=False)
     with pytest.raises(RuntimeError):
         OpenAICompatProvider.from_env()
+
+
+def test_openai_sdk_hidden_retries_are_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: list[dict[str, object]] = []
+
+    def _factory(**kwargs: object) -> _FakeClient:
+        captured.append(kwargs)
+        return _FakeClient(_FakeResponse("ok", prompt_tokens=1, completion_tokens=1))
+
+    monkeypatch.setattr(llm_mod, "AsyncOpenAI", _factory)
+    OpenAICompatProvider(
+        {
+            "basic": RoleConfig(
+                api_key="k",
+                base_url="https://api.example.test/v1",
+                model="m",
+            )
+        }
+    )
+
+    assert captured[0]["max_retries"] == 0
 
 
 def test_from_env_applies_non_secret_basic_role_experiment_overrides(
@@ -472,6 +495,45 @@ async def test_dashscope_token_quota_throttling_remains_retryable_rate_limit(
     assert "SECRET-TENANT" not in repr(failure)
 
 
+@pytest.mark.parametrize(
+    ("header", "seconds", "timestamp", "invalid"),
+    [
+        ("12", 12.0, None, False),
+        ("Sun, 06 Nov 1994 08:49:37 GMT", None, 784111777.0, False),
+        ("invalid SECRET-RETRY-HEADER", None, None, True),
+    ],
+)
+async def test_complete_normalizes_retry_after_without_retaining_raw_header(
+    monkeypatch: pytest.MonkeyPatch,
+    header: str,
+    seconds: float | None,
+    timestamp: float | None,
+    invalid: bool,
+) -> None:
+    request = httpx.Request("POST", "https://api.example.test/chat/completions")
+    response = httpx.Response(429, request=request, headers={"Retry-After": header})
+    upstream = RateLimitError(
+        "SECRET-UPSTREAM-MESSAGE",
+        response=response,
+        body={"error": {"message": "SECRET-UPSTREAM-MESSAGE", "code": "rate_limit"}},
+    )
+    _patch_failing_client(monkeypatch, upstream)
+    provider = OpenAICompatProvider(
+        {"basic": RoleConfig(api_key="k", base_url="https://api.example.test/v1", model="m")}
+    )
+
+    with pytest.raises(ProviderFailure) as caught:
+        await provider.complete([Message(role="user", content="hi")], role="basic")
+
+    failure = caught.value
+    assert failure.retry_after_seconds == seconds
+    assert failure.retry_after_at == timestamp
+    assert failure.retry_after_invalid is invalid
+    assert header not in repr(failure)
+    if invalid:
+        assert header not in repr(provider_failure_payload(failure))
+
+
 async def test_stream_complete_normalizes_provider_failure_at_request_boundary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -498,6 +560,54 @@ async def test_stream_complete_normalizes_provider_failure_at_request_boundary(
     assert failure.provider_code == "AccessDenied"
     assert failure.retryable is False
     assert "SECRET-TENANT" not in repr(failure)
+
+
+async def test_stream_failure_after_first_upstream_chunk_is_not_replay_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = httpx.Request("POST", "https://api.example.test/chat/completions")
+    response = httpx.Response(503, request=request)
+    upstream = InternalServerError(
+        "SECRET-MIDSTREAM-ERROR",
+        response=response,
+        body={"error": {"message": "SECRET-MIDSTREAM-ERROR", "code": "overloaded"}},
+    )
+    captured = _patch_streaming_client(
+        monkeypatch,
+        [_FakeChunk("prefix"), upstream],
+    )
+    provider = OpenAICompatProvider(
+        {"basic": RoleConfig(api_key="k", base_url="https://api.example.test/v1", model="m")}
+    )
+
+    with pytest.raises(ProviderFailure) as caught:
+        async for _event in provider.stream_complete(
+            [Message(role="user", content="hi")], role="basic"
+        ):
+            pass
+
+    failure = caught.value
+    assert failure.response_started is True
+    assert failure.replay_safe is False
+    stream_completions = cast(
+        _FakeStreamingCompletions,
+        captured["client"].chat.completions,
+    )
+    assert stream_completions.stream.closed is True
+    assert "SECRET-MIDSTREAM-ERROR" not in repr(failure)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -1.0])
+def test_provider_failure_rejects_unsafe_retry_after_numbers(value: float) -> None:
+    failure = ProviderFailure(
+        category=ProviderFailureCategory.RATE_LIMITED,
+        retryable=True,
+        retry_after_seconds=value,
+    )
+
+    assert failure.retry_after_seconds is None
+    assert failure.retry_after_invalid is True
+    assert value.__repr__() not in repr(provider_failure_payload(failure))
 
 
 @pytest.mark.parametrize(

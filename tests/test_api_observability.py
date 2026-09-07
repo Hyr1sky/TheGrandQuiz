@@ -488,6 +488,7 @@ def test_observability_openapi_exposes_only_finite_semantic_event_fields(
         "latency_ms",
         "node_id",
         "provider_failure",
+        "provider_retry",
         "execution_identity",
     }
     provider_failure = schema["components"]["schemas"]["SafeProviderFailureV1"]
@@ -495,6 +496,9 @@ def test_observability_openapi_exposes_only_finite_semantic_event_fields(
         "category",
         "status_code",
         "retryable",
+        "retry_after_seconds",
+        "response_started",
+        "replay_safe",
     }
     assert provider_failure["properties"]["category"]["enum"] == [
         "invalid_request",
@@ -509,6 +513,13 @@ def test_observability_openapi_exposes_only_finite_semantic_event_fields(
         "server_error",
         "unknown",
     ]
+    provider_retry = schema["components"]["schemas"]["SafeProviderRetryDecisionV1"]
+    assert set(provider_retry["properties"]) == {
+        "attempt",
+        "action",
+        "reason",
+        "delay_seconds",
+    }
     execution_identity = schema["components"]["schemas"]["SafeModelExecutionIdentityV1"]
     assert set(execution_identity["properties"]) == {
         "status",

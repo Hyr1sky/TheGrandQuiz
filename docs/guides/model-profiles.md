@@ -60,8 +60,8 @@ grandquiz react --model-profile writer
 ## 配置规则
 
 配置文件固定为 `model-config.v1`，包含 `connections`、`profiles`、`default_profile` 和可选
-`purpose_overrides`、`presets`。Connection 管网络协议和凭证引用，Profile 管模型、有效请求参数与
-显式能力声明。
+`purpose_overrides`、`presets`、`retry`。Connection 管网络协议和凭证引用，Profile 管模型、有效请求
+参数与显式能力声明；retry 是所有用途共享的传输恢复上限，不属于某个厂商。
 
 - 本阶段只支持 `openai_chat_completions` wire API。
 - 凭证只写环境变量名，真实值仍放在 gitignored 的 `.env`。
@@ -69,8 +69,13 @@ grandquiz react --model-profile writer
 - 用途覆盖优先于默认 Profile；显式选择只影响被选择的对话运行，不连带覆盖出题、判卷或 Eval。
 - Chat 显式选择要求 `tools` 与 `native_streaming` 均为 supported；unsupported 与 unknown 分开报错，
   completion 模拟流不会冒充原生流。
-- 不存在隐式模型路由、自动 fallback 或应用重试。
-- OpenAI SDK 的隐藏重试已关闭；重试策略要等后续 PCP-04 明确 owner、次数、等待和观测契约。
+- 不存在隐式模型路由或自动 fallback。
+- 生产 Model Runtime 由应用统一管理传输重试，OpenAI SDK 的隐藏重试固定关闭。默认一次逻辑调用总计
+  最多 3 次请求（包含首次），总期限 90 秒、累计等待最多 30 秒；限流、连接、超时、冲突和 5xx 仅在
+  可安全重放且预算充足时重试。鉴权、权限、坏请求、永久额度和未知错误不会默认重试。
+- 可选 `[retry]` 能配置 `enabled`、`max_attempts`、`deadline_seconds`、`base_delay_seconds`、
+  `max_delay_seconds`、`max_total_wait_seconds` 和 `jitter_ratio`；未知或越界值会在联网前拒绝。
+- `Retry-After` 支持秒数与 HTTP 日期。流已收到任何输出或上游 chunk 时不自动重放；取消立即传播。
 
 ## 执行身份与历史
 
@@ -82,5 +87,6 @@ grandquiz react --model-profile writer
 设置页展示当前绑定；历史 Trace 和诊断包只读取调用当时的事件。当前配置从 A 改成 B 后，A 的历史
 仍显示 A 的指纹；旧 Trace 没有身份时显示 `unknown`，不会用 B 倒填。
 
-新版 `model-cassette.v3` 把执行身份、messages 和工具契约共同计入回放键。用途、配置或工具变化都会
-明确 miss；旧 v1/v2 cassette 只经 legacy reader 读取，v3 miss 不会偷偷回退旧键。
+新版 `model-cassette.v4` 把执行身份、messages 和工具契约共同计入回放键，并保存 typed
+failure/success attempt 序列。用途、配置或工具变化都会明确 miss；v3 成功录制继续只读兼容，旧 v1/v2
+cassette 只经 legacy reader 读取，新键 miss 不会偷偷回退旧键。

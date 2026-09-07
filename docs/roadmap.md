@@ -130,9 +130,10 @@ ProviderFailure 与安全投影是共同基座；后续控制面改造不再纳�
   身份时保持未知，不能用当前设置补写历史；
 - 密钥继续由环境变量管理，Profile 仅保存凭证引用，公共投影不泄漏连接秘密。
 
-后续分别起草并按进入门实现：唯一 owner 的有界 retry（含 Retry-After、取消和流式重放安全）、
-显式允许的 fallback 候选链、真实消费者拉动的新协议 Adapter。智能路由先与固定模型／确定性规则
-进行配对 Eval，质量、费用、延迟与失败策略明确后才考虑人工晋升；不默认接入黑盒自动选模。
+唯一 owner 的有界 retry 已交付，覆盖 Retry-After、取消、流式重放安全、attempt 观测与离线故障序列
+Replay。后续分别按进入门实现：显式允许的 fallback 候选链、真实消费者拉动的新协议 Adapter。智能路由
+先与固定模型／确定性规则进行配对 Eval，质量、费用、延迟与失败策略明确后才考虑人工晋升；不默认接入
+黑盒自动选模。
 具体 PRD、tickets 与两轨协作状态从 `.scratch/CURRENT.md` 进入。
 
 ### P6：Voice Interview 的 TTS 阶段

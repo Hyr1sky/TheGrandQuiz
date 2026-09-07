@@ -14,19 +14,17 @@ import asyncio
 from grandquiz.kernel.context import ContextBudgetStatus, ContextBuilder
 from grandquiz.kernel.events import EventEmitter, EventType
 from grandquiz.kernel.hooks import HookManager, HookVeto
-from grandquiz.kernel.model_events import model_failure_event_payload, model_identity_event_payload
+from grandquiz.kernel.model_execution import complete_model_call, stream_model_call
 from grandquiz.kernel.recovery import Decision, RecoveryPolicy
 from grandquiz.kernel.tools import ToolContext, ToolRegistry
 from grandquiz.providers.base import (
     Completion,
     Message,
     Model,
-    ProviderStreamProtocolError,
     StreamingModel,
     TextDelta,
     ToolCall,
 )
-from grandquiz.providers.failure import provider_failure_payload
 
 _TOOL_CALL_HOOK = "tool_call"
 _STREAM_DELTA_BATCH_CHARS = 48
@@ -112,47 +110,18 @@ class Runner:
 
         # 历史只在成功后提交：失败不留孤儿 user 消息，否则重试会喂给 LLM 两条连续 user。
         call_messages = [*self._messages(), Message(role="user", content=user_message)]
-        model_span = self._emitter.new_span_id()
-        self._emitter.emit(
-            EventType.MODEL_STARTED,
-            span_id=model_span,
-            parent_span_id=turn_span,
-            payload={
-                "messages": [m.model_dump() for m in call_messages],
-                "prompt_version": self._prompt_version,
-                **model_identity_event_payload(self._provider),
-            },
-        )
         try:
-            completion: Completion = await self._provider.complete(call_messages)
-        except Exception as exc:
-            # 错误也要闭合 model span（started/ended 成对不变量）：ERROR 是一等信号，
-            # MODEL_ENDED(ok=False) 封口，否则 TraceStore 会拿到永远开着的 span。
-            self._emitter.emit(
-                EventType.ERROR,
-                span_id=model_span,
+            completion = await complete_model_call(
+                model=self._provider,
+                messages=call_messages,
+                emitter=self._emitter,
                 parent_span_id=turn_span,
-                payload={"error": repr(exc), **provider_failure_payload(exc)},
+                prompt_version=self._prompt_version,
+                emit_error_event=True,
             )
-            self._emitter.emit(
-                EventType.MODEL_ENDED,
-                span_id=model_span,
-                parent_span_id=turn_span,
-                payload=model_failure_event_payload(exc),
-            )
+        except Exception:
             self._emitter.emit(EventType.TURN_ENDED, span_id=turn_span, payload={"ok": False})
             raise
-
-        self._emitter.emit(
-            EventType.MODEL_ENDED,
-            span_id=model_span,
-            parent_span_id=turn_span,
-            payload={
-                "ok": True,
-                "output": completion.text,
-                "usage": completion.usage.model_dump(),
-            },
-        )
         # 跨轮裁剪（架构约束）：历史只保留每轮最终 assistant 回答——M1 无工具中间步，故平凡。
         self._history.append(Message(role="user", content=user_message))
         self._history.append(Message(role="assistant", content=completion.text))
@@ -302,112 +271,62 @@ class Runner:
         模型只能用文本"扮演"调工具（dogfood 的 11 agent_turn / 0 tool_call 根因）。Runner 不选择
         Profile 或厂商；若 Model 携带执行身份，则随 MODEL_STARTED 记录。
         """
-        model_span = self._emitter.new_span_id()
-        self._emitter.emit(
-            EventType.MODEL_STARTED,
-            span_id=model_span,
-            parent_span_id=parent_span_id,
-            payload={
-                "messages": [m.model_dump() for m in call_messages],
-                "prompt_version": self._prompt_version,
-                **model_identity_event_payload(model),
-            },
-        )
-        try:
-            tools = self._tools.tool_specs()
-            if isinstance(model, StreamingModel):
-                text_parts: list[str] = []
-                pending_delta_parts: list[str] = []
-                pending_delta_chars = 0
-                first_delta_emitted = False
-                completion: Completion | None = None
+        tools = self._tools.tool_specs()
+        if isinstance(model, StreamingModel):
+            pending_delta_parts: list[str] = []
+            pending_delta_chars = 0
+            first_delta_emitted = False
 
-                def emit_delta(text: str) -> None:
-                    self._emitter.emit(
-                        EventType.MODEL_OUTPUT_DELTA,
-                        span_id=model_span,
-                        parent_span_id=parent_span_id,
-                        payload={"text": text},
-                    )
-
-                async for stream_event in model.stream_complete(
-                    call_messages,
-                    tools=tools,
-                ):
-                    if isinstance(stream_event, TextDelta):
-                        if completion is not None:
-                            raise ProviderStreamProtocolError(
-                                "CompletionFinished 之后仍收到文本增量"
-                            )
-                        if stream_event.text:
-                            text_parts.append(stream_event.text)
-                            if not first_delta_emitted:
-                                emit_delta(stream_event.text)
-                                first_delta_emitted = True
-                            else:
-                                pending_delta_parts.append(stream_event.text)
-                                pending_delta_chars += len(stream_event.text)
-                                if pending_delta_chars >= _STREAM_DELTA_BATCH_CHARS:
-                                    emit_delta("".join(pending_delta_parts))
-                                    pending_delta_parts.clear()
-                                    pending_delta_chars = 0
-                    else:
-                        if completion is not None:
-                            raise ProviderStreamProtocolError("一次流包含多个 CompletionFinished")
-                        if pending_delta_parts:
-                            emit_delta("".join(pending_delta_parts))
-                            pending_delta_parts.clear()
-                            pending_delta_chars = 0
-                        completion = stream_event.completion
-                if completion is None:
-                    raise ProviderStreamProtocolError("Provider stream 缺少 CompletionFinished")
-                if "".join(text_parts) != completion.text:
-                    raise ProviderStreamProtocolError("文本增量与最终 Completion.text 不一致")
-            else:
-                completion = await model.complete(
-                    call_messages,
-                    tools=tools,
+            def emit_delta(text: str, model_span: str) -> None:
+                self._emitter.emit(
+                    EventType.MODEL_OUTPUT_DELTA,
+                    span_id=model_span,
+                    parent_span_id=parent_span_id,
+                    payload={"text": text},
                 )
-        except asyncio.CancelledError:
-            self._emitter.emit(
-                EventType.MODEL_ENDED,
-                span_id=model_span,
+
+            def observe_delta(event: TextDelta, model_span: str) -> None:
+                nonlocal pending_delta_chars, first_delta_emitted
+                if not event.text:
+                    return
+                if not first_delta_emitted:
+                    emit_delta(event.text, model_span)
+                    first_delta_emitted = True
+                    return
+                pending_delta_parts.append(event.text)
+                pending_delta_chars += len(event.text)
+                if pending_delta_chars >= _STREAM_DELTA_BATCH_CHARS:
+                    emit_delta("".join(pending_delta_parts), model_span)
+                    pending_delta_parts.clear()
+                    pending_delta_chars = 0
+
+            def flush_deltas(model_span: str) -> None:
+                nonlocal pending_delta_chars
+                if pending_delta_parts:
+                    emit_delta("".join(pending_delta_parts), model_span)
+                    pending_delta_parts.clear()
+                    pending_delta_chars = 0
+
+            return await stream_model_call(
+                model=model,
+                messages=call_messages,
+                tools=tools,
+                emitter=self._emitter,
                 parent_span_id=parent_span_id,
-                payload={
-                    "ok": False,
-                    "cancelled": True,
-                    "status": "cancelled",
-                },
+                prompt_version=self._prompt_version,
+                emit_error_event=True,
+                on_text_delta=observe_delta,
+                on_stream_finished=flush_deltas,
             )
-            raise
-        except Exception as exc:
-            self._emitter.emit(
-                EventType.ERROR,
-                span_id=model_span,
-                parent_span_id=parent_span_id,
-                payload={"error": repr(exc), **provider_failure_payload(exc)},
-            )
-            self._emitter.emit(
-                EventType.MODEL_ENDED,
-                span_id=model_span,
-                parent_span_id=parent_span_id,
-                payload=model_failure_event_payload(exc),
-            )
-            raise
-        output: dict[str, object] = {
-            "ok": True,
-            "output": completion.text,
-            "usage": completion.usage.model_dump(),
-        }
-        if completion.tool_calls is not None:
-            output["tool_calls"] = [tc.model_dump() for tc in completion.tool_calls]
-        self._emitter.emit(
-            EventType.MODEL_ENDED,
-            span_id=model_span,
+        return await complete_model_call(
+            model=model,
+            messages=call_messages,
+            tools=tools,
+            emitter=self._emitter,
             parent_span_id=parent_span_id,
-            payload=output,
+            prompt_version=self._prompt_version,
+            emit_error_event=True,
         )
-        return completion
 
     async def _execute_tool_call(
         self, tool_call: ToolCall, *, parent_span_id: str, recovery: RecoveryPolicy

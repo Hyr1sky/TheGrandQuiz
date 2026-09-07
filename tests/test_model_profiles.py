@@ -117,6 +117,33 @@ def test_explicit_selection_distinguishes_unsupported_from_unknown_capability(
 def test_default_binding_keeps_legacy_unknown_capabilities_compatible() -> None:
     config = parse_model_config(CONFIG, purposes={"chat", "question_generation"})
     assert config.resolve("chat").profile.model == "test-model"
+    assert config.retry_policy.max_attempts == 3
+
+
+def test_retry_policy_is_validated_as_part_of_model_configuration() -> None:
+    config = parse_model_config(
+        CONFIG
+        + """
+[retry]
+max_attempts = 4
+deadline_seconds = 45.0
+base_delay_seconds = 1.0
+max_delay_seconds = 6.0
+max_total_wait_seconds = 15.0
+jitter_ratio = 0.1
+""",
+        purposes={"chat", "question_generation"},
+    )
+
+    assert config.retry_policy.max_attempts == 4
+    assert config.retry_policy.deadline_seconds == 45.0
+    assert config.retry_policy.fingerprint != ""
+
+    with pytest.raises(ModelConfigurationError):
+        parse_model_config(
+            CONFIG + "\n[retry]\nmax_attempts = 0\n",
+            purposes={"chat", "question_generation"},
+        )
 
 
 @pytest.mark.parametrize(

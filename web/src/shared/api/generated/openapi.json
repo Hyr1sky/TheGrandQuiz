@@ -4442,6 +4442,28 @@
             "title": "Category",
             "type": "string"
           },
+          "replay_safe": {
+            "default": true,
+            "title": "Replay Safe",
+            "type": "boolean"
+          },
+          "response_started": {
+            "default": false,
+            "title": "Response Started",
+            "type": "boolean"
+          },
+          "retry_after_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After Seconds"
+          },
           "retryable": {
             "title": "Retryable",
             "type": "boolean"
@@ -4465,6 +4487,56 @@
           "retryable"
         ],
         "title": "SafeProviderFailureV1",
+        "type": "object"
+      },
+      "SafeProviderRetryDecisionV1": {
+        "properties": {
+          "action": {
+            "enum": [
+              "retry",
+              "stop"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "attempt": {
+            "minimum": 1.0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "delay_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delay Seconds"
+          },
+          "reason": {
+            "enum": [
+              "retry_disabled",
+              "non_retryable",
+              "replay_unsafe",
+              "attempt_limit",
+              "wait_budget_exhausted",
+              "deadline_exhausted",
+              "transient_failure",
+              "invalid_retry_after"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt",
+          "action",
+          "reason"
+        ],
+        "title": "SafeProviderRetryDecisionV1",
         "type": "object"
       },
       "SafeTraceEventV1": {
@@ -4559,6 +4631,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/SafeProviderFailureV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider_retry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SafeProviderRetryDecisionV1"
               },
               {
                 "type": "null"

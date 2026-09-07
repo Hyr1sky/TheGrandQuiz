@@ -21,8 +21,8 @@ from grandquiz.domain.learning.assessment.question import MultipleChoiceQuestion
 from grandquiz.domain.learning.assessment.workflow import GRADE_ANSWER
 from grandquiz.domain.learning.models import CitedEvidence, ungrounded_citations
 from grandquiz.domain.learning.prompts import load_prompt
-from grandquiz.kernel.events import EventEmitter, EventType
-from grandquiz.kernel.model_events import model_failure_event_payload, model_identity_event_payload
+from grandquiz.kernel.events import EventEmitter
+from grandquiz.kernel.model_execution import complete_model_call
 from grandquiz.kernel.recovery import ErrorClass
 from grandquiz.providers.base import Completion, Message
 from grandquiz.providers.models import ModelSource, bind_model
@@ -361,40 +361,14 @@ async def _call_model(
 ) -> Completion:
     # 照 reader._call_model：一对 MODEL_STARTED / MODEL_ENDED 共享 span_id；用途是 answer_grading。
     model = bind_model(provider, "answer_grading")
-    span_id = emitter.new_span_id()
-    emitter.emit(
-        EventType.MODEL_STARTED,
-        span_id=span_id,
+    return await complete_model_call(
+        model=model,
+        messages=messages,
+        emitter=emitter,
         parent_span_id=parent_span_id,
-        payload={
-            "messages": [m.model_dump() for m in messages],
-            "prompt_version": prompt_version,
-            **model_identity_event_payload(model),
-            "node_id": GRADE_ANSWER,
-        },
+        prompt_version=prompt_version,
+        context={"node_id": GRADE_ANSWER},
     )
-    try:
-        completion = await model.complete(messages)
-    except Exception as exc:
-        emitter.emit(
-            EventType.MODEL_ENDED,
-            span_id=span_id,
-            parent_span_id=parent_span_id,
-            payload=model_failure_event_payload(exc, node_id=GRADE_ANSWER),
-        )
-        raise
-    emitter.emit(
-        EventType.MODEL_ENDED,
-        span_id=span_id,
-        parent_span_id=parent_span_id,
-        payload={
-            "ok": True,
-            "output": completion.text,
-            "usage": completion.usage.model_dump(),
-            "node_id": GRADE_ANSWER,
-        },
-    )
-    return completion
 
 
 def _parse(

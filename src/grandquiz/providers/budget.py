@@ -24,6 +24,7 @@ from grandquiz.providers.models import (
     bind_model,
     identities_of,
     identity_of,
+    retry_runtime_of,
     select_model,
     selection_options_of,
 )
@@ -33,6 +34,7 @@ from grandquiz.providers.profiles import (
     ModelSelection,
     ModelSelectionOption,
 )
+from grandquiz.providers.retry import RetryRuntime
 
 
 class TokenEstimator(Protocol):
@@ -62,6 +64,10 @@ class BudgetedModel:
     @property
     def identity(self) -> ModelIdentity | None:
         return identity_of(self.inner)
+
+    @property
+    def retry_runtime(self) -> RetryRuntime | None:
+        return retry_runtime_of(self.inner)
 
     async def complete(
         self,

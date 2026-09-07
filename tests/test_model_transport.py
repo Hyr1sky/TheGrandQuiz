@@ -11,7 +11,7 @@ import grandquiz.providers.llm as llm_module
 from grandquiz.providers.base import Message
 from grandquiz.providers.failure import ProviderFailure
 from grandquiz.providers.llm import ChatModelConfig, OpenAIChatModel
-from grandquiz.providers.models import ModelRuntime, identity_of, select_model
+from grandquiz.providers.models import ModelRuntime, identity_of, retry_runtime_of, select_model
 from grandquiz.providers.profiles import (
     ModelConfigurationError,
     ModelRequestRequirements,
@@ -143,6 +143,10 @@ async def test_bound_purposes_send_their_selected_model_and_keep_configuration_f
         assert runtime.bindings.identity_for("question_generation") == config.identity_for(
             "question_generation"
         )
+        assert retry_runtime_of(writer) is runtime.bindings.retry_runtime
+        assert retry_runtime_of(grader) is runtime.bindings.retry_runtime
+        assert runtime.bindings.retry_runtime is not None
+        assert runtime.bindings.retry_runtime.policy == config.retry_policy
         with pytest.raises(ModelConfigurationError):
             runtime.bindings.for_purpose("unknown")
     finally:

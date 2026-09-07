@@ -26,12 +26,14 @@ from grandquiz.providers.profiles import (
     ModelSelectionOption,
     ResolvedProfile,
 )
+from grandquiz.providers.retry import RetryRuntime
 
 
 @dataclass(frozen=True)
 class BoundModel:
     inner: Model
     identity: ModelIdentity
+    retry_runtime: RetryRuntime | None = None
 
     async def complete(
         self,
@@ -66,6 +68,10 @@ class CompletionAsStreamModel:
     def identity(self) -> ModelIdentity | None:
         return identity_of(self.inner)
 
+    @property
+    def retry_runtime(self) -> RetryRuntime | None:
+        return retry_runtime_of(self.inner)
+
     async def complete(
         self,
         messages: Sequence[Message],
@@ -91,10 +97,15 @@ def as_streaming_model(model: Model) -> StreamingModel:
     return model if isinstance(model, StreamingModel) else CompletionAsStreamModel(model)
 
 
-def with_identity(model: Model, identity: ModelIdentity) -> BoundModel:
+def with_identity(
+    model: Model,
+    identity: ModelIdentity,
+    *,
+    retry_runtime: RetryRuntime | None = None,
+) -> BoundModel:
     if isinstance(model, StreamingModel):
-        return _BoundStreamingModel(model, identity)
-    return BoundModel(model, identity)
+        return _BoundStreamingModel(model, identity, retry_runtime)
+    return BoundModel(model, identity, retry_runtime)
 
 
 @dataclass(frozen=True)
@@ -104,6 +115,7 @@ class ModelBindings:
     models: tuple[tuple[str, Model], ...]
     configuration: ModelConfiguration | None = None
     profile_models: tuple[tuple[str, Model], ...] = ()
+    retry_runtime: RetryRuntime | None = None
 
     def for_purpose(self, purpose: str) -> Model:
         for name, model in self.models:
@@ -146,7 +158,11 @@ class ModelBindings:
         )
         if model is None:
             raise ModelSelectionError("unknown_profile")
-        return with_identity(model, configuration.identity_for_resolved(resolved))
+        return with_identity(
+            model,
+            configuration.identity_for_resolved(resolved),
+            retry_runtime=self.retry_runtime,
+        )
 
     def selection_options(self, purpose: str) -> tuple[ModelSelectionOption, ...]:
         configuration = self.configuration
@@ -236,6 +252,11 @@ def identity_of(model: Model) -> ModelIdentity | None:
     return identity if isinstance(identity, ModelIdentity) else None
 
 
+def retry_runtime_of(model: Model) -> RetryRuntime | None:
+    runtime = getattr(model, "retry_runtime", None)
+    return runtime if isinstance(runtime, RetryRuntime) else None
+
+
 def identities_of(source: ModelSource) -> tuple[ModelIdentity, ...]:
     if isinstance(source, ModelIdentitySource):
         return source.model_identities()
@@ -258,7 +279,13 @@ class ModelRuntime:
         config: ModelConfiguration,
         *,
         environment: Mapping[str, str],
+        retry_runtime: RetryRuntime | None = None,
+        retry_seed: int | None = None,
     ) -> "ModelRuntime":
+        active_retry_runtime = retry_runtime or RetryRuntime.production(
+            config.retry_policy,
+            seed=retry_seed,
+        )
         credentials: dict[str, str] = {}
         configured_profiles = tuple(
             (profile, connection) for _, profile, connection in config.profile_catalog
@@ -343,6 +370,7 @@ class ModelRuntime:
                     with_identity(
                         raw_model,
                         config.identity_for(binding.purpose),
+                        retry_runtime=active_retry_runtime,
                     ),
                 )
             )
@@ -351,6 +379,7 @@ class ModelRuntime:
                 tuple(models),
                 configuration=config if config.profile_catalog else None,
                 profile_models=tuple(profile_models),
+                retry_runtime=active_retry_runtime,
             ),
             tuple(transports.values()),
         )

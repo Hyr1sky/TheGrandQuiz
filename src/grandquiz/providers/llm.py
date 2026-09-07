@@ -53,6 +53,8 @@ from grandquiz.providers.base import (
 from grandquiz.providers.failure import (
     ProviderFailure,
     ProviderFailureCategory,
+    RetryAfter,
+    parse_retry_after,
     safe_provider_code,
 )
 from grandquiz.providers.legacy import LegacyPurposeProvider
@@ -111,8 +113,22 @@ def _is_quota_exhausted(exc: APIError, provider_code: str | None) -> bool:
     return isinstance(message, str) and "free quota exhausted" in message.casefold()
 
 
-def _normalize_openai_failure(exc: APIError) -> ProviderFailure:
+def _retry_after(exc: APIError) -> RetryAfter:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if not isinstance(headers, Mapping):
+        return RetryAfter()
+    value = cast("Mapping[str, object]", headers).get("retry-after")
+    return RetryAfter() if value is None else parse_retry_after(value)
+
+
+def _normalize_openai_failure(
+    exc: APIError,
+    *,
+    response_started: bool = False,
+) -> ProviderFailure:
     provider_code = _provider_code(exc)
+    retry_after = _retry_after(exc)
     status_code = getattr(exc, "status_code", None)
     status = status_code if isinstance(status_code, int) else None
 
@@ -154,6 +170,11 @@ def _normalize_openai_failure(exc: APIError) -> ProviderFailure:
         status_code=status,
         provider_code=provider_code,
         retryable=retryable,
+        retry_after_seconds=retry_after.seconds,
+        retry_after_at=retry_after.utc_timestamp,
+        retry_after_invalid=retry_after.invalid,
+        response_started=response_started,
+        replay_safe=not response_started,
     )
 
 
@@ -563,8 +584,10 @@ class OpenAIChatModel:
         completion_tokens = 0
 
         primary_error: BaseException | None = None
+        response_started = False
         try:
             async for chunk in stream:
+                response_started = True
                 chunk_usage = getattr(chunk, "usage", None)
                 if chunk_usage is not None:
                     prompt_tokens = int(getattr(chunk_usage, "prompt_tokens", 0))
@@ -604,7 +627,7 @@ class OpenAIChatModel:
                         fragment["arguments"] += str(arguments)
         except APIError as exc:
             primary_error = exc
-            raise _normalize_openai_failure(exc) from exc
+            raise _normalize_openai_failure(exc, response_started=response_started) from exc
         except BaseException as exc:
             primary_error = exc
             raise

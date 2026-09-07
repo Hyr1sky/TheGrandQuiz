@@ -37,8 +37,8 @@ ProviderFailure 已统一外部错误，但“为什么选这个模型、实际�
 业务代码不再关心厂商请求格式；新增协议只需提供同一 Model Interface 的 Adapter。配置错误在网络前
 大声失败，厂商错误继续统一为 ProviderFailure。当前设置、历史事实、Replay 和 Eval 使用同一冻结身份。
 
-代价是启动装配需要注册全部用途，新 cassette/Subject 需要版本化，旧数据只能显示不完整身份。用户级
-选模、能力预检、retry 与 fallback 仍是后续工作，不能从 Profile 存在推断为已经支持。
+代价是启动装配需要注册全部用途，新 cassette/Subject 需要版本化，旧数据只能显示不完整身份。不能从
+Profile 存在推断用户选模、能力、retry 或 fallback 已天然具备；它们必须分别定义。
 
-用户显式选模与能力预检已由 [ADR-0014](0014-explicit-model-selection-and-capability-gating.md) 后续补充；
-retry 与 fallback 仍不由本决策定义。
+用户显式选模与能力预检已由 [ADR-0014](0014-explicit-model-selection-and-capability-gating.md) 补充，传输
+retry 由 [ADR-0015](0015-application-owned-provider-retry.md) 定义；fallback 仍不由本决策定义。
