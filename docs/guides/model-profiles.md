@@ -27,6 +27,17 @@ ANTHROPIC_API_KEY=...
 一旦指定文件，文件就是唯一配置来源，不会与 `LLM_*` 或 `ENRICH_LLM_*` 拼接。修改文件后需重启
 进程；本阶段不支持热更新。
 
+## 模型列表与下拉框
+
+当前 Web 下拉框展示的是配置文件 `[profiles]` 中允许本应用使用的 Profile ID，以及可选的 fast／quality
+预设；它不会拿 API Key 调厂商接口自动导入全部模型。只配置 `.env` 的 legacy 入口时没有可选目录，仍由
+`LLM_MODEL` 指定唯一模型；需要下拉选择时应启用 `GRANDQUIZ_MODEL_CONFIG` 并在 TOML 中列出 Profile。
+
+这是一条有意保守的边界：厂商“模型列表”通常只能证明名称可见，不能统一证明 tools、原生 streaming、
+上下文／输出上限、reasoning、价格或当前账号权限。DeepSeek 的 OpenAI-compatible `/models` 只提供基本
+模型身份；百炼另有按地域／Workspace 查询且元数据更丰富的目录接口。未来若加入自动发现，它应先生成
+待确认候选，再由用户补齐或确认能力与用途，不能直接变成已授权 fallback／路由集合。
+
 ## 显式选择与预设
 
 Profile 可以额外声明 `tools`、`native_streaming`、`structured_output`、`reasoning` 四项能力，

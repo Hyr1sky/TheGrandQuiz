@@ -24,26 +24,28 @@ native_streaming = "supported"
 structured_output = "unknown"
 reasoning = "unsupported"
 
-# Optional independent question-generation model.
-[connections.writer]
-base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-api_key_env = "DASHSCOPE_MODEL_KEY"
-wire_api = "openai_chat_completions"
-
-[profiles.writer]
-connection = "writer"
-model = "qwen-plus"
-timeout_seconds = 60
-api_dialect = "dashscope"
-thinking_mode = "disabled"
-context_window_tokens = 32000
-max_output_tokens = 4096
-
-[profiles.writer.capabilities]
-tools = "supported"
-native_streaming = "supported"
-structured_output = "unknown"
-reasoning = "unknown"
+# Optional independent question-generation model. Uncomment this complete block,
+# its purpose override, and the quality preset together.
+#
+# [connections.writer]
+# base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+# api_key_env = "DASHSCOPE_MODEL_KEY"
+# wire_api = "openai_chat_completions"
+#
+# [profiles.writer]
+# connection = "writer"
+# model = "qwen-plus"
+# timeout_seconds = 60
+# api_dialect = "dashscope"
+# thinking_mode = "disabled"
+# context_window_tokens = 32000
+# max_output_tokens = 4096
+#
+# [profiles.writer.capabilities]
+# tools = "supported"
+# native_streaming = "supported"
+# structured_output = "unknown"
+# reasoning = "unknown"
 
 # Optional native Anthropic Messages profile. Uncomment the complete connection,
 # profile, capabilities, and a purpose/preset reference together. max_output_tokens
@@ -68,14 +70,14 @@ reasoning = "unknown"
 # structured_output = "unknown"
 # reasoning = "unsupported"
 
-[purpose_overrides]
-question_generation = "writer"
+# [purpose_overrides]
+# question_generation = "writer"
 
 # Optional deterministic aliases for an explicit Chat/CLI choice. These labels
 # do not benchmark or automatically route a model.
 [presets]
 fast = "shared"
-quality = "writer"
+# quality = "writer"
 
 # Optional application-owned transport retry policy. max_attempts includes the
 # initial request. The OpenAI SDK's hidden retry loop remains disabled.
