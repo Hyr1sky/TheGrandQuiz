@@ -100,10 +100,25 @@ concept_key 或其他跨资源归并方案。证据带结构定位符（section_
 ADR-0008 的 DocumentNode 文档结构树。
 _Avoid_: 知识点卡片、笔记
 
-**Assessment Mode**（规划中）:
-考核怎样组织知识范围的策略：`atomic` 只考一个 KnowledgeItem，`composite` 沿已验证关系联合多个 item，
-`exploratory`（产品文案可称“混沌模式”）允许提出本地知识图之外的问题。它与题型、难度和输入方式正交。
-_Avoid_: 用 temperature 定义模式、把复合模式称为批量出卷、把 exploratory 理解成无约束随机提问
+**Assessment Mode**:
+一次考核允许依赖哪一层知识范围、哪些结果有资格进入正式学习记账的策略：`atomic` 只依赖一个
+KnowledgeItem，`composite` 要求多个 item 的 Evidence 都是作答必要条件，`exploratory` 明确隔离材料外主张。
+它与题型、难度和输入方式正交。
+_Avoid_: 用 temperature 定义模式、按题面出现的概念数量判定模式、把复合模式称为批量出卷、把 exploratory 理解成无约束随机提问
+
+**Assessment Claim**（实验中）:
+一次作答希望支持或反驳的有界学习推断；它先于题干存在，并明确关联目标 KnowledgeItem，而不是复述整段摘要。
+_Avoid_: 题干、参考答案、KnowledgeItem summary、模型自由发挥的考察主题
+
+**Evidence Affordance**（实验中）:
+本轮允许使用的 Evidence 实际能够支持的最高任务形态，例如释义、区分、应用或跨 item 综合；Evidence
+不足时应换任务、换题型或拒绝出题。
+_Avoid_: Evidence 数量、题目难度分数、生成后由 Judge 补写的合理化说明
+
+**Item Design Target**（实验中）:
+模型生成题目之前冻结的命题意图，把 Assessment Claim、Assessment Mode、认知任务、题型与允许 Evidence
+连成一个可审查目标。
+_Avoid_: QuestionSpec、Prompt、生成模型输出、为每个字段预建生产表
 
 **Knowledge Relation Assertion**（实验候选）:
 一条带来源、Evidence、置信度和裁决状态的 KnowledgeItem 间语义关系主张；历史主张可以保留，但只有当前
