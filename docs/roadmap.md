@@ -135,7 +135,10 @@ ProviderFailure 与安全投影是共同基座；后续控制面改造不再纳�
 发现厂商，只恢复尚未完成且可安全重放的单次模型请求。原生 Anthropic Messages Adapter 已由现有
 Chat/Runner 消费者拉动交付，支持文本、client tools、完整／流式响应与 typed failure；thinking、服务端
 工具和 continuation 不会被静默丢弃。智能路由先与固定模型／确定性规则进行配对 Eval，质量、费用、延迟
-与失败策略明确后才考虑人工晋升；不默认接入黑盒自动选模。
+与失败策略明确后才考虑人工晋升；不默认接入黑盒自动选模。Provider-neutral 的 PCP-07A 离线评测基座
+已由公开预计算结果拉动，位于 `evals/` 而非生产 Provider 请求路径；它只交付配对数据、来源隔离、
+固定／种子随机／Oracle 基线和分维度报告，不代表已批准真实消费者、自动路由、双 Profile 付费采集
+或线上策略。
 具体 PRD、tickets 与两轨协作状态从 `.scratch/CURRENT.md` 进入。
 
 ### P6：Voice Interview 的 TTS 阶段

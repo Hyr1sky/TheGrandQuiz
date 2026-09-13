@@ -100,11 +100,18 @@ src/grandquiz/
 └── evals/
     ├── cases/               # 用例 DSL（YAML）
     ├── graders/             # 规则断言 + LLM judge
+    ├── routing.py           # Provider-neutral 离线路由数据契约、基线与报告
+    ├── routing_dataset.py   # 公开预计算结果 Reader；不参与生产请求
     ├── solvers.py           # per-kind 确定性执行 Adapter
     ├── runner.py            # Tier-1 / Tier-2 suite policy
     ├── reporting.py         # 文本与自包含 HTML 投影
     └── harness.py           # 稳定兼容 facade
 ```
+
+离线路由评测属于 `evals/`，不属于厂商传输路径：它读取已经产生的候选 outcome，只把调用前可见的
+`RoutingRequest` 交给待评策略，并分别报告质量、成本、token、延迟和失败。LLMRouterBench 导入器是
+数据 Reader，不是 OpenAI／Anthropic 协议 Adapter。质量 Oracle 只能作为事后上限；它看到真实 outcome，
+因此永远不能进入生产选择接口。
 
 ### 模型执行边界
 

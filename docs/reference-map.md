@@ -15,6 +15,7 @@
 | [pydantic/pydantic-ai](https://github.com/pydantic/pydantic-ai) | 类型驱动的工具签名与结构化输出校验重试；Provider／Model／Profile 边界和传输 failure 与模型修复 retry 的区分；`pydantic-evals` 的 case/dataset 组织 |
 | [earendil-works/pi](https://github.com/earendil-works/pi) | Provider、wire API 与 Model 三个维度分离；统一 stream event 和包含 Retry-After 的有界 Provider retry |
 | [BerriAI/litellm](https://github.com/BerriAI/litellm) | 异常类别、模型能力 schema，以及“候选选择策略”和“失败后 fallback”分离；仅作边界参考，不引入其全局模型目录或 Router |
+| [ynulihao/LLMRouterBench](https://github.com/ynulihao/LLMRouterBench) | PCP-07A 公开预计算结果的逐请求 score/token/cost 字段与固定候选、随机、Oracle 比较思路；本仓库只实现严格 Dataset Reader 和 Provider-neutral 离线报告，不引入其 Collector、Router 实现或完整数据包 |
 | [VectifyAI/PageIndex](https://github.com/VectifyAI/PageIndex) | 层级树作为检索入口，“读大纲 → 选择分支 → 展开自然章节”的 vectorless Agentic Search；节点标题、摘要、顺序与 source range 共同服务可解释导航。借鉴检索行为，不照搬实现或“完全不分块”的宣传口径——超大自然节点仍须在代码预算内按段落生成 synthetic children |
 | [abhigyanpatwari/GitNexus](https://github.com/abhigyanpatwari/GitNexus) | 先确定性抽取结构节点/边，再把图变成 context、impact、trace 等查询能力；借鉴“结构图是查询基座而非可视化摆设”。代码 AST 图不直接类比散文语义图，我们只把确定性的 document hierarchy 放在高信任层 |
 | [Ontos-AI/knowhere](https://github.com/Ontos-AI/knowhere) | 保留 section hierarchy、跨文档关系与 evidence-based citation；规则式实体/关键词重叠可作为二期 concept_key 候选配方。**不要带过来**：重运行时（Postgres/Redis/S3/worker/FastAPI monorepo）、向量库、GraphRAG 式实体抽取 + 社区检测、MinerU/VLM 多模态栈、大规模跨文档图导航 |

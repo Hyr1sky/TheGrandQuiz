@@ -159,3 +159,17 @@ failure/success attempt 序列。候选顺序、fallback policy 与共享 retry 
 仍按自己的 ModelIdentity 分键，因此离线回放会复现已冻结的切换而不是重新发现模型。用途、配置或工具变化
 都会明确 miss；v3 成功录制继续只读兼容，旧 v1/v2 cassette 只经 legacy reader 读取，新键 miss 不会
 偷偷回退旧键。
+
+## 离线路由评测不是生产路由
+
+PCP-07A 的通用数据与基线实现位于 `grandquiz.evals`。它读取公开或消费者投影的预计算候选 outcome，
+只把调用前可见的请求文本与通用特征交给待评策略；质量定义仍由数据生产者／真实消费者提供。报告保留
+质量、成本、token、延迟和失败的独立维度，未知成本或失败 usage 不会被补成零。
+
+公开结果导入模块称为 Dataset Reader／Importer：它把外部文件变成 `RoutingDataset`，不翻译真实厂商
+请求。OpenAI-compatible 与 Anthropic Messages 才是协议 Adapter。固定候选和种子随机是生产候选的
+比较基线；质量 Oracle 会读取事后结果，只用于估计理论上限，不能实现或冒充在线 `RoutingPolicy`。
+
+因此当前仍没有 `auto` 选择。进入规则路由至少需要一个真实消费者、两个明确授权且能力可比的 Profile、
+版本化质量 rubric、来源隔离的项目内配对数据，以及在未调参数据上胜过固定／随机基线的证据。详见
+[Provider 路由离线评测指南](provider-routing-evaluation.md)。
