@@ -32,6 +32,7 @@ QUESTION_ASKED + ANSWER_JUDGED
 | `AskedQuestionsLedger` | 避免跨会话机械重复 | 与薄弱状态、难度分别演化 |
 | `AssessmentPlan` | 把多题请求规范化为逐位置题型意图 | 1–20 题；顺序不可丢；所有 interface 共用 |
 | `QuestionSpec` | 保存单道开放题的题干、评分点、预注册核心点、参考作答与 Evidence | 每个评分点 ID 唯一且锚定本题 Evidence；critical ID 必须引用已有评分点；Grader 不读取题外 rubric |
+| `AssessmentClaim / ItemDesignTarget` | 在生成前表达本题要形成的学习推断与命题意图 | 当前只用于 Prototype；通过 Eval 前不进入 migration、OpenAPI 或正式 Attempt |
 | `RecognitionLexicon` | 保存某个获批 revision 的语音识别术语投影 | 内容寻址、可重建；不向 KnowledgeItem 反写 ASR 字段 |
 | `TranscriptionHints` | 冻结一次 VoiceRun 使用的有限术语选择 | 只来自当前 Assessment item 范围；不成为长期知识事实 |
 | `VoiceRun` | 管理完整录音转写到可审查草稿的应用状态 | 草稿不是答案；只有用户确认后才进入唯一 Assessment submission |
@@ -98,6 +99,46 @@ flowchart TB
 `TraceStore` 横跨所有运行阶段，但只负责完整审计；它不是长期学习事实的唯一存储。
 [ADR-0010](adr/0010-durable-learning-facts-separate-from-operational-trace.md) 固定了两个事件消费者的
 保留边界。
+
+### Assessment Mode 与命题边界
+
+Assessment Mode 决定题目允许依赖的知识范围以及答案后果能否进入正式学习记账；它不决定题面形式。
+`QuestionFormat`（multiple choice / open response）、`QuestionStrategy`（standard / probe）、Difficulty
+Mode 与 InputModality 都是正交维度。选择题可以是 atomic 或 composite，开放题也一样。
+
+| Mode | V1 允许范围 | 成立条件 | 正式学习后果 |
+| --- | --- | --- | --- |
+| `atomic` | 恰好一个 KnowledgeItem 及其 exact Evidence | 完整答案只依赖该 item；邻近 item 可以提供受控干扰项，但不能成为正确答案的必要证据 | 只允许更新目标 item |
+| `composite` | 恰好两个 KnowledgeItem、一条 accepted 当前关系及双边 Evidence | 删除任一 item 后都无法完整作答；每个 item 和关系均有可归属评分点 | 只接收经过验证的 item 级后果；首版不建立 RelationMemory |
+| `exploratory` | 本地 KnowledgeItem、LearnerProjection 与显式标记的材料外主张 | 本地事实、关系和外部主张可分别核验；不得把模型补充伪装成 approved Evidence | 仅本地 Evidence 支持的 item 后果可正式记账；其余进入 Frontier 候选 |
+
+模式按**作答必要证据**判定，而不是按题干或选项出现了几个概念判定。一个 atomic 选择题可以使用邻近概念
+构造干扰项；只要正确作答仍只需要目标 item，它就不是 composite。反之，即使题干只写一个短句，只要完整
+答案必须联合两个 item，它仍是 composite。
+
+Prototype 在生成前使用以下可丢弃契约验证这一边界：
+
+```text
+AssessmentClaimV0
+  description, target_item_ids, intended_inference
+
+ItemDesignTargetV0
+  claim, mode, cognitive_task
+  allowed_evidence_refs, evidence_affordance
+  requested_format, option_count_range?
+
+QuestionBuildOutcomeV0
+  ready | ready_degraded | reroute_required | failed
+```
+
+`EvidenceAffordance` 描述允许 Evidence 能诚实承载的任务形态，而不是一个质量分或永久分类。首轮实验只需
+区分 narrow proposition、definition/attributes、rule/conditions、process、contrast set、verified relation
+与 insufficient；同一 KnowledgeItem 在 Evidence scope 改变后可以得到不同 affordance。
+
+生成后的 Question Review 至少分开三个轴：硬合法性、题型适配度和软质量。结构错误、幽灵引文、多解等
+硬错误可以有界重试；题型不适配应 reroute；软质量不足可以标记或进入离线比较，不能无限重试直到另一个
+模型“认可”。这些 V0 名称只服务命题基线与 composite Prototype；只有配对 Eval 显示产品收益后，才决定
+哪些字段进入生产 `QuestionSpec`、事件或持久化契约。
 
 ### v0.5 的语音输入边界
 
