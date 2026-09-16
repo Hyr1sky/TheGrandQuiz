@@ -419,6 +419,29 @@ async def test_complete_maps_messages_and_response_and_disables_thinking(
     assert call["extra_body"] == {"thinking": {"type": "disabled"}}
 
 
+async def test_complete_enforces_the_configured_openai_output_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _patch_client(
+        monkeypatch, _FakeResponse("摘要", prompt_tokens=11, completion_tokens=3)
+    )
+    provider = OpenAICompatProvider(
+        {
+            "basic": RoleConfig(
+                api_key="k",
+                base_url="https://api.example.test/v1",
+                model="summary-model",
+                max_output_tokens=512,
+            )
+        }
+    )
+
+    await provider.complete([Message(role="user", content="hi")], role="basic")
+
+    call = captured["client"].chat.completions.calls[0]
+    assert call["max_tokens"] == 512
+
+
 async def test_complete_normalizes_provider_quota_failure_without_raw_response_leak(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

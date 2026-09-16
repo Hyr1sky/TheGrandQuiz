@@ -180,6 +180,30 @@ async def test_bound_purposes_send_their_selected_model_and_keep_configuration_f
         await runtime.aclose()
 
 
+async def test_profile_output_limit_reaches_the_openai_compatible_request(
+    wire: list[httpx.Request],
+) -> None:
+    config = parse_model_config(
+        PROFILE_CONFIG.replace(
+            "[profiles.shared]\n",
+            "[profiles.shared]\nmax_output_tokens = 512\n",
+        ),
+        purposes={"question_generation", "summarization"},
+    )
+    runtime = ModelRuntime.from_configuration(
+        config,
+        environment={"TEST_MODEL_KEY": "test-credential"},
+    )
+    try:
+        await runtime.bindings.for_purpose("summarization").complete(
+            [Message(role="user", content="summarize")]
+        )
+    finally:
+        await runtime.aclose()
+
+    assert json.loads(wire[0].content)["max_tokens"] == 512
+
+
 async def test_legacy_imported_binding_without_a_profile_catalog_still_allocates_transport(
     wire: list[httpx.Request],
 ) -> None:

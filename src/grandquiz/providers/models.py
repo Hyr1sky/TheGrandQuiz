@@ -381,6 +381,7 @@ class ModelRuntime:
                             base_url=base_url,
                             model=profile.model,
                             timeout_seconds=profile.timeout_seconds,
+                            max_output_tokens=profile.max_output_tokens,
                             api_dialect=profile.api_dialect,
                             thinking_mode=profile.thinking_mode,
                             reasoning_effort=profile.reasoning_effort,

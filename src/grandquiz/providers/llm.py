@@ -276,6 +276,7 @@ class ChatModelConfig:
     base_url: str
     model: str
     timeout_seconds: float = 60.0
+    max_output_tokens: int | None = None
     # OpenRouter BYOK 可选约束：指定后只允许该 provider，且禁用共享端点 fallback。
     only_provider: str | None = None
     api_dialect: ProviderDialect = "generic"
@@ -320,6 +321,7 @@ class _PreparedChatRequest:
     messages: list[ChatCompletionMessageParam]
     extra_body: dict[str, object] | None
     tools: list[ChatCompletionToolParam] | Omit
+    max_tokens: int | Omit
 
 
 def _read_role(
@@ -524,6 +526,7 @@ class OpenAIChatModel:
             messages=_to_oai_messages(messages),
             extra_body=extra_body or None,
             tools=_to_oai_tools(tools) if tools else omit,
+            max_tokens=config.max_output_tokens if config.max_output_tokens is not None else omit,
         )
 
     async def complete(
@@ -544,6 +547,7 @@ class OpenAIChatModel:
                 temperature=0,
                 extra_body=request.extra_body,
                 tools=request.tools,
+                max_tokens=request.max_tokens,
             )
         except APIError as exc:
             raise _normalize_openai_failure(exc) from exc
@@ -571,6 +575,7 @@ class OpenAIChatModel:
                 temperature=0,
                 extra_body=request.extra_body,
                 tools=request.tools,
+                max_tokens=request.max_tokens,
                 stream=True,
                 stream_options={"include_usage": True},
             )

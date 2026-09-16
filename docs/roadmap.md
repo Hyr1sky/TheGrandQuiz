@@ -138,7 +138,9 @@ Chat/Runner 消费者拉动交付，支持文本、client tools、完整／流�
 与失败策略明确后才考虑人工晋升；不默认接入黑盒自动选模。Provider-neutral 的 PCP-07A 离线评测基座
 已由公开预计算结果拉动，位于 `evals/` 而非生产 Provider 请求路径；它只交付配对数据、来源隔离、
 固定／种子随机／Oracle 基线和分维度报告，不代表已批准真实消费者、自动路由、双 Profile 付费采集
-或线上策略。
+或线上策略。后续以 `summarization` 完成的首轮项目内配对 pilot 显示，最佳固定候选与事后质量 Oracle 的
+平均分仅相差 `0.0077`（27 个 development case 中 Oracle 只改选 2 次）；证据不足以进入规则路由，故保持
+静态 Profile 绑定，冻结 holdout，不建设 shadow／canary。否定性 Eval 结论不改变 P1 优先级。
 具体 PRD、tickets 与两轨协作状态从 `.scratch/CURRENT.md` 进入。
 
 ### P6：Voice Interview 的 TTS 阶段

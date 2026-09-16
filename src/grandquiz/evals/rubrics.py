@@ -119,6 +119,32 @@ _RUBRICS = {
             ),
         ),
     ),
+    "summarization_quality": Rubric(
+        rubric_id="summarization_quality",
+        version="summarization_quality@v1",
+        criteria=(
+            Criterion(
+                "factual_fidelity",
+                "只判断摘要中的实质陈述是否全部受原对话支持；不得补写原对话没有的事实、"
+                "决定、偏好或进展。全部受支持为 4，轻微歧义为 3，关键事实错误或臆造为 1",
+            ),
+            Criterion(
+                "useful_retention",
+                "只判断摘要是否保留后续对话仍可能需要的决定、偏好、约束、进展和未决事项；"
+                "完整保留为 4，遗漏少量次要信息为 3，遗漏关键约束或结论为 1",
+            ),
+            Criterion(
+                "compression_quality",
+                "只判断是否把问答过程压缩为结论性信息并避免逐字复述、标题和列表；简洁且"
+                "信息密度高为 4，略冗长为 3，大量复述过程或格式不合约为 1",
+            ),
+            Criterion(
+                "continuation_usefulness",
+                "只判断后续模型仅阅读该摘要时能否延续当前工作而不误解上下文；身份、状态、"
+                "边界和下一步清楚为 4，需猜测少量上下文为 3，容易导致错误行动为 1",
+            ),
+        ),
+    ),
 }
 
 
