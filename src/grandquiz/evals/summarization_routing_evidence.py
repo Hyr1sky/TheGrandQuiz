@@ -33,7 +33,6 @@ from grandquiz.evals.summarization_routing import (
     SummarizationPilotOutcome,
     SummarizationPilotPlan,
 )
-from grandquiz.providers.profiles import ModelIdentity
 
 
 class SummarizationRoutingEvidenceError(ValueError):
@@ -126,20 +125,16 @@ def snapshot_summarization_routing_subjects(
         subjects.append(
             snapshot_subject_v2(
                 prompts={"summarize": pilot.prompt_version},
-                model_identities=(
-                    _subject_model_identity(
-                        purpose="summarization",
-                        profile_id=candidate.profile_id,
-                        configuration_fingerprint=candidate.configuration_fingerprint,
-                    ),
-                ),
+                model_identities=(candidate.model_identity,),
                 tool_schemas={},
                 policies={
                     "fallback": "disabled",
                     "harness": "collect_summarization_pilot.v1",
                     "rubric": pilot.rubric_version,
+                    "retry_policy": _canonical(candidate.retry_policy.model_dump(mode="json")),
+                    "retry_policy_fingerprint": candidate.retry_policy.fingerprint,
                     "token_budget": str(pilot.max_total_tokens),
-                    "transport_attempts": "at-most-one",
+                    "transport_attempts": str(candidate.retry_policy.max_attempts),
                     "workflow": "summarization-paired-pilot.v1",
                 },
             )
@@ -148,48 +143,21 @@ def snapshot_summarization_routing_subjects(
         subjects.append(
             snapshot_subject_v2(
                 prompts={"pairwise_judge": judge_plan.prompt_version},
-                model_identities=(
-                    _subject_model_identity(
-                        purpose="eval_quality",
-                        profile_id=judge.profile_id,
-                        configuration_fingerprint=judge.configuration_fingerprint,
-                    ),
-                ),
+                model_identities=(judge.model_identity,),
                 tool_schemas={},
                 policies={
                     "fallback": "disabled",
                     "harness": "collect_summarization_judgements.v1",
                     "rubric": judge_plan.rubric_version,
+                    "retry_policy": _canonical(judge.retry_policy.model_dump(mode="json")),
+                    "retry_policy_fingerprint": judge.retry_policy.fingerprint,
                     "token_budget": str(judge_plan.experiment_token_cap),
-                    "transport_attempts": "at-most-one",
+                    "transport_attempts": str(judge.retry_policy.max_attempts),
                     "workflow": "summarization-blind-dual-judge.v1",
                 },
             )
         )
     return tuple(sorted(subjects, key=lambda subject: subject.subject_id))
-
-
-def _subject_model_identity(
-    *,
-    purpose: str,
-    profile_id: str,
-    configuration_fingerprint: str,
-) -> ModelIdentity:
-    return ModelIdentity(
-        purpose=purpose,
-        selection_source="explicit_profile",
-        configuration_fingerprint=configuration_fingerprint,
-        policy_fingerprint=_digest(
-            {
-                "version": "summarization-routing-eval-policy.v1",
-                "purpose": purpose,
-                "profile_id": profile_id,
-                "required_capability": "text_completion",
-                "transport_attempts": "at-most-one",
-                "fallback": "disabled",
-            }
-        ),
-    )
 
 
 def _require_approval(
@@ -344,10 +312,13 @@ def _judge_plan_digest(plan: SummarizationJudgePlan) -> str:
 
 
 def _digest(value: object) -> str:
-    canonical = json.dumps(
+    return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def _canonical(value: object) -> str:
+    return json.dumps(
         value,
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,
     )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

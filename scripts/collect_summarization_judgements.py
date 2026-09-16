@@ -64,9 +64,11 @@ async def _run(args: argparse.Namespace) -> None:
         args.model_config.read_text(encoding="utf-8"),
         purposes={"summarization", "eval_quality"},
     )
+    execution_retry_policy = ProviderRetryPolicy(max_attempts=1)
     judges = resolve_summarization_judge_candidates(
         configuration,
         ("deepseek", "qwen_summary_candidate"),
+        retry_policy=execution_retry_policy,
     )
     plan = compile_summarization_judge_plan(
         pilot,
@@ -94,7 +96,7 @@ async def _run(args: argparse.Namespace) -> None:
         configuration,
         environment=_environment(args.environment_file),
         retry_runtime=RetryRuntime.production(
-            ProviderRetryPolicy(max_attempts=1),
+            execution_retry_policy,
             seed=0,
         ),
     )

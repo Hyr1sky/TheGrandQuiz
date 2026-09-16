@@ -54,9 +54,11 @@ async def _run(args: argparse.Namespace) -> None:
         args.model_config.read_text(encoding="utf-8"),
         purposes={"summarization"},
     )
+    execution_retry_policy = ProviderRetryPolicy(max_attempts=1)
     candidates = resolve_summarization_pilot_candidates(
         configuration,
         ("deepseek", "qwen_summary_candidate"),
+        retry_policy=execution_retry_policy,
     )
     source_store = TraceStore(args.trace_db)
     try:
@@ -88,7 +90,7 @@ async def _run(args: argparse.Namespace) -> None:
     _write_new(args.output_dir / "approval.json", approval.model_dump(mode="json"))
 
     retry_runtime = RetryRuntime.production(
-        ProviderRetryPolicy(max_attempts=1),
+        execution_retry_policy,
         seed=0,
     )
     runtime = ModelRuntime.from_configuration(

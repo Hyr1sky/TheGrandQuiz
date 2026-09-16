@@ -21,7 +21,8 @@ from grandquiz.kernel.model_execution import complete_model_call
 from grandquiz.providers.base import Message, Model, Usage
 from grandquiz.providers.failure import ProviderFailure
 from grandquiz.providers.models import fallback_plan_of, identity_of, retry_runtime_of
-from grandquiz.providers.profiles import ModelConfiguration, ModelSelection
+from grandquiz.providers.profiles import ModelConfiguration, ModelIdentity, ModelSelection
+from grandquiz.providers.retry import ProviderRetryPolicy
 
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "summarization_pairwise_judge.md"
 DisplayLabel = Literal["A", "B", "tie", "both_bad", "exclude"]
@@ -46,8 +47,22 @@ class _JudgeRecord(BaseModel):
 class SummarizationJudgeCandidate(_JudgeRecord):
     profile_id: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")
     configuration_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    model_identity: ModelIdentity
+    retry_policy: ProviderRetryPolicy
     context_window_tokens: int = Field(gt=0)
     max_output_tokens: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _execution_identity_is_coherent(self) -> Self:
+        if (
+            self.model_identity.purpose != "eval_quality"
+            or self.model_identity.selection_source != "explicit_profile"
+            or self.model_identity.configuration_fingerprint != self.configuration_fingerprint
+        ):
+            raise ValueError("judge model identity does not match its deployment")
+        if self.retry_policy.max_attempts != 1:
+            raise ValueError("judge retry policy must allow one attempt")
+        return self
 
 
 class SummarizationJudgePolicy(_JudgeRecord):
@@ -100,6 +115,8 @@ class SummarizationJudgeApprovalSummary(_JudgeRecord):
     partition: Literal["development"] = "development"
     judge_profile_ids: tuple[str, str]
     judge_configuration_fingerprints: tuple[str, str]
+    judge_model_policy_fingerprints: tuple[str, str]
+    judge_retry_policy_fingerprints: tuple[str, str]
     experiment_token_cap: int = Field(gt=0, le=600_000)
     prior_actual_tokens: int = Field(ge=0)
     reserved_tokens: int = Field(gt=0)
@@ -234,6 +251,8 @@ class SummarizationReviewApproval(_JudgeRecord):
 def resolve_summarization_judge_candidates(
     configuration: ModelConfiguration,
     profile_ids: tuple[str, str],
+    *,
+    retry_policy: ProviderRetryPolicy,
 ) -> tuple[SummarizationJudgeCandidate, SummarizationJudgeCandidate]:
     """Freeze two explicit eval-quality deployments without reading credentials."""
 
@@ -253,6 +272,8 @@ def resolve_summarization_judge_candidates(
             SummarizationJudgeCandidate(
                 profile_id=profile_id,
                 configuration_fingerprint=resolved.configuration_fingerprint,
+                model_identity=configuration.identity_for_resolved(resolved),
+                retry_policy=retry_policy,
                 context_window_tokens=context_window,
                 max_output_tokens=max_output,
             )
@@ -340,6 +361,14 @@ def compile_summarization_judge_plan(
         judge_configuration_fingerprints=(
             policy.judges[0].configuration_fingerprint,
             policy.judges[1].configuration_fingerprint,
+        ),
+        judge_model_policy_fingerprints=(
+            policy.judges[0].model_identity.policy_fingerprint,
+            policy.judges[1].model_identity.policy_fingerprint,
+        ),
+        judge_retry_policy_fingerprints=(
+            policy.judges[0].retry_policy.fingerprint,
+            policy.judges[1].retry_policy.fingerprint,
         ),
         experiment_token_cap=policy.experiment_token_cap,
         prior_actual_tokens=policy.prior_actual_tokens,
@@ -805,15 +834,11 @@ def _validate_judge_models(
     for judge in plan.judges:
         model = judge_models[judge.profile_id]
         identity = identity_of(model)
-        if (
-            identity is None
-            or identity.purpose != "eval_quality"
-            or identity.configuration_fingerprint != judge.configuration_fingerprint
-        ):
+        if identity != judge.model_identity:
             raise SummarizationJudgePlanError("judge model identity does not match the plan")
         runtime = retry_runtime_of(model)
-        if runtime is not None and runtime.policy.enabled and runtime.policy.max_attempts != 1:
-            raise SummarizationJudgePlanError("judge retries must be limited to one attempt")
+        if runtime is None or runtime.policy != judge.retry_policy:
+            raise SummarizationJudgePlanError("judge retry policy does not match the frozen plan")
         if fallback_plan_of(model) is not None:
             raise SummarizationJudgePlanError("blind judge does not permit provider fallback")
 

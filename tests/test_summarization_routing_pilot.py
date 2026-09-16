@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from grandquiz.evals.summarization_routing import (
     SummarizationPilotApprovalRequired,
     SummarizationPilotBudgetExceeded,
+    SummarizationPilotError,
     SummarizationPilotPolicy,
     approve_summarization_pilot,
     collect_summarization_pilot,
@@ -19,7 +20,8 @@ from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Completion, Message, ToolSpec, Usage
 from grandquiz.providers.models import with_identity
-from grandquiz.providers.profiles import ModelIdentity, parse_model_config
+from grandquiz.providers.profiles import parse_model_config
+from grandquiz.providers.retry import ProviderRetryPolicy, RetryRuntime
 
 _MODEL_CONFIG = """
 schema_version = "model-config.v1"
@@ -41,6 +43,7 @@ model = "qwen-flash"
 context_window_tokens = 256000
 max_output_tokens = 4096
 """
+_RETRY_POLICY = ProviderRetryPolicy(max_attempts=1)
 
 
 def _policy(*, max_total_tokens: int = 600_000) -> SummarizationPilotPolicy:
@@ -49,6 +52,7 @@ def _policy(*, max_total_tokens: int = 600_000) -> SummarizationPilotPolicy:
         candidates=resolve_summarization_pilot_candidates(
             config,
             ("deepseek", "qwen_summary_candidate"),
+            retry_policy=_RETRY_POLICY,
         ),
         max_total_tokens=max_total_tokens,
         max_cases=10,
@@ -153,6 +157,11 @@ def test_trace_inputs_compile_to_a_frozen_approval_bound_pilot() -> None:
     assert plan.data_scope == "successful_local_chat_turns"
     assert plan.candidate_profile_ids == ("deepseek", "qwen_summary_candidate")
     assert all(len(candidate.configuration_fingerprint) == 64 for candidate in plan.candidates)
+    assert all(
+        candidate.model_identity.configuration_fingerprint == candidate.configuration_fingerprint
+        for candidate in plan.candidates
+    )
+    assert all(candidate.retry_policy == _RETRY_POLICY for candidate in plan.candidates)
     assert plan.prompt_version.startswith("summarize@")
     assert plan.rubric_version == "summarization_quality@v1"
     assert plan.max_attempts_per_candidate == 1
@@ -269,12 +278,8 @@ async def test_collection_reuses_the_real_summarizer_and_cannot_call_before_yes(
     models = {
         candidate.profile_id: with_identity(
             raw_models[candidate.profile_id],
-            ModelIdentity(
-                purpose="summarization",
-                selection_source="explicit_profile",
-                configuration_fingerprint=candidate.configuration_fingerprint,
-                policy_fingerprint="f" * 64,
-            ),
+            candidate.model_identity,
+            retry_runtime=RetryRuntime.production(candidate.retry_policy, seed=0),
         )
         for candidate in plan.candidates
     }
@@ -298,6 +303,24 @@ async def test_collection_reuses_the_real_summarizer_and_cannot_call_before_yes(
         approval_id="approval-yes",
         decided_at=102.0,
     )
+    first_candidate = plan.candidates[0]
+    wrong_retry_policy = first_candidate.retry_policy.model_copy(
+        update={"deadline_seconds": first_candidate.retry_policy.deadline_seconds - 1}
+    )
+    wrong_models = dict(models)
+    wrong_models[first_candidate.profile_id] = with_identity(
+        raw_models[first_candidate.profile_id],
+        first_candidate.model_identity,
+        retry_runtime=RetryRuntime.production(wrong_retry_policy, seed=0),
+    )
+    with pytest.raises(SummarizationPilotError, match="retry policy"):
+        await collect_summarization_pilot(
+            plan,
+            approval=approval,
+            candidate_models=wrong_models,
+            emitter=emitter,
+        )
+
     collection = await collect_summarization_pilot(
         plan,
         approval=approval,

@@ -29,7 +29,7 @@ from grandquiz.providers.models import (
     retry_runtime_of,
 )
 from grandquiz.providers.profiles import ModelConfiguration, ModelIdentity, ModelSelection
-from grandquiz.providers.retry import RetryRuntime
+from grandquiz.providers.retry import ProviderRetryPolicy, RetryRuntime
 
 
 class SummarizationPilotError(ValueError):
@@ -53,8 +53,22 @@ class SummarizationPilotCandidate(_PilotRecord):
 
     profile_id: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")
     configuration_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    model_identity: ModelIdentity
+    retry_policy: ProviderRetryPolicy
     context_window_tokens: int = Field(gt=0)
     max_output_tokens: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _execution_identity_is_coherent(self) -> Self:
+        if (
+            self.model_identity.purpose != "summarization"
+            or self.model_identity.selection_source != "explicit_profile"
+            or self.model_identity.configuration_fingerprint != self.configuration_fingerprint
+        ):
+            raise ValueError("candidate model identity does not match its deployment")
+        if self.retry_policy.max_attempts != 1:
+            raise ValueError("pilot candidate retry policy must allow one attempt")
+        return self
 
 
 class SummarizationPilotPolicy(_PilotRecord):
@@ -106,6 +120,8 @@ class SummarizationPilotApprovalSummary(_PilotRecord):
     data_scope: Literal["successful_local_chat_turns"] = "successful_local_chat_turns"
     candidate_profile_ids: tuple[str, str]
     candidate_configuration_fingerprints: tuple[str, str]
+    candidate_model_policy_fingerprints: tuple[str, str]
+    candidate_retry_policy_fingerprints: tuple[str, str]
     max_total_tokens: int = Field(gt=0, le=600_000)
     reserved_total_tokens: int = Field(gt=0)
     max_attempts_per_candidate: Literal[1] = 1
@@ -529,15 +545,11 @@ def _validate_candidate_models(
     for candidate in plan.candidates:
         model = candidate_models[candidate.profile_id]
         identity = identity_of(model)
-        if (
-            identity is None
-            or identity.purpose != "summarization"
-            or identity.configuration_fingerprint != candidate.configuration_fingerprint
-        ):
+        if identity != candidate.model_identity:
             raise SummarizationPilotError("candidate model identity does not match the frozen plan")
         runtime = retry_runtime_of(model)
-        if runtime is not None and runtime.policy.enabled and runtime.policy.max_attempts != 1:
-            raise SummarizationPilotError("pilot candidate retries must be limited to one attempt")
+        if runtime is None or runtime.policy != candidate.retry_policy:
+            raise SummarizationPilotError("candidate retry policy does not match the frozen plan")
         if fallback_plan_of(model) is not None:
             raise SummarizationPilotError("pilot collection does not permit provider fallback")
 
@@ -545,6 +557,8 @@ def _validate_candidate_models(
 def resolve_summarization_pilot_candidates(
     configuration: ModelConfiguration,
     profile_ids: tuple[str, str],
+    *,
+    retry_policy: ProviderRetryPolicy,
 ) -> tuple[SummarizationPilotCandidate, SummarizationPilotCandidate]:
     """Freeze two explicit profile deployments without resolving any credentials."""
 
@@ -564,6 +578,8 @@ def resolve_summarization_pilot_candidates(
             SummarizationPilotCandidate(
                 profile_id=profile_id,
                 configuration_fingerprint=resolved.configuration_fingerprint,
+                model_identity=configuration.identity_for_resolved(resolved),
+                retry_policy=retry_policy,
                 context_window_tokens=context_window,
                 max_output_tokens=max_output,
             )
@@ -657,6 +673,14 @@ def _approval_summary(
         candidate_configuration_fingerprints=(
             candidates[0].configuration_fingerprint,
             candidates[1].configuration_fingerprint,
+        ),
+        candidate_model_policy_fingerprints=(
+            candidates[0].model_identity.policy_fingerprint,
+            candidates[1].model_identity.policy_fingerprint,
+        ),
+        candidate_retry_policy_fingerprints=(
+            candidates[0].retry_policy.fingerprint,
+            candidates[1].retry_policy.fingerprint,
         ),
         max_total_tokens=max_total_tokens,
         reserved_total_tokens=reserved_total_tokens,

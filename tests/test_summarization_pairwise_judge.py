@@ -8,6 +8,7 @@ import pytest
 from grandquiz.evals.summarization_pairwise import (
     SummarizationJudgeApprovalRequired,
     SummarizationJudgePlan,
+    SummarizationJudgePlanError,
     SummarizationJudgePolicy,
     approve_summarization_judge_plan,
     approve_summarization_review_pack,
@@ -36,7 +37,8 @@ from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
 from grandquiz.providers.base import Completion, Message, ToolSpec, Usage
 from grandquiz.providers.models import with_identity
-from grandquiz.providers.profiles import ModelConfiguration, ModelIdentity, parse_model_config
+from grandquiz.providers.profiles import ModelConfiguration, parse_model_config
+from grandquiz.providers.retry import ProviderRetryPolicy, RetryRuntime
 
 _MODEL_CONFIG = """
 schema_version = "model-config.v1"
@@ -58,6 +60,7 @@ model = "qwen-flash"
 context_window_tokens = 256000
 max_output_tokens = 4096
 """
+_RETRY_POLICY = ProviderRetryPolicy(max_attempts=1)
 
 
 class _SummaryModel:
@@ -150,6 +153,7 @@ async def _prepare_judge_plan() -> tuple[
             candidates=resolve_summarization_pilot_candidates(
                 config,
                 ("deepseek", "qwen_summary_candidate"),
+                retry_policy=_RETRY_POLICY,
             ),
             max_total_tokens=600_000,
             holdout_every=2,
@@ -168,12 +172,8 @@ async def _prepare_judge_plan() -> tuple[
     generation_models = {
         candidate.profile_id: with_identity(
             _SummaryModel(generation_text[candidate.profile_id]),
-            ModelIdentity(
-                purpose="summarization",
-                selection_source="explicit_profile",
-                configuration_fingerprint=candidate.configuration_fingerprint,
-                policy_fingerprint="f" * 64,
-            ),
+            candidate.model_identity,
+            retry_runtime=RetryRuntime.production(candidate.retry_policy, seed=0),
         )
         for candidate in pilot.candidates
     }
@@ -190,6 +190,7 @@ async def _prepare_judge_plan() -> tuple[
             judges=resolve_summarization_judge_candidates(
                 config,
                 ("deepseek", "qwen_summary_candidate"),
+                retry_policy=_RETRY_POLICY,
             ),
             experiment_token_cap=600_000,
             prior_actual_tokens=collection.known_actual_tokens,
@@ -224,12 +225,8 @@ async def test_only_yes_runs_blind_judges_and_agreement_becomes_a_suggested_labe
     judge_models = {
         judge.profile_id: with_identity(
             raw_judges[judge.profile_id],
-            ModelIdentity(
-                purpose="eval_quality",
-                selection_source="explicit_profile",
-                configuration_fingerprint=judge.configuration_fingerprint,
-                policy_fingerprint="f" * 64,
-            ),
+            judge.model_identity,
+            retry_runtime=RetryRuntime.production(judge.retry_policy, seed=0),
         )
         for judge in plan.judges
     }
@@ -250,6 +247,24 @@ async def test_only_yes_runs_blind_judges_and_agreement_becomes_a_suggested_labe
         approval_id="judge-yes",
         decided_at=2.0,
     )
+    first_judge = plan.judges[0]
+    wrong_retry_policy = first_judge.retry_policy.model_copy(
+        update={"max_total_wait_seconds": first_judge.retry_policy.max_total_wait_seconds - 1}
+    )
+    wrong_judge_models = dict(judge_models)
+    wrong_judge_models[first_judge.profile_id] = with_identity(
+        raw_judges[first_judge.profile_id],
+        first_judge.model_identity,
+        retry_runtime=RetryRuntime.production(wrong_retry_policy, seed=0),
+    )
+    with pytest.raises(SummarizationJudgePlanError, match="retry policy"):
+        await collect_summarization_judgements(
+            plan,
+            approval=approval,
+            judge_models=wrong_judge_models,
+            emitter=emitter,
+        )
+
     result = await collect_summarization_judgements(
         plan,
         approval=approval,
@@ -275,12 +290,8 @@ async def test_hitl_pack_is_auto_built_blind_and_accepts_one_yes_no_decision() -
     judge_models = {
         judge.profile_id: with_identity(
             raw_judges[judge.profile_id],
-            ModelIdentity(
-                purpose="eval_quality",
-                selection_source="explicit_profile",
-                configuration_fingerprint=judge.configuration_fingerprint,
-                policy_fingerprint="f" * 64,
-            ),
+            judge.model_identity,
+            retry_runtime=RetryRuntime.production(judge.retry_policy, seed=0),
         )
         for judge in plan.judges
     }
@@ -332,12 +343,8 @@ async def test_only_approved_review_pack_materializes_provider_neutral_routing_d
     judge_models = {
         judge.profile_id: with_identity(
             raw_judges[judge.profile_id],
-            ModelIdentity(
-                purpose="eval_quality",
-                selection_source="explicit_profile",
-                configuration_fingerprint=judge.configuration_fingerprint,
-                policy_fingerprint="f" * 64,
-            ),
+            judge.model_identity,
+            retry_runtime=RetryRuntime.production(judge.retry_policy, seed=0),
         )
         for judge in plan.judges
     }
@@ -415,8 +422,18 @@ async def test_only_approved_review_pack_materializes_provider_neutral_routing_d
     assert len(subjects) == 4
     assert {subject.subject_id for subject in subjects} <= set(dataset.source_revisions)
     assert all(subject.schema_version == "eval-subject.v2" for subject in subjects)
+    assert all(dict(subject.policies)["transport_attempts"] == "1" for subject in subjects)
+    assert {subject.model_identities[0].policy_fingerprint for subject in subjects} == {
+        *(candidate.model_identity.policy_fingerprint for candidate in pilot.candidates),
+        *(judge.model_identity.policy_fingerprint for judge in plan.judges),
+    }
     assert all(
-        dict(subject.policies)["transport_attempts"] == "at-most-one" for subject in subjects
+        dict(subject.policies)["retry_policy_fingerprint"]
+        in {
+            *(candidate.retry_policy.fingerprint for candidate in pilot.candidates),
+            *(judge.retry_policy.fingerprint for judge in plan.judges),
+        }
+        for subject in subjects
     )
     assert all(dict(subject.policies)["fallback"] == "disabled" for subject in subjects)
     assert {dict(subject.policies)["workflow"] for subject in subjects} == {
