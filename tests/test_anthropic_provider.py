@@ -719,6 +719,69 @@ async def test_stream_rejects_decreasing_cumulative_output_usage(
     await model.aclose()
 
 
+async def test_stream_rejects_missing_terminal_output_usage_instead_of_recording_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = _stream_body(
+        (
+            "message_start",
+            {
+                "type": "message_start",
+                "message": {
+                    **_message_response(content=[]),
+                    "stop_reason": None,
+                    "usage": {"input_tokens": 4, "output_tokens": 0},
+                },
+            },
+        ),
+        (
+            "content_block_start",
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "text", "text": ""},
+            },
+        ),
+        (
+            "content_block_delta",
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "text_delta", "text": "answer"},
+            },
+        ),
+        ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+        (
+            "message_delta",
+            {
+                "type": "message_delta",
+                "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+                "usage": {},
+            },
+        ),
+        ("message_stop", {"type": "message_stop"}),
+    )
+    _install_transport(
+        monkeypatch,
+        lambda request: httpx2.Response(
+            200,
+            request=request,
+            headers={"content-type": "text/event-stream"},
+            content=body,
+        ),
+    )
+    model = _model()
+    seen: list[object] = []
+
+    with pytest.raises(ProviderStreamProtocolError):
+        async for event in model.stream_complete([Message(role="user", content="question")]):
+            seen.append(event)
+    await model.aclose()
+
+    assert seen == [TextDelta(text="answer")]
+    assert not any(isinstance(event, CompletionFinished) for event in seen)
+
+
 async def test_stream_rejects_prefilled_message_start_content_instead_of_dropping_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

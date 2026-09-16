@@ -22,7 +22,7 @@ typed ProviderFailure，且收到任意事件后不可自动重放。截断、�
 
 | 检查 | 结果 |
 | --- | --- |
-| Anthropic Adapter 专项 | 33 passed；官方 SDK JSON/SSE 解码走本地 MockTransport |
+| Anthropic Adapter 专项 | 34 passed；官方 SDK JSON/SSE 解码走本地 MockTransport |
 | Provider/Runner/Replay 交叉回归 | 175 passed |
 | Python 全量 pytest | 1385 passed |
 | Ruff lint / format | 通过；309 files formatted |
@@ -49,3 +49,9 @@ Bedrock/Vertex/Foundry、OpenAI Responses、智能路由和真实付费 smoke。
 Evidence 或学习记账逻辑。
 
 这是路线图内、与命题业务解耦的独立支撑轨；不改变 composite/exploratory 的产品优先级。
+
+## 合并前审查补充
+
+分支合并前的 ADR 复核发现：流式 `message_delta` 若完全缺少累计 `output_tokens`，旧实现会沿用
+`message_start` 的初始值，可能把未知 output usage 记成 0。现在成功流必须至少观察到一次合法的终态累计
+output usage，否则抛 `ProviderStreamProtocolError` 且不产生 `CompletionFinished`；新增真实 SSE fixture 回归。

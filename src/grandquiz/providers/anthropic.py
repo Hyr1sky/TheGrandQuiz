@@ -487,6 +487,7 @@ class AnthropicMessagesModel:
         blocks: dict[int, _StreamBlock] = {}
         input_usage = Usage()
         output_tokens = 0
+        final_output_usage_seen = False
         stop_reason: object = None
         message_started = False
         message_stopped = False
@@ -612,6 +613,7 @@ class AnthropicMessagesModel:
                             ):
                                 raise ProviderStreamProtocolError("Anthropic output usage 非法")
                             output_tokens = output
+                            final_output_usage_seen = True
                         continue
                     if event_type == "message_stop":
                         if (
@@ -645,6 +647,8 @@ class AnthropicMessagesModel:
         unsupported = _unsupported_stop_reason(stop_reason)
         if unsupported is not None:
             raise unsupported
+        if not final_output_usage_seen:
+            raise ProviderStreamProtocolError("Anthropic stream 缺少终态 output usage")
 
         text_parts: list[str] = []
         tool_calls: list[ToolCall] = []
