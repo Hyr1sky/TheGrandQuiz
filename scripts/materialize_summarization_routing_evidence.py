@@ -12,9 +12,11 @@ from grandquiz.evals.routing import (
     SeededRandomPolicy,
     evaluate_routing_policies,
 )
+from grandquiz.evals.subject import EvalSubjectSnapshotV2
 from grandquiz.evals.summarization_pairwise import (
     SummarizationJudgementCollection,
     SummarizationJudgePlan,
+    SummarizationReviewApproval,
     SummarizationReviewPack,
     approve_summarization_review_pack,
 )
@@ -24,6 +26,7 @@ from grandquiz.evals.summarization_routing import (
 )
 from grandquiz.evals.summarization_routing_evidence import (
     materialize_summarization_routing_dataset,
+    snapshot_summarization_routing_subjects,
 )
 
 
@@ -33,7 +36,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--judging-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--approved-review-pack-hash", required=True)
-    parser.add_argument("--approval-id", required=True)
+    approval = parser.add_mutually_exclusive_group(required=True)
+    approval.add_argument("--approval-id")
+    approval.add_argument("--approval-file", type=Path)
     parser.add_argument("--random-seed", type=int, default=42)
     return parser
 
@@ -43,6 +48,27 @@ def _write(path: Path, value: object) -> None:
         json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def _subject_payload(subject: EvalSubjectSnapshotV2) -> dict[str, object]:
+    return {
+        "schema_version": subject.schema_version,
+        "subject_id": subject.subject_id,
+        "prompts": subject.prompts,
+        "model_identities": [
+            identity.model_dump(mode="json") for identity in subject.model_identities
+        ],
+        "tool_schemas": subject.tool_schemas,
+        "policies": subject.policies,
+        "replay_evidence": [
+            {
+                "owner": evidence.owner,
+                "cassette": evidence.cassette,
+                "sha256": evidence.sha256,
+            }
+            for evidence in subject.replay_evidence
+        ],
+    }
 
 
 def main() -> None:
@@ -65,12 +91,19 @@ def main() -> None:
     if review_pack.content_sha256 != args.approved_review_pack_hash:
         raise RuntimeError("review pack does not match the explicitly approved hash")
 
-    approval = approve_summarization_review_pack(
-        review_pack,
-        approved=True,
-        approval_id=args.approval_id,
-        decided_at=time.time(),
-    )
+    if args.approval_file is not None:
+        approval = SummarizationReviewApproval.model_validate_json(
+            args.approval_file.read_text(encoding="utf-8")
+        )
+    else:
+        if not isinstance(args.approval_id, str):
+            raise RuntimeError("approval id is required")
+        approval = approve_summarization_review_pack(
+            review_pack,
+            approved=True,
+            approval_id=args.approval_id,
+            decided_at=time.time(),
+        )
     dataset = materialize_summarization_routing_dataset(
         pilot,
         collection,
@@ -79,6 +112,7 @@ def main() -> None:
         review_pack,
         approval=approval,
     )
+    subjects = snapshot_summarization_routing_subjects(pilot, judge_plan)
     fixed_policies = tuple(
         FixedCandidatePolicy(
             policy_id=f"fixed:{candidate_id}",
@@ -98,6 +132,10 @@ def main() -> None:
 
     args.output_dir.mkdir(parents=True, exist_ok=False)
     _write(args.output_dir / "review-approval.json", approval.model_dump(mode="json"))
+    _write(
+        args.output_dir / "eval-subjects.json",
+        [_subject_payload(subject) for subject in subjects],
+    )
     _write(args.output_dir / "routing-dataset.json", dataset.model_dump(mode="json"))
     _write(args.output_dir / "routing-baselines.json", report.model_dump(mode="json"))
     print(

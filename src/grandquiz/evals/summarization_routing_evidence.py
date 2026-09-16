@@ -16,6 +16,7 @@ from grandquiz.evals.routing import (
     RoutingDataset,
     RoutingRequest,
 )
+from grandquiz.evals.subject import EvalSubjectSnapshotV2, snapshot_subject_v2
 from grandquiz.evals.summarization_pairwise import (
     SummarizationCriterionScores,
     SummarizationJudgeCase,
@@ -32,6 +33,7 @@ from grandquiz.evals.summarization_routing import (
     SummarizationPilotOutcome,
     SummarizationPilotPlan,
 )
+from grandquiz.providers.profiles import ModelIdentity
 
 
 class SummarizationRoutingEvidenceError(ValueError):
@@ -55,6 +57,7 @@ def materialize_summarization_routing_dataset(
 
     approved_review = _require_approval(review_pack, approval)
     _verify_artifact_chain(pilot, collection, judge_plan, judgements, review_pack)
+    subjects = snapshot_summarization_routing_subjects(pilot, judge_plan)
 
     pilot_by_case = {case.case_id: case for case in pilot.cases}
     collection_by_case = {case.case_id: case for case in collection.cases}
@@ -100,12 +103,92 @@ def materialize_summarization_routing_dataset(
                     judgements.content_sha256,
                     review_pack.content_sha256,
                     approval_revision,
+                    *(subject.subject_id for subject in subjects),
                 }
             )
         ),
         cost_unit="unknown",
         candidate_ids=candidate_ids,
         cases=tuple(sorted(cases, key=lambda case: case.request.case_id)),
+    )
+
+
+def snapshot_summarization_routing_subjects(
+    pilot: SummarizationPilotPlan,
+    judge_plan: SummarizationJudgePlan,
+) -> tuple[EvalSubjectSnapshotV2, ...]:
+    """Freeze the four exact model/harness combinations behind paired evidence."""
+
+    if judge_plan.pilot_plan_content_sha256 != pilot.content_sha256:
+        raise SummarizationRoutingEvidenceError("judge plan does not belong to the pilot")
+    subjects: list[EvalSubjectSnapshotV2] = []
+    for candidate in pilot.candidates:
+        subjects.append(
+            snapshot_subject_v2(
+                prompts={"summarize": pilot.prompt_version},
+                model_identities=(
+                    _subject_model_identity(
+                        purpose="summarization",
+                        profile_id=candidate.profile_id,
+                        configuration_fingerprint=candidate.configuration_fingerprint,
+                    ),
+                ),
+                tool_schemas={},
+                policies={
+                    "fallback": "disabled",
+                    "harness": "collect_summarization_pilot.v1",
+                    "rubric": pilot.rubric_version,
+                    "token_budget": str(pilot.max_total_tokens),
+                    "transport_attempts": "at-most-one",
+                    "workflow": "summarization-paired-pilot.v1",
+                },
+            )
+        )
+    for judge in judge_plan.judges:
+        subjects.append(
+            snapshot_subject_v2(
+                prompts={"pairwise_judge": judge_plan.prompt_version},
+                model_identities=(
+                    _subject_model_identity(
+                        purpose="eval_quality",
+                        profile_id=judge.profile_id,
+                        configuration_fingerprint=judge.configuration_fingerprint,
+                    ),
+                ),
+                tool_schemas={},
+                policies={
+                    "fallback": "disabled",
+                    "harness": "collect_summarization_judgements.v1",
+                    "rubric": judge_plan.rubric_version,
+                    "token_budget": str(judge_plan.experiment_token_cap),
+                    "transport_attempts": "at-most-one",
+                    "workflow": "summarization-blind-dual-judge.v1",
+                },
+            )
+        )
+    return tuple(sorted(subjects, key=lambda subject: subject.subject_id))
+
+
+def _subject_model_identity(
+    *,
+    purpose: str,
+    profile_id: str,
+    configuration_fingerprint: str,
+) -> ModelIdentity:
+    return ModelIdentity(
+        purpose=purpose,
+        selection_source="explicit_profile",
+        configuration_fingerprint=configuration_fingerprint,
+        policy_fingerprint=_digest(
+            {
+                "version": "summarization-routing-eval-policy.v1",
+                "purpose": purpose,
+                "profile_id": profile_id,
+                "required_capability": "text_completion",
+                "transport_attempts": "at-most-one",
+                "fallback": "disabled",
+            }
+        ),
     )
 
 

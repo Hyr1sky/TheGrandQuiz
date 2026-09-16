@@ -30,6 +30,7 @@ from grandquiz.evals.summarization_routing_evidence import (
     SummarizationRoutingEvidenceApprovalRequired,
     SummarizationRoutingEvidenceError,
     materialize_summarization_routing_dataset,
+    snapshot_summarization_routing_subjects,
 )
 from grandquiz.kernel.clock import ManualClock
 from grandquiz.kernel.events import AgentEvent, EventEmitter, EventSink, EventType
@@ -408,8 +409,20 @@ async def test_only_approved_review_pack_materializes_provider_neutral_routing_d
         pack,
         approval=approved,
     )
+    subjects = snapshot_summarization_routing_subjects(pilot, plan)
 
     assert dataset.source_kind == "summarization-paired-pilot.v1"
+    assert len(subjects) == 4
+    assert {subject.subject_id for subject in subjects} <= set(dataset.source_revisions)
+    assert all(subject.schema_version == "eval-subject.v2" for subject in subjects)
+    assert all(
+        dict(subject.policies)["transport_attempts"] == "at-most-one" for subject in subjects
+    )
+    assert all(dict(subject.policies)["fallback"] == "disabled" for subject in subjects)
+    assert {dict(subject.policies)["workflow"] for subject in subjects} == {
+        "summarization-paired-pilot.v1",
+        "summarization-blind-dual-judge.v1",
+    }
     assert dataset.candidate_ids == ("deepseek", "qwen_summary_candidate")
     assert len(dataset.cases) == len(plan.cases)
     assert all(case.request.partition == "development" for case in dataset.cases)

@@ -35,8 +35,12 @@ PCP-07B 的项目内证据门已完成，但结论是 **不实现智能路由**�
 接口；候选的评分、token 和延迟只作为事后 outcome。双 Judge 的四项 1～4 分按候选聚合为 8～32 分，再以
 `(raw - 8) / 24` 归一化到 `[0, 1]`。本轮没有冻结价格表，所以 cost 明确保留 unknown。
 
+提交前审查进一步要求复用正式 `EvalSubjectSnapshotV2`，而不是把 Profile 指纹误当完整被测系统身份。最终
+证据为两个生成候选和两个 Judge 分别冻结 model identity、prompt、rubric、token budget、单次 transport
+attempt、禁用 fallback、workflow 与 harness 版本；四个 subject ID 都进入 `RoutingDataset.source_revisions`。
+
 开发集数据哈希为
-`3abf1b37f89840d7d30a7f262e2391611ca024bcc506c9da2701af3ef975805a`。
+`90c36b73ef646cd4157cdeea044ef8ee8919d20f99423b8d1e810fe9e8459f5d`。
 
 ## 基线结果
 
@@ -61,7 +65,7 @@ Oracle 相对固定 DeepSeek 的质量增益约为 0.81%，且依赖生产时不
 | 检查 | 结果 |
 | --- | --- |
 | summarization pilot／judge／routing 与 Provider transport 专项 | 68 passed |
-| Python 全量 pytest | 1402 passed |
+| Python 全量 pytest | 1403 passed |
 | Ruff lint／format | 通过；321 files formatted |
 | Pyright strict | 0 errors / 0 warnings |
 | Import Linter | 1 kept / 0 broken |
