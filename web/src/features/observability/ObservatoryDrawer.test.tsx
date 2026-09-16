@@ -186,10 +186,11 @@ describe("ObservatoryDrawer", () => {
     expect(
       await screen.findByRole("dialog", { name: "运行观测" }),
     ).toBeInTheDocument();
+    const statusRegion = await screen.findByRole("region", {
+      name: "运行状态",
+    });
     expect(
-      within(screen.getByRole("region", { name: "运行状态" })).getByText(
-        "已完成",
-      ),
+      within(statusRegion).getByText("已完成"),
     ).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
     expect(screen.getByText("选择题生成")).toBeInTheDocument();

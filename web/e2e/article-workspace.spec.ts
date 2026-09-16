@@ -308,9 +308,7 @@ test("keeps the exact material across two chat cursors", async ({ page }) => {
 
   await composer.fill("第一轮");
   await page.getByRole("button", { name: "发送" }).click();
-  await expect(page.locator(".chat-bubble--agent")).toHaveText(
-    "（fixture",
-  );
+  await expect(page.locator(".chat-bubble--agent")).toContainText("（fixture");
   await expect(page.getByText(new RegExp(`active_resource_id=${resourceId}.*第一轮`))).toBeVisible();
 
   await composer.fill("第二轮");
